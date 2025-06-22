@@ -1,0 +1,23 @@
+# Ignore everything by default
+*
+
+# Allow directories (needed to allow their contents later)
+!*/
+
+# Explicitly allow project files
+!.gitignore
+!README.md
+
+# Gradle wrapper and build files
+!build.gradle.kts
+!settings.gradle.kts
+!gradlew
+!gradlew.bat
+!gradle/wrapper/**
+
+# Source code
+!src/**
+
+# Ignore environment and IDE-specific files
+.env*
+.idea/
