@@ -3,71 +3,117 @@ package ai.attackframework.vectors.sources.burp.ui;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.util.ArrayList;
+import java.awt.event.ActionListener;
 import java.util.List;
+import java.util.*;
 
 public class AttackVectorsTab extends JPanel {
 
-    private final JCheckBox selectAllSources = new JCheckBox("Select All Sources");
-    private final JCheckBox sitemap = new JCheckBox("Sitemap");
-    private final JCheckBox issues = new JCheckBox("Issues");
-    private final JCheckBox traffic = new JCheckBox("All Traffic");
+    private final JRadioButton allTrafficRadio = new JRadioButton("All Traffic", true);
+    private final JRadioButton inScopeRadio = new JRadioButton("In-Scope Traffic");
+    private final JRadioButton customScopeRadio = new JRadioButton("Custom Scope (regex)");
+    private final JTextField customScopeField = new JTextField(20);
 
-    private final JCheckBox selectAllSinks = new JCheckBox("Select All Sinks");
-    private final JCheckBox openSearch = new JCheckBox("OpenSearch");
+    private final JCheckBox sitemapCheckbox = new JCheckBox("Sitemap", true);
+    private final JCheckBox issuesCheckbox = new JCheckBox("Issues", true);
+    private final JCheckBox trafficCheckbox = new JCheckBox("Scoped Traffic", true);
+
+    private final JCheckBox fileSinkCheckbox = new JCheckBox("To File", true);
+    private final JCheckBox openSearchSinkCheckbox = new JCheckBox("To OpenSearch", true);
 
     public AttackVectorsTab() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        add(buildSection("Data Sources", selectAllSources, List.of(sitemap, issues, traffic)));
-        add(Box.createVerticalStrut(15));
-        add(buildSection("Sink Targets", selectAllSinks, List.of(openSearch)));
-        add(Box.createVerticalStrut(15));
-
-        JButton saveButton = new JButton("Save");
-        saveButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        saveButton.addActionListener(this::onSaveClicked);
-        add(saveButton);
-
-        setupSelectAll(selectAllSources, List.of(sitemap, issues, traffic));
-        setupSelectAll(selectAllSinks, List.of(openSearch));
+        add(buildScopePanel());
+        add(Box.createVerticalStrut(10));
+        add(buildSourcesPanel());
+        add(Box.createVerticalStrut(10));
+        add(buildSinksPanel());
+        add(Box.createVerticalStrut(10));
+        add(buildSaveButton());
     }
 
-    private JPanel buildSection(String title, JCheckBox selectAll, List<JCheckBox> checkboxes) {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.setBorder(BorderFactory.createTitledBorder(title));
+    private JPanel buildScopePanel() {
+        JPanel scopePanel = new JPanel();
+        scopePanel.setLayout(new BoxLayout(scopePanel, BoxLayout.Y_AXIS));
+        scopePanel.setBorder(BorderFactory.createTitledBorder("Scope"));
 
-        panel.add(selectAll);
-        for (JCheckBox box : checkboxes) {
-            panel.add(box);
-        }
+        ButtonGroup group = new ButtonGroup();
+        group.add(inScopeRadio);
+        group.add(customScopeRadio);
+        group.add(allTrafficRadio);
+
+        scopePanel.add(wrapLeftAligned(inScopeRadio));
+
+        JPanel customScopeRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        customScopeRow.add(customScopeRadio);
+        customScopeRow.add(customScopeField);
+        scopePanel.add(customScopeRow);
+
+        scopePanel.add(wrapLeftAligned(allTrafficRadio));
+
+        return scopePanel;
+    }
+
+    private JPanel buildSourcesPanel() {
+        JPanel sourcesPanel = new JPanel();
+        sourcesPanel.setLayout(new BoxLayout(sourcesPanel, BoxLayout.Y_AXIS));
+        sourcesPanel.setBorder(BorderFactory.createTitledBorder("Data Sources"));
+
+        sourcesPanel.add(wrapLeftAligned(sitemapCheckbox));
+        sourcesPanel.add(wrapLeftAligned(issuesCheckbox));
+        sourcesPanel.add(wrapLeftAligned(trafficCheckbox));
+
+        return sourcesPanel;
+    }
+
+    private JPanel buildSinksPanel() {
+        JPanel sinksPanel = new JPanel();
+        sinksPanel.setLayout(new BoxLayout(sinksPanel, BoxLayout.Y_AXIS));
+        sinksPanel.setBorder(BorderFactory.createTitledBorder("Sink Targets"));
+
+        sinksPanel.add(wrapLeftAligned(fileSinkCheckbox));
+        sinksPanel.add(wrapLeftAligned(openSearchSinkCheckbox));
+
+        return sinksPanel;
+    }
+
+    private JPanel buildSaveButton() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton saveButton = new JButton("Save");
+        saveButton.addActionListener(new SaveButtonListener());
+        panel.add(saveButton);
         return panel;
     }
 
-    private void setupSelectAll(JCheckBox master, List<JCheckBox> targets) {
-        master.addActionListener(e -> {
-            boolean selected = master.isSelected();
-            for (JCheckBox cb : targets) {
-                cb.setSelected(selected);
-            }
-        });
+    private JPanel wrapLeftAligned(JComponent comp) {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        panel.add(comp);
+        return panel;
     }
 
-    private void onSaveClicked(ActionEvent e) {
-        List<String> selectedSources = new ArrayList<>();
-        if (sitemap.isSelected()) selectedSources.add("Sitemap");
-        if (issues.isSelected()) selectedSources.add("Issues");
-        if (traffic.isSelected()) selectedSources.add("All Traffic");
+    private class SaveButtonListener implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            List<String> selectedSources = new ArrayList<>();
+            if (sitemapCheckbox.isSelected()) selectedSources.add("Sitemap");
+            if (issuesCheckbox.isSelected()) selectedSources.add("Issues");
+            if (trafficCheckbox.isSelected()) selectedSources.add("Scoped Traffic");
 
-        List<String> selectedSinks = new ArrayList<>();
-        if (openSearch.isSelected()) selectedSinks.add("OpenSearch");
+            List<String> selectedSinks = new ArrayList<>();
+            if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
+            if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
 
-        Logger.logInfo("Sources selected: " + String.join(", ", selectedSources));
-        Logger.logInfo("Sinks selected: " + String.join(", ", selectedSinks));
+            String scope = allTrafficRadio.isSelected() ? "All Traffic"
+                    : inScopeRadio.isSelected() ? "In-Scope Traffic"
+                    : "Custom: " + customScopeField.getText();
+
+            Logger.logInfo("Scope selected: " + scope);
+            Logger.logInfo("Sources selected: " + String.join(", ", selectedSources));
+            Logger.logInfo("Sinks selected: " + String.join(", ", selectedSinks));
+        }
     }
 }
