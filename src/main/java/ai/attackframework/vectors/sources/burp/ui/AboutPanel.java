@@ -9,8 +9,7 @@ public class AboutPanel extends JPanel {
         JTextArea aboutText = new JTextArea(
                 "Attack Vectors: Burp Exporter\n" +
                         "https://github.com/pS3ud0RAnD0m/attackvectors-burp\n\n" +
-                        "This extension exports Burp Suite data into formats usable by data lakes and vector DBs.\n" +
-                        "Part of the Attack Framework initiative."
+                        "This extension exports Burp Suite data into formats usable by data lakes and vector DBs as part of the Attack Framework™ initiative."
         );
         aboutText.setEditable(false);
         aboutText.setLineWrap(true);
