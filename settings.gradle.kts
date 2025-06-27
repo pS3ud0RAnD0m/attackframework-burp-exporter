@@ -1,1 +1,1 @@
-rootProject.name = "attackvectors-burp"
+rootProject.name = "ai.attackframework.vectors.sources.burp"

@@ -6,6 +6,7 @@
 
 # Explicitly allow project files
 !.gitignore
+!.github/**
 !README.md
 
 # Gradle wrapper and build files
@@ -13,6 +14,7 @@
 !settings.gradle.kts
 !gradlew
 !gradlew.bat
+!gradle.properties
 !gradle/wrapper/**
 
 # Source code

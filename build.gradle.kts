@@ -3,7 +3,6 @@ plugins {
 }
 
 group = "ai.attackframework.vectors.sources.burp"
-version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()

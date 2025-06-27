@@ -1,0 +1,38 @@
+name: Build & Release Burp Extension
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 21 (Corretto)
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+
+      - name: Grant Gradle permission
+        run: chmod +x gradlew
+
+      - name: Build extension
+        run: ./gradlew clean build
+
+      - name: Create or update GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v0.0.1
+          name: v0.0.1
+          allowUpdates: true
+          replacesArtifacts: true
+          artifacts: build/libs/ai.attackframework.vectors.sources.burp-0.0.1.jar
+          token: ${{ secrets.GH_PAT }}
+          body: |
+            Automated build from latest commit to main.
+            Always reflects the current state of the 0.0.1 dev version.
