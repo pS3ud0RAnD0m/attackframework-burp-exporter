@@ -8,7 +8,7 @@ public class AboutPanel extends JPanel {
         setLayout(new BorderLayout());
         JTextArea aboutText = new JTextArea(
                 "Attack Vectors: Burp Exporter\n" +
-                        "https://github.com/attackinc/attackvectors-burp\n\n" +
+                        "https://github.com/pS3ud0RAnD0m/attackvectors-burp\n\n" +
                         "This extension exports Burp Suite data into formats usable by data lakes and vector DBs.\n" +
                         "Part of the Attack Framework initiative."
         );
