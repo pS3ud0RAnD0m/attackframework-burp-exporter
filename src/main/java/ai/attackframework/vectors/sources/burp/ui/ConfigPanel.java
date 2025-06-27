@@ -19,13 +19,13 @@ public class ConfigPanel extends JPanel {
     private final JTextField filePathField = new JTextField("/path/to/attackvectors.json", 20);
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JLabel testWriteAccessStatus = new JLabel("");
-    private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", true);
+    private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     private final JTextField openSearchUrlField = new JTextField("http://localhost:9200", 20);
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JLabel testConnectionStatus = new JLabel("");
 
-    private final JRadioButton allRadio = new JRadioButton("All", true);
-    private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's");
+    private final JRadioButton allRadio = new JRadioButton("All");
+    private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
     private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
     private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 20);
 
