@@ -9,3 +9,7 @@ By externalizing Burp’s insights into searchable, semantically indexed stores,
 **Attack Vectors: Burp Exporter** is part of the larger Attack Framework™ open-source initiative — a modular ecosystem for integrating offensive security tools with modern AI and data infrastructure.
 
 We welcome pull requests, ideas, and feedback. If you have suggestions, bug reports, or contributions, feel free to open an issue or submit a PR.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

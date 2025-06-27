@@ -7,6 +7,7 @@
 # Explicitly allow project files
 !.gitignore
 !.github/**
+!LICENSE
 !README.md
 
 # Gradle wrapper and build files
