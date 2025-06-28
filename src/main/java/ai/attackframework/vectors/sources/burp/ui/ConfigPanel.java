@@ -133,10 +133,12 @@ public class ConfigPanel extends JPanel {
             if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
             if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
 
-            Logger.logInfo("Sources selected: " + String.join(", ", selectedSources));
-            Logger.logInfo("Scope selected: " + scope);
-            Logger.logInfo("Sinks selected: " + String.join(", ", selectedSinks));
-            Logger.logInfo("OpenSearch URL: " + openSearchUrlField.getText());
+            Logger.logInfo("----------------------------------------");
+            Logger.logInfo("Saving config ...");
+            Logger.logInfo("  Data source(s): " + String.join(", ", selectedSources));
+            Logger.logInfo("  Scope: " + scope);
+            Logger.logInfo("  Data Sink(s): " + String.join(", ", selectedSinks));
+            Logger.logInfo("  OpenSearch URL: " + openSearchUrlField.getText());
         }
     }
 }
