@@ -97,10 +97,29 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(testConnectionStatus);
 
         testConnectionButton.addActionListener(e -> {
-            String url = openSearchUrlField.getText();
-            testConnectionStatus.setText("Testing connection ...");
-            boolean success = OpenSearchClient.testConnection(url);
-            testConnectionStatus.setText(success ? "Connection successful" : "Connection failed");
+            testConnectionStatus.setText("...");
+
+            new SwingWorker<OpenSearchClient.OpenSearchStatus, Void>() {
+                @Override
+                protected OpenSearchClient.OpenSearchStatus doInBackground() {
+                    String url = openSearchUrlField.getText();
+                    return OpenSearchClient.testConnection(url);
+                }
+
+                @Override
+                protected void done() {
+                    try {
+                        OpenSearchClient.OpenSearchStatus status = get();
+                        if (status.success()) {
+                            testConnectionStatus.setText("✔ " + status.distribution() + " v" + status.version());
+                        } else {
+                            testConnectionStatus.setText("✖ " + status.message());
+                        }
+                    } catch (Exception ex) {
+                        testConnectionStatus.setText("✖ Error: " + ex.getMessage());
+                    }
+                }
+            }.execute();
         });
 
         sinksPanel.add(openSearchRow);
