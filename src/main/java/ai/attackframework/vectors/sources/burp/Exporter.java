@@ -10,13 +10,13 @@ public class Exporter implements BurpExtension {
     @Override
     public void initialize(MontoyaApi api) {
         try {
-            api.extension().setName("Attack Vectors: Burp Exporter");
+            api.extension().setName("Attack Framework: Burp Exporter");
 
             Logger.initialize(api.logging());
 
-            api.userInterface().registerSuiteTab("Attack Vectors", new AttackVectorsTab());
+            api.userInterface().registerSuiteTab("Attack Framework", new AttackVectorsTab());
 
-            api.logging().logToOutput("'Attack Vectors: Burp Exporter' initialized successfully.");
+            api.logging().logToOutput("'Attack Framework: Burp Exporter' initialized successfully.");
         } catch (Exception e) {
             api.logging().logToError("Initialization failed: " + e.getMessage());
         }
