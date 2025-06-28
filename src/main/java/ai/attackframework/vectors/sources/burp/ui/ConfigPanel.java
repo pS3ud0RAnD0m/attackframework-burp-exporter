@@ -13,7 +13,12 @@ public class ConfigPanel extends JPanel {
 
     private final JCheckBox sitemapCheckbox = new JCheckBox("Sitemap", true);
     private final JCheckBox issuesCheckbox = new JCheckBox("Issues", true);
-    private final JCheckBox trafficCheckbox = new JCheckBox("Scoped Traffic", true);
+    private final JCheckBox trafficCheckbox = new JCheckBox("Traffic", true);
+
+    private final JRadioButton allRadio = new JRadioButton("All");
+    private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
+    private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
+    private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 20);
 
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
     private final JTextField filePathField = new JTextField("/path/to/attackvectors.json", 20);
@@ -24,18 +29,13 @@ public class ConfigPanel extends JPanel {
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JLabel testConnectionStatus = new JLabel("");
 
-    private final JRadioButton allRadio = new JRadioButton("All");
-    private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
-    private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
-    private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 20);
-
     public ConfigPanel() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         add(buildSourcesPanel());
         add(Box.createVerticalStrut(10));
-        add(buildSinksPanel());
-        add(Box.createVerticalStrut(10));
         add(buildScopePanel());
+        add(Box.createVerticalStrut(10));
+        add(buildSinksPanel());
         add(Box.createVerticalStrut(10));
         add(buildSaveButton());
     }
@@ -50,6 +50,28 @@ public class ConfigPanel extends JPanel {
         sourcesPanel.add(wrapLeftAligned(trafficCheckbox));
 
         return sourcesPanel;
+    }
+
+    private JPanel buildScopePanel() {
+        JPanel scopePanel = new JPanel();
+        scopePanel.setLayout(new BoxLayout(scopePanel, BoxLayout.Y_AXIS));
+        scopePanel.setBorder(BorderFactory.createTitledBorder("Scope"));
+
+        ButtonGroup group = new ButtonGroup();
+        group.add(burpSuiteRadio);
+        group.add(customRadio);
+        group.add(allRadio);
+
+        scopePanel.add(wrapLeftAligned(burpSuiteRadio));
+
+        JPanel customScopeRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        customScopeRow.add(customRadio);
+        customScopeRow.add(customScopeField);
+        scopePanel.add(customScopeRow);
+
+        scopePanel.add(wrapLeftAligned(allRadio));
+
+        return scopePanel;
     }
 
     private JPanel buildSinksPanel() {
@@ -80,28 +102,6 @@ public class ConfigPanel extends JPanel {
         return sinksPanel;
     }
 
-    private JPanel buildScopePanel() {
-        JPanel scopePanel = new JPanel();
-        scopePanel.setLayout(new BoxLayout(scopePanel, BoxLayout.Y_AXIS));
-        scopePanel.setBorder(BorderFactory.createTitledBorder("Scope"));
-
-        ButtonGroup group = new ButtonGroup();
-        group.add(burpSuiteRadio);
-        group.add(customRadio);
-        group.add(allRadio);
-
-        scopePanel.add(wrapLeftAligned(burpSuiteRadio));
-
-        JPanel customScopeRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        customScopeRow.add(customRadio);
-        customScopeRow.add(customScopeField);
-        scopePanel.add(customScopeRow);
-
-        scopePanel.add(wrapLeftAligned(allRadio));
-
-        return scopePanel;
-    }
-
     private JPanel buildSaveButton() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton saveButton = new JButton("Save");
@@ -123,19 +123,19 @@ public class ConfigPanel extends JPanel {
             List<String> selectedSources = new ArrayList<>();
             if (sitemapCheckbox.isSelected()) selectedSources.add("Sitemap");
             if (issuesCheckbox.isSelected()) selectedSources.add("Issues");
-            if (trafficCheckbox.isSelected()) selectedSources.add("Scoped Traffic");
-
-            List<String> selectedSinks = new ArrayList<>();
-            if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
-            if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
+            if (trafficCheckbox.isSelected()) selectedSources.add("Traffic");
 
             String scope = allRadio.isSelected() ? "All"
                     : burpSuiteRadio.isSelected() ? "Burp Suite's"
                     : "Custom: " + customScopeField.getText();
 
+            List<String> selectedSinks = new ArrayList<>();
+            if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
+            if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
+
             Logger.logInfo("Sources selected: " + String.join(", ", selectedSources));
-            Logger.logInfo("Sinks selected: " + String.join(", ", selectedSinks));
             Logger.logInfo("Scope selected: " + scope);
+            Logger.logInfo("Sinks selected: " + String.join(", ", selectedSinks));
             Logger.logInfo("OpenSearch URL: " + openSearchUrlField.getText());
         }
     }
