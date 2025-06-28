@@ -1,6 +1,7 @@
 package ai.attackframework.vectors.sources.burp.ui;
 
 import ai.attackframework.vectors.sources.burp.utils.Logger;
+import ai.attackframework.vectors.sources.burp.utils.OpenSearchClient;
 
 import javax.swing.*;
 import java.awt.*;
@@ -95,7 +96,12 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(testConnectionButton);
         openSearchRow.add(testConnectionStatus);
 
-        testConnectionButton.addActionListener(e -> testConnectionStatus.setText("Testing connection ..."));
+        testConnectionButton.addActionListener(e -> {
+            String url = openSearchUrlField.getText();
+            testConnectionStatus.setText("Testing connection ...");
+            boolean success = OpenSearchClient.testConnection(url);
+            testConnectionStatus.setText(success ? "Connection successful" : "Connection failed");
+        });
 
         sinksPanel.add(openSearchRow);
 
