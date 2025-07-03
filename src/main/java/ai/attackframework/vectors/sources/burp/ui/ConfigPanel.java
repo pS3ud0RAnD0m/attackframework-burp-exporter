@@ -23,7 +23,7 @@ public class ConfigPanel extends JPanel {
     private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 20);
 
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
-    private final JTextField filePathField = new JTextField("/path/to/attackvectors.json", 20);
+    private final JTextField filePathField = new JTextField("/path/to/attackframework-burp.json", 20);
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JLabel testWriteAccessStatus = new JLabel("");
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
@@ -88,8 +88,7 @@ public class ConfigPanel extends JPanel {
         fileRow.add(testWriteAccessButton);
         fileRow.add(testWriteAccessStatus);
 
-        testWriteAccessButton.addActionListener(e -> testWriteAccessStatus.setText("Testing write access ..."));
-
+        testWriteAccessButton.addActionListener(e -> testWriteAccessStatus.setText("Testing write access ."));
         sinksPanel.add(fileRow);
 
         JPanel openSearchRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -98,14 +97,15 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(testConnectionButton);
         openSearchRow.add(testConnectionStatus);
 
+        // ✅ Only change: use safeTestConnection and clean done()
         testConnectionButton.addActionListener(e -> {
-            testConnectionStatus.setText("...");
+            testConnectionStatus.setText(".");
 
             new SwingWorker<OpenSearchClient.OpenSearchStatus, Void>() {
                 @Override
                 protected OpenSearchClient.OpenSearchStatus doInBackground() {
                     String url = openSearchUrlField.getText();
-                    return OpenSearchClient.testConnection(url);
+                    return OpenSearchClient.safeTestConnection(url);
                 }
 
                 @Override
@@ -113,7 +113,8 @@ public class ConfigPanel extends JPanel {
                     try {
                         OpenSearchClient.OpenSearchStatus status = get();
                         if (status.success()) {
-                            testConnectionStatus.setText("✔ " + status.distribution() + " v" + status.version());
+                            testConnectionStatus.setText("✔ " + status.message() +
+                                    " (" + status.distribution() + " v" + status.version() + ")");
                         } else {
                             testConnectionStatus.setText("✖ " + status.message());
                         }
@@ -125,7 +126,6 @@ public class ConfigPanel extends JPanel {
         });
 
         sinksPanel.add(openSearchRow);
-
         return sinksPanel;
     }
 
