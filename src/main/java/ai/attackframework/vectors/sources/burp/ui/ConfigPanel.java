@@ -12,6 +12,7 @@ import java.util.List;
 
 public class ConfigPanel extends JPanel {
 
+    private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
     private final JCheckBox sitemapCheckbox = new JCheckBox("Sitemap", true);
     private final JCheckBox issuesCheckbox = new JCheckBox("Issues", true);
     private final JCheckBox trafficCheckbox = new JCheckBox("Traffic", true);
@@ -46,6 +47,7 @@ public class ConfigPanel extends JPanel {
         sourcesPanel.setLayout(new BoxLayout(sourcesPanel, BoxLayout.Y_AXIS));
         sourcesPanel.setBorder(BorderFactory.createTitledBorder("Data Sources"));
 
+        sourcesPanel.add(wrapLeftAligned(settingsCheckbox));
         sourcesPanel.add(wrapLeftAligned(sitemapCheckbox));
         sourcesPanel.add(wrapLeftAligned(issuesCheckbox));
         sourcesPanel.add(wrapLeftAligned(trafficCheckbox));
@@ -146,6 +148,7 @@ public class ConfigPanel extends JPanel {
         @Override
         public void actionPerformed(ActionEvent e) {
             List<String> selectedSources = new ArrayList<>();
+            if (settingsCheckbox.isSelected()) selectedSources.add("Settings");
             if (sitemapCheckbox.isSelected()) selectedSources.add("Sitemap");
             if (issuesCheckbox.isSelected()) selectedSources.add("Issues");
             if (trafficCheckbox.isSelected()) selectedSources.add("Traffic");
