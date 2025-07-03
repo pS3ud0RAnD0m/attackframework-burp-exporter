@@ -1,13 +1,18 @@
 package ai.attackframework.vectors.sources.burp.utils.opensearch;
 
 import ai.attackframework.vectors.sources.burp.utils.Logger;
+import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.InfoResponse;
+import org.opensearch.client.opensearch.core.IndexRequest;
+import org.opensearch.client.opensearch.core.IndexResponse;
+
+import java.util.Map;
 
 public class OpenSearchClientWrapper {
 
     public static OpenSearchStatus testConnection(String baseUrl) {
         try {
-            org.opensearch.client.opensearch.OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
+            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
             InfoResponse info = client.info();
 
             String version = info.version().number();
@@ -32,22 +37,23 @@ public class OpenSearchClientWrapper {
         }
     }
 
-    private static String extractJsonValue(String json, String key) {
-        int idx = json.indexOf(key);
-        if (idx == -1) return "";
+    public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
+        try {
+            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
 
-        int colon = json.indexOf(":", idx);
-        if (colon == -1) return "";
+            IndexRequest<Map<String, Object>> request = new IndexRequest.Builder<Map<String, Object>>()
+                    .index(indexName)
+                    .document(document)
+                    .build();
 
-        int quoteStart = json.indexOf("\"", colon);
-        if (quoteStart == -1) return "";
+            IndexResponse response = client.index(request);
+            return response.result().jsonValue().equalsIgnoreCase("created")
+                    || response.result().jsonValue().equalsIgnoreCase("updated");
 
-        quoteStart += 1;
-
-        int quoteEnd = json.indexOf("\"", quoteStart);
-        if (quoteEnd == -1) return "";
-
-        return json.substring(quoteStart, quoteEnd);
+        } catch (Exception e) {
+            Logger.logError("Failed to index document to " + indexName + ": " + e.getMessage());
+            return false;
+        }
     }
 
     public record OpenSearchStatus(boolean success, String distribution, String version, String message) {}
