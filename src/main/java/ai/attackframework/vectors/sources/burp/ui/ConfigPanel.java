@@ -1,7 +1,7 @@
 package ai.attackframework.vectors.sources.burp.ui;
 
 import ai.attackframework.vectors.sources.burp.utils.Logger;
-import ai.attackframework.vectors.sources.burp.utils.OpenSearchClient;
+import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
 
 import javax.swing.*;
 import java.awt.*;
@@ -101,17 +101,17 @@ public class ConfigPanel extends JPanel {
         testConnectionButton.addActionListener(e -> {
             testConnectionStatus.setText(".");
 
-            new SwingWorker<OpenSearchClient.OpenSearchStatus, Void>() {
+            new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
-                protected OpenSearchClient.OpenSearchStatus doInBackground() {
+                protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
                     String url = openSearchUrlField.getText();
-                    return OpenSearchClient.safeTestConnection(url);
+                    return OpenSearchClientWrapper.safeTestConnection(url);
                 }
 
                 @Override
                 protected void done() {
                     try {
-                        OpenSearchClient.OpenSearchStatus status = get();
+                        OpenSearchClientWrapper.OpenSearchStatus status = get();
                         if (status.success()) {
                             testConnectionStatus.setText("✔ " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ")");
