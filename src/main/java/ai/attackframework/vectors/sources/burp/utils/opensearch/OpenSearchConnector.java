@@ -2,24 +2,17 @@ package ai.attackframework.vectors.sources.burp.utils.opensearch;
 
 import org.apache.http.HttpHost;
 import org.opensearch.client.RestClient;
-import org.opensearch.client.RestClientBuilder;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.transport.rest_client.RestClientTransport;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 
 public class OpenSearchConnector {
 
-    private static OpenSearchClient client;
-
     public static OpenSearchClient getClient(String baseUrl) throws Exception {
-        if (client != null) return client;
-
         HttpHost host = parseHost(baseUrl);
         RestClient restClient = RestClient.builder(host).build();
         RestClientTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
-
-        client = new OpenSearchClient(transport);
-        return client;
+        return new OpenSearchClient(transport);
     }
 
     private static HttpHost parseHost(String baseUrl) throws Exception {
@@ -35,4 +28,3 @@ public class OpenSearchConnector {
         return new HttpHost(host, port, scheme);
     }
 }
-
