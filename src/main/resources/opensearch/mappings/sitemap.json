@@ -1,0 +1,26 @@
+{
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "url":            { "type": "keyword" },
+      "host":           { "type": "keyword" },
+      "port":           { "type": "integer" },
+      "protocol":       { "type": "keyword" },
+      "method":         { "type": "keyword" },
+      "status_code":    { "type": "integer" },
+      "status_reason":  { "type": "keyword" },
+      "content_type":   { "type": "keyword" },
+      "content_length": { "type": "integer" },
+      "title":          { "type": "text" },
+      "param_names":    { "type": "keyword" },
+      "timestamp":      { "type": "date" },
+      "node_type":      { "type": "keyword" },
+      "path":           { "type": "keyword" },
+      "query_string":   { "type": "text" },
+      "request_id":     { "type": "keyword" },
+      "source":         { "type": "keyword" },
+      "tech_stack":     { "type": "keyword" },
+      "tags":           { "type": "keyword" }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "name":                  { "type": "text" },
+      "severity":              { "type": "keyword" },
+      "confidence":            { "type": "keyword" },
+      "host":                  { "type": "keyword" },
+      "port":                  { "type": "integer" },
+      "protocol":              { "type": "keyword" },
+      "url":                   { "type": "keyword" },
+      "param":                 { "type": "keyword" },
+      "issue_type_id":         { "type": "integer" },
+      "typical_severity":      { "type": "keyword" },
+      "description":           { "type": "text" },
+      "background":            { "type": "text" },
+      "remediation_background": { "type": "text" },
+      "remediation_detail":    { "type": "text" },
+      "references":            { "type": "text" },
+      "classifications": {
+        "properties": {
+          "cwe":   { "type": "integer" },
+          "capec": { "type": "integer" }
+        }
+      },
+      "request": {
+        "properties": {
+          "headers": { "type": "text", "index": false },
+          "body":    { "type": "binary", "doc_values": false }
+        }
+      },
+      "response": {
+        "properties": {
+          "headers": { "type": "text", "index": false },
+          "body":    { "type": "binary", "doc_values": false }
+        }
+      }
+    }
+  }
+}
