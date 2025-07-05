@@ -48,7 +48,7 @@ public class OpenSearchSink {
 
         } catch (Exception e) {
             if (e.getMessage() != null && e.getMessage().contains("resource_already_exists_exception")) {
-                return true; // safe to ignore
+                return true;
             }
             Logger.logError("Failed to create OpenSearch index: " + fullIndexName + "\n" + e);
             return false;

@@ -13,7 +13,10 @@
       "settings_project": {
         "type": "object",
         "enabled": true
-      }
+      },
+      "settings_hash":   { "type": "keyword" },
+      "settings_version": { "type": "keyword" },
+      "source":          { "type": "keyword" }
     }
   }
 }

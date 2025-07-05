@@ -1,0 +1,19 @@
+{
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "timestamp":       { "type": "date" },
+      "level":           { "type": "keyword" },
+      "message":         { "type": "text" },
+      "source":          { "type": "keyword" },
+      "event_type":      { "type": "keyword" },
+      "exception":       { "type": "text" },
+      "thread":          { "type": "keyword" },
+      "class":           { "type": "keyword" },
+      "method":          { "type": "keyword" },
+      "line":            { "type": "integer" },
+      "project_id":      { "type": "keyword" },
+      "user_id":         { "type": "keyword" }
+    }
+  }
+}

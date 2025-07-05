@@ -2,7 +2,7 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "url":            { "type": "keyword" },
+      "url":            { "type": "text", "fields": { "raw": { "type": "keyword" } } },
       "host":           { "type": "keyword" },
       "port":           { "type": "integer" },
       "protocol":       { "type": "keyword" },
@@ -15,7 +15,7 @@
       "param_names":    { "type": "keyword" },
       "timestamp":      { "type": "date" },
       "node_type":      { "type": "keyword" },
-      "path":           { "type": "keyword" },
+      "path":           { "type": "text", "fields": { "raw": { "type": "keyword" } } },
       "query_string":   { "type": "text" },
       "request_id":     { "type": "keyword" },
       "source":         { "type": "keyword" },
