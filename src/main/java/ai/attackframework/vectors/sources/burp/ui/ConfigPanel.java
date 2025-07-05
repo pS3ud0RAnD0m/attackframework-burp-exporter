@@ -98,9 +98,8 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(testConnectionButton);
         openSearchRow.add(testConnectionStatus);
 
-        // ✅ Only change: use safeTestConnection and clean done()
         testConnectionButton.addActionListener(e -> {
-            testConnectionStatus.setText(".");
+            testConnectionStatus.setText("Testing  . . .");
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
