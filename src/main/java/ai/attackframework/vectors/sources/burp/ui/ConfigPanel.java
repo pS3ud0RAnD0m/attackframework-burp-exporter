@@ -1,5 +1,6 @@
 package ai.attackframework.vectors.sources.burp.ui;
 
+import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
 
@@ -148,10 +149,10 @@ public class ConfigPanel extends JPanel {
         @Override
         public void actionPerformed(ActionEvent e) {
             List<String> selectedSources = new ArrayList<>();
-            if (settingsCheckbox.isSelected()) selectedSources.add("Settings");
-            if (sitemapCheckbox.isSelected()) selectedSources.add("Sitemap");
-            if (issuesCheckbox.isSelected()) selectedSources.add("Issues");
-            if (trafficCheckbox.isSelected()) selectedSources.add("Traffic");
+            if (settingsCheckbox.isSelected()) selectedSources.add("settings");
+            if (sitemapCheckbox.isSelected()) selectedSources.add("sitemap");
+            if (issuesCheckbox.isSelected()) selectedSources.add("findings");
+            if (trafficCheckbox.isSelected()) selectedSources.add("traffic");
 
             String scope = allRadio.isSelected() ? "All"
                     : burpSuiteRadio.isSelected() ? "Burp Suite's"
@@ -167,6 +168,19 @@ public class ConfigPanel extends JPanel {
             Logger.logInfo("  Scope: " + scope);
             Logger.logInfo("  Data Sink(s): " + String.join(", ", selectedSinks));
             Logger.logInfo("  OpenSearch URL: " + openSearchUrlField.getText());
+
+            // ✅ Batch-create OpenSearch indices
+            if (openSearchSinkCheckbox.isSelected()) {
+                String url = openSearchUrlField.getText();
+                for (String shortName : selectedSources) {
+                    boolean ok = OpenSearchSink.createIndexFromResource(url, shortName);
+                    if (ok) {
+                        Logger.logInfo("  ✔ Created or verified index: " + shortName);
+                    } else {
+                        Logger.logError("  ✖ Failed to create index: " + shortName);
+                    }
+                }
+            }
         }
     }
 }

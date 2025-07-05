@@ -1,30 +1,32 @@
 package ai.attackframework.vectors.sources.burp.utils.opensearch;
 
-import org.apache.http.HttpHost;
-import org.opensearch.client.RestClient;
+import org.apache.hc.core5.http.HttpHost;
 import org.opensearch.client.opensearch.OpenSearchClient;
-import org.opensearch.client.transport.rest_client.RestClientTransport;
+import org.opensearch.client.json.JsonpMapper;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
+import org.opensearch.client.transport.OpenSearchTransport;
+import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder;
+
+import java.net.URI;
 
 public class OpenSearchConnector {
 
-    public static OpenSearchClient getClient(String baseUrl) throws Exception {
-        HttpHost host = parseHost(baseUrl);
-        RestClient restClient = RestClient.builder(host).build();
-        RestClientTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
-        return new OpenSearchClient(transport);
-    }
+    public static OpenSearchClient getClient(String baseUrl) {
+        try {
+            URI uri = URI.create(baseUrl);
+            HttpHost host = new HttpHost(uri.getScheme(), uri.getHost(), uri.getPort());
 
-    private static HttpHost parseHost(String baseUrl) throws Exception {
-        java.net.URI uri = java.net.URI.create(baseUrl);
-        String scheme = uri.getScheme();
-        String host = uri.getHost();
-        int port = uri.getPort() != -1 ? uri.getPort() : (scheme.equals("https") ? 443 : 80);
+            JsonpMapper mapper = new JacksonJsonpMapper();
 
-        if (host == null || scheme == null) {
-            throw new IllegalArgumentException("Invalid OpenSearch URL: " + baseUrl);
+            OpenSearchTransport transport = ApacheHttpClient5TransportBuilder
+                    .builder(host)              // ✅ pass HttpHost here
+                    .setMapper(mapper)
+                    .build();
+
+            return new OpenSearchClient(transport);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize OpenSearch client: " + e.getMessage(), e);
         }
-
-        return new HttpHost(host, port, scheme);
     }
 }

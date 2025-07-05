@@ -15,9 +15,6 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.19.1")
-    implementation("org.apache.httpcomponents:httpcore:4.4.16")
-    implementation("org.glassfish:jakarta.json:2.0.1")
     implementation("org.opensearch.client:opensearch-java:3.1.0")
 }
 
