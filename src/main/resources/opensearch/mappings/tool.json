@@ -4,16 +4,39 @@
     "properties": {
       "timestamp":       { "type": "date" },
       "level":           { "type": "keyword" },
-      "message":         { "type": "text" },
-      "source":          { "type": "keyword" },
       "event_type":      { "type": "keyword" },
+      "source":          { "type": "keyword" },
+      "operation":       { "type": "keyword" },
+      "status":          { "type": "keyword" },
+      "duration_ms":     { "type": "integer" },
+
+      "message_text":    { "type": "text" },
+      "message": {
+        "type": "object",
+        "enabled": true
+      },
+
       "exception":       { "type": "text" },
       "thread":          { "type": "keyword" },
       "class":           { "type": "keyword" },
       "method":          { "type": "keyword" },
       "line":            { "type": "integer" },
-      "project_id":      { "type": "keyword" },
-      "user_id":         { "type": "keyword" }
+
+      "extension_version": { "type": "keyword" },
+      "burp_version":      { "type": "keyword" },
+      "project_id":        { "type": "keyword" },
+      "user_id":           { "type": "keyword" },
+
+      "embedding": {
+        "type": "dense_vector",
+        "dims": 4096,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "summary":       { "type": "text" },
+      "cluster_id":    { "type": "keyword" },
+      "vector_tags":   { "type": "keyword" },
+      "vector_source": { "type": "keyword" }
     }
   }
 }

@@ -2,7 +2,7 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "url":            { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "url":            { "type": "keyword" },
       "host":           { "type": "keyword" },
       "port":           { "type": "integer" },
       "protocol":       { "type": "keyword" },
@@ -11,7 +11,7 @@
       "status_reason":  { "type": "keyword" },
       "content_type":   { "type": "keyword" },
       "content_length": { "type": "integer" },
-      "title":          { "type": "text" },
+      "title":          { "type": "text", "fields": { "raw": { "type": "keyword" } } },
       "param_names":    { "type": "keyword" },
       "timestamp":      { "type": "date" },
       "node_type":      { "type": "keyword" },
@@ -20,7 +20,18 @@
       "request_id":     { "type": "keyword" },
       "source":         { "type": "keyword" },
       "tech_stack":     { "type": "keyword" },
-      "tags":           { "type": "keyword" }
+      "tags":           { "type": "keyword" },
+
+      "embedding": {
+        "type": "dense_vector",
+        "dims": 4096,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "summary":       { "type": "text" },
+      "cluster_id":    { "type": "keyword" },
+      "vector_tags":   { "type": "keyword" },
+      "vector_source": { "type": "keyword" }
     }
   }
 }

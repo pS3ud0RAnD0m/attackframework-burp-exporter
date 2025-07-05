@@ -2,42 +2,55 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "url":                   { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-      "host":                  { "type": "keyword" },
-      "port":                  { "type": "integer" },
-      "scheme":                { "type": "keyword" },
-      "protocol_transport":    { "type": "keyword" },
-      "protocol_application":  { "type": "keyword" },
-      "protocol_sub":          { "type": "keyword" },
-      "tool":                  { "type": "keyword" },
-      "in_scope":              { "type": "boolean" },
-      "time_start":            { "type": "date" },
-      "time_end":              { "type": "date" },
-      "duration_ms":           { "type": "integer" },
-      "http_version":          { "type": "keyword" },
-      "method":                { "type": "keyword" },
-      "status":                { "type": "integer" },
-      "mime_type":             { "type": "keyword" },
-      "highlight":             { "type": "keyword" },
-      "comment":               { "type": "text" },
-      "edited":                { "type": "boolean" },
-      "path":                  { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "url":                  { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "host":                 { "type": "keyword" },
+      "port":                 { "type": "integer" },
+      "scheme":               { "type": "keyword" },
+      "protocol_transport":   { "type": "keyword" },
+      "protocol_application": { "type": "keyword" },
+      "protocol_sub":         { "type": "keyword" },
+      "tool":                 { "type": "keyword" },
+      "in_scope":             { "type": "boolean" },
+      "time_start":           { "type": "date" },
+      "time_end":             { "type": "date" },
+      "duration_ms":          { "type": "integer" },
+      "http_version":         { "type": "keyword" },
+      "method":               { "type": "keyword" },
+      "status":               { "type": "integer" },
+      "mime_type":            { "type": "keyword" },
+      "highlight":            { "type": "keyword" },
+      "comment":              { "type": "text" },
+      "edited":               { "type": "boolean" },
+      "path":                 { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+
       "request": {
         "properties": {
-          "headers": { "type": "text" },
+          "headers": { "type": "text",   "fields": { "raw": { "type": "keyword" } } },
           "body":    { "type": "binary", "doc_values": false }
         }
       },
       "response": {
         "properties": {
-          "headers": { "type": "text" },
+          "headers": { "type": "text",   "fields": { "raw": { "type": "keyword" } } },
           "body":    { "type": "binary", "doc_values": false }
         }
       },
+
       "websocket_id":    { "type": "integer" },
       "ws_direction":    { "type": "keyword" },
       "ws_message_type": { "type": "keyword" },
-      "ws_payload":      { "type": "binary", "doc_values": false }
+      "ws_payload":      { "type": "binary", "doc_values": false },
+
+      "embedding": {
+        "type": "dense_vector",
+        "dims": 4096,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "summary":       { "type": "text" },
+      "cluster_id":    { "type": "keyword" },
+      "vector_tags":   { "type": "keyword" },
+      "vector_source": { "type": "keyword" }
     }
   }
 }
