@@ -19,7 +19,7 @@ public class OpenSearchConnector {
             JsonpMapper mapper = new JacksonJsonpMapper();
 
             OpenSearchTransport transport = ApacheHttpClient5TransportBuilder
-                    .builder(host)              // ✅ pass HttpHost here
+                    .builder(host)
                     .setMapper(mapper)
                     .build();
 
