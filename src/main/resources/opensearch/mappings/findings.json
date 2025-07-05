@@ -25,14 +25,20 @@
       },
       "request": {
         "properties": {
-          "headers": { "type": "text", "index": true },
+          "headers": { "type": "text" },
           "body":    { "type": "binary", "doc_values": false }
         }
       },
       "response": {
         "properties": {
-          "headers": { "type": "text", "index": true },
+          "headers": { "type": "text" },
           "body":    { "type": "binary", "doc_values": false }
+        }
+      },
+      "document_meta": {
+        "properties": {
+          "schema_version":    { "type": "keyword" },
+          "extension_version": { "type": "keyword" }
         }
       },
       "embedding": {
@@ -41,10 +47,10 @@
         "index": true,
         "similarity": "cosine"
       },
-      "summary":         { "type": "text" },
-      "cluster_id":      { "type": "keyword" },
-      "vector_tags":     { "type": "keyword" },
-      "vector_source":   { "type": "keyword" }
+      "summary":       { "type": "text" },
+      "cluster_id":    { "type": "keyword" },
+      "vector_tags":   { "type": "keyword" },
+      "vector_source": { "type": "keyword" }
     }
   }
 }

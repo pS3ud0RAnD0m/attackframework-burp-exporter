@@ -21,7 +21,12 @@
       "source":         { "type": "keyword" },
       "tech_stack":     { "type": "keyword" },
       "tags":           { "type": "keyword" },
-
+      "document_meta": {
+        "properties": {
+          "schema_version":    { "type": "keyword" },
+          "extension_version": { "type": "keyword" }
+        }
+      },
       "embedding": {
         "type": "dense_vector",
         "dims": 4096,

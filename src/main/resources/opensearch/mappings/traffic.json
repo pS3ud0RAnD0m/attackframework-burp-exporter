@@ -22,25 +22,28 @@
       "comment":              { "type": "text" },
       "edited":               { "type": "boolean" },
       "path":                 { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-
       "request": {
         "properties": {
-          "headers": { "type": "text",   "fields": { "raw": { "type": "keyword" } } },
+          "headers": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
           "body":    { "type": "binary", "doc_values": false }
         }
       },
       "response": {
         "properties": {
-          "headers": { "type": "text",   "fields": { "raw": { "type": "keyword" } } },
+          "headers": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
           "body":    { "type": "binary", "doc_values": false }
         }
       },
-
       "websocket_id":    { "type": "integer" },
       "ws_direction":    { "type": "keyword" },
       "ws_message_type": { "type": "keyword" },
       "ws_payload":      { "type": "binary", "doc_values": false },
-
+      "document_meta": {
+        "properties": {
+          "schema_version":    { "type": "keyword" },
+          "extension_version": { "type": "keyword" }
+        }
+      },
       "embedding": {
         "type": "dense_vector",
         "dims": 4096,

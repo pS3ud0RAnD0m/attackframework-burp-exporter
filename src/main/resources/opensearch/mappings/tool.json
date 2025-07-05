@@ -2,31 +2,30 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "timestamp":       { "type": "date" },
-      "level":           { "type": "keyword" },
-      "event_type":      { "type": "keyword" },
-      "source":          { "type": "keyword" },
-      "operation":       { "type": "keyword" },
-      "status":          { "type": "keyword" },
-      "duration_ms":     { "type": "integer" },
-
-      "message_text":    { "type": "text" },
-      "message": {
-        "type": "object",
-        "enabled": true
-      },
-
-      "exception":       { "type": "text" },
-      "thread":          { "type": "keyword" },
-      "class":           { "type": "keyword" },
-      "method":          { "type": "keyword" },
-      "line":            { "type": "integer" },
-
+      "timestamp":         { "type": "date" },
+      "level":             { "type": "keyword" },
+      "event_type":        { "type": "keyword" },
+      "source":            { "type": "keyword" },
+      "operation":         { "type": "keyword" },
+      "status":            { "type": "keyword" },
+      "duration_ms":       { "type": "integer" },
+      "message_text":      { "type": "text" },
+      "message":           { "type": "object", "enabled": true },
+      "exception":         { "type": "text" },
+      "thread":            { "type": "keyword" },
+      "class":             { "type": "keyword" },
+      "method":            { "type": "keyword" },
+      "line":              { "type": "integer" },
       "extension_version": { "type": "keyword" },
       "burp_version":      { "type": "keyword" },
       "project_id":        { "type": "keyword" },
       "user_id":           { "type": "keyword" },
-
+      "document_meta": {
+        "properties": {
+          "schema_version":    { "type": "keyword" },
+          "extension_version": { "type": "keyword" }
+        }
+      },
       "embedding": {
         "type": "dense_vector",
         "dims": 4096,
