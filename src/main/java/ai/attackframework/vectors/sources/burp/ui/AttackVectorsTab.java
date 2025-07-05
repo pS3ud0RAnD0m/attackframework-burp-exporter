@@ -12,6 +12,7 @@ public class AttackVectorsTab extends JPanel {
 
         tabbedPane.addTab("Config", new ConfigPanel());
         tabbedPane.addTab("Stats", new StatsPanel());
+        tabbedPane.addTab("Logs", new LogsPanel());
         tabbedPane.addTab("About", new AboutPanel());
 
         add(tabbedPane, BorderLayout.CENTER);
