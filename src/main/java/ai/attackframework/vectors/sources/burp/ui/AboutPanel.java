@@ -7,9 +7,11 @@ public class AboutPanel extends JPanel {
     public AboutPanel() {
         setLayout(new BorderLayout());
         JTextArea aboutText = new JTextArea(
-                "Attack Framework: Burp Exporter\n" +
-                        "https://github.com/pS3ud0RAnD0m/attack-framework-burp-exporter\n\n" +
-                        "This extension exports Burp Suite data into formats usable by data lakes and vector DBs as part of the Attack Framework™ initiative."
+                """
+                        Attack Framework: Burp Exporter\s
+                        https://github.com/pS3ud0RAnD0m/attack-framework-burp-exporter
+                        
+                        This extension exports Burp Suite data into formats usable by data lakes and vector DBs as part of the Attack Framework™ initiative."""
         );
         aboutText.setEditable(false);
         aboutText.setLineWrap(true);
