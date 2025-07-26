@@ -8,7 +8,7 @@ By externalizing Burp’s insights into searchable, semantically indexed stores,
 
 **Attack Framework: Burp Exporter** is part of the larger [Attack Framework](https://github.com/attackframework/attackframework) open-source initiative — a modular ecosystem for integrating offensive security tools with modern AI and data infrastructure.
 
-We welcome pull requests, ideas, and feedback. If you have suggestions, bug reports, or contributions, feel free to open a discussion, issue, or submit a PR.
+We welcome ideas, feedback, and pull requests. Feel free to open a discussion, issue, or submit a PR.
 
 ## License
 
