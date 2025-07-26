@@ -1,7 +1,5 @@
 # Ignore everything by default
 *
-
-# Allow directories (needed to allow their contents later)
 !*/
 
 # Explicitly allow project files
