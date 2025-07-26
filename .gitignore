@@ -21,6 +21,6 @@
 # Source code
 !src/**
 
-# Ignore environment and IDE-specific files
+# Prevent VCS tracking
 .env*
 .idea/
