@@ -1,6 +1,6 @@
 # Attack Framework: Burp Exporter
 
-> ⚠️ **Development Status**: This extension is under active development. While the UI is functional and loads successfully in Burp Suite, core data extraction and sink integration (e.g., OpenSearch) are still being implemented. Expect breaking changes and partial functionality.
+> ⚠️ **Development Status**: This extension is in early development. While the UI is functional and loads successfully in Burp Suite, core data extraction and sink integration (e.g., OpenSearch) are still being implemented. Expect breaking changes and partial functionality.
 
 This Burp Suite extension continuously exports traffic, issues, and other project data into structured formats optimized for ingestion by data lakes and vector databases, such as OpenSearch, Qdrant, and Weaviate.
 
