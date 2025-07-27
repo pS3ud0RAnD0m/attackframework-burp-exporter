@@ -17,16 +17,8 @@
           "extension_version": { "type": "keyword" }
         }
       },
-      "embedding": {
-        "type": "dense_vector",
-        "dims": 4096,
-        "index": true,
-        "similarity": "cosine"
-      },
       "summary":       { "type": "text" },
-      "cluster_id":    { "type": "keyword" },
-      "vector_tags":   { "type": "keyword" },
-      "vector_source": { "type": "keyword" }
+      "cluster_id":    { "type": "keyword" }
     }
   }
 }
