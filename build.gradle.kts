@@ -1,9 +1,15 @@
 plugins {
     id("java")
-    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "ai.attackframework.vectors.sources.burp"
+version = "0.0.1"
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
 
 repositories {
     mavenCentral()
@@ -16,17 +22,30 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
 
     implementation("org.opensearch.client:opensearch-java:3.1.0")
+
+    implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2")
+    implementation("jakarta.json:jakarta.json-api:2.1.1")
+    implementation("org.glassfish:jakarta.json:2.0.1")
 }
 
 tasks.test {
     useJUnitPlatform()
 }
 
-tasks {
-    shadowJar {
-        archiveClassifier.set("")
-    }
-    build {
-        dependsOn(shadowJar)
-    }
+tasks.register<Jar>("fatJar") {
+    archiveBaseName.set("ai.attackframework.vectors.sources.burp")
+    archiveVersion.set("0.0.1")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from(sourceSets.main.get().output)
+
+    dependsOn(configurations.runtimeClasspath)
+    from({
+        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+    })
+}
+
+tasks.build {
+    dependsOn("fatJar")
 }
