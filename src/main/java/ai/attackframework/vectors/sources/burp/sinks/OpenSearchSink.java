@@ -12,6 +12,7 @@ import org.opensearch.client.transport.Transport;
 import java.io.InputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Scanner;
 
 public class OpenSearchSink {
@@ -52,6 +53,17 @@ public class OpenSearchSink {
             }
             Logger.logError("Failed to create OpenSearch index: " + fullIndexName + "\n" + e);
             return false;
+        }
+    }
+
+    public static void createSelectedIndexes(String baseUrl, List<String> selectedSources) {
+        for (String shortName : selectedSources) {
+            boolean ok = createIndexFromResource(baseUrl, shortName);
+            if (ok) {
+                Logger.logInfo("  ✔ Created or verified index: " + shortName);
+            } else {
+                Logger.logError("  ✖ Failed to create index: " + shortName);
+            }
         }
     }
 }

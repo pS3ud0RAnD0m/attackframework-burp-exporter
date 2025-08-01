@@ -168,17 +168,9 @@ public class ConfigPanel extends JPanel {
             Logger.logInfo("  Data Sink(s): " + String.join(", ", selectedSinks));
             Logger.logInfo("  OpenSearch URL: " + openSearchUrlField.getText());
 
-            // ✅ Batch-create OpenSearch indices
             if (openSearchSinkCheckbox.isSelected()) {
                 String url = openSearchUrlField.getText();
-                for (String shortName : selectedSources) {
-                    boolean ok = OpenSearchSink.createIndexFromResource(url, shortName);
-                    if (ok) {
-                        Logger.logInfo("  ✔ Created or verified index: " + shortName);
-                    } else {
-                        Logger.logError("  ✖ Failed to create index: " + shortName);
-                    }
-                }
+                OpenSearchSink.createSelectedIndexes(url, selectedSources);
             }
         }
     }
