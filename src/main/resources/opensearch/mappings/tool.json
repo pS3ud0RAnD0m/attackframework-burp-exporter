@@ -1,4 +1,5 @@
 {
+  "settings": {},
   "mappings": {
     "dynamic": true,
     "properties": {
