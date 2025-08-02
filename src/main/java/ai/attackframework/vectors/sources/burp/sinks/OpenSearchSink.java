@@ -19,16 +19,19 @@ import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
 public class OpenSearchSink {
 
-    private static final String INDEX_PREFIX = "attackframework-burp-";
     private static final String MAPPINGS_PATH = "/opensearch/mappings/";
 
     public static boolean createIndexFromResource(String baseUrl, String shortName) {
-        String fullIndexName = INDEX_PREFIX + shortName;
+        String fullIndexName = shortName.equals("tool")
+                ? "attackframework-tool-burp"
+                : "attackframework-tool-burp-" + shortName;
+
         String mappingFile = MAPPINGS_PATH + shortName + ".json";
 
         Logger.logInfo("🔍 Attempting to create index: " + fullIndexName);
@@ -81,7 +84,7 @@ public class OpenSearchSink {
             return response.acknowledged();
 
         } catch (Exception e) {
-            Logger.logError("❌ Exception while creating index: " + fullIndexName);
+            Logger.logError("❌ Exception while creating index: " + shortName);
             if (jsonBody != null) {
                 Logger.logError("📄 Mapping JSON:\n" + jsonBody);
             }
@@ -94,7 +97,14 @@ public class OpenSearchSink {
 
     public static void createSelectedIndexes(String baseUrl, List<String> selectedSources) {
         Logger.logInfo("▶ Entered createSelectedIndexes with sources: " + selectedSources);
-        for (String shortName : selectedSources) {
+
+        // Ensure "tool" is always included
+        List<String> sources = new ArrayList<>(selectedSources);
+        if (!sources.contains("tool")) {
+            sources.add("tool");
+        }
+
+        for (String shortName : sources) {
             Logger.logInfo("→ Creating index for: " + shortName);
             boolean ok = createIndexFromResource(baseUrl, shortName);
             Logger.logInfo("← Result for " + shortName + ": " + ok);
