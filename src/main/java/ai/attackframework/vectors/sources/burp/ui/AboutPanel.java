@@ -8,11 +8,9 @@ public class AboutPanel extends JPanel {
         setLayout(new BorderLayout());
         JTextArea aboutText = new JTextArea(
                 """
+
                     Attack Framework: Burp Exporter
-
-
                       This extension exports Burp Suite data into formats usable by data lakes and vector DBs as part of the Attack Framework initiative.
-
                       https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter
                       https://github.com/attackframework/attackframework
                 """
