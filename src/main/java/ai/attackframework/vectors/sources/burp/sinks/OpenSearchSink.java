@@ -34,8 +34,8 @@ public class OpenSearchSink {
 
         String mappingFile = MAPPINGS_PATH + shortName + ".json";
 
-        Logger.logInfo("🔍 Attempting to create index: " + fullIndexName);
-        Logger.logInfo("📄 Using mapping file: " + mappingFile);
+        Logger.logInfo("Attempting to create index: " + fullIndexName);
+        Logger.logInfo("Using mapping file: " + mappingFile);
 
         String jsonBody = null;
 
@@ -78,13 +78,13 @@ public class OpenSearchSink {
                     .mappings(mappings)
                     .build();
 
-            Logger.logInfo("📡 Sending CreateIndex request for: " + fullIndexName);
+            Logger.logInfo("Sending CreateIndex request for: " + fullIndexName);
             CreateIndexResponse response = client.indices().create(request);
-            Logger.logInfo("✅ Index creation acknowledged: " + response.acknowledged());
+            Logger.logInfo("Index creation acknowledged: " + response.acknowledged());
             return response.acknowledged();
 
         } catch (Exception e) {
-            Logger.logError("❌ Exception while creating index: " + shortName);
+            Logger.logError("Exception while creating index: " + fullIndexName);
             if (jsonBody != null) {
                 Logger.logError("📄 Mapping JSON:\n" + jsonBody);
             }
@@ -96,18 +96,17 @@ public class OpenSearchSink {
     }
 
     public static void createSelectedIndexes(String baseUrl, List<String> selectedSources) {
-        Logger.logInfo("▶ Entered createSelectedIndexes with sources: " + selectedSources);
+        Logger.logInfo("Entered createSelectedIndexes with sources: " + selectedSources);
 
-        // Ensure "tool" is always included
         List<String> sources = new ArrayList<>(selectedSources);
         if (!sources.contains("tool")) {
             sources.add("tool");
         }
 
         for (String shortName : sources) {
-            Logger.logInfo("→ Creating index for: " + shortName);
+            Logger.logInfo("Creating index for: " + shortName);
             boolean ok = createIndexFromResource(baseUrl, shortName);
-            Logger.logInfo("← Result for " + shortName + ": " + ok);
+            Logger.logInfo("Result for " + shortName + ": " + ok);
         }
     }
 }

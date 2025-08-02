@@ -16,9 +16,9 @@ public class Exporter implements BurpExtension {
 
             api.userInterface().registerSuiteTab("Attack Framework", new AttackVectorsTab());
 
-            api.logging().logToOutput("'Attack Framework: Burp Exporter' initialized successfully.");
+            Logger.logInfo("'Attack Framework: Burp Exporter' initialized successfully.");
         } catch (Exception e) {
-            api.logging().logToError("Initialization failed: " + e.getMessage());
+            Logger.logError("Initialization failed: " + e.getMessage());
         }
     }
 }
