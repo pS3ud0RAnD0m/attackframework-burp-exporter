@@ -5,6 +5,7 @@ import ai.attackframework.vectors.sources.burp.utils.Logger;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
 
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -47,7 +48,10 @@ public class ConfigPanel extends JPanel {
     private JPanel buildSourcesPanel() {
         JPanel sourcesPanel = new JPanel();
         sourcesPanel.setLayout(new BoxLayout(sourcesPanel, BoxLayout.Y_AXIS));
-        sourcesPanel.setBorder(BorderFactory.createTitledBorder("Data Sources"));
+        TitledBorder border = BorderFactory.createTitledBorder("Data Sources");
+        border.setTitleJustification(TitledBorder.CENTER);
+        sourcesPanel.setBorder(border);
+
 
         sourcesPanel.add(wrapLeftAligned(settingsCheckbox));
         sourcesPanel.add(wrapLeftAligned(sitemapCheckbox));
@@ -60,7 +64,9 @@ public class ConfigPanel extends JPanel {
     private JPanel buildScopePanel() {
         JPanel scopePanel = new JPanel();
         scopePanel.setLayout(new BoxLayout(scopePanel, BoxLayout.Y_AXIS));
-        scopePanel.setBorder(BorderFactory.createTitledBorder("Scope"));
+        TitledBorder border = BorderFactory.createTitledBorder("Scope");
+        border.setTitleJustification(TitledBorder.CENTER);
+        scopePanel.setBorder(border);
 
         ButtonGroup group = new ButtonGroup();
         group.add(burpSuiteRadio);
@@ -82,7 +88,9 @@ public class ConfigPanel extends JPanel {
     private JPanel buildSinksPanel() {
         JPanel sinksPanel = new JPanel();
         sinksPanel.setLayout(new BoxLayout(sinksPanel, BoxLayout.Y_AXIS));
-        sinksPanel.setBorder(BorderFactory.createTitledBorder("Data Sinks"));
+        TitledBorder border = BorderFactory.createTitledBorder("Data Sinks");
+        border.setTitleJustification(TitledBorder.CENTER);
+        sinksPanel.setBorder(border);
 
         JPanel fileRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
         fileRow.add(fileSinkCheckbox);
