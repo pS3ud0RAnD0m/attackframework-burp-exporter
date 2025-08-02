@@ -30,6 +30,7 @@ public class ConfigPanel extends JPanel {
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     private final JTextField openSearchUrlField = new JTextField("http://localhost:9200", 20);
     private final JButton testConnectionButton = new JButton("Test Connection");
+    private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JLabel testConnectionStatus = new JLabel("");
 
     public ConfigPanel() {
@@ -96,6 +97,7 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(openSearchSinkCheckbox);
         openSearchRow.add(openSearchUrlField);
         openSearchRow.add(testConnectionButton);
+        openSearchRow.add(createIndexesButton);
         openSearchRow.add(testConnectionStatus);
 
         testConnectionButton.addActionListener(e -> {
@@ -115,14 +117,34 @@ public class ConfigPanel extends JPanel {
                         if (status.success()) {
                             testConnectionStatus.setText("✔ " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ")");
+                            Logger.logInfo("OpenSearch connection successful: " + status.message() +
+                                    " (" + status.distribution() + " v" + status.version() + ") at " + openSearchUrlField.getText());
                         } else {
                             testConnectionStatus.setText("✖ " + status.message());
+                            Logger.logError("OpenSearch connection failed: " + status.message());
                         }
                     } catch (Exception ex) {
                         testConnectionStatus.setText("✖ Error: " + ex.getMessage());
+                        Logger.logError("OpenSearch connection error: " + ex.getMessage());
                     }
                 }
             }.execute();
+        });
+
+        createIndexesButton.addActionListener(e -> {
+            Logger.logInfo("Create Indexes button clicked");
+
+            String url = openSearchUrlField.getText();
+            Logger.logInfo("Attempting index creation via OpenSearchSink.createSelectedIndexes(...)");
+
+            List<String> selectedSources = getSelectedSources();
+
+            try {
+                OpenSearchSink.createSelectedIndexes(url, selectedSources);
+                Logger.logInfo("Index creation succeeded.");
+            } catch (Exception ex) {
+                Logger.logError("Index creation failed: " + ex.getMessage());
+            }
         });
 
         sinksPanel.add(openSearchRow);
@@ -144,14 +166,19 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
+    private List<String> getSelectedSources() {
+        List<String> selected = new ArrayList<>();
+        if (settingsCheckbox.isSelected()) selected.add("settings");
+        if (sitemapCheckbox.isSelected()) selected.add("sitemap");
+        if (issuesCheckbox.isSelected()) selected.add("findings");
+        if (trafficCheckbox.isSelected()) selected.add("traffic");
+        return selected;
+    }
+
     private class SaveButtonListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            List<String> selectedSources = new ArrayList<>();
-            if (settingsCheckbox.isSelected()) selectedSources.add("settings");
-            if (sitemapCheckbox.isSelected()) selectedSources.add("sitemap");
-            if (issuesCheckbox.isSelected()) selectedSources.add("findings");
-            if (trafficCheckbox.isSelected()) selectedSources.add("traffic");
+            List<String> selectedSources = getSelectedSources();
 
             String scope = allRadio.isSelected() ? "All"
                     : burpSuiteRadio.isSelected() ? "Burp Suite's"
@@ -161,17 +188,11 @@ public class ConfigPanel extends JPanel {
             if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
             if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
 
-            Logger.logInfo("----------------------------------------");
             Logger.logInfo("Saving config ...");
             Logger.logInfo("  Data source(s): " + String.join(", ", selectedSources));
             Logger.logInfo("  Scope: " + scope);
             Logger.logInfo("  Data Sink(s): " + String.join(", ", selectedSinks));
             Logger.logInfo("  OpenSearch URL: " + openSearchUrlField.getText());
-
-            if (openSearchSinkCheckbox.isSelected()) {
-                String url = openSearchUrlField.getText();
-                OpenSearchSink.createSelectedIndexes(url, selectedSources);
-            }
         }
     }
 }
