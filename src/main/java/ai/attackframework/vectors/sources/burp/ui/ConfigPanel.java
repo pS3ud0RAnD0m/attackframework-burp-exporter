@@ -1,6 +1,7 @@
 package ai.attackframework.vectors.sources.burp.ui;
 
 import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink;
+import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
 
@@ -111,7 +112,7 @@ public class ConfigPanel extends JPanel {
 
         testConnectionButton.addActionListener(e -> {
             testConnectionStatus.setText("Testing  . . .");
-            createIndexesStatus.setText("");  // 🧼 Clear the other status
+            createIndexesStatus.setText("");
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
@@ -143,11 +144,11 @@ public class ConfigPanel extends JPanel {
 
         createIndexesButton.addActionListener(e -> {
             createIndexesStatus.setText("Creating indexes . . .");
-            testConnectionStatus.setText("");  // 🧼 Clear the other status
+            testConnectionStatus.setText("");
 
-            SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+            SwingWorker<List<IndexResult>, Void> worker = new SwingWorker<>() {
                 @Override
-                protected Boolean doInBackground() {
+                protected List<IndexResult> doInBackground() {
                     String url = openSearchUrlField.getText();
                     List<String> selectedSources = getSelectedSources();
                     return OpenSearchSink.createSelectedIndexes(url, selectedSources);
@@ -156,13 +157,35 @@ public class ConfigPanel extends JPanel {
                 @Override
                 protected void done() {
                     try {
-                        boolean success = get();
-                        createIndexesStatus.setText(success
-                                ? "✔ Index creation succeeded"
-                                : "✖ Index creation failed");
+                        List<IndexResult> results = get();
+                        if (results.isEmpty()) {
+                            createIndexesStatus.setText("✔ No indexes needed");
+                            Logger.logInfo("No index creation needed; all already exist.");
+                            return;
+                        }
+
+                        List<String> created = new ArrayList<>();
+                        List<String> exists = new ArrayList<>();
+                        List<String> failed = new ArrayList<>();
+
+                        for (IndexResult r : results) {
+                            switch (r.status()) {
+                                case CREATED -> created.add(r.fullName());
+                                case EXISTS  -> exists.add(r.fullName());
+                                case FAILED  -> failed.add(r.fullName());
+                            }
+                        }
+
+                        StringBuilder summary = new StringBuilder();
+                        if (!created.isEmpty()) summary.append("Indexes created: ").append(String.join(", ", created)).append("  ");
+                        if (!exists.isEmpty())  summary.append("Indexes already exist: ").append(String.join(", ", exists)).append("  ");
+                        if (!failed.isEmpty())  summary.append("Failed: ").append(String.join(", ", failed)).append("  ");
+
+                        createIndexesStatus.setText(summary.toString().trim());
+
                     } catch (Exception ex) {
-                        createIndexesStatus.setText("✖ Index creation failed: " + ex.getMessage());
-                        Logger.logError("Index creation failed: " + ex.getMessage());
+                        createIndexesStatus.setText("Index creation error: " + ex.getMessage());
+                        Logger.logError("Index creation error: " + ex.getMessage());
                     }
                 }
             };

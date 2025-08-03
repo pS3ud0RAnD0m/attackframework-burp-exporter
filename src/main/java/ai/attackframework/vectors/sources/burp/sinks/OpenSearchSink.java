@@ -27,7 +27,7 @@ public class OpenSearchSink {
 
     private static final String MAPPINGS_PATH = "/opensearch/mappings/";
 
-    public static boolean createIndexFromResource(String baseUrl, String shortName) {
+    public static IndexResult createIndexFromResource(String baseUrl, String shortName) {
         String fullIndexName = shortName.equals("tool")
                 ? "attackframework-tool-burp"
                 : "attackframework-tool-burp-" + shortName;
@@ -42,10 +42,16 @@ public class OpenSearchSink {
         try {
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
 
+            boolean exists = client.indices().exists(b -> b.index(fullIndexName)).value();
+            if (exists) {
+                Logger.logInfo("Index already exists: " + fullIndexName);
+                return new IndexResult(shortName, fullIndexName, IndexResult.Status.EXISTS);
+            }
+
             try (InputStream is = OpenSearchSink.class.getResourceAsStream(mappingFile)) {
                 if (is == null) {
-                    Logger.logError("MAPPING FILE NOT FOUND: " + mappingFile);
-                    return false;
+                    Logger.logError("Mapping file not found: " + mappingFile);
+                    return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
                 }
                 Logger.logInfo("Found mapping file for: " + shortName);
                 jsonBody = new Scanner(is, StandardCharsets.UTF_8).useDelimiter("\\A").next();
@@ -59,7 +65,7 @@ public class OpenSearchSink {
 
             if (settingsJson == null || mappingsJson == null) {
                 Logger.logError("Mapping file must contain both 'settings' and 'mappings'.");
-                return false;
+                return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
             }
 
             @SuppressWarnings("resource")
@@ -81,7 +87,9 @@ public class OpenSearchSink {
             Logger.logInfo("Sending CreateIndex request for: " + fullIndexName);
             CreateIndexResponse response = client.indices().create(request);
             Logger.logInfo("Index creation acknowledged: " + response.acknowledged());
-            return response.acknowledged();
+
+            return new IndexResult(shortName, fullIndexName,
+                    response.acknowledged() ? IndexResult.Status.CREATED : IndexResult.Status.FAILED);
 
         } catch (Exception e) {
             Logger.logError("Exception while creating index: " + fullIndexName);
@@ -91,26 +99,27 @@ public class OpenSearchSink {
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             Logger.logError(sw.toString());
-            return false;
+            return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
         }
     }
 
-    public static boolean createSelectedIndexes(String baseUrl, List<String> selectedSources) {
+    public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
         Logger.logInfo("Entered createSelectedIndexes with sources: " + selectedSources);
-
         List<String> sources = new ArrayList<>(selectedSources);
-        if (!sources.contains("tool")) {
-            sources.add("tool");
-        }
+        List<IndexResult> results = new ArrayList<>();
+        if (!sources.contains("tool")) sources.add("tool");
 
-        boolean allOk = true;
         for (String shortName : sources) {
             Logger.logInfo("Creating index for: " + shortName);
-            boolean ok = createIndexFromResource(baseUrl, shortName);
-            Logger.logInfo("Result for " + shortName + ": " + ok);
-            if (!ok) allOk = false;
+            IndexResult result = createIndexFromResource(baseUrl, shortName);
+            Logger.logInfo("Result for " + shortName + ": " + result.status());
+            results.add(result);
         }
 
-        return allOk;
+        return results;
+    }
+
+    public record IndexResult(String shortName, String fullName, Status status) {
+        public enum Status { CREATED, EXISTS, FAILED }
     }
 }
