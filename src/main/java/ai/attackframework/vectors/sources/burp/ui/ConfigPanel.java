@@ -33,6 +33,7 @@ public class ConfigPanel extends JPanel {
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JLabel testConnectionStatus = new JLabel("");
+    private final JLabel createIndexesStatus = new JLabel("");
 
     public ConfigPanel() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
@@ -51,7 +52,6 @@ public class ConfigPanel extends JPanel {
         TitledBorder border = BorderFactory.createTitledBorder("Data Sources");
         border.setTitleJustification(TitledBorder.CENTER);
         sourcesPanel.setBorder(border);
-
 
         sourcesPanel.add(wrapLeftAligned(settingsCheckbox));
         sourcesPanel.add(wrapLeftAligned(sitemapCheckbox));
@@ -107,9 +107,11 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(testConnectionButton);
         openSearchRow.add(createIndexesButton);
         openSearchRow.add(testConnectionStatus);
+        openSearchRow.add(createIndexesStatus);
 
         testConnectionButton.addActionListener(e -> {
             testConnectionStatus.setText("Testing  . . .");
+            createIndexesStatus.setText("");  // 🧼 Clear the other status
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
@@ -140,19 +142,32 @@ public class ConfigPanel extends JPanel {
         });
 
         createIndexesButton.addActionListener(e -> {
-            Logger.logInfo("Create Indexes button clicked");
+            createIndexesStatus.setText("Creating indexes . . .");
+            testConnectionStatus.setText("");  // 🧼 Clear the other status
 
-            String url = openSearchUrlField.getText();
-            Logger.logInfo("Attempting index creation via OpenSearchSink.createSelectedIndexes(...)");
+            SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
+                @Override
+                protected Boolean doInBackground() {
+                    String url = openSearchUrlField.getText();
+                    List<String> selectedSources = getSelectedSources();
+                    return OpenSearchSink.createSelectedIndexes(url, selectedSources);
+                }
 
-            List<String> selectedSources = getSelectedSources();
+                @Override
+                protected void done() {
+                    try {
+                        boolean success = get();
+                        createIndexesStatus.setText(success
+                                ? "✔ Index creation succeeded"
+                                : "✖ Index creation failed");
+                    } catch (Exception ex) {
+                        createIndexesStatus.setText("✖ Index creation failed: " + ex.getMessage());
+                        Logger.logError("Index creation failed: " + ex.getMessage());
+                    }
+                }
+            };
 
-            try {
-                OpenSearchSink.createSelectedIndexes(url, selectedSources);
-                Logger.logInfo("Index creation succeeded.");
-            } catch (Exception ex) {
-                Logger.logError("Index creation failed: " + ex.getMessage());
-            }
+            worker.execute();
         });
 
         sinksPanel.add(openSearchRow);

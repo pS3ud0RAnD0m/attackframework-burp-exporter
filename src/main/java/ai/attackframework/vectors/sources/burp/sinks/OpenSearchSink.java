@@ -44,10 +44,10 @@ public class OpenSearchSink {
 
             try (InputStream is = OpenSearchSink.class.getResourceAsStream(mappingFile)) {
                 if (is == null) {
-                    Logger.logError("❌ MAPPING FILE NOT FOUND: " + mappingFile);
+                    Logger.logError("MAPPING FILE NOT FOUND: " + mappingFile);
                     return false;
                 }
-                Logger.logInfo("✅ Found mapping file for: " + shortName);
+                Logger.logInfo("Found mapping file for: " + shortName);
                 jsonBody = new Scanner(is, StandardCharsets.UTF_8).useDelimiter("\\A").next();
             }
 
@@ -58,7 +58,7 @@ public class OpenSearchSink {
             JsonObject mappingsJson = root.getJsonObject("mappings");
 
             if (settingsJson == null || mappingsJson == null) {
-                Logger.logError("❌ Mapping file must contain both 'settings' and 'mappings'.");
+                Logger.logError("Mapping file must contain both 'settings' and 'mappings'.");
                 return false;
             }
 
@@ -86,7 +86,7 @@ public class OpenSearchSink {
         } catch (Exception e) {
             Logger.logError("Exception while creating index: " + fullIndexName);
             if (jsonBody != null) {
-                Logger.logError("📄 Mapping JSON:\n" + jsonBody);
+                Logger.logError("Mapping JSON:\n" + jsonBody);
             }
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
@@ -95,7 +95,7 @@ public class OpenSearchSink {
         }
     }
 
-    public static void createSelectedIndexes(String baseUrl, List<String> selectedSources) {
+    public static boolean createSelectedIndexes(String baseUrl, List<String> selectedSources) {
         Logger.logInfo("Entered createSelectedIndexes with sources: " + selectedSources);
 
         List<String> sources = new ArrayList<>(selectedSources);
@@ -103,10 +103,14 @@ public class OpenSearchSink {
             sources.add("tool");
         }
 
+        boolean allOk = true;
         for (String shortName : sources) {
             Logger.logInfo("Creating index for: " + shortName);
             boolean ok = createIndexFromResource(baseUrl, shortName);
             Logger.logInfo("Result for " + shortName + ": " + ok);
+            if (!ok) allOk = false;
         }
+
+        return allOk;
     }
 }

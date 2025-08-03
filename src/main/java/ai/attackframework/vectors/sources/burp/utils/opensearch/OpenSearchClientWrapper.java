@@ -21,8 +21,7 @@ public class OpenSearchClientWrapper {
             return new OpenSearchStatus(true, distribution, version, "Connection successful");
 
         } catch (Exception e) {
-            String msg = "OpenSearch connection test failed: " + e.getMessage();
-            return new OpenSearchStatus(false, "", "", msg);
+            return new OpenSearchStatus(false, "", "", e.getMessage());
         }
     }
 
@@ -30,8 +29,7 @@ public class OpenSearchClientWrapper {
         try {
             return testConnection(baseUrl);
         } catch (Exception e) {
-            String msg = "OpenSearch connection test failed: " + e.getMessage();
-            return new OpenSearchStatus(false, "", "", msg);
+            return new OpenSearchStatus(false, "", "", e.getMessage());
         }
     }
 
