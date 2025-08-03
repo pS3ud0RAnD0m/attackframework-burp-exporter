@@ -62,10 +62,10 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
-        panel.add(settingsCheckbox, "gapleft 20");
-        panel.add(sitemapCheckbox, "gapleft 20");
-        panel.add(issuesCheckbox, "gapleft 20");
-        panel.add(trafficCheckbox, "gapleft 20");
+        panel.add(settingsCheckbox, "gapleft 30");
+        panel.add(sitemapCheckbox, "gapleft 30");
+        panel.add(issuesCheckbox, "gapleft 30");
+        panel.add(trafficCheckbox, "gapleft 30");
         return panel;
     }
 
@@ -82,14 +82,14 @@ public class ConfigPanel extends JPanel {
         scopeGroup.add(customRadio);
         scopeGroup.add(allRadio);
 
-        panel.add(burpSuiteRadio, "gapleft 20");
+        panel.add(burpSuiteRadio, "gapleft 30");
 
         JPanel customRow = new JPanel(new MigLayout("insets 0", "[][]", ""));
         customRow.add(customRadio);
         customRow.add(customScopeField, "growx, pushx");
-        panel.add(customRow, "gapleft 20");
+        panel.add(customRow, "gapleft 30");
 
-        panel.add(allRadio, "gapleft 20");
+        panel.add(allRadio, "gapleft 30");
         return panel;
     }
 
@@ -105,19 +105,19 @@ public class ConfigPanel extends JPanel {
         fileRow.add(fileSinkCheckbox);
         fileRow.add(filePathField);
         fileRow.add(testWriteAccessButton);
-        panel.add(fileRow, "gapleft 20, wrap");
+        panel.add(fileRow, "gapleft 30, wrap");
 
-        panel.add(testWriteAccessStatus, "gapleft 20, wrap");
+        panel.add(testWriteAccessStatus, "gapleft 30, wrap");
 
         JPanel osRow = new JPanel(new MigLayout("insets 0", "[][][][]", ""));
         osRow.add(openSearchSinkCheckbox);
         osRow.add(openSearchUrlField);
         osRow.add(testConnectionButton);
         osRow.add(createIndexesButton);
-        panel.add(osRow, "gapleft 20, wrap");
+        panel.add(osRow, "gapleft 30, wrap");
 
         configureTextArea(osStatus);
-        panel.add(osStatus, "gapleft 20, growx, wrap");
+        panel.add(osStatus, "gapleft 30, growx, wrap");
 
         wireButtonActions();
         return panel;
