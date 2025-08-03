@@ -21,12 +21,12 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 
-    implementation("org.opensearch.client:opensearch-java:3.1.0")
-
     implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2")
+    implementation("com.miglayout:miglayout-swing:11.0")
     implementation("jakarta.json:jakarta.json-api:2.1.1")
     implementation("org.glassfish:jakarta.json:2.0.1")
+    implementation("org.opensearch.client:opensearch-java:3.1.0")
 }
 
 tasks.test {

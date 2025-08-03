@@ -4,9 +4,9 @@ import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink;
 import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
+import net.miginfocom.swing.MigLayout;
 
 import javax.swing.*;
-import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -29,88 +29,96 @@ public class ConfigPanel extends JPanel {
     private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json", 0);
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JLabel testWriteAccessStatus = new JLabel("");
+
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
     private final JTextField openSearchUrlField = new JTextField("http://opensearch.acme.com:9200", 0);
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
-    private final JLabel testConnectionStatus = new JLabel("");
-    private final JLabel createIndexesStatus = new JLabel("");
+
+    private final JTextArea testConnectionStatus = new JTextArea();
+    private final JTextArea createIndexesStatus = new JTextArea();
 
     public ConfigPanel() {
-        setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-        add(buildSourcesPanel());
-        add(Box.createVerticalStrut(10));
-        add(buildScopePanel());
-        add(Box.createVerticalStrut(10));
-        add(buildSinksPanel());
-        add(Box.createVerticalStrut(10));
-        add(buildSaveButton());
+        setLayout(new MigLayout("fillx, insets 12", "[fill]"));
+
+        add(buildSourcesPanel(), "wrap");
+        add(buildScopePanel(), "wrap");
+        add(buildSinksPanel(), "growx, wrap");
+        add(buildSavePanel(), "growx, wrap");
+        add(Box.createVerticalGlue(), "growy, wrap");
     }
 
     private JPanel buildSourcesPanel() {
-        JPanel sourcesPanel = new JPanel();
-        sourcesPanel.setLayout(new BoxLayout(sourcesPanel, BoxLayout.Y_AXIS));
-        TitledBorder border = BorderFactory.createTitledBorder("Data Sources");
-        border.setTitleJustification(TitledBorder.CENTER);
-        sourcesPanel.setBorder(border);
-
-        sourcesPanel.add(wrapLeftAligned(settingsCheckbox));
-        sourcesPanel.add(wrapLeftAligned(sitemapCheckbox));
-        sourcesPanel.add(wrapLeftAligned(issuesCheckbox));
-        sourcesPanel.add(wrapLeftAligned(trafficCheckbox));
-
-        return sourcesPanel;
+        JPanel panel = new JPanel(new MigLayout("insets 10, wrap 1", "[left]"));
+        panel.setBorder(BorderFactory.createTitledBorder("Data Sources"));
+        panel.add(settingsCheckbox);
+        panel.add(sitemapCheckbox);
+        panel.add(issuesCheckbox);
+        panel.add(trafficCheckbox);
+        return panel;
     }
 
     private JPanel buildScopePanel() {
-        JPanel scopePanel = new JPanel();
-        scopePanel.setLayout(new BoxLayout(scopePanel, BoxLayout.Y_AXIS));
-        TitledBorder border = BorderFactory.createTitledBorder("Scope");
-        border.setTitleJustification(TitledBorder.CENTER);
-        scopePanel.setBorder(border);
+        JPanel panel = new JPanel(new MigLayout("insets 10, wrap 1", "[left]"));
+        panel.setBorder(BorderFactory.createTitledBorder("Scope"));
 
-        ButtonGroup group = new ButtonGroup();
-        group.add(burpSuiteRadio);
-        group.add(customRadio);
-        group.add(allRadio);
+        ButtonGroup scopeGroup = new ButtonGroup();
+        scopeGroup.add(burpSuiteRadio);
+        scopeGroup.add(customRadio);
+        scopeGroup.add(allRadio);
 
-        scopePanel.add(wrapLeftAligned(burpSuiteRadio));
+        panel.add(burpSuiteRadio);
+        JPanel customRow = new JPanel(new MigLayout("insets 0", "[][]", ""));
+        customRow.add(customRadio);
+        customRow.add(customScopeField, "growx, pushx");
+        panel.add(customRow);
+        panel.add(allRadio);
 
-        JPanel customScopeRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        customScopeRow.add(customRadio);
-        customScopeRow.add(customScopeField);
-        scopePanel.add(customScopeRow);
-
-        scopePanel.add(wrapLeftAligned(allRadio));
-
-        return scopePanel;
+        return panel;
     }
 
     private JPanel buildSinksPanel() {
-        JPanel sinksPanel = new JPanel();
-        sinksPanel.setLayout(new BoxLayout(sinksPanel, BoxLayout.Y_AXIS));
-        TitledBorder border = BorderFactory.createTitledBorder("Data Sinks");
-        border.setTitleJustification(TitledBorder.CENTER);
-        sinksPanel.setBorder(border);
+        JPanel panel = new JPanel(new MigLayout("insets 10, wrap 2", "[left]10[grow,fill]"));
+        panel.setBorder(BorderFactory.createTitledBorder("Data Sinks"));
 
-        JPanel fileRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        fileRow.add(fileSinkCheckbox);
-        fileRow.add(filePathField);
-        fileRow.add(testWriteAccessButton);
-        fileRow.add(testWriteAccessStatus);
+        panel.add(fileSinkCheckbox, "");
+        panel.add(filePathField, "wrap");
+        panel.add(testWriteAccessButton, "");
+        panel.add(testWriteAccessStatus, "wrap");
 
-        testWriteAccessButton.addActionListener(e -> testWriteAccessStatus.setText("Testing write access ."));
-        sinksPanel.add(fileRow);
+        panel.add(openSearchSinkCheckbox, "");
+        panel.add(openSearchUrlField, "wrap");
+        panel.add(testConnectionButton, "");
+        panel.add(createIndexesButton, "wrap");
 
-        JPanel openSearchRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        openSearchRow.add(openSearchSinkCheckbox);
-        openSearchRow.add(openSearchUrlField);
-        openSearchRow.add(testConnectionButton);
-        openSearchRow.add(createIndexesButton);
-        openSearchRow.add(testConnectionStatus);
-        openSearchRow.add(createIndexesStatus);
+        configureTextArea(testConnectionStatus);
+        configureTextArea(createIndexesStatus);
+        panel.add(testConnectionStatus, "span 2, growx, wrap");
+        panel.add(createIndexesStatus, "span 2, growx, wrap");
 
+        wireButtonActions();
+
+        return panel;
+    }
+
+    private JPanel buildSavePanel() {
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[]"));
+        JButton saveButton = new JButton("Save");
+        saveButton.addActionListener(new SaveButtonListener());
+        panel.add(saveButton);
+        return panel;
+    }
+
+    private void configureTextArea(JTextArea area) {
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setMargin(new Insets(4, 10, 4, 4));
+        area.setRows(2);
+    }
+
+    private void wireButtonActions() {
         testConnectionButton.addActionListener(e -> {
             testConnectionStatus.setText("Testing  . . .");
             createIndexesStatus.setText("");
@@ -118,8 +126,7 @@ public class ConfigPanel extends JPanel {
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
                 protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
-                    String url = openSearchUrlField.getText();
-                    return OpenSearchClientWrapper.safeTestConnection(url);
+                    return OpenSearchClientWrapper.safeTestConnection(openSearchUrlField.getText());
                 }
 
                 @Override
@@ -147,12 +154,10 @@ public class ConfigPanel extends JPanel {
             createIndexesStatus.setText("Creating indexes . . .");
             testConnectionStatus.setText("");
 
-            SwingWorker<List<IndexResult>, Void> worker = new SwingWorker<>() {
+            new SwingWorker<List<IndexResult>, Void>() {
                 @Override
                 protected List<IndexResult> doInBackground() {
-                    String url = openSearchUrlField.getText();
-                    List<String> selectedSources = getSelectedSources();
-                    return OpenSearchSink.createSelectedIndexes(url, selectedSources);
+                    return OpenSearchSink.createSelectedIndexes(openSearchUrlField.getText(), getSelectedSources());
                 }
 
                 @Override
@@ -172,45 +177,25 @@ public class ConfigPanel extends JPanel {
                         for (IndexResult r : results) {
                             switch (r.status()) {
                                 case CREATED -> created.add(r.fullName());
-                                case EXISTS  -> exists.add(r.fullName());
-                                case FAILED  -> failed.add(r.fullName());
+                                case EXISTS -> exists.add(r.fullName());
+                                case FAILED -> failed.add(r.fullName());
                             }
                         }
 
-                        StringBuilder summary = new StringBuilder();
-                        if (!created.isEmpty()) summary.append("Indexes created: ").append(String.join(", ", created)).append("  ");
-                        if (!exists.isEmpty())  summary.append("Indexes already exist: ").append(String.join(", ", exists)).append("  ");
-                        if (!failed.isEmpty())  summary.append("Failed: ").append(String.join(", ", failed)).append("  ");
+                        StringBuilder sb = new StringBuilder();
+                        if (!created.isEmpty()) sb.append("Indexes created: ").append(String.join(", ", created)).append("\n");
+                        if (!exists.isEmpty()) sb.append("Indexes already exist: ").append(String.join(", ", exists)).append("\n");
+                        if (!failed.isEmpty()) sb.append("Failed: ").append(String.join(", ", failed)).append("\n");
 
-                        createIndexesStatus.setText(summary.toString().trim());
+                        createIndexesStatus.setText(sb.toString().trim());
 
                     } catch (Exception ex) {
                         createIndexesStatus.setText("Index creation error: " + ex.getMessage());
                         Logger.logError("Index creation error: " + ex.getMessage());
                     }
                 }
-            };
-
-            worker.execute();
+            }.execute();
         });
-
-        sinksPanel.add(openSearchRow);
-        return sinksPanel;
-    }
-
-    private JPanel buildSaveButton() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton saveButton = new JButton("Save");
-
-        saveButton.addActionListener(new SaveButtonListener());
-        panel.add(saveButton);
-        return panel;
-    }
-
-    private JPanel wrapLeftAligned(JComponent comp) {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        panel.add(comp);
-        return panel;
     }
 
     private List<String> getSelectedSources() {
@@ -226,7 +211,6 @@ public class ConfigPanel extends JPanel {
         @Override
         public void actionPerformed(ActionEvent e) {
             List<String> selectedSources = getSelectedSources();
-
             String scope = allRadio.isSelected() ? "All"
                     : burpSuiteRadio.isSelected() ? "Burp Suite's"
                     : "Custom: " + customScopeField.getText();
