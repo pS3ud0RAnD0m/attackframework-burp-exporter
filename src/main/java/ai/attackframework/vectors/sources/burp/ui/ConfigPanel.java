@@ -23,82 +23,103 @@ public class ConfigPanel extends JPanel {
     private final JRadioButton allRadio = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
     private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
-    private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 0);
+    private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 20);
 
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
-    private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json", 0);
+    private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json", 20);
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JLabel testWriteAccessStatus = new JLabel("");
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
-    private final JTextField openSearchUrlField = new JTextField("http://opensearch.acme.com:9200", 0);
+    private final JTextField openSearchUrlField = new JTextField("http://opensearch.acme.com:9200", 30);
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
 
-    private final JTextArea testConnectionStatus = new JTextArea();
-    private final JTextArea createIndexesStatus = new JTextArea();
+    private final JTextArea osStatus = new JTextArea();
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
-        add(buildSourcesPanel(), "wrap");
-        add(buildScopePanel(), "wrap");
-        add(buildSinksPanel(), "growx, wrap");
+        add(buildSourcesPanel(), "gapbottom 6, wrap");
+        add(new JSeparator(), "growx, wrap");
+
+        add(buildScopePanel(), "gapbottom 6, wrap");
+        add(new JSeparator(), "growx, wrap");
+
+        add(buildSinksPanel(), "gapbottom 6, growx, wrap");
+        add(new JSeparator(), "growx, wrap");
+
         add(buildSavePanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
     }
 
     private JPanel buildSourcesPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 10, wrap 1", "[left]"));
-        panel.setBorder(BorderFactory.createTitledBorder("Data Sources"));
-        panel.add(settingsCheckbox);
-        panel.add(sitemapCheckbox);
-        panel.add(issuesCheckbox);
-        panel.add(trafficCheckbox);
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        panel.setAlignmentX(LEFT_ALIGNMENT);
+
+        JLabel header = new JLabel("Data Sources");
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        panel.add(header, "gapbottom 6");
+
+        panel.add(settingsCheckbox, "gapleft 20");
+        panel.add(sitemapCheckbox, "gapleft 20");
+        panel.add(issuesCheckbox, "gapleft 20");
+        panel.add(trafficCheckbox, "gapleft 20");
         return panel;
     }
 
     private JPanel buildScopePanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 10, wrap 1", "[left]"));
-        panel.setBorder(BorderFactory.createTitledBorder("Scope"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        panel.setAlignmentX(LEFT_ALIGNMENT);
+
+        JLabel header = new JLabel("Scope");
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        panel.add(header, "gapbottom 6");
 
         ButtonGroup scopeGroup = new ButtonGroup();
         scopeGroup.add(burpSuiteRadio);
         scopeGroup.add(customRadio);
         scopeGroup.add(allRadio);
 
-        panel.add(burpSuiteRadio);
+        panel.add(burpSuiteRadio, "gapleft 20");
+
         JPanel customRow = new JPanel(new MigLayout("insets 0", "[][]", ""));
         customRow.add(customRadio);
         customRow.add(customScopeField, "growx, pushx");
-        panel.add(customRow);
-        panel.add(allRadio);
+        panel.add(customRow, "gapleft 20");
 
+        panel.add(allRadio, "gapleft 20");
         return panel;
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 10, wrap 2", "[left]10[grow,fill]"));
-        panel.setBorder(BorderFactory.createTitledBorder("Data Sinks"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow,fill]"));
+        panel.setAlignmentX(LEFT_ALIGNMENT);
 
-        panel.add(fileSinkCheckbox, "");
-        panel.add(filePathField, "wrap");
-        panel.add(testWriteAccessButton, "");
-        panel.add(testWriteAccessStatus, "wrap");
+        JLabel header = new JLabel("Data Sinks");
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        panel.add(header, "gapbottom 6");
 
-        panel.add(openSearchSinkCheckbox, "");
-        panel.add(openSearchUrlField, "wrap");
-        panel.add(testConnectionButton, "");
-        panel.add(createIndexesButton, "wrap");
+        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[][][]", ""));
+        fileRow.add(fileSinkCheckbox);
+        fileRow.add(filePathField);
+        fileRow.add(testWriteAccessButton);
+        panel.add(fileRow, "gapleft 20, wrap");
 
-        configureTextArea(testConnectionStatus);
-        configureTextArea(createIndexesStatus);
-        panel.add(testConnectionStatus, "span 2, growx, wrap");
-        panel.add(createIndexesStatus, "span 2, growx, wrap");
+        panel.add(testWriteAccessStatus, "gapleft 20, wrap");
+
+        JPanel osRow = new JPanel(new MigLayout("insets 0", "[][][][]", ""));
+        osRow.add(openSearchSinkCheckbox);
+        osRow.add(openSearchUrlField);
+        osRow.add(testConnectionButton);
+        osRow.add(createIndexesButton);
+        panel.add(osRow, "gapleft 20, wrap");
+
+        configureTextArea(osStatus);
+        panel.add(osStatus, "gapleft 20, growx, wrap");
 
         wireButtonActions();
-
         return panel;
     }
 
@@ -120,8 +141,7 @@ public class ConfigPanel extends JPanel {
 
     private void wireButtonActions() {
         testConnectionButton.addActionListener(e -> {
-            testConnectionStatus.setText("Testing  . . .");
-            createIndexesStatus.setText("");
+            osStatus.setText("Testing  . . .");
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
@@ -134,16 +154,16 @@ public class ConfigPanel extends JPanel {
                     try {
                         OpenSearchClientWrapper.OpenSearchStatus status = get();
                         if (status.success()) {
-                            testConnectionStatus.setText("✔ " + status.message() +
+                            osStatus.setText("✔ " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ")");
                             Logger.logInfo("OpenSearch connection successful: " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ") at " + openSearchUrlField.getText());
                         } else {
-                            testConnectionStatus.setText("✖ " + status.message());
+                            osStatus.setText("✖ " + status.message());
                             Logger.logError("OpenSearch connection failed: " + status.message());
                         }
                     } catch (Exception ex) {
-                        testConnectionStatus.setText("✖ Error: " + ex.getMessage());
+                        osStatus.setText("✖ Error: " + ex.getMessage());
                         Logger.logError("OpenSearch connection error: " + ex.getMessage());
                     }
                 }
@@ -151,8 +171,7 @@ public class ConfigPanel extends JPanel {
         });
 
         createIndexesButton.addActionListener(e -> {
-            createIndexesStatus.setText("Creating indexes . . .");
-            testConnectionStatus.setText("");
+            osStatus.setText("Creating indexes . . .");
 
             new SwingWorker<List<IndexResult>, Void>() {
                 @Override
@@ -165,7 +184,7 @@ public class ConfigPanel extends JPanel {
                     try {
                         List<IndexResult> results = get();
                         if (results.isEmpty()) {
-                            createIndexesStatus.setText("✔ No indexes needed");
+                            osStatus.setText("✔ No indexes needed");
                             Logger.logInfo("No index creation needed; all already exist.");
                             return;
                         }
@@ -187,10 +206,10 @@ public class ConfigPanel extends JPanel {
                         if (!exists.isEmpty()) sb.append("Indexes already exist: ").append(String.join(", ", exists)).append("\n");
                         if (!failed.isEmpty()) sb.append("Failed: ").append(String.join(", ", failed)).append("\n");
 
-                        createIndexesStatus.setText(sb.toString().trim());
+                        osStatus.setText(sb.toString().trim());
 
                     } catch (Exception ex) {
-                        createIndexesStatus.setText("Index creation error: " + ex.getMessage());
+                        osStatus.setText("Index creation error: " + ex.getMessage());
                         Logger.logError("Index creation error: " + ex.getMessage());
                     }
                 }
@@ -219,11 +238,15 @@ public class ConfigPanel extends JPanel {
             if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
             if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
 
+            String sinkLine = "  Data Sink(s): " + String.join(", ", selectedSinks);
+            if (openSearchSinkCheckbox.isSelected()) {
+                sinkLine += " (" + openSearchUrlField.getText() + ")";
+            }
+
             Logger.logInfo("Saving config ...");
             Logger.logInfo("  Data source(s): " + String.join(", ", selectedSources));
             Logger.logInfo("  Scope: " + scope);
-            Logger.logInfo("  Data Sink(s): " + String.join(", ", selectedSinks));
-            Logger.logInfo("  OpenSearch URL: " + openSearchUrlField.getText());
+            Logger.logInfo(sinkLine);
         }
     }
 }
