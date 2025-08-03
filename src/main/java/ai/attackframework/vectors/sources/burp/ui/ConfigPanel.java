@@ -30,7 +30,7 @@ public class ConfigPanel extends JPanel {
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JLabel testWriteAccessStatus = new JLabel("");
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
-    private final JTextField openSearchUrlField = new JTextField("http://localhost:9200", 20);
+    private final JTextField openSearchUrlField = new JTextField("http://opensearch.attackframework.ai:9200", 20);
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JLabel testConnectionStatus = new JLabel("");
