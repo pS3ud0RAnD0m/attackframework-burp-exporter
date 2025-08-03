@@ -23,14 +23,15 @@ public class ConfigPanel extends JPanel {
     private final JRadioButton allRadio = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
     private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
-    private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 20);
+    private final JTextField customScopeField = new JTextField("^.*acme\\.com$", 0);
 
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
-    private final JTextField filePathField = new JTextField("/path/to/attackframework-burp.json", 20);
+    private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json", 0);
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JLabel testWriteAccessStatus = new JLabel("");
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
-    private final JTextField openSearchUrlField = new JTextField("http://opensearch.attackframework.ai:9200", 20);
+    @SuppressWarnings("HttpUrlsUsage")
+    private final JTextField openSearchUrlField = new JTextField("http://opensearch.acme.com:9200", 0);
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JLabel testConnectionStatus = new JLabel("");
