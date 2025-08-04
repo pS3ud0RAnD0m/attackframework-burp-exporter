@@ -37,6 +37,7 @@ public class ConfigPanel extends JPanel {
     private final JButton createIndexesButton = new JButton("Create Indexes");
 
     private final JTextArea openSearchStatus = new JTextArea();
+    private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5"));
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
@@ -116,8 +117,15 @@ public class ConfigPanel extends JPanel {
         openSearchRow.add(testConnectionButton);
         openSearchRow.add(createIndexesButton);
         panel.add(openSearchRow, "gapleft 30, wrap");
+
         configureTextArea(openSearchStatus);
-        panel.add(openSearchStatus, "gapleft 30, growx, wrap");
+
+        statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        statusWrapper.add(openSearchStatus, "growx, pushx");
+        statusWrapper.setVisible(false);
+
+        panel.add(statusWrapper, "gapleft 30, growx, wrap");
+
         wireButtonActions();
 
         return panel;
@@ -135,13 +143,20 @@ public class ConfigPanel extends JPanel {
         area.setEditable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        area.setMargin(new Insets(4, 10, 4, 4));
-        area.setRows(2);
+        area.setOpaque(false);
+        area.setFont(new Font("Monospaced", Font.PLAIN, 12));
+    }
+
+    private void updateStatus(String message) {
+        int lines = message.split("\r\n|\r|\n").length;
+        openSearchStatus.setRows(Math.max(lines, 1));
+        openSearchStatus.setText(message);
+        statusWrapper.setVisible(true);
     }
 
     private void wireButtonActions() {
         testConnectionButton.addActionListener(e -> {
-            openSearchStatus.setText("Testing  . . .");
+            updateStatus("Testing  . . .");
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
@@ -154,16 +169,16 @@ public class ConfigPanel extends JPanel {
                     try {
                         OpenSearchClientWrapper.OpenSearchStatus status = get();
                         if (status.success()) {
-                            openSearchStatus.setText("✔ " + status.message() +
+                            updateStatus("✔ " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ")");
                             Logger.logInfo("OpenSearch connection successful: " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ") at " + openSearchUrlField.getText());
                         } else {
-                            openSearchStatus.setText("✖ " + status.message());
+                            updateStatus("✖ " + status.message());
                             Logger.logError("OpenSearch connection failed: " + status.message());
                         }
                     } catch (Exception ex) {
-                        openSearchStatus.setText("✖ Error: " + ex.getMessage());
+                        updateStatus("✖ Error: " + ex.getMessage());
                         Logger.logError("OpenSearch connection error: " + ex.getMessage());
                     }
                 }
@@ -171,7 +186,7 @@ public class ConfigPanel extends JPanel {
         });
 
         createIndexesButton.addActionListener(e -> {
-            openSearchStatus.setText("Creating indexes . . .");
+            updateStatus("Creating indexes . . .");
 
             new SwingWorker<List<IndexResult>, Void>() {
                 @Override
@@ -184,8 +199,7 @@ public class ConfigPanel extends JPanel {
                     try {
                         List<IndexResult> results = get();
                         if (results.isEmpty()) {
-                            // todo: why am i not seeing this?
-                            openSearchStatus.setText("✔ No indexes needed");
+                            updateStatus("✔ No indexes needed");
                             Logger.logInfo("No index creation needed; all already exist.");
                             return;
                         }
@@ -203,14 +217,20 @@ public class ConfigPanel extends JPanel {
                         }
 
                         StringBuilder sb = new StringBuilder();
-                        if (!created.isEmpty()) sb.append("Indexes created: ").append(String.join(", ", created)).append("\n");
-                        if (!exists.isEmpty()) sb.append("Indexes already exist: ").append(String.join(", ", exists)).append("\n");
-                        if (!failed.isEmpty()) sb.append("Failed: ").append(String.join(", ", failed)).append("\n");
+                        if (!created.isEmpty()) {
+                            sb.append("Indexes created:\n  ").append(String.join("\n  ", created)).append("\n");
+                        }
+                        if (!exists.isEmpty()) {
+                            sb.append("Indexes already exist:\n  ").append(String.join("\n  ", exists)).append("\n");
+                        }
+                        if (!failed.isEmpty()) {
+                            sb.append("Failed:\n  ").append(String.join("\n  ", failed)).append("\n");
+                        }
 
-                        openSearchStatus.setText(sb.toString().trim());
+                        updateStatus(sb.toString().trim());
 
                     } catch (Exception ex) {
-                        openSearchStatus.setText("Index creation error: " + ex.getMessage());
+                        updateStatus("Index creation error: " + ex.getMessage());
                         Logger.logError("Index creation error: " + ex.getMessage());
                     }
                 }
