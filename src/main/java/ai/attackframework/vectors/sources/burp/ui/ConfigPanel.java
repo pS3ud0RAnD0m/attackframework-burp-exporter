@@ -41,13 +41,13 @@ public class ConfigPanel extends JPanel {
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
-        add(buildSourcesPanel(), "gapbottom 20, wrap");
+        add(buildSourcesPanel(), "gaptop 5, gapbottom 5, wrap");
         add(new JSeparator(), "growx, wrap");
 
-        add(buildScopePanel(), "gapbottom 20, wrap");
+        add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
         add(new JSeparator(), "growx, wrap");
 
-        add(buildSinksPanel(), "gapbottom 20, growx, wrap");
+        add(buildSinksPanel(), "gaptop 10, gapbottom 5, growx, wrap");
         add(new JSeparator(), "growx, wrap");
 
         add(buildSavePanel(), "growx, wrap");
@@ -66,6 +66,7 @@ public class ConfigPanel extends JPanel {
         panel.add(sitemapCheckbox, "gapleft 30");
         panel.add(issuesCheckbox, "gapleft 30");
         panel.add(trafficCheckbox, "gapleft 30");
+
         return panel;
     }
 
@@ -90,6 +91,7 @@ public class ConfigPanel extends JPanel {
         panel.add(customRow, "gapleft 30");
 
         panel.add(allRadio, "gapleft 30");
+
         return panel;
     }
 
@@ -106,20 +108,18 @@ public class ConfigPanel extends JPanel {
         fileRow.add(filePathField);
         fileRow.add(testWriteAccessButton);
         panel.add(fileRow, "gapleft 30, wrap");
-
         panel.add(testWriteAccessStatus, "gapleft 30, wrap");
 
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[][][][]", ""));
+        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[][][]", ""));
         openSearchRow.add(openSearchSinkCheckbox);
         openSearchRow.add(openSearchUrlField);
         openSearchRow.add(testConnectionButton);
         openSearchRow.add(createIndexesButton);
         panel.add(openSearchRow, "gapleft 30, wrap");
-
         configureTextArea(openSearchStatus);
         panel.add(openSearchStatus, "gapleft 30, growx, wrap");
-
         wireButtonActions();
+
         return panel;
     }
 
@@ -184,6 +184,7 @@ public class ConfigPanel extends JPanel {
                     try {
                         List<IndexResult> results = get();
                         if (results.isEmpty()) {
+                            // todo: why am i not seeing this?
                             openSearchStatus.setText("✔ No indexes needed");
                             Logger.logInfo("No index creation needed; all already exist.");
                             return;
