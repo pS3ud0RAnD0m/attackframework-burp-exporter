@@ -169,7 +169,7 @@ public class ConfigPanel extends JPanel {
                     try {
                         OpenSearchClientWrapper.OpenSearchStatus status = get();
                         if (status.success()) {
-                            updateStatus("✔ " + status.message() +
+                            updateStatus(status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ")");
                             Logger.logInfo("OpenSearch connection successful: " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ") at " + openSearchUrlField.getText());
@@ -198,11 +198,6 @@ public class ConfigPanel extends JPanel {
                 protected void done() {
                     try {
                         List<IndexResult> results = get();
-                        if (results.isEmpty()) {
-                            updateStatus("✔ No indexes needed");
-                            Logger.logInfo("No index creation needed; all already exist.");
-                            return;
-                        }
 
                         List<String> created = new ArrayList<>();
                         List<String> exists = new ArrayList<>();
@@ -216,15 +211,24 @@ public class ConfigPanel extends JPanel {
                             }
                         }
 
+                        boolean allExist = !results.isEmpty() && results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
+
                         StringBuilder sb = new StringBuilder();
                         if (!created.isEmpty()) {
-                            sb.append("Indexes created:\n  ").append(String.join("\n  ", created)).append("\n");
+                            sb.append(created.size() == 1 ? "Index created:\n  " : "Indexes created:\n  ");
+                            sb.append(String.join("\n  ", created)).append("\n");
                         }
                         if (!exists.isEmpty()) {
-                            sb.append("Indexes already exist:\n  ").append(String.join("\n  ", exists)).append("\n");
+                            sb.append(exists.size() == 1 ? "Index already exists:\n  " : "Indexes already exist:\n  ");
+                            sb.append(String.join("\n  ", exists)).append("\n");
                         }
                         if (!failed.isEmpty()) {
-                            sb.append("Failed:\n  ").append(String.join("\n  ", failed)).append("\n");
+                            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ");
+                            sb.append(String.join("\n  ", failed)).append("\n");
+                        }
+
+                        if (allExist) {
+                            Logger.logInfo("All indexes already existed — no creation performed.");
                         }
 
                         updateStatus(sb.toString().trim());
