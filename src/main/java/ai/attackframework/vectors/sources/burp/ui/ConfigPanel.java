@@ -104,17 +104,19 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
-        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[left]10[shrink,fill]10[left]", ""));
+        String columns = "[110!,left]10[shrink,fill]10[left]";
+
+        JPanel fileRow = new JPanel(new MigLayout("insets 0", columns, ""));
         fileRow.add(fileSinkCheckbox);
-        fileRow.add(filePathField);
+        fileRow.add(filePathField, "grow 0");
         fileRow.add(testWriteAccessButton);
         panel.add(fileRow, "gapleft 30, wrap");
 
         panel.add(testWriteAccessStatus, "gapleft 30, wrap");
 
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[left]10[shrink,fill]10[left]", ""));
+        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", columns, ""));
         openSearchRow.add(openSearchSinkCheckbox);
-        openSearchRow.add(openSearchUrlField);
+        openSearchRow.add(openSearchUrlField, "grow 0");
 
         JPanel buttonGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         buttonGroup.add(testConnectionButton);
