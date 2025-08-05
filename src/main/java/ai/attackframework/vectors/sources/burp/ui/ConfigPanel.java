@@ -104,30 +104,32 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
-        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[][][]", ""));
+        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[left]10[shrink,fill]10[left]", ""));
         fileRow.add(fileSinkCheckbox);
         fileRow.add(filePathField);
         fileRow.add(testWriteAccessButton);
         panel.add(fileRow, "gapleft 30, wrap");
+
         panel.add(testWriteAccessStatus, "gapleft 30, wrap");
 
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[][][]", ""));
+        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[left]10[shrink,fill]10[left]", ""));
         openSearchRow.add(openSearchSinkCheckbox);
         openSearchRow.add(openSearchUrlField);
-        openSearchRow.add(testConnectionButton);
-        openSearchRow.add(createIndexesButton);
+
+        JPanel buttonGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        buttonGroup.add(testConnectionButton);
+        buttonGroup.add(createIndexesButton);
+        openSearchRow.add(buttonGroup);
+
         panel.add(openSearchRow, "gapleft 30, wrap");
 
         configureTextArea(openSearchStatus);
-
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
         statusWrapper.setVisible(false);
-
         panel.add(statusWrapper, "gapleft 30, growx, wrap");
 
         wireButtonActions();
-
         return panel;
     }
 
@@ -219,7 +221,7 @@ public class ConfigPanel extends JPanel {
                             sb.append(String.join("\n  ", created)).append("\n");
                         }
                         if (!exists.isEmpty()) {
-                            sb.append(exists.size() == 1 ? "Index already exists:\n  " : "Indexes already exist:\n  ");
+                            sb.append(exists.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ");
                             sb.append(String.join("\n  ", exists)).append("\n");
                         }
                         if (!failed.isEmpty()) {
