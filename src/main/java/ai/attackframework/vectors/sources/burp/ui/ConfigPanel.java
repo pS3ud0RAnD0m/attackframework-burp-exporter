@@ -97,39 +97,32 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow,fill]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[160!,left]10[]10[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6");
+        panel.add(header, "span 3, gapbottom 6, wrap");
 
-        String columns = "[110!,left]10[shrink,fill]10[left]";
+        panel.add(fileSinkCheckbox, "gapleft 30");
+        panel.add(filePathField, "grow 0");
+        panel.add(testWriteAccessButton, "wrap");
 
-        JPanel fileRow = new JPanel(new MigLayout("insets 0", columns, ""));
-        fileRow.add(fileSinkCheckbox);
-        fileRow.add(filePathField, "grow 0");
-        fileRow.add(testWriteAccessButton);
-        panel.add(fileRow, "gapleft 30, wrap");
+        panel.add(testWriteAccessStatus, "gapleft 30, span 3, wrap");
 
-        panel.add(testWriteAccessStatus, "gapleft 30, wrap");
-
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", columns, ""));
-        openSearchRow.add(openSearchSinkCheckbox);
-        openSearchRow.add(openSearchUrlField, "grow 0");
+        panel.add(openSearchSinkCheckbox, "gapleft 30");
+        panel.add(openSearchUrlField, "grow 0");
 
         JPanel buttonGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         buttonGroup.add(testConnectionButton);
         buttonGroup.add(createIndexesButton);
-        openSearchRow.add(buttonGroup);
-
-        panel.add(openSearchRow, "gapleft 30, wrap");
+        panel.add(buttonGroup, "wrap");
 
         configureTextArea(openSearchStatus);
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
         statusWrapper.setVisible(false);
-        panel.add(statusWrapper, "gapleft 30, growx, wrap");
+        panel.add(statusWrapper, "gapleft 30, span 3, growx, wrap");
 
         wireButtonActions();
         return panel;
