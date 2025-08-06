@@ -106,17 +106,14 @@ public class ConfigPanel extends JPanel {
 
         panel.add(fileSinkCheckbox, "gapleft 30");
         panel.add(filePathField, "grow 0");
-        panel.add(testWriteAccessButton, "wrap");
+        panel.add(testWriteAccessButton, "alignx left, wrap");
 
         panel.add(testWriteAccessStatus, "gapleft 30, span 3, wrap");
 
         panel.add(openSearchSinkCheckbox, "gapleft 30");
         panel.add(openSearchUrlField, "grow 0");
-
-        JPanel buttonGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        buttonGroup.add(testConnectionButton);
-        buttonGroup.add(createIndexesButton);
-        panel.add(buttonGroup, "wrap");
+        panel.add(testConnectionButton, "split 2, alignx left");
+        panel.add(createIndexesButton, "alignx left, wrap");
 
         configureTextArea(openSearchStatus);
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
