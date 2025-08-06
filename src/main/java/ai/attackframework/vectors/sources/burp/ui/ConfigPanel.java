@@ -28,7 +28,8 @@ public class ConfigPanel extends JPanel {
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
     private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json");
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
-    private final JLabel fileStatus = new JLabel("");
+    private final JTextArea fileStatus = new JTextArea();
+    private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
@@ -108,7 +109,11 @@ public class ConfigPanel extends JPanel {
         panel.add(filePathField, "grow 0");
         panel.add(testWriteAccessButton, "alignx left, wrap");
 
-        panel.add(fileStatus, "gapleft 30, span 3, wrap");
+        configureTextArea(fileStatus);
+        fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        fileStatusWrapper.add(fileStatus, "growx, pushx");
+        fileStatusWrapper.setVisible(false);
+        panel.add(fileStatusWrapper, "gapleft 30, span 3, growx, wrap, hidemode 3");
 
         panel.add(openSearchSinkCheckbox, "gapleft 30");
         panel.add(openSearchUrlField, "grow 0");
@@ -119,7 +124,7 @@ public class ConfigPanel extends JPanel {
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
         statusWrapper.setVisible(false);
-        panel.add(statusWrapper, "gapleft 30, span 3, growx, wrap");
+        panel.add(statusWrapper, "gapleft 30, span 3, growx, wrap, hidemode 3");
 
         wireButtonActions();
         return panel;
@@ -164,7 +169,19 @@ public class ConfigPanel extends JPanel {
         statusWrapper.setVisible(true);
     }
 
+    private void updateFileStatus(String message) {
+        int lines = message.split("\r\n|\r|\n").length;
+        fileStatus.setRows(Math.max(lines, 1));
+        fileStatus.setText(message);
+        fileStatusWrapper.setVisible(true);
+    }
+
     private void wireButtonActions() {
+        testWriteAccessButton.addActionListener(e -> {
+            String path = filePathField.getText().trim();
+            updateFileStatus("Testing write access to " + path + " ...");
+        });
+
         testConnectionButton.addActionListener(e -> {
             updateStatus("Testing  . . .");
 
