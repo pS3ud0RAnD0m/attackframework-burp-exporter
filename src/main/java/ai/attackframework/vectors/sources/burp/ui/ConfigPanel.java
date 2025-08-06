@@ -28,7 +28,7 @@ public class ConfigPanel extends JPanel {
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
     private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json");
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
-    private final JLabel testWriteAccessStatus = new JLabel("");
+    private final JLabel fileStatus = new JLabel("");
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
@@ -108,7 +108,7 @@ public class ConfigPanel extends JPanel {
         panel.add(filePathField, "grow 0");
         panel.add(testWriteAccessButton, "alignx left, wrap");
 
-        panel.add(testWriteAccessStatus, "gapleft 30, span 3, wrap");
+        panel.add(fileStatus, "gapleft 30, span 3, wrap");
 
         panel.add(openSearchSinkCheckbox, "gapleft 30");
         panel.add(openSearchUrlField, "grow 0");
@@ -134,10 +134,19 @@ public class ConfigPanel extends JPanel {
     }
 
     private JComponent thickSeparator() {
-        JPanel wrapper = new JPanel(new BorderLayout());
-        wrapper.setPreferredSize(new Dimension(1, 4));
-        wrapper.add(new JSeparator(), BorderLayout.CENTER);
-        return wrapper;
+        return new JSeparator() {
+            @Override
+            public Dimension getPreferredSize() {
+                return new Dimension(super.getPreferredSize().width, 4);
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                g.setColor(getForeground());
+                g.fillRect(0, 1, getWidth(), 2);
+            }
+        };
     }
 
     private void configureTextArea(JTextArea area) {
