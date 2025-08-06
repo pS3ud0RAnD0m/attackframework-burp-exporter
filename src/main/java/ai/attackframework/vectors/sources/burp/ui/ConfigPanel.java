@@ -43,13 +43,13 @@ public class ConfigPanel extends JPanel {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
         add(buildSourcesPanel(), "gaptop 5, gapbottom 5, wrap");
-        add(new JSeparator(), "growx, wrap");
+        add(thickSeparator(), "growx, wrap");
 
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
-        add(new JSeparator(), "growx, wrap");
+        add(thickSeparator(), "growx, wrap");
 
         add(buildSinksPanel(), "gaptop 10, gapbottom 5, growx, wrap");
-        add(new JSeparator(), "growx, wrap");
+        add(thickSeparator(), "growx, wrap");
 
         add(buildSavePanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
@@ -86,7 +86,7 @@ public class ConfigPanel extends JPanel {
 
         panel.add(burpSuiteRadio, "gapleft 30");
 
-        JPanel customRow = new JPanel(new MigLayout("insets 0", "[][]", ""));
+        JPanel customRow = new JPanel(new MigLayout("insets 0", "[]20[]", ""));
         customRow.add(customRadio);
         customRow.add(customScopeField);
         panel.add(customRow, "gapleft 30");
@@ -97,7 +97,7 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[160!,left]10[]10[left]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[]30[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -131,6 +131,13 @@ public class ConfigPanel extends JPanel {
         saveButton.addActionListener(new SaveButtonListener());
         panel.add(saveButton);
         return panel;
+    }
+
+    private JComponent thickSeparator() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setPreferredSize(new Dimension(1, 4));
+        wrapper.add(new JSeparator(), BorderLayout.CENTER);
+        return wrapper;
     }
 
     private void configureTextArea(JTextArea area) {
