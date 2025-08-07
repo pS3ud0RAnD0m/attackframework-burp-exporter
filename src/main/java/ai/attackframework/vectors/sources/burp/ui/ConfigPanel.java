@@ -36,7 +36,6 @@ public class ConfigPanel extends JPanel {
     private final JTextField openSearchUrlField = new JTextField("http://opensearch.acme.com:9200");
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
-
     private final JTextArea openSearchStatus = new JTextArea();
     private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5"));
 
@@ -98,33 +97,33 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[]30[left]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[]30[left]30[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "span 3, gapbottom 6, wrap");
+        panel.add(header, "span 4, gapbottom 6, wrap");
 
-        panel.add(fileSinkCheckbox, "gapleft 30");
-        panel.add(filePathField, "grow 0");
-        panel.add(testWriteAccessButton, "alignx left, wrap");
+        panel.add(fileSinkCheckbox, "gapleft 30, alignx left, top");
+        panel.add(filePathField, "alignx left, top, growx");
+        panel.add(testWriteAccessButton, "alignx left, top");
 
         configureTextArea(fileStatus);
         fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         fileStatusWrapper.add(fileStatus, "growx, pushx");
-        fileStatusWrapper.setVisible(false);
-        panel.add(fileStatusWrapper, "gapleft 30, span 3, growx, wrap, hidemode 3");
+        fileStatusWrapper.setVisible(true);
+        panel.add(fileStatusWrapper, "hidemode 3, alignx left, top, growx, pushx, wrap");
 
-        panel.add(openSearchSinkCheckbox, "gapleft 30");
-        panel.add(openSearchUrlField, "grow 0");
-        panel.add(testConnectionButton, "split 2, alignx left");
-        panel.add(createIndexesButton, "alignx left, wrap");
+        panel.add(openSearchSinkCheckbox, "gapleft 30, top");
+        panel.add(openSearchUrlField, "alignx left, top, growx");
+        panel.add(testConnectionButton, "split 2, alignx left, top");
+        panel.add(createIndexesButton, "alignx left, top");
 
         configureTextArea(openSearchStatus);
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
-        statusWrapper.setVisible(false);
-        panel.add(statusWrapper, "gapleft 30, span 3, growx, wrap, hidemode 3");
+        statusWrapper.setVisible(true);
+        panel.add(statusWrapper, "hidemode 3, alignx left, top, growx, pushx, wrap");
 
         wireButtonActions();
         return panel;
