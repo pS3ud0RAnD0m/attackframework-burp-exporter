@@ -18,6 +18,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     public LogPanel() {
         setLayout(new BorderLayout());
+        setPreferredSize(new Dimension(1200, 600));
 
         logTextPane = new JTextPane();
         logTextPane.setEditable(false);
@@ -35,7 +36,10 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         StyleConstants.setForeground(errorStyle, UIManager.getColor("TextPane.foreground"));
         StyleConstants.setBold(errorStyle, true);
 
-        JScrollPane scrollPane = new JScrollPane(logTextPane);
+        JScrollPane scrollPane = new JScrollPane(logTextPane,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+
         add(scrollPane, BorderLayout.CENTER);
 
         Logger.registerListener(this);

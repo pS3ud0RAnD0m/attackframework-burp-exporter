@@ -43,6 +43,7 @@ public class ConfigPanel extends JPanel {
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
+        setPreferredSize(new Dimension(1200, 600));
 
         add(buildSourcesPanel(), "gaptop 5, gapbottom 5, wrap");
         add(thickSeparator(), "growx, wrap");
@@ -227,7 +228,6 @@ public class ConfigPanel extends JPanel {
                 protected void done() {
                     try {
                         List<IndexResult> results = get();
-
                         List<String> created = new ArrayList<>();
                         List<String> exists = new ArrayList<>();
                         List<String> failed = new ArrayList<>();
