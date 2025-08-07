@@ -7,6 +7,8 @@ import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClient
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -26,14 +28,14 @@ public class ConfigPanel extends JPanel {
     private final JTextField customScopeField = new JTextField("^.*acme\\.com$");
 
     private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
-    private final JTextField filePathField = new JTextField("/path/to/acme.com-burp.json");
+    private final JTextField filePathField = new AutoSizingTextField("/path/to/acme.com-burp.json");
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JTextArea fileStatus = new JTextArea();
     private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
-    private final JTextField openSearchUrlField = new JTextField("http://opensearch.acme.com:9200");
+    private final JTextField openSearchUrlField = new AutoSizingTextField("http://opensearch.acme.com:9200");
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JTextArea openSearchStatus = new JTextArea();
@@ -97,7 +99,7 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[]30[left]30[left]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[left]30[left]30[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -105,17 +107,17 @@ public class ConfigPanel extends JPanel {
         panel.add(header, "span 4, gapbottom 6, wrap");
 
         panel.add(fileSinkCheckbox, "gapleft 30, alignx left, top");
-        panel.add(filePathField, "alignx left, top, growx");
+        panel.add(filePathField, "alignx left, top");
         panel.add(testWriteAccessButton, "alignx left, top");
 
         configureTextArea(fileStatus);
         fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         fileStatusWrapper.add(fileStatus, "growx, pushx");
         fileStatusWrapper.setVisible(true);
-        panel.add(fileStatusWrapper, "hidemode 3, alignx left, top, growx, pushx, wrap");
+        panel.add(fileStatusWrapper, "hidemode 0, alignx left, top, growx, pushx, wrap");
 
         panel.add(openSearchSinkCheckbox, "gapleft 30, top");
-        panel.add(openSearchUrlField, "alignx left, top, growx");
+        panel.add(openSearchUrlField, "alignx left, top");
         panel.add(testConnectionButton, "split 2, alignx left, top");
         panel.add(createIndexesButton, "alignx left, top");
 
@@ -123,7 +125,7 @@ public class ConfigPanel extends JPanel {
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
         statusWrapper.setVisible(true);
-        panel.add(statusWrapper, "hidemode 3, alignx left, top, growx, pushx, wrap");
+        panel.add(statusWrapper, "hidemode 0, alignx left, top, growx, pushx, wrap");
 
         wireButtonActions();
         return panel;
@@ -266,6 +268,15 @@ public class ConfigPanel extends JPanel {
                 }
             }.execute();
         });
+
+        // Attach auto-resize revalidation to both dynamic fields
+        DocumentListener relayout = new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
+            public void removeUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
+            public void changedUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
+        };
+        filePathField.getDocument().addDocumentListener(relayout);
+        openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
     private List<String> getSelectedSources() {
@@ -275,6 +286,20 @@ public class ConfigPanel extends JPanel {
         if (issuesCheckbox.isSelected()) selected.add("findings");
         if (trafficCheckbox.isSelected()) selected.add("traffic");
         return selected;
+    }
+
+    private static class AutoSizingTextField extends JTextField {
+        public AutoSizingTextField(String text) {
+            super(text);
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            FontMetrics fm = getFontMetrics(getFont());
+            int textWidth = fm.stringWidth(getText()) + 20;
+            int height = super.getPreferredSize().height;
+            return new Dimension(textWidth, height);
+        }
     }
 
     private class SaveButtonListener implements ActionListener {
