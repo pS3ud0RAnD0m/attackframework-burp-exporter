@@ -99,12 +99,7 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[left]30[left]30[left]"));
-        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[left, grow]30[left]30[left, grow]"));
-        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[left,grow 0]30[left]30[left, grow]"));
-        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[left,grow,shrink 0]30[left]30[left]"));
-        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[][pref!]30[left]30[left,grow]"));
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[][pref!]30[left]30[left,grow,fill]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]20[][pref!]20[left]20[left,grow,fill]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -166,7 +161,7 @@ public class ConfigPanel extends JPanel {
         area.setWrapStyleWord(true);
         area.setOpaque(false);
         area.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        area.setColumns(75);
+        area.setColumns(80);
     }
 
     private void updateStatus(String message) {
