@@ -1,6 +1,6 @@
 package ai.attackframework.vectors.sources.burp;
 
-import ai.attackframework.vectors.sources.burp.ui.AttackVectorsTab;
+import ai.attackframework.vectors.sources.burp.ui.ExporterTab;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 
 import burp.api.montoya.BurpExtension;
@@ -14,7 +14,7 @@ public class Exporter implements BurpExtension {
 
             Logger.initialize(api.logging());
 
-            api.userInterface().registerSuiteTab("Attack Framework", new AttackVectorsTab());
+            api.userInterface().registerSuiteTab("Attack Framework", new ExporterTab());
 
             Logger.logInfo("Initialized successfully.");
         } catch (Exception e) {

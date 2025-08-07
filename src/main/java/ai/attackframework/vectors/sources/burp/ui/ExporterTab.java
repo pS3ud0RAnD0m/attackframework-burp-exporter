@@ -3,9 +3,9 @@ package ai.attackframework.vectors.sources.burp.ui;
 import javax.swing.*;
 import java.awt.*;
 
-public class AttackVectorsTab extends JPanel {
+public class ExporterTab extends JPanel {
 
-    public AttackVectorsTab() {
+    public ExporterTab() {
         setLayout(new BorderLayout());
 
         JTabbedPane tabbedPane = new JTabbedPane();
