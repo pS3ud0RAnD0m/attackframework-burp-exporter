@@ -31,7 +31,7 @@ public class ConfigPanel extends JPanel {
     private final JTextField filePathField = new AutoSizingTextField("/path/to/acme.com-burp.json");
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JTextArea fileStatus = new JTextArea();
-    private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5"));
+    private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5", "[grow,fill]"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
@@ -39,7 +39,7 @@ public class ConfigPanel extends JPanel {
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JTextArea openSearchStatus = new JTextArea();
-    private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5"));
+    private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5", "[grow,fill]"));
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
@@ -99,7 +99,12 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[left]30[left]30[left]"));
+        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[left]30[left]30[left]"));
+        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]10[left, grow]30[left]30[left, grow]"));
+        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[left,grow 0]30[left]30[left, grow]"));
+        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[left,grow,shrink 0]30[left]30[left]"));
+        //JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[][pref!]30[left]30[left,grow]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]30[][pref!]30[left]30[left,grow,fill]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -114,7 +119,7 @@ public class ConfigPanel extends JPanel {
         fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         fileStatusWrapper.add(fileStatus, "growx, pushx");
         fileStatusWrapper.setVisible(true);
-        panel.add(fileStatusWrapper, "hidemode 0, alignx left, top, growx, pushx, wrap");
+        panel.add(fileStatusWrapper, "hidemode 0, growx, pushx, span 1, wrap");
 
         panel.add(openSearchSinkCheckbox, "gapleft 30, top");
         panel.add(openSearchUrlField, "alignx left, top");
@@ -125,7 +130,7 @@ public class ConfigPanel extends JPanel {
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
         statusWrapper.setVisible(true);
-        panel.add(statusWrapper, "hidemode 0, alignx left, top, growx, pushx, wrap");
+        panel.add(statusWrapper, "hidemode 0, growx, pushx, span 1, wrap");
 
         wireButtonActions();
         return panel;
@@ -161,6 +166,7 @@ public class ConfigPanel extends JPanel {
         area.setWrapStyleWord(true);
         area.setOpaque(false);
         area.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        area.setColumns(75);
     }
 
     private void updateStatus(String message) {
@@ -269,7 +275,6 @@ public class ConfigPanel extends JPanel {
             }.execute();
         });
 
-        // Attach auto-resize revalidation to both dynamic fields
         DocumentListener relayout = new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
             public void removeUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
