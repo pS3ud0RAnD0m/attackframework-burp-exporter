@@ -48,7 +48,7 @@ public class ConfigPanel extends JPanel {
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
         add(thickSeparator(), "growx, wrap");
 
-        add(buildSinksPanel(), "gaptop 10, gapbottom 5, growx, wrap");
+        add(buildSinksPanel(), "gaptop 10, gapbottom 5, wrap");
         add(thickSeparator(), "growx, wrap");
 
         add(buildSavePanel(), "growx, wrap");
