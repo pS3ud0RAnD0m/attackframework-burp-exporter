@@ -2,6 +2,7 @@ package ai.attackframework.vectors.sources.burp.ui;
 
 import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink;
 import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.vectors.sources.burp.utils.FilesUtil;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
 import net.miginfocom.swing.MigLayout;
@@ -27,11 +28,10 @@ public class ConfigPanel extends JPanel {
     private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
     private final JTextField customScopeField = new JTextField("^.*acme\\.com$");
 
-    private final JCheckBox fileSinkCheckbox = new JCheckBox("File", true);
-    private final JTextField filePathField = new AutoSizingTextField("/path/to/acme.com-burp.json");
-    private final JButton testWriteAccessButton = new JButton("Test Write Access");
+    private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
+    private final JTextField filePathField = new AutoSizingTextField("/path/to/directory");
+    private final JButton testWriteAccessButton = new JButton("Create Files");
     private final JTextArea fileStatus = new JTextArea();
-    // Size-to-content wrappers (no grow/fill)
     private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
@@ -40,7 +40,6 @@ public class ConfigPanel extends JPanel {
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JTextArea openSearchStatus = new JTextArea();
-    // Size-to-content wrapper (no grow/fill)
     private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     public ConfigPanel() {
@@ -109,7 +108,6 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6, wrap");
 
-        // ---------- File row ----------
         JPanel fileRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"
@@ -129,7 +127,6 @@ public class ConfigPanel extends JPanel {
 
         panel.add(fileRow, "growx, wrap");
 
-        // ---------- OpenSearch row ----------
         JPanel osRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"
@@ -190,14 +187,11 @@ public class ConfigPanel extends JPanel {
 
     private void updateStatus(String message) {
         openSearchStatus.setText(message);
-
         String[] lines = message.split("\r\n|\r|\n", -1);
         int rows = Math.max(lines.length, 1);
         int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
-
         openSearchStatus.setRows(rows);
         openSearchStatus.setColumns(cols);
-
         statusWrapper.setVisible(true);
         statusWrapper.revalidate();
         statusWrapper.repaint();
@@ -205,14 +199,11 @@ public class ConfigPanel extends JPanel {
 
     private void updateFileStatus(String message) {
         fileStatus.setText(message);
-
         String[] lines = message.split("\r\n|\r|\n", -1);
         int rows = Math.max(lines.length, 1);
         int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
-
         fileStatus.setRows(rows);
         fileStatus.setColumns(cols);
-
         fileStatusWrapper.setVisible(true);
         fileStatusWrapper.revalidate();
         fileStatusWrapper.repaint();
@@ -228,12 +219,43 @@ public class ConfigPanel extends JPanel {
 
     private void wireButtonActions() {
         testWriteAccessButton.addActionListener(e -> {
-            String path = filePathField.getText().trim();
-            updateFileStatus("Testing write access to " + path + " ...");
+            final String root = filePathField.getText().trim();
+            updateFileStatus("Creating files in " + root + " ...");
+
+            new SwingWorker<FilesUtil.CreateResult, Void>() {
+                @Override
+                protected FilesUtil.CreateResult doInBackground() {
+                    return FilesUtil.ensureFile(root, "test.json");
+                }
+
+                @Override
+                protected void done() {
+                    try {
+                        FilesUtil.CreateResult r = get();
+                        switch (r.status()) {
+                            case EXISTS -> {
+                                updateFileStatus("File already existed: " + r.path());
+                                Logger.logInfo("File already existed: " + r.path());
+                            }
+                            case CREATED -> {
+                                updateFileStatus("File created: " + r.path());
+                                Logger.logInfo("File created: " + r.path());
+                            }
+                            case FAILED -> {
+                                updateFileStatus("File creation failed: " + r.error());
+                                Logger.logError("File creation failed: " + r.error());
+                            }
+                        }
+                    } catch (Exception ex) {
+                        updateFileStatus("File creation failed: " + ex.getMessage());
+                        Logger.logError("File creation failed: " + ex.getMessage());
+                    }
+                }
+            }.execute();
         });
 
         testConnectionButton.addActionListener(e -> {
-            updateStatus("Testing  . . .");
+            updateStatus("Testing ...");
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
@@ -359,7 +381,7 @@ public class ConfigPanel extends JPanel {
                     : "Custom: " + customScopeField.getText();
 
             List<String> selectedSinks = new ArrayList<>();
-            if (fileSinkCheckbox.isSelected()) selectedSinks.add("File");
+            if (fileSinkCheckbox.isSelected()) selectedSinks.add("Files");
             if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
 
             String sinkLine = "  Data Sink(s): " + String.join(", ", selectedSinks);
