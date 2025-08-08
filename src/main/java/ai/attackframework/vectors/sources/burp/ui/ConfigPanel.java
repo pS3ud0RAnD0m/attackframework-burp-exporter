@@ -100,7 +100,7 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]20[][pref!]20[left]20[left,grow,fill]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]20[][pref]20[left]20[left,grow,fill]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -115,7 +115,7 @@ public class ConfigPanel extends JPanel {
         fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         fileStatusWrapper.add(fileStatus, "growx, pushx");
         fileStatusWrapper.setVisible(true);
-        panel.add(fileStatusWrapper, "hidemode 0, growx, pushx, span 1, wrap");
+        panel.add(fileStatusWrapper, "hidemode 3, growx, pushx, span 1, wrap");
 
         panel.add(openSearchSinkCheckbox, "gapleft 30, top");
         panel.add(openSearchUrlField, "alignx left, top");
@@ -126,7 +126,7 @@ public class ConfigPanel extends JPanel {
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.add(openSearchStatus, "growx, pushx");
         statusWrapper.setVisible(true);
-        panel.add(statusWrapper, "hidemode 0, growx, pushx, span 1, wrap");
+        panel.add(statusWrapper, "hidemode 3, growx, pushx, span 1, wrap");
 
         wireButtonActions();
         return panel;
@@ -158,11 +158,11 @@ public class ConfigPanel extends JPanel {
 
     private void configureTextArea(JTextArea area) {
         area.setEditable(false);
-        area.setLineWrap(true);
+        area.setLineWrap(false);
         area.setWrapStyleWord(true);
         area.setOpaque(false);
         area.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        area.setColumns(80);
+       area.setColumns(40);
     }
 
     private void updateStatus(String message) {
