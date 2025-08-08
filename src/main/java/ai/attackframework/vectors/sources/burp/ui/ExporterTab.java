@@ -1,7 +1,9 @@
 package ai.attackframework.vectors.sources.burp.ui;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
+import java.awt.BorderLayout;
 
 public class ExporterTab extends JPanel {
 

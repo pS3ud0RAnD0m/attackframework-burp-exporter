@@ -8,13 +8,32 @@ import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClient
 import ai.attackframework.vectors.sources.burp.utils.IndexNaming;
 import net.miginfocom.swing.MigLayout;
 
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.ButtonGroup;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.JSeparator;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingWorker;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import java.awt.*;
+
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+
 import java.nio.file.Path;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,6 +62,9 @@ public class ConfigPanel extends JPanel {
     private final JTextArea  openSearchStatus      = new JTextArea();
     private final JPanel     statusWrapper         = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
+    /**
+     * Creates a new ConfigPanel.
+     */
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
         setPreferredSize(new Dimension(1200, 600));

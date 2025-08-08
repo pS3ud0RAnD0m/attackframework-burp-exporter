@@ -2,9 +2,18 @@ package ai.attackframework.vectors.sources.burp.ui;
 
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 
-import javax.swing.*;
-import javax.swing.text.*;
-import java.awt.*;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.Font;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -16,6 +25,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private final Style errorStyle;
     private final DateTimeFormatter timestampFormat;
 
+    /**
+     * Creates a new LogPanel.
+     */
     public LogPanel() {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));

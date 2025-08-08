@@ -1,9 +1,17 @@
 package ai.attackframework.vectors.sources.burp.ui;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.Font;
 
 public class StatsPanel extends JPanel {
+
+    /**
+     * Creates a new StatsPanel.
+     */
     public StatsPanel() {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));
@@ -14,9 +22,11 @@ public class StatsPanel extends JPanel {
         statsArea.setWrapStyleWord(true);
         statsArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
 
-        JScrollPane scrollPane = new JScrollPane(statsArea,
+        JScrollPane scrollPane = new JScrollPane(
+                statsArea,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        );
 
         add(scrollPane, BorderLayout.CENTER);
     }
