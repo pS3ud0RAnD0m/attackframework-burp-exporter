@@ -37,7 +37,6 @@ public class ConfigPanel extends JPanel {
     private final JPanel     fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
-    @SuppressWarnings("HttpUrlsUsage")
     private final JTextField openSearchUrlField    = new AutoSizingTextField("http://opensearch.url:9200");
     private final JButton    testConnectionButton  = new JButton("Test Connection");
     private final JButton    createIndexesButton   = new JButton("Create Indexes");

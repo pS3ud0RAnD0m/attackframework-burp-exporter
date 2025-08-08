@@ -2,8 +2,8 @@ plugins {
     id("java")
 }
 
-group = "ai.attackframework.vectors.sources.burp"
-version = "0.0.1"
+group = project.property("group").toString()
+version = project.property("version").toString()
 
 java {
     toolchain {
@@ -34,8 +34,8 @@ tasks.test {
 }
 
 tasks.register<Jar>("fatJar") {
-    archiveBaseName.set("ai.attackframework.vectors.sources.burp")
-    archiveVersion.set("0.0.1")
+    archiveBaseName.set(project.property("archivesBaseName").toString())
+    archiveVersion.set(project.property("version").toString())
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     from(sourceSets.main.get().output)

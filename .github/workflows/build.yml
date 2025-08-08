@@ -27,15 +27,23 @@ jobs:
       - name: Build extension
         run: ./gradlew clean build
 
+      - name: Read Gradle properties
+        id: props
+        run: |
+          ARCHIVES_BASENAME=$(grep '^archivesBaseName=' gradle.properties | cut -d'=' -f2)
+          VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
+          echo "basename=$ARCHIVES_BASENAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Create or update GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.0.1
-          name: v0.0.1
+          tag: v${{ steps.props.outputs.version }}
+          name: v${{ steps.props.outputs.version }}
           allowUpdates: true
           replacesArtifacts: true
-          artifacts: build/libs/ai.attackframework.vectors.sources.burp-0.0.1.jar
+          artifacts: build/libs/${{ steps.props.outputs.basename }}-${{ steps.props.outputs.version }}.jar
           token: ${{ secrets.GH_PAT }}
           body: |
             Automated build from latest commit to main.
-            Always reflects the current state of the 0.0.1 dev version.
+            Always reflects the current state of the v${{ steps.props.outputs.version }} dev version.
