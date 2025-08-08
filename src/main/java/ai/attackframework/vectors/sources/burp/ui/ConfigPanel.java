@@ -2,9 +2,10 @@ package ai.attackframework.vectors.sources.burp.ui;
 
 import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink;
 import ai.attackframework.vectors.sources.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.vectors.sources.burp.utils.FilesUtil;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
+import ai.attackframework.vectors.sources.burp.utils.files.FilesUtil;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.vectors.sources.burp.utils.IndexNaming;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.*;
@@ -13,34 +14,35 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ConfigPanel extends JPanel {
 
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
-    private final JCheckBox sitemapCheckbox = new JCheckBox("Sitemap", true);
-    private final JCheckBox issuesCheckbox = new JCheckBox("Issues", true);
-    private final JCheckBox trafficCheckbox = new JCheckBox("Traffic", true);
+    private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
+    private final JCheckBox issuesCheckbox   = new JCheckBox("Issues",   true);
+    private final JCheckBox trafficCheckbox  = new JCheckBox("Traffic",  true);
 
-    private final JRadioButton allRadio = new JRadioButton("All");
+    private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
-    private final JRadioButton customRadio = new JRadioButton("Custom (RegEx)");
-    private final JTextField customScopeField = new JTextField("^.*acme\\.com$");
+    private final JRadioButton customRadio    = new JRadioButton("Custom (RegEx)");
+    private final JTextField   customScopeField = new JTextField("^.*acme\\.com$");
 
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
-    private final JTextField filePathField = new AutoSizingTextField("/path/to/directory");
-    private final JButton testWriteAccessButton = new JButton("Create Files");
-    private final JTextArea fileStatus = new JTextArea();
-    private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
+    private final JButton    createFilesButton = new JButton("Create Files");
+    private final JTextArea  fileStatus = new JTextArea();
+    private final JPanel     fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
-    private final JTextField openSearchUrlField = new AutoSizingTextField("http://opensearch.acme.com:9200");
-    private final JButton testConnectionButton = new JButton("Test Connection");
-    private final JButton createIndexesButton = new JButton("Create Indexes");
-    private final JTextArea openSearchStatus = new JTextArea();
-    private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private final JTextField openSearchUrlField    = new AutoSizingTextField("http://opensearch.acme.com:9200");
+    private final JButton    testConnectionButton  = new JButton("Test Connection");
+    private final JButton    createIndexesButton   = new JButton("Create Indexes");
+    private final JTextArea  openSearchStatus      = new JTextArea();
+    private final JPanel     statusWrapper         = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
@@ -68,9 +70,9 @@ public class ConfigPanel extends JPanel {
         panel.add(header, "gapbottom 6");
 
         panel.add(settingsCheckbox, "gapleft 30");
-        panel.add(sitemapCheckbox, "gapleft 30");
-        panel.add(issuesCheckbox, "gapleft 30");
-        panel.add(trafficCheckbox, "gapleft 30");
+        panel.add(sitemapCheckbox,  "gapleft 30");
+        panel.add(issuesCheckbox,   "gapleft 30");
+        panel.add(trafficCheckbox,  "gapleft 30");
 
         return panel;
     }
@@ -108,6 +110,7 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6, wrap");
 
+        // ---------- File row ----------
         JPanel fileRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"
@@ -115,8 +118,8 @@ public class ConfigPanel extends JPanel {
         fileRow.setAlignmentX(LEFT_ALIGNMENT);
 
         fileRow.add(fileSinkCheckbox, "gapleft 30, alignx left, top");
-        fileRow.add(filePathField, "alignx left, top");
-        fileRow.add(testWriteAccessButton, "alignx left, top");
+        fileRow.add(filePathField,    "alignx left, top");
+        fileRow.add(createFilesButton, "alignx left, top");
 
         configureTextArea(fileStatus);
         fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
@@ -127,6 +130,7 @@ public class ConfigPanel extends JPanel {
 
         panel.add(fileRow, "growx, wrap");
 
+        // ---------- OpenSearch row ----------
         JPanel osRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"
@@ -134,9 +138,9 @@ public class ConfigPanel extends JPanel {
         osRow.setAlignmentX(LEFT_ALIGNMENT);
 
         osRow.add(openSearchSinkCheckbox, "gapleft 30, top");
-        osRow.add(openSearchUrlField, "alignx left, top");
-        osRow.add(testConnectionButton, "split 2, alignx left, top");
-        osRow.add(createIndexesButton, "alignx left, top");
+        osRow.add(openSearchUrlField,     "alignx left, top");
+        osRow.add(testConnectionButton,   "split 2, alignx left, top");
+        osRow.add(createIndexesButton,    "alignx left, top");
 
         configureTextArea(openSearchStatus);
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
@@ -187,11 +191,14 @@ public class ConfigPanel extends JPanel {
 
     private void updateStatus(String message) {
         openSearchStatus.setText(message);
+
         String[] lines = message.split("\r\n|\r|\n", -1);
         int rows = Math.max(lines.length, 1);
         int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+
         openSearchStatus.setRows(rows);
         openSearchStatus.setColumns(cols);
+
         statusWrapper.setVisible(true);
         statusWrapper.revalidate();
         statusWrapper.repaint();
@@ -199,11 +206,14 @@ public class ConfigPanel extends JPanel {
 
     private void updateFileStatus(String message) {
         fileStatus.setText(message);
+
         String[] lines = message.split("\r\n|\r|\n", -1);
         int rows = Math.max(lines.length, 1);
         int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+
         fileStatus.setRows(rows);
         fileStatus.setColumns(cols);
+
         fileStatusWrapper.setVisible(true);
         fileStatusWrapper.revalidate();
         fileStatusWrapper.repaint();
@@ -218,40 +228,42 @@ public class ConfigPanel extends JPanel {
     }
 
     private void wireButtonActions() {
-        testWriteAccessButton.addActionListener(e -> {
-            final String root = filePathField.getText().trim();
+        createFilesButton.addActionListener(e -> {
+            String root = filePathField.getText().trim();
             updateFileStatus("Creating files in " + root + " ...");
 
-            new SwingWorker<FilesUtil.CreateResult, Void>() {
-                @Override
-                protected FilesUtil.CreateResult doInBackground() {
-                    return FilesUtil.ensureFile(root, "test.json");
-                }
+            List<String> baseNames = IndexNaming.computeIndexBaseNames(getSelectedSources());
+            List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
 
-                @Override
-                protected void done() {
-                    try {
-                        FilesUtil.CreateResult r = get();
-                        switch (r.status()) {
-                            case EXISTS -> {
-                                updateFileStatus("File already existed: " + r.path());
-                                Logger.logInfo("File already existed: " + r.path());
-                            }
-                            case CREATED -> {
-                                updateFileStatus("File created: " + r.path());
-                                Logger.logInfo("File created: " + r.path());
-                            }
-                            case FAILED -> {
-                                updateFileStatus("File creation failed: " + r.error());
-                                Logger.logError("File creation failed: " + r.error());
-                            }
-                        }
-                    } catch (Exception ex) {
-                        updateFileStatus("File creation failed: " + ex.getMessage());
-                        Logger.logError("File creation failed: " + ex.getMessage());
-                    }
+            List<FilesUtil.CreateResult> results = FilesUtil.ensureJsonFiles(Path.of(root), jsonNames);
+
+            List<String> created = new ArrayList<>();
+            List<String> exists  = new ArrayList<>();
+            List<String> failed  = new ArrayList<>();
+
+            for (FilesUtil.CreateResult r : results) {
+                switch (r.status()) {
+                    case CREATED -> created.add(r.path().toString());
+                    case EXISTS  -> exists.add(r.path().toString());
+                    case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
                 }
-            }.execute();
+            }
+
+            StringBuilder sb = new StringBuilder();
+            if (!created.isEmpty()) {
+                sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
+                        .append(String.join("\n  ", created)).append("\n");
+            }
+            if (!exists.isEmpty()) {
+                sb.append(exists.size() == 1 ? "File already existed:\n  " : "Files already existed:\n  ")
+                        .append(String.join("\n  ", exists)).append("\n");
+            }
+            if (!failed.isEmpty()) {
+                sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
+                        .append(String.join("\n  ", failed)).append("\n");
+            }
+
+            updateFileStatus(sb.toString().trim());
         });
 
         testConnectionButton.addActionListener(e -> {
@@ -299,31 +311,32 @@ public class ConfigPanel extends JPanel {
                         List<IndexResult> results = get();
 
                         List<String> created = new ArrayList<>();
-                        List<String> exists = new ArrayList<>();
-                        List<String> failed = new ArrayList<>();
+                        List<String> exists  = new ArrayList<>();
+                        List<String> failed  = new ArrayList<>();
 
                         for (IndexResult r : results) {
                             switch (r.status()) {
                                 case CREATED -> created.add(r.fullName());
-                                case EXISTS -> exists.add(r.fullName());
-                                case FAILED -> failed.add(r.fullName());
+                                case EXISTS  -> exists.add(r.fullName());
+                                case FAILED  -> failed.add(r.fullName());
                             }
                         }
 
-                        boolean allExist = !results.isEmpty() && results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
+                        boolean allExist = !results.isEmpty() &&
+                                results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
 
                         StringBuilder sb = new StringBuilder();
                         if (!created.isEmpty()) {
-                            sb.append(created.size() == 1 ? "Index created:\n  " : "Indexes created:\n  ");
-                            sb.append(String.join("\n  ", created)).append("\n");
+                            sb.append(created.size() == 1 ? "Index created:\n  " : "Indexes created:\n  ")
+                                    .append(String.join("\n  ", created)).append("\n");
                         }
                         if (!exists.isEmpty()) {
-                            sb.append(exists.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ");
-                            sb.append(String.join("\n  ", exists)).append("\n");
+                            sb.append(exists.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ")
+                                    .append(String.join("\n  ", exists)).append("\n");
                         }
                         if (!failed.isEmpty()) {
-                            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ");
-                            sb.append(String.join("\n  ", failed)).append("\n");
+                            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ")
+                                    .append(String.join("\n  ", failed)).append("\n");
                         }
 
                         if (allExist) {
@@ -352,9 +365,9 @@ public class ConfigPanel extends JPanel {
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add("settings");
-        if (sitemapCheckbox.isSelected()) selected.add("sitemap");
-        if (issuesCheckbox.isSelected()) selected.add("findings");
-        if (trafficCheckbox.isSelected()) selected.add("traffic");
+        if (sitemapCheckbox.isSelected())  selected.add("sitemap");
+        if (issuesCheckbox.isSelected())   selected.add("findings");
+        if (trafficCheckbox.isSelected())  selected.add("traffic");
         return selected;
     }
 
@@ -381,7 +394,7 @@ public class ConfigPanel extends JPanel {
                     : "Custom: " + customScopeField.getText();
 
             List<String> selectedSinks = new ArrayList<>();
-            if (fileSinkCheckbox.isSelected()) selectedSinks.add("Files");
+            if (fileSinkCheckbox.isSelected())       selectedSinks.add("Files");
             if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
 
             String sinkLine = "  Data Sink(s): " + String.join(", ", selectedSinks);

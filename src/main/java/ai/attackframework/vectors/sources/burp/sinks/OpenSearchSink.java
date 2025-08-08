@@ -1,5 +1,6 @@
 package ai.attackframework.vectors.sources.burp.sinks;
 
+import ai.attackframework.vectors.sources.burp.utils.IndexNaming;
 import ai.attackframework.vectors.sources.burp.utils.Logger;
 import ai.attackframework.vectors.sources.burp.utils.opensearch.OpenSearchConnector;
 import jakarta.json.Json;
@@ -20,6 +21,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Scanner;
 
@@ -29,8 +31,8 @@ public class OpenSearchSink {
 
     public static IndexResult createIndexFromResource(String baseUrl, String shortName) {
         String fullIndexName = shortName.equals("tool")
-                ? "attackframework-tool-burp"
-                : "attackframework-tool-burp-" + shortName;
+                ? IndexNaming.INDEX_PREFIX
+                : IndexNaming.INDEX_PREFIX + "-" + shortName;
 
         String mappingFile = MAPPINGS_PATH + shortName + ".json";
 
@@ -53,7 +55,6 @@ public class OpenSearchSink {
                     Logger.logError("Mapping file not found: " + mappingFile);
                     return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
                 }
-                Logger.logInfo("Found mapping file for: " + shortName);
                 jsonBody = new Scanner(is, StandardCharsets.UTF_8).useDelimiter("\\A").next();
             }
 
@@ -68,7 +69,7 @@ public class OpenSearchSink {
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
             }
 
-            @SuppressWarnings("resource")
+            @SuppressWarnings("resource") // client owns transport, do not close here
             Transport transport = client._transport();
             JsonpMapper mapper = transport.jsonpMapper();
 
@@ -84,7 +85,6 @@ public class OpenSearchSink {
                     .mappings(mappings)
                     .build();
 
-            Logger.logInfo("Sending CreateIndex request for: " + fullIndexName);
             CreateIndexResponse response = client.indices().create(request);
             Logger.logInfo("Index creation acknowledged: " + response.acknowledged());
 
@@ -93,9 +93,7 @@ public class OpenSearchSink {
 
         } catch (Exception e) {
             Logger.logError("Exception while creating index: " + fullIndexName);
-            if (jsonBody != null) {
-                Logger.logError("Mapping JSON:\n" + jsonBody);
-            }
+            if (jsonBody != null) Logger.logError("Mapping JSON:\n" + jsonBody);
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             Logger.logError(sw.toString());
@@ -105,17 +103,25 @@ public class OpenSearchSink {
 
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
         Logger.logInfo("Entered createSelectedIndexes with sources: " + selectedSources);
-        List<String> sources = new ArrayList<>(selectedSources);
-        List<IndexResult> results = new ArrayList<>();
-        if (!sources.contains("tool")) sources.add("tool");
 
-        for (String shortName : sources) {
+        // Derive short names from the shared naming logic and always include "tool".
+        List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
+        LinkedHashSet<String> shortNames = new LinkedHashSet<>();
+        for (String base : baseNames) {
+            if (base.equals(IndexNaming.INDEX_PREFIX)) {
+                shortNames.add("tool");
+            } else if (base.startsWith(IndexNaming.INDEX_PREFIX + "-")) {
+                shortNames.add(base.substring(IndexNaming.INDEX_PREFIX.length() + 1));
+            }
+        }
+
+        List<IndexResult> results = new ArrayList<>();
+        for (String shortName : shortNames) {
             Logger.logInfo("Creating index for: " + shortName);
             IndexResult result = createIndexFromResource(baseUrl, shortName);
             Logger.logInfo("Result for " + shortName + ": " + result.status());
             results.add(result);
         }
-
         return results;
     }
 
