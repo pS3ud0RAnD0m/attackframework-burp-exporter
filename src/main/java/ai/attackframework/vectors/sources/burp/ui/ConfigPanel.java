@@ -109,7 +109,6 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6, wrap");
 
-        // ---------- File row ----------
         JPanel fileRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"
@@ -129,7 +128,6 @@ public class ConfigPanel extends JPanel {
 
         panel.add(fileRow, "growx, wrap");
 
-        // ---------- OpenSearch row ----------
         JPanel osRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"

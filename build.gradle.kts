@@ -36,16 +36,26 @@ tasks.test {
 tasks.register<Jar>("fatJar") {
     archiveBaseName.set(project.property("archivesBaseName").toString())
     archiveVersion.set(project.property("version").toString())
+
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     from(sourceSets.main.get().output)
 
     dependsOn(configurations.runtimeClasspath)
     from({
-        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+        configurations.runtimeClasspath.get()
+            .filter { it.name.endsWith("jar") }
+            .map { zipTree(it) }
     })
 }
 
+tasks.named<Jar>("jar") {
+    enabled = false
+}
+
+tasks.assemble {
+    dependsOn("fatJar")
+}
 tasks.build {
     dependsOn("fatJar")
 }
