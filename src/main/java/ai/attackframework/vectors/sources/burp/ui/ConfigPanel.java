@@ -31,7 +31,8 @@ public class ConfigPanel extends JPanel {
     private final JTextField filePathField = new AutoSizingTextField("/path/to/acme.com-burp.json");
     private final JButton testWriteAccessButton = new JButton("Test Write Access");
     private final JTextArea fileStatus = new JTextArea();
-    private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5", "[grow,fill]"));
+    // Size-to-content wrappers (no grow/fill)
+    private final JPanel fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
@@ -39,7 +40,8 @@ public class ConfigPanel extends JPanel {
     private final JButton testConnectionButton = new JButton("Test Connection");
     private final JButton createIndexesButton = new JButton("Create Indexes");
     private final JTextArea openSearchStatus = new JTextArea();
-    private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5", "[grow,fill]"));
+    // Size-to-content wrapper (no grow/fill)
+    private final JPanel statusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
@@ -100,33 +102,53 @@ public class ConfigPanel extends JPanel {
     }
 
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[150!,left]20[][pref]20[left]20[left,grow,fill]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "span 4, gapbottom 6, wrap");
+        panel.add(header, "gapbottom 6, wrap");
 
-        panel.add(fileSinkCheckbox, "gapleft 30, alignx left, top");
-        panel.add(filePathField, "alignx left, top");
-        panel.add(testWriteAccessButton, "alignx left, top");
+        // ---------- File row ----------
+        JPanel fileRow = new JPanel(new MigLayout(
+                "insets 0",
+                "[150!, left]20[pref]20[left]20[left, grow]"
+        ));
+        fileRow.setAlignmentX(LEFT_ALIGNMENT);
+
+        fileRow.add(fileSinkCheckbox, "gapleft 30, alignx left, top");
+        fileRow.add(filePathField, "alignx left, top");
+        fileRow.add(testWriteAccessButton, "alignx left, top");
 
         configureTextArea(fileStatus);
         fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        fileStatusWrapper.add(fileStatus, "growx, pushx");
-        fileStatusWrapper.setVisible(true);
-        panel.add(fileStatusWrapper, "hidemode 3, growx, pushx, span 1, wrap");
+        fileStatusWrapper.removeAll();
+        fileStatusWrapper.add(fileStatus, "w pref!");
+        fileStatusWrapper.setVisible(false);
+        fileRow.add(fileStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
-        panel.add(openSearchSinkCheckbox, "gapleft 30, top");
-        panel.add(openSearchUrlField, "alignx left, top");
-        panel.add(testConnectionButton, "split 2, alignx left, top");
-        panel.add(createIndexesButton, "alignx left, top");
+        panel.add(fileRow, "growx, wrap");
+
+        // ---------- OpenSearch row ----------
+        JPanel osRow = new JPanel(new MigLayout(
+                "insets 0",
+                "[150!, left]20[pref]20[left]20[left, grow]"
+        ));
+        osRow.setAlignmentX(LEFT_ALIGNMENT);
+
+        osRow.add(openSearchSinkCheckbox, "gapleft 30, top");
+        osRow.add(openSearchUrlField, "alignx left, top");
+        osRow.add(testConnectionButton, "split 2, alignx left, top");
+        osRow.add(createIndexesButton, "alignx left, top");
 
         configureTextArea(openSearchStatus);
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        statusWrapper.add(openSearchStatus, "growx, pushx");
-        statusWrapper.setVisible(true);
-        panel.add(statusWrapper, "hidemode 3, growx, pushx, span 1, wrap");
+        statusWrapper.removeAll();
+        statusWrapper.add(openSearchStatus, "w pref!");
+        statusWrapper.setVisible(false);
+        osRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
+
+        panel.add(osRow, "growx, wrap");
 
         wireButtonActions();
         return panel;
@@ -162,21 +184,46 @@ public class ConfigPanel extends JPanel {
         area.setWrapStyleWord(true);
         area.setOpaque(false);
         area.setFont(new Font("Monospaced", Font.PLAIN, 12));
-       area.setColumns(40);
+        area.setRows(1);
+        area.setColumns(1);
     }
 
     private void updateStatus(String message) {
-        int lines = message.split("\r\n|\r|\n").length;
-        openSearchStatus.setRows(Math.max(lines, 1));
         openSearchStatus.setText(message);
+
+        String[] lines = message.split("\r\n|\r|\n", -1);
+        int rows = Math.max(lines.length, 1);
+        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+
+        openSearchStatus.setRows(rows);
+        openSearchStatus.setColumns(cols);
+
         statusWrapper.setVisible(true);
+        statusWrapper.revalidate();
+        statusWrapper.repaint();
     }
 
     private void updateFileStatus(String message) {
-        int lines = message.split("\r\n|\r|\n").length;
-        fileStatus.setRows(Math.max(lines, 1));
         fileStatus.setText(message);
+
+        String[] lines = message.split("\r\n|\r|\n", -1);
+        int rows = Math.max(lines.length, 1);
+        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+
+        fileStatus.setRows(rows);
+        fileStatus.setColumns(cols);
+
         fileStatusWrapper.setVisible(true);
+        fileStatusWrapper.revalidate();
+        fileStatusWrapper.repaint();
+    }
+
+    private static int maxLineLength(String[] lines) {
+        int max = 1;
+        for (String s : lines) {
+            if (s != null && s.length() > max) max = s.length();
+        }
+        return max;
     }
 
     private void wireButtonActions() {
@@ -228,6 +275,7 @@ public class ConfigPanel extends JPanel {
                 protected void done() {
                     try {
                         List<IndexResult> results = get();
+
                         List<String> created = new ArrayList<>();
                         List<String> exists = new ArrayList<>();
                         List<String> failed = new ArrayList<>();
