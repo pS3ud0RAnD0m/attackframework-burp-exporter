@@ -38,7 +38,7 @@ public class ConfigPanel extends JPanel {
 
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     @SuppressWarnings("HttpUrlsUsage")
-    private final JTextField openSearchUrlField    = new AutoSizingTextField("http://opensearch.acme.com:9200");
+    private final JTextField openSearchUrlField    = new AutoSizingTextField("http://opensearch.url:9200");
     private final JButton    testConnectionButton  = new JButton("Test Connection");
     private final JButton    createIndexesButton   = new JButton("Create Indexes");
     private final JTextArea  openSearchStatus      = new JTextArea();
