@@ -1,3 +1,7 @@
+import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
+import org.gradle.api.tasks.testing.TestResult
+
 plugins {
     id("java")
     id("jacoco")
@@ -27,7 +31,6 @@ dependencies {
 
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-
     testRuntimeOnly("org.slf4j:slf4j-simple:2.0.13")
 
     implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
@@ -38,6 +41,10 @@ dependencies {
     implementation("org.opensearch.client:opensearch-java:3.1.0")
 }
 
+// Toggle with: gradlew test -PverboseTests=true
+val verboseTests: Boolean =
+    (project.findProperty("verboseTests")?.toString()?.toBooleanStrictOrNull()) ?: false
+
 tasks.test {
     useJUnitPlatform {
         if (project.hasProperty("excludeIntegration")) {
@@ -46,14 +53,35 @@ tasks.test {
     }
 
     systemProperty("java.awt.headless", "true")
+    systemProperty("org.slf4j.simpleLogger.defaultLogLevel", if (verboseTests) "info" else "warn")
 
     testLogging {
         events("passed", "skipped", "failed")
-        showStandardStreams = true
+        showStandardStreams = verboseTests
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 
-    systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "info")
+    if (verboseTests) {
+        val green = "\u001B[32m"
+        val red = "\u001B[31m"
+        val yellow = "\u001B[33m"
+        val reset = "\u001B[0m"
+
+        addTestListener(object : TestListener {
+            override fun beforeTest(descriptor: TestDescriptor) {}
+            override fun beforeSuite(suite: TestDescriptor) {}
+            override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+
+            override fun afterTest(descriptor: TestDescriptor, result: TestResult) {
+                val status = when (result.resultType) {
+                    TestResult.ResultType.SUCCESS -> "${green}PASSED${reset}"
+                    TestResult.ResultType.FAILURE -> "${red}FAILED${reset}"
+                    TestResult.ResultType.SKIPPED -> "${yellow}SKIPPED${reset}"
+                }
+                println("${descriptor.className} > ${descriptor.displayName} $status")
+            }
+        })
+    }
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {
@@ -68,7 +96,6 @@ tasks.named<JacocoReport>("jacocoTestReport") {
 tasks.register<Jar>("fatJar") {
     archiveBaseName.set(project.property("archivesBaseName").toString())
     archiveVersion.set(project.property("version").toString())
-
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     from(sourceSets.main.get().output)
@@ -88,6 +115,7 @@ tasks.named<Jar>("jar") {
 tasks.assemble {
     dependsOn("fatJar")
 }
+
 tasks.build {
     dependsOn("fatJar")
 }
