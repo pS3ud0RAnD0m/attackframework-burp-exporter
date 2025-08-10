@@ -11,7 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Contract tests for the OpenSearch index mapping resources.
- * Ensures that required JSON files are present, parseable, and contain the expected keys.
+ * Ensures required JSON files are present, parseable, and contain the structure
+ * that OpenSearchSink.createIndexFromResource() expects: both "settings" and "mappings"
+ * (with non-empty "mappings.properties").
  */
 class MappingsContractTest {
 
@@ -39,11 +41,18 @@ class MappingsContractTest {
 
                 JsonNode root = mapper.readTree(in);
 
-                // Required structure: {"mappings": {"properties": {...}}}
+                // Required by OpenSearchSink: presence of both keys
+                assertThat(root.has("settings"))
+                        .withFailMessage("Missing 'settings' in %s", file)
+                        .isTrue();
+                JsonNode settings = root.get("settings");
+                assertThat(settings != null && settings.isObject())
+                        .withFailMessage("'settings' must be a JSON object (can be empty) in %s", file)
+                        .isTrue();
+
                 assertThat(root.has("mappings"))
                         .withFailMessage("Missing 'mappings' in %s", file)
                         .isTrue();
-
                 JsonNode mappings = root.get("mappings");
                 assertThat(mappings.isObject())
                         .withFailMessage("'mappings' must be a JSON object in %s", file)
@@ -52,13 +61,10 @@ class MappingsContractTest {
                 assertThat(mappings.has("properties"))
                         .withFailMessage("Missing 'mappings.properties' in %s", file)
                         .isTrue();
-
                 JsonNode properties = mappings.get("properties");
                 assertThat(properties.isObject())
                         .withFailMessage("'mappings.properties' must be a JSON object in %s", file)
                         .isTrue();
-
-                // Optional sanity: ensure at least one property is defined.
                 assertThat(properties.size())
                         .withFailMessage("'mappings.properties' is empty in %s", file)
                         .isGreaterThan(0);

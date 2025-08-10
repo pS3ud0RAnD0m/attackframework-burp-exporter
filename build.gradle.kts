@@ -1,5 +1,6 @@
 plugins {
     id("java")
+    id("jacoco")
 }
 
 group = project.property("group").toString()
@@ -24,11 +25,9 @@ dependencies {
     testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
     testImplementation("org.assertj:assertj-core:3.26.3")
 
-    // JUnit engine + launcher to be explicit/future-proof
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    // Show useful client logs during tests
     testRuntimeOnly("org.slf4j:slf4j-simple:2.0.13")
 
     implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
@@ -40,21 +39,30 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        if (project.hasProperty("excludeIntegration")) {
+            excludeTags("integration")
+        }
+    }
+
     systemProperty("java.awt.headless", "true")
 
-    // Log output from tests and client
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 
-    // slf4j-simple configuration (adjust as needed: trace|debug|info|warn|error)
     systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "info")
-    // Example: quiet down verbose categories
-    // systemProperty("org.slf4j.simpleLogger.log.org.apache.hc.client5", "warn")
-    // systemProperty("org.slf4j.simpleLogger.log.org.opensearch.client", "info")
+}
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(false)
+        csv.required.set(false)
+        html.required.set(true)
+    }
 }
 
 tasks.register<Jar>("fatJar") {
