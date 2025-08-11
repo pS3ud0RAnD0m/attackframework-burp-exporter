@@ -8,12 +8,14 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import net.miginfocom.swing.MigLayout;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
+import javax.swing.KeyStroke;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
@@ -23,6 +25,7 @@ import javax.swing.JTextField;
 import javax.swing.SwingWorker;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.undo.UndoManager;
 
 import java.awt.Color;
 import java.awt.Dimension;
@@ -31,6 +34,7 @@ import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 
 import java.nio.file.Path;
 
@@ -84,6 +88,9 @@ public class ConfigPanel extends JPanel {
 
         add(buildSavePanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
+
+        // Text-input UX: install undo/redo and Enter-to-action bindings.
+        wireTextFieldEnhancements();
     }
 
     /** Sources section. */
@@ -462,5 +469,55 @@ public class ConfigPanel extends JPanel {
             Logger.logInfo("  Scope: " + scope);
             Logger.logInfo(sinkLine);
         }
+    }
+
+    /**
+     * Installs text-field UX:
+     *  - Undo/Redo: bind both Ctrl and Meta variants (plus Shift+Z redo), headless-safe.
+     *  - Enter on filePathField -> clicks Create Files
+     *  - Enter on openSearchUrlField -> clicks Test Connection
+     * Keeps changes local to each field (no global default button).
+     */
+    private void wireTextFieldEnhancements() {
+        installUndoRedo(filePathField);
+        installUndoRedo(openSearchUrlField);
+        installUndoRedo(customScopeField);
+
+        filePathField.addActionListener(e -> createFilesButton.doClick());
+        openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
+    }
+
+    /** Adds robust, headless-safe undo/redo to a text field using key bindings + UndoManager. */
+    private static void installUndoRedo(JTextField field) {
+        UndoManager undo = new UndoManager();
+        undo.setLimit(200); // practical cap to avoid unbounded memory growth
+        field.getDocument().addUndoableEditListener(undo);
+
+        // Bind BOTH Control and Meta so it works across platforms without Toolkit or OS checks.
+        // Undo
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK), "undo");
+
+        // Redo (Ctrl/Meta+Y and Ctrl/Meta+Shift+Z)
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.META_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
+
+        field.getActionMap().put("undo", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (undo.canUndo()) undo.undo();
+            }
+        });
+        field.getActionMap().put("redo", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (undo.canRedo()) undo.redo();
+            }
+        });
+    }
+
+    /** Small helper to keep key-binding setup tidy. */
+    private static void bind(JTextField field, KeyStroke ks, String actionKey) {
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
     }
 }
