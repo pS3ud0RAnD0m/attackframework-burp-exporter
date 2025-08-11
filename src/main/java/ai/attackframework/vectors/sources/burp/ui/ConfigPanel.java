@@ -37,6 +37,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * UI for selecting sources/scope, configuring sinks, running small actions,
+ * and logging/surfacing status. Comments are concise and focus on intent/design.
+ */
 public class ConfigPanel extends JPanel {
 
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
@@ -82,6 +86,7 @@ public class ConfigPanel extends JPanel {
         add(Box.createVerticalGlue(), "growy, wrap");
     }
 
+    /** Sources section. */
     private JPanel buildSourcesPanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -98,6 +103,7 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
+    /** Scope selection (Burp scope, Custom regex, or All). */
     private JPanel buildScopePanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -123,6 +129,7 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
+    /** Sinks section (Files, OpenSearch) and status areas. */
     private JPanel buildSinksPanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -174,6 +181,7 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
+    /** Save section. */
     private JPanel buildSavePanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0", "[]"));
         JButton saveButton = new JButton("Save");
@@ -182,6 +190,7 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
+    /** 4px horizontal separator for section delineation. */
     private JComponent thickSeparator() {
         return new JSeparator() {
             @Override
@@ -198,6 +207,7 @@ public class ConfigPanel extends JPanel {
         };
     }
 
+    /** Monospace, non-wrapping status areas for predictable layout. */
     private void configureTextArea(JTextArea area) {
         area.setEditable(false);
         area.setLineWrap(false);
@@ -208,6 +218,7 @@ public class ConfigPanel extends JPanel {
         area.setColumns(1);
     }
 
+    /** Update OpenSearch status text and size to content. */
     private void updateStatus(String message) {
         openSearchStatus.setText(message);
 
@@ -223,6 +234,7 @@ public class ConfigPanel extends JPanel {
         statusWrapper.repaint();
     }
 
+    /** Update Files status text and size to content. */
     private void updateFileStatus(String message) {
         fileStatus.setText(message);
 
@@ -238,6 +250,7 @@ public class ConfigPanel extends JPanel {
         fileStatusWrapper.repaint();
     }
 
+    /** Longest line length (used to size status textareas). */
     private static int maxLineLength(String[] lines) {
         int max = 1;
         for (String s : lines) {
@@ -246,43 +259,62 @@ public class ConfigPanel extends JPanel {
         return max;
     }
 
+    /**
+     * Wire button actions.
+     * Note: Files action runs on a SwingWorker so the "Creating files..." message paints immediately.
+     */
     private void wireButtonActions() {
         createFilesButton.addActionListener(e -> {
             String root = filePathField.getText().trim();
             updateFileStatus("Creating files in " + root + " ...");
 
-            List<String> baseNames = IndexNaming.computeIndexBaseNames(getSelectedSources());
-            List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
-
-            List<FilesUtil.CreateResult> results = FilesUtil.ensureJsonFiles(Path.of(root), jsonNames);
-
-            List<String> created = new ArrayList<>();
-            List<String> exists  = new ArrayList<>();
-            List<String> failed  = new ArrayList<>();
-
-            for (FilesUtil.CreateResult r : results) {
-                switch (r.status()) {
-                    case CREATED -> created.add(r.path().toString());
-                    case EXISTS  -> exists.add(r.path().toString());
-                    case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
+            // Run file creation off the EDT so the initial status is visible and UI stays responsive.
+            new SwingWorker<List<FilesUtil.CreateResult>, Void>() {
+                @Override
+                protected List<FilesUtil.CreateResult> doInBackground() {
+                    List<String> baseNames = IndexNaming.computeIndexBaseNames(getSelectedSources());
+                    List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
+                    return FilesUtil.ensureJsonFiles(Path.of(root), jsonNames);
                 }
-            }
 
-            StringBuilder sb = new StringBuilder();
-            if (!created.isEmpty()) {
-                sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
-                        .append(String.join("\n  ", created)).append("\n");
-            }
-            if (!exists.isEmpty()) {
-                sb.append(exists.size() == 1 ? "File already existed:\n  " : "Files already existed:\n  ")
-                        .append(String.join("\n  ", exists)).append("\n");
-            }
-            if (!failed.isEmpty()) {
-                sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
-                        .append(String.join("\n  ", failed)).append("\n");
-            }
+                @Override
+                protected void done() {
+                    try {
+                        List<FilesUtil.CreateResult> results = get();
 
-            updateFileStatus(sb.toString().trim());
+                        List<String> created = new ArrayList<>();
+                        List<String> exists  = new ArrayList<>();
+                        List<String> failed  = new ArrayList<>();
+
+                        for (FilesUtil.CreateResult r : results) {
+                            switch (r.status()) {
+                                case CREATED -> created.add(r.path().toString());
+                                case EXISTS  -> exists.add(r.path().toString());
+                                case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
+                            }
+                        }
+
+                        StringBuilder sb = new StringBuilder();
+                        if (!created.isEmpty()) {
+                            sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
+                                    .append(String.join("\n  ", created)).append("\n");
+                        }
+                        if (!exists.isEmpty()) {
+                            sb.append(exists.size() == 1 ? "File already existed:\n  " : "Files already existed:\n  ")
+                                    .append(String.join("\n  ", exists)).append("\n");
+                        }
+                        if (!failed.isEmpty()) {
+                            sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
+                                    .append(String.join("\n  ", failed)).append("\n");
+                        }
+
+                        updateFileStatus(sb.toString().trim());
+                    } catch (Exception ex) {
+                        updateFileStatus("File creation error: " + ex.getMessage());
+                        Logger.logError("File creation error: " + ex.getMessage());
+                    }
+                }
+            }.execute();
         });
 
         testConnectionButton.addActionListener(e -> {
@@ -372,6 +404,7 @@ public class ConfigPanel extends JPanel {
             }.execute();
         });
 
+        // Keep text fields sizing to content as user types.
         DocumentListener relayout = new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
             public void removeUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
@@ -381,6 +414,7 @@ public class ConfigPanel extends JPanel {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
+    /** Selected short names used to compute index basenames. */
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add("settings");
@@ -390,6 +424,7 @@ public class ConfigPanel extends JPanel {
         return selected;
     }
 
+    /** Text field that computes preferred width from its content. */
     private static class AutoSizingTextField extends JTextField {
         public AutoSizingTextField(String text) {
             super(text);
@@ -404,6 +439,7 @@ public class ConfigPanel extends JPanel {
         }
     }
 
+    /** Save logs selected sources, scope, and sinks (with URL if OpenSearch is selected). */
     private class SaveButtonListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {

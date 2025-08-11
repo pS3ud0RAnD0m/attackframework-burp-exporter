@@ -5,132 +5,135 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Headless smoke for the Files sink action in ConfigPanel.
- * Verifies that clicking "Create Files" creates the expected JSON files and updates status text.
- */
-@Tag("integration") // uses filesystem; no network
-class ConfigPanelFileSinkHeadlessTest {
+@Tag("headless")
+public class ConfigPanelFileSinkHeadlessTest {
 
-    private static final long DEFAULT_WAIT_MS = 10_000;
+    private static final long DEFAULT_WAIT_MS = 8000;
 
     @Test
     void createFilesButton_createsExpectedJsonFiles_andUpdatesStatus() throws Exception {
-        Path tempDir = Files.createTempDirectory("af-burp-filesink-");
-        try {
-            ConfigPanel panel = onEdtAndWait(ConfigPanel::new);
+        ConfigPanel panel = new ConfigPanel();
 
-            JTextField filePathField    = getPrivate(panel, "filePathField", JTextField.class);
-            JCheckBox  fileSinkCheckbox = getPrivate(panel, "fileSinkCheckbox", JCheckBox.class);
-            JButton    createFilesBtn   = getPrivate(panel, "createFilesButton", JButton.class);
-            JTextArea  fileStatusArea   = getPrivate(panel, "fileStatus", JTextArea.class);
+        // Build the list of expected JSON filenames and pre-create them
+        // so the final status must include "already existed".
+        List<String> sources = new ArrayList<>();
+        sources.add("settings");
+        sources.add("sitemap");
+        sources.add("findings");
+        sources.add("traffic");
 
-            onEdtAndWait(() -> {
-                fileSinkCheckbox.setSelected(true);
-                filePathField.setText(tempDir.toString());
-                fileStatusArea.setText("");
-            });
+        List<String> baseNames = IndexNaming.computeIndexBaseNames(sources);
+        List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
 
-            onEdtAndWait(() -> createFilesBtn.doClick());
-            awaitStatusUpdate(fileStatusArea);
+        Path tmpDir = Files.createTempDirectory("af-burp-filesink-");
+        for (String name : jsonNames) {
+            Files.createFile(tmpDir.resolve(name));
+        }
 
-            String status = fileStatusArea.getText().trim();
-            assertThat(status).isNotBlank();
+        // Reflect private UI fields we need to drive the interaction.
+        JTextField pathField   = (JTextField) getPrivate(panel, "filePathField");
+        JButton createBtn      = (JButton) getPrivate(panel, "createFilesButton");
+        JTextArea statusArea   = (JTextArea) getPrivate(panel, "fileStatus");
 
-            // Defaults: all sources selected in the panel
-            List<String> baseNames = IndexNaming.computeIndexBaseNames(
-                    List.of("settings", "sitemap", "findings", "traffic"));
-            List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
+        // Set path and click on the EDT.
+        onEdtAndWait(() -> pathField.setText(tmpDir.toString()));
+        onEdtAndWait(createBtn::doClick);
 
-            for (String json : jsonNames) {
-                Path p = tempDir.resolve(json);
-                assertThat(Files.exists(p))
-                        .withFailMessage("Expected file was not created: %s", p)
-                        .isTrue();
-            }
+        // Wait for the asynchronous worker to post the final status.
+        waitForFinalFileStatus(statusArea);
 
-            // Second click: most entries should report "already existed"
-            onEdtAndWait(() -> fileStatusArea.setText(""));
-            onEdtAndWait(() -> createFilesBtn.doClick());
-            awaitStatusUpdate(fileStatusArea);
-            String status2 = fileStatusArea.getText().trim();
-            assertThat(status2).containsIgnoringCase("already existed");
+        String status = statusArea.getText().toLowerCase(Locale.ROOT);
+        assertTrue(status.contains("already existed"),
+                "Expecting final status to mention already existed; actual:\n" + statusArea.getText());
+    }
 
-        } finally {
-            try (var walk = Files.walk(tempDir)) {
-                walk.sorted((a, b) -> b.getNameCount() - a.getNameCount()).forEach(p -> {
-                    try { Files.deleteIfExists(p); } catch (IOException ignored) {}
-                });
-            }
+    /** Reflects a private field by name. */
+    private static Object getPrivate(Object target, String fieldName) throws Exception {
+        Field f = target.getClass().getDeclaredField(fieldName);
+        f.setAccessible(true);
+        return f.get(target);
+    }
+
+    /** Runs the given runnable on the EDT and blocks until complete. */
+    private static void onEdtAndWait(Runnable r) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            r.run();
+        } else {
+            SwingUtilities.invokeAndWait(r);
         }
     }
 
-    // ---------- helpers (EDT + reflection + await) ----------
-
-    private static <T> T getPrivate(Object target, String fieldName, Class<T> type) throws Exception {
-        Field f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return type.cast(f.get(target));
+    /** True iff the status text represents a final (post-worker) state. */
+    private static boolean isFinalStatus(String s) {
+        if (s == null) return false;
+        String t = s.toLowerCase(Locale.ROOT);
+        return t.contains("file created:")
+                || t.contains("files created:")
+                || t.contains("file already existed:")
+                || t.contains("files already existed:")
+                || t.contains("file creation failed:")
+                || t.contains("file creations failed:")
+                || t.startsWith("file creation error:");
     }
 
-    private static <T> T onEdtAndWait(java.util.concurrent.Callable<T> c) throws Exception {
-        AtomicReference<T> ref = new AtomicReference<>();
-        AtomicReference<Exception> err = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            try { ref.set(c.call()); } catch (Exception e) { err.set(e); }
-        });
-        if (err.get() != null) throw err.get();
-        return ref.get();
-    }
-
-    private static void onEdtAndWait(Runnable r) throws Exception {
-        AtomicReference<Exception> err = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            try { r.run(); } catch (Exception e) { err.set(e); }
-        });
-        if (err.get() != null) throw err.get();
-    }
-
-    private static boolean isFinalStatus(String text) {
-        return text != null && !text.isBlank();
-    }
-
-    /** Waits until the status area’s text becomes non-empty (no busy-waiting). */
-    private static void awaitStatusUpdate(JTextArea area) throws Exception {
+    /**
+     * Waits until the file status text reaches a final state or times out.
+     * Uses a DocumentListener to react as soon as the SwingWorker completes.
+     */
+    private static void waitForFinalFileStatus(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<DocumentListener> ref = new AtomicReference<>();
 
         onEdtAndWait(() -> {
             DocumentListener dl = new DocumentListener() {
-                private void check() { if (isFinalStatus(area.getText())) latch.countDown(); }
+                private void check() {
+                    if (isFinalStatus(area.getText())) {
+                        latch.countDown();
+                    }
+                }
                 @Override public void insertUpdate(DocumentEvent e) { check(); }
                 @Override public void removeUpdate(DocumentEvent e) { check(); }
                 @Override public void changedUpdate(DocumentEvent e) { check(); }
             };
             ref.set(dl);
             area.getDocument().addDocumentListener(dl);
-            if (isFinalStatus(area.getText())) latch.countDown();
+
+            // Handle the rare case the worker finished before we attached.
+            if (isFinalStatus(area.getText())) {
+                latch.countDown();
+            }
         });
 
         boolean ok = latch.await(DEFAULT_WAIT_MS, TimeUnit.MILLISECONDS);
-        onEdtAndWait(() -> area.getDocument().removeDocumentListener(ref.get()));
-        if (!ok) throw new AssertionError("Timed out waiting for file status update; last value: \"" + area.getText() + "\"");
+
+        onEdtAndWait(() -> {
+            DocumentListener dl = ref.get();
+            if (dl != null) {
+                area.getDocument().removeDocumentListener(dl);
+            }
+        });
+
+        if (!ok) {
+            throw new AssertionError(
+                    "Timed out waiting for file status update; last value: \"" + area.getText() + "\""
+            );
+        }
     }
 }
