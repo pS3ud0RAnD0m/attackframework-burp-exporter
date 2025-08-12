@@ -86,7 +86,7 @@ public class ConfigPanel extends JPanel {
         add(buildSinksPanel(), "gaptop 10, gapbottom 5, wrap");
         add(thickSeparator(), "growx, wrap");
 
-        add(buildSavePanel(), "growx, wrap");
+        add(buildAdminPanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
 
         // Text-input UX: install undo/redo and Enter-to-action bindings.
@@ -188,12 +188,21 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
-    /** Save section. */
-    private JPanel buildSavePanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0", "[]"));
-        JButton saveButton = new JButton("Save");
-        saveButton.addActionListener(new SaveButtonListener());
-        panel.add(saveButton);
+    /** Admin section with Save functionality. */
+    private JPanel buildAdminPanel() {
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        panel.setAlignmentX(LEFT_ALIGNMENT);
+
+        JLabel header = new JLabel("Admin");
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        panel.add(header, "gapbottom 6");
+
+        JPanel row = new JPanel(new MigLayout("insets 0", "[]", ""));
+        JButton adminSaveButton = new JButton("Save");
+        adminSaveButton.addActionListener(new AdminSaveButtonListener());
+        row.add(adminSaveButton);
+        panel.add(row);
+
         return panel;
     }
 
@@ -446,28 +455,45 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Save logs selected sources, scope, and sinks (with URL if OpenSearch is selected). */
-    private class SaveButtonListener implements ActionListener {
+    /** Save (Admin) logs selected sources, scope, and sinks as pretty JSON. */
+    private class AdminSaveButtonListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
             List<String> selectedSources = getSelectedSources();
-            String scope = allRadio.isSelected() ? "All"
-                    : burpSuiteRadio.isSelected() ? "Burp Suite's"
-                    : "Custom: " + customScopeField.getText();
 
-            List<String> selectedSinks = new ArrayList<>();
-            if (fileSinkCheckbox.isSelected())       selectedSinks.add("Files");
-            if (openSearchSinkCheckbox.isSelected()) selectedSinks.add("OpenSearch");
-
-            String sinkLine = "  Data Sink(s): " + String.join(", ", selectedSinks);
-            if (openSearchSinkCheckbox.isSelected()) {
-                sinkLine += " (" + openSearchUrlField.getText() + ")";
+            // Scope: one of "burp", "custom", or "all". For "custom", log an array of regex strings.
+            String scopeType;
+            List<String> scopeRegexes = null;
+            if (allRadio.isSelected()) {
+                scopeType = "all";
+            } else if (burpSuiteRadio.isSelected()) {
+                scopeType = "burp";
+            } else {
+                scopeType = "custom";
+                scopeRegexes = new ArrayList<>();
+                String rx = customScopeField.getText();
+                if (rx != null && !rx.trim().isEmpty()) {
+                    scopeRegexes.add(rx.trim());
+                }
             }
 
+            boolean filesEnabled = fileSinkCheckbox.isSelected();
+            boolean osEnabled    = openSearchSinkCheckbox.isSelected();
+            String  osUrl        = openSearchUrlField.getText();
+            String  filesRoot    = filePathField.getText();
+
+            String json = buildPrettyConfigJson(
+                    selectedSources,
+                    scopeType,
+                    scopeRegexes,
+                    filesEnabled,
+                    filesRoot,
+                    osEnabled,
+                    osUrl
+            );
+
             Logger.logInfo("Saving config ...");
-            Logger.logInfo("  Data source(s): " + String.join(", ", selectedSources));
-            Logger.logInfo("  Scope: " + scope);
-            Logger.logInfo(sinkLine);
+            Logger.logInfo(json);
         }
     }
 
@@ -519,5 +545,110 @@ public class ConfigPanel extends JPanel {
     /** Small helper to keep key-binding setup tidy. */
     private static void bind(JTextField field, KeyStroke ks, String actionKey) {
         field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
+    }
+
+    // --------------------------
+    // JSON pretty-print helpers
+    // --------------------------
+
+    /** Builds a pretty-printed JSON snapshot of current config (non-secret settings only). */
+    private static String buildPrettyConfigJson(
+            List<String> sources,
+            String scopeType,               // "burp" | "custom" | "all"
+            List<String> scopeRegexes,      // only when custom; may be empty
+            boolean filesEnabled,
+            String filesRoot,
+            boolean openSearchEnabled,
+            String openSearchUrl) {
+
+        String indent = "  ";
+        String indent2 = indent + indent;
+        String indent3 = indent2 + indent;
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n");
+
+        // dataSources
+        sb.append(indent).append("\"dataSources\": [");
+        if (sources != null && !sources.isEmpty()) {
+            sb.append("\n");
+            for (int i = 0; i < sources.size(); i++) {
+                sb.append(indent2).append("\"").append(jsonEscape(sources.get(i))).append("\"");
+                if (i < sources.size() - 1) sb.append(",");
+                sb.append("\n");
+            }
+            sb.append(indent).append("],\n");
+        } else {
+            sb.append("],\n");
+        }
+
+        // scope object (tight form): { "custom": [ ... ] } OR { "burp": [] } OR { "all": [] }
+        sb.append(indent).append("\"scope\": {\n");
+        if ("custom".equals(scopeType)) {
+            sb.append(indent2).append("\"custom\": [");
+            if (scopeRegexes != null && !scopeRegexes.isEmpty()) {
+                sb.append("\n");
+                for (int i = 0; i < scopeRegexes.size(); i++) {
+                    sb.append(indent3).append("\"").append(jsonEscape(scopeRegexes.get(i))).append("\"");
+                    if (i < scopeRegexes.size() - 1) sb.append(",");
+                    sb.append("\n");
+                }
+                sb.append(indent2).append("]\n");
+            } else {
+                sb.append("]\n");
+            }
+        } else if ("burp".equals(scopeType)) {
+            sb.append(indent2).append("\"burp\": []\n");
+        } else { // "all"
+            sb.append(indent2).append("\"all\": []\n");
+        }
+        sb.append(indent).append("},\n");
+
+        // sinks — only include selected sinks; values are direct strings (path or URL)
+        sb.append(indent).append("\"sinks\": {\n");
+        List<String> sinkLines = new ArrayList<>();
+        if (filesEnabled) {
+            sinkLines.add(indent2 + "\"files\": \"" + jsonEscape(filesRoot != null ? filesRoot : "") + "\"");
+        }
+        if (openSearchEnabled) {
+            sinkLines.add(indent2 + "\"openSearch\": \"" + jsonEscape(openSearchUrl != null ? openSearchUrl : "") + "\"");
+        }
+        if (!sinkLines.isEmpty()) {
+            for (int i = 0; i < sinkLines.size(); i++) {
+                sb.append(sinkLines.get(i));
+                if (i < sinkLines.size() - 1) sb.append(",\n");
+            }
+            sb.append("\n").append(indent).append("}\n");
+        } else {
+            sb.append(indent).append("}\n"); // empty object
+        }
+
+        sb.append("}");
+        return sb.toString();
+    }
+
+    /** Minimal JSON string escape (quotes, backslashes, and common control chars). */
+    private static String jsonEscape(String s) {
+        if (s == null) return "";
+        StringBuilder out = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\"': out.append("\\\""); break;
+                case '\\': out.append("\\\\"); break;
+                case '\b': out.append("\\b"); break;
+                case '\f': out.append("\\f"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+            }
+        }
+        return out.toString();
     }
 }
