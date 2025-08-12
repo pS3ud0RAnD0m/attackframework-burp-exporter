@@ -15,6 +15,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.KeyStroke;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -26,6 +27,7 @@ import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.undo.UndoManager;
 
 import java.awt.Color;
@@ -33,15 +35,19 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
+import java.awt.GraphicsEnvironment;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
-import java.awt.event.ItemEvent;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * UI for selecting sources/scope, configuring sinks, running small actions,
@@ -220,8 +226,8 @@ public class ConfigPanel extends JPanel {
         JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]15[]15[left, grow]", ""));
         JButton importButton = new JButton("Import Config");
         JButton exportButton = new JButton("Export Config");
-        importButton.addActionListener(e -> updateImportExportStatus("Importing ..."));
-        exportButton.addActionListener(e -> updateImportExportStatus("Exporting ..."));
+        importButton.addActionListener(e -> doImportConfig());
+        exportButton.addActionListener(e -> doExportConfig());
         importExportRow.add(importButton);
         importExportRow.add(exportButton);
 
@@ -295,41 +301,19 @@ public class ConfigPanel extends JPanel {
         wrapper.repaint();
     }
 
-    /** Update OpenSearch status text and size to content. */
-    private void updateStatus(String message) {
-        setStatus(openSearchStatus, statusWrapper, message);
-    }
+    private void updateStatus(String message) { setStatus(openSearchStatus, statusWrapper, message); }
+    private void updateFileStatus(String message) { setStatus(fileStatus, fileStatusWrapper, message); }
+    private void updateAdminStatus(String message) { setStatus(adminStatus, adminStatusWrapper, message); }
+    private void updateImportExportStatus(String message) { setStatus(importExportStatus, importExportStatusWrapper, message); }
 
-    /** Update Files status text and size to content. */
-    private void updateFileStatus(String message) {
-        setStatus(fileStatus, fileStatusWrapper, message);
-    }
-
-    /** Update Admin save status text and size to content. */
-    private void updateAdminStatus(String message) {
-        setStatus(adminStatus, adminStatusWrapper, message);
-    }
-
-    /** Update Import/Export status text and size to content. */
-    private void updateImportExportStatus(String message) {
-        setStatus(importExportStatus, importExportStatusWrapper, message);
-    }
-
-    /** Longest line length (used to size status textareas). */
     private static int maxLineLength(String[] lines) {
         int max = 1;
-        for (String s : lines) {
-            if (s != null && s.length() > max) max = s.length();
-        }
+        for (String s : lines) if (s != null && s.length() > max) max = s.length();
         return max;
     }
 
-    /**
-     * Wire button actions.
-     * Note: Files action runs on a SwingWorker so the "Creating files..." message paints immediately.
-     */
+    /** Button actions and small enable/disable UX. */
     private void wireButtonActions() {
-        // Enable/disable associated fields when sinks are toggled
         fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
 
@@ -342,15 +326,14 @@ public class ConfigPanel extends JPanel {
             updateFileStatus("Creating files in " + root + " ...");
             createFilesButton.setEnabled(false);
 
-            // Run file creation off the EDT so the initial status is visible and UI stays responsive.
             new SwingWorker<List<FilesUtil.CreateResult>, Void>() {
                 @Override
                 protected List<FilesUtil.CreateResult> doInBackground() {
                     List<String> baseNames = IndexNaming.computeIndexBaseNames(getSelectedSources());
                     List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
-                    return FilesUtil.ensureJsonFiles(Path.of(root), jsonNames);
+                    // Delegate full file creation to FilesUtil (String overload avoids Path construction here)
+                    return FilesUtil.ensureJsonFiles(root, jsonNames);
                 }
-
                 @Override
                 protected void done() {
                     try {
@@ -407,14 +390,12 @@ public class ConfigPanel extends JPanel {
                 protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
                     return OpenSearchClientWrapper.safeTestConnection(url);
                 }
-
                 @Override
                 protected void done() {
                     try {
                         OpenSearchClientWrapper.OpenSearchStatus status = get();
                         if (status.success()) {
-                            updateStatus(status.message() +
-                                    " (" + status.distribution() + " v" + status.version() + ")");
+                            updateStatus(status.message() + " (" + status.distribution() + " v" + status.version() + ")");
                             Logger.logInfo("OpenSearch connection successful: " + status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ") at " + url);
                         } else {
@@ -445,7 +426,6 @@ public class ConfigPanel extends JPanel {
                 protected List<IndexResult> doInBackground() {
                     return OpenSearchSink.createSelectedIndexes(url, getSelectedSources());
                 }
-
                 @Override
                 protected void done() {
                     try {
@@ -480,9 +460,7 @@ public class ConfigPanel extends JPanel {
                                     .append(String.join("\n  ", failed)).append("\n");
                         }
 
-                        if (allExist) {
-                            Logger.logInfo("All indexes already existed — no creation performed.");
-                        }
+                        if (allExist) Logger.logInfo("All indexes already existed — no creation performed.");
 
                         updateStatus(sb.toString().trim());
 
@@ -513,7 +491,6 @@ public class ConfigPanel extends JPanel {
         createFilesButton.setEnabled(files);
 
         boolean os = openSearchSinkCheckbox.isSelected();
-        // Keep buttons enabled so Test/Create can still be used for quick checks.
         openSearchUrlField.setEnabled(os);
     }
 
@@ -529,12 +506,8 @@ public class ConfigPanel extends JPanel {
 
     /** Text field that computes preferred width from its content. */
     private static class AutoSizingTextField extends JTextField {
-        public AutoSizingTextField(String text) {
-            super(text);
-        }
-
-        @Override
-        public Dimension getPreferredSize() {
+        public AutoSizingTextField(String text) { super(text); }
+        @Override public Dimension getPreferredSize() {
             FontMetrics fm = getFontMetrics(getFont());
             int textWidth = fm.stringWidth(getText()) + 20;
             int height = super.getPreferredSize().height;
@@ -547,47 +520,13 @@ public class ConfigPanel extends JPanel {
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                List<String> selectedSources = getSelectedSources();
-
-                // Scope: one of "burp", "custom", or "all". For "custom", log an array of regex strings.
-                String scopeType;
-                List<String> scopeRegexes = null;
-                if (allRadio.isSelected()) {
-                    scopeType = "all";
-                } else if (burpSuiteRadio.isSelected()) {
-                    scopeType = "burp";
-                } else {
-                    scopeType = "custom";
-                    scopeRegexes = new ArrayList<>();
-                    String rx = customScopeField.getText();
-                    if (rx != null && !rx.trim().isEmpty()) {
-                        scopeRegexes.add(rx.trim());
-                    }
-                }
-
-                boolean filesEnabled = fileSinkCheckbox.isSelected();
-                boolean osEnabled    = openSearchSinkCheckbox.isSelected();
-                String  osUrl        = openSearchUrlField.getText();
-                String  filesRoot    = filePathField.getText();
-
-                String json = buildPrettyConfigJson(
-                        selectedSources,
-                        scopeType,
-                        scopeRegexes,
-                        filesEnabled,
-                        filesRoot,
-                        osEnabled,
-                        osUrl
-                );
+                String json = currentConfigJson();
 
                 Logger.logInfo("Saving config ...");
                 Logger.logInfo(json);
 
-                // Success: show "Saved!" then auto-hide after 3s.
                 updateAdminStatus("Saved!");
-                if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) {
-                    adminStatusHideTimer.stop();
-                }
+                if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
                 adminStatusHideTimer = new Timer(3000, evt -> {
                     adminStatusWrapper.setVisible(false);
                     adminStatusWrapper.revalidate();
@@ -603,12 +542,44 @@ public class ConfigPanel extends JPanel {
         }
     }
 
+    /** Build JSON snapshot of current UI (non-secret settings only). */
+    private String currentConfigJson() {
+        List<String> selectedSources = getSelectedSources();
+
+        String scopeType;
+        List<String> scopeRegexes = null;
+        if (allRadio.isSelected()) {
+            scopeType = "all";
+        } else if (burpSuiteRadio.isSelected()) {
+            scopeType = "burp";
+        } else {
+            scopeType = "custom";
+            scopeRegexes = new ArrayList<>();
+            String rx = customScopeField.getText();
+            if (rx != null && !rx.trim().isEmpty()) scopeRegexes.add(rx.trim());
+        }
+
+        boolean filesEnabled = fileSinkCheckbox.isSelected();
+        boolean osEnabled    = openSearchSinkCheckbox.isSelected();
+        String  osUrl        = openSearchUrlField.getText();
+        String  filesRoot    = filePathField.getText();
+
+        return buildPrettyConfigJson(
+                selectedSources,
+                scopeType,
+                scopeRegexes,
+                filesEnabled,
+                filesRoot,
+                osEnabled,
+                osUrl
+        );
+    }
+
     /**
-     * Installs text-field UX:
+     * Text-field UX:
      *  - Undo/Redo: bind both Ctrl and Meta variants (plus Shift+Z redo), headless-safe.
      *  - Enter on filePathField -> clicks Create Files
      *  - Enter on openSearchUrlField -> clicks Test Connection
-     * Keeps changes local to each field (no global default button).
      */
     private void wireTextFieldEnhancements() {
         installUndoRedo(filePathField);
@@ -619,42 +590,143 @@ public class ConfigPanel extends JPanel {
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
     }
 
-    /** Adds robust, headless-safe undo/redo to a text field using key bindings + UndoManager. */
+    /** Robust, headless-safe undo/redo on a text field using key bindings + UndoManager. */
     private static void installUndoRedo(JTextField field) {
         UndoManager undo = new UndoManager();
-        undo.setLimit(200); // practical cap to avoid unbounded memory growth
+        undo.setLimit(200);
         field.getDocument().addUndoableEditListener(undo);
 
-        // Bind BOTH Control and Meta so it works across platforms without Toolkit or OS checks.
         // Undo
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK), "undo");
-
-        // Redo (Ctrl/Meta+Y and Ctrl/Meta+Shift+Z)
+        // Redo
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.META_DOWN_MASK), "redo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
 
         field.getActionMap().put("undo", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) {
-                if (undo.canUndo()) undo.undo();
-            }
+            @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }
         });
         field.getActionMap().put("redo", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) {
-                if (undo.canRedo()) undo.redo();
-            }
+            @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }
         });
     }
 
-    /** Small helper to keep key-binding setup tidy. */
     private static void bind(JTextField field, KeyStroke ks, String actionKey) {
         field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
     }
 
     // --------------------------
-    // JSON pretty-print helpers
+    // Import / Export wiring
+    // --------------------------
+
+    /** Export current JSON to a file (headless-safe: writes to temp). */
+    private void doExportConfig() {
+        String json = currentConfigJson();
+
+        if (GraphicsEnvironment.isHeadless()) {
+            try {
+                Path out = FilesUtil.writeTempFile("attackframework-config-export-", ".json", json);
+                updateImportExportStatus("Exported to " + out.toAbsolutePath());
+                Logger.logInfo("Config exported (headless) to " + out.toAbsolutePath());
+            } catch (IOException ioe) {
+                updateImportExportStatus("✖ Export error: " + ioe.getMessage());
+                Logger.logError("Export error: " + ioe.getMessage());
+            }
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export Config");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
+        chooser.setSelectedFile(new File("attackframework-config.json"));
+
+        int result = chooser.showSaveDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            updateImportExportStatus("Export cancelled.");
+            return;
+        }
+
+        File file = FilesUtil.ensureJsonExtension(chooser.getSelectedFile());
+        try {
+            FilesUtil.writeStringCreateDirs(file.toPath(), json);
+            updateImportExportStatus("Exported to " + file.getAbsolutePath());
+            Logger.logInfo("Config exported to " + file.getAbsolutePath());
+        } catch (IOException ioe) {
+            updateImportExportStatus("✖ Export error: " + ioe.getMessage());
+            Logger.logError("Export error: " + ioe.getMessage());
+        }
+    }
+
+    /** Import JSON from a file and apply it to the UI. */
+    private void doImportConfig() {
+        if (GraphicsEnvironment.isHeadless()) {
+            updateImportExportStatus("✖ Import not available in headless mode.");
+            Logger.logError("Import attempted in headless mode.");
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import Config");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
+
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            updateImportExportStatus("Import cancelled.");
+            return;
+        }
+
+        File file = chooser.getSelectedFile();
+        try {
+            String json = FilesUtil.readString(file.toPath());
+            ImportedConfig cfg = parseConfigJson(json);
+
+            // Apply to UI (sources)
+            settingsCheckbox.setSelected(cfg.dataSources.contains("settings"));
+            sitemapCheckbox.setSelected(cfg.dataSources.contains("sitemap"));
+            issuesCheckbox.setSelected(cfg.dataSources.contains("findings"));
+            trafficCheckbox.setSelected(cfg.dataSources.contains("traffic"));
+
+            // Apply scope
+            switch (cfg.scopeType) {
+                case "custom" -> {
+                    customRadio.setSelected(true);
+                    customScopeField.setText(cfg.scopeRegexes.isEmpty() ? "" : cfg.scopeRegexes.getFirst());
+                }
+                case "burp" -> burpSuiteRadio.setSelected(true);
+                default -> allRadio.setSelected(true); // "all"
+            }
+
+            // Apply sinks
+            if (cfg.filesPath != null) {
+                fileSinkCheckbox.setSelected(true);
+                filePathField.setText(cfg.filesPath);
+            } else {
+                fileSinkCheckbox.setSelected(false);
+            }
+            if (cfg.openSearchUrl != null) {
+                openSearchSinkCheckbox.setSelected(true);
+                openSearchUrlField.setText(cfg.openSearchUrl);
+            } else {
+                openSearchSinkCheckbox.setSelected(false);
+            }
+
+            refreshEnabledStates();
+            updateImportExportStatus("Imported from " + file.getAbsolutePath());
+
+            if ("custom".equals(cfg.scopeType) && cfg.scopeRegexes.size() > 1) {
+                Logger.logInfo("Imported multiple custom regex entries; using the first. Additional fields will be supported later.");
+            }
+
+        } catch (Exception ex) {
+            updateImportExportStatus("✖ Import error: " + ex.getMessage());
+            Logger.logError("Import error: " + ex.getMessage());
+        }
+    }
+
+    // --------------------------
+    // JSON helpers (export format) and minimal parser
     // --------------------------
 
     /** Builds a pretty-printed JSON snapshot of current config (non-secret settings only). */
@@ -674,7 +746,6 @@ public class ConfigPanel extends JPanel {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
 
-        // dataSources
         sb.append(indent).append("\"dataSources\": [");
         if (sources != null && !sources.isEmpty()) {
             sb.append("\n");
@@ -705,7 +776,7 @@ public class ConfigPanel extends JPanel {
             }
         } else if ("burp".equals(scopeType)) {
             sb.append(indent2).append("\"burp\": []\n");
-        } else { // "all"
+        } else {
             sb.append(indent2).append("\"all\": []\n");
         }
         sb.append(indent).append("},\n");
@@ -726,14 +797,14 @@ public class ConfigPanel extends JPanel {
             }
             sb.append("\n").append(indent).append("}\n");
         } else {
-            sb.append(indent).append("}\n"); // empty object
+            sb.append(indent).append("}\n");
         }
 
         sb.append("}");
         return sb.toString();
     }
 
-    /** Minimal JSON string escape (quotes, backslashes, and common control chars). */
+    /** Minimal JSON string escape (quotes, backslashes, common control chars). */
     private static String jsonEscape(String s) {
         if (s == null) return "";
         StringBuilder out = new StringBuilder(s.length() + 16);
@@ -748,11 +819,98 @@ public class ConfigPanel extends JPanel {
                 case '\r': out.append("\\r"); break;
                 case '\t': out.append("\\t"); break;
                 default:
-                    if (c < 0x20) {
-                        out.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        out.append(c);
-                    }
+                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
+                    else out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    // ---- Minimal parser for our export format (no external libs) ----
+
+    private static final class ImportedConfig {
+        final List<String> dataSources = new ArrayList<>();
+        String scopeType = "all";              // "custom" | "burp" | "all"
+        final List<String> scopeRegexes = new ArrayList<>();
+        String filesPath;                      // nullable
+        String openSearchUrl;                  // nullable
+    }
+
+    /**
+     * Parses the JSON we export (dataSources array, scope object with custom/burp/all, sinks object).
+     * Intentionally minimal and tolerant of whitespace/newlines. Not a general-purpose JSON parser.
+     */
+    private static ImportedConfig parseConfigJson(String json) {
+        ImportedConfig cfg = new ImportedConfig();
+        String src = json == null ? "" : json;
+
+        // dataSources: extract ["...","..."]
+        Matcher mDs = Pattern.compile("\"dataSources\"\\s*:\\s*\\[(.*?)]", Pattern.DOTALL).matcher(src);
+        if (mDs.find()) {
+            String arr = mDs.group(1);
+            Matcher mVals = Pattern.compile("\"(.*?)\"", Pattern.DOTALL).matcher(arr);
+            while (mVals.find()) cfg.dataSources.add(jsonUnescape(mVals.group(1)));
+        }
+
+        // scope: { ... } then check which key exists
+        Matcher mScope = Pattern.compile("\"scope\"\\s*:\\s*\\{(.*?)}", Pattern.DOTALL).matcher(src);
+        if (mScope.find()) {
+            String inner = mScope.group(1);
+            if (inner.contains("\"custom\"")) {
+                cfg.scopeType = "custom";
+                Matcher mCustomArr = Pattern.compile("\"custom\"\\s*:\\s*\\[(.*?)]", Pattern.DOTALL).matcher(inner);
+                if (mCustomArr.find()) {
+                    String arr = mCustomArr.group(1);
+                    Matcher mVals = Pattern.compile("\"(.*?)\"", Pattern.DOTALL).matcher(arr);
+                    while (mVals.find()) cfg.scopeRegexes.add(jsonUnescape(mVals.group(1)));
+                }
+            } else if (inner.contains("\"burp\"")) {
+                cfg.scopeType = "burp";
+            } else {
+                cfg.scopeType = "all";
+            }
+        }
+
+        // sinks: look for "files":"..." and/or "openSearch":"..."
+        Matcher mFiles = Pattern.compile("\"files\"\\s*:\\s*\"(.*?)\"", Pattern.DOTALL).matcher(src);
+        if (mFiles.find()) cfg.filesPath = jsonUnescape(mFiles.group(1));
+
+        Matcher mOs = Pattern.compile("\"openSearch\"\\s*:\\s*\"(.*?)\"", Pattern.DOTALL).matcher(src);
+        if (mOs.find()) cfg.openSearchUrl = jsonUnescape(mOs.group(1));
+
+        return cfg;
+    }
+
+    /** Minimal JSON unescape counterpart to jsonEscape (quotes, backslashes, controls, Unicode escapes). */
+    private static String jsonUnescape(String s) {
+        if (s == null || s.indexOf('\\') < 0) return s;
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char n = s.charAt(++i);
+                switch (n) {
+                    case '\"': out.append('\"'); break;
+                    case '\\': out.append('\\'); break;
+                    case '/':  out.append('/');  break;
+                    case 'b':  out.append('\b'); break;
+                    case 'f':  out.append('\f'); break;
+                    case 'n':  out.append('\n'); break;
+                    case 'r':  out.append('\r'); break;
+                    case 't':  out.append('\t'); break;
+                    case 'u':
+                        if (i + 4 < s.length()) {
+                            String hex = s.substring(i + 1, i + 5);
+                            try { out.append((char) Integer.parseInt(hex, 16)); i += 4; }
+                            catch (NumberFormatException nfe) { out.append("\\u").append(hex); i += 4; }
+                        } else {
+                            out.append("\\u");
+                        }
+                        break;
+                    default: out.append(n);
+                }
+            } else {
+                out.append(c);
             }
         }
         return out.toString();

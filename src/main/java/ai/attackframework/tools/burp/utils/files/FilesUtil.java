@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.utils.files;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryNotEmptyException;
@@ -9,14 +10,28 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Small file utilities used by the UI and sinks. Keeps I/O concerns out of UI code.
+ */
 public final class FilesUtil {
 
     public enum Status { CREATED, EXISTS, FAILED }
-
     public record CreateResult(Path path, Status status, String error) {}
 
     private FilesUtil() {}
 
+    /**
+     * Convenience overload to keep panel code free of Path construction.
+     * Delegates to the Path-based variant.
+     */
+    public static List<CreateResult> ensureJsonFiles(String rootDir, List<String> fileNames) {
+        return ensureJsonFiles(Path.of(rootDir), fileNames);
+    }
+
+    /**
+     * Ensure a set of JSON files exist under {@code rootDir}. Creates parent dirs as needed.
+     * For each file, returns CREATED, EXISTS, or FAILED with error message.
+     */
     public static List<CreateResult> ensureJsonFiles(Path rootDir, List<String> fileNames) {
         List<CreateResult> out = new ArrayList<>(fileNames.size());
 
@@ -62,5 +77,35 @@ public final class FilesUtil {
         }
 
         return out;
+    }
+
+    // ---------- Generic helpers used by ConfigPanel import/export ----------
+
+    /** Ensure a {@code .json} extension on the provided file name (case-insensitive). */
+    public static File ensureJsonExtension(File f) {
+        if (f == null) return null;
+        String nameLower = f.getName().toLowerCase();
+        if (nameLower.endsWith(".json")) return f;
+        File parent = f.getParentFile();
+        return (parent == null) ? new File(f.getName() + ".json") : new File(parent, f.getName() + ".json");
+    }
+
+    /** Write UTF-8 text to a file, creating parent directories if necessary. */
+    public static void writeStringCreateDirs(Path file, String content) throws IOException {
+        Path parent = file.getParent();
+        if (parent != null) Files.createDirectories(parent);
+        Files.writeString(file, content, StandardCharsets.UTF_8);
+    }
+
+    /** Read UTF-8 text from a file. */
+    public static String readString(Path file) throws IOException {
+        return Files.readString(file, StandardCharsets.UTF_8);
+    }
+
+    /** Create a temp file and write UTF-8 content to it. Returns the temp file path. */
+    public static Path writeTempFile(String prefix, String suffix, String content) throws IOException {
+        Path p = Files.createTempFile(prefix, suffix);
+        Files.writeString(p, content, StandardCharsets.UTF_8);
+        return p;
     }
 }
