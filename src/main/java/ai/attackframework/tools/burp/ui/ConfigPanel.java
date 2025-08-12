@@ -23,6 +23,7 @@ import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingWorker;
+import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.undo.UndoManager;
@@ -69,6 +70,15 @@ public class ConfigPanel extends JPanel {
     private final JButton    createIndexesButton   = new JButton("Create Indexes");
     private final JTextArea  openSearchStatus      = new JTextArea();
     private final JPanel     statusWrapper         = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+
+    // Admin Save status UI (hidden until Save is clicked).
+    private final JTextArea adminStatus = new JTextArea();
+    private final JPanel    adminStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private Timer adminStatusHideTimer;
+
+    // Admin Import/Export status UI (hidden until either button is clicked).
+    private final JTextArea importExportStatus = new JTextArea();
+    private final JPanel    importExportStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
     /**
      * Creates a new ConfigPanel.
@@ -188,7 +198,7 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
-    /** Admin section with Save functionality. */
+    /** Admin section with Import/Export row and Save functionality. */
     private JPanel buildAdminPanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -197,11 +207,40 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
+        // Row 1: Import/Export + status (hidden until used)
+        JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]20[]20[left, grow]", ""));
+        JButton importButton = new JButton("Import Config");
+        JButton exportButton = new JButton("Export Config");
+        importButton.addActionListener(e -> updateImportExportStatus("Importing ..."));
+        exportButton.addActionListener(e -> updateImportExportStatus("Exporting ..."));
+        importExportRow.add(importButton);
+        importExportRow.add(exportButton);
+
+        configureTextArea(importExportStatus);
+        importExportStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        importExportStatusWrapper.removeAll();
+        importExportStatusWrapper.add(importExportStatus, "w pref!");
+        importExportStatusWrapper.setVisible(false);
+        importExportRow.add(importExportStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
+
+        // indent to match other panels
+        panel.add(importExportRow, "gapleft 30, wrap");
+
+        // Row 2: Save + status (hidden until used)
         JPanel row = new JPanel(new MigLayout("insets 0", "[]", ""));
         JButton adminSaveButton = new JButton("Save");
         adminSaveButton.addActionListener(new AdminSaveButtonListener());
         row.add(adminSaveButton);
-        panel.add(row);
+
+        configureTextArea(adminStatus);
+        adminStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        adminStatusWrapper.removeAll();
+        adminStatusWrapper.add(adminStatus, "w pref!");
+        adminStatusWrapper.setVisible(false);
+        row.add(adminStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
+
+        // indent to match other panels
+        panel.add(row, "gapleft 30");
 
         return panel;
     }
@@ -264,6 +303,38 @@ public class ConfigPanel extends JPanel {
         fileStatusWrapper.setVisible(true);
         fileStatusWrapper.revalidate();
         fileStatusWrapper.repaint();
+    }
+
+    /** Update Admin save status text and size to content. */
+    private void updateAdminStatus(String message) {
+        adminStatus.setText(message);
+
+        String[] lines = message.split("\r\n|\r|\n", -1);
+        int rows = Math.max(lines.length, 1);
+        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+
+        adminStatus.setRows(rows);
+        adminStatus.setColumns(cols);
+
+        adminStatusWrapper.setVisible(true);
+        adminStatusWrapper.revalidate();
+        adminStatusWrapper.repaint();
+    }
+
+    /** Update Import/Export status text and size to content. */
+    private void updateImportExportStatus(String message) {
+        importExportStatus.setText(message);
+
+        String[] lines = message.split("\r\n|\r|\n", -1);
+        int rows = Math.max(lines.length, 1);
+        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+
+        importExportStatus.setRows(rows);
+        importExportStatus.setColumns(cols);
+
+        importExportStatusWrapper.setVisible(true);
+        importExportStatusWrapper.revalidate();
+        importExportStatusWrapper.repaint();
     }
 
     /** Longest line length (used to size status textareas). */
@@ -459,41 +530,60 @@ public class ConfigPanel extends JPanel {
     private class AdminSaveButtonListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            List<String> selectedSources = getSelectedSources();
+            try {
+                List<String> selectedSources = getSelectedSources();
 
-            // Scope: one of "burp", "custom", or "all". For "custom", log an array of regex strings.
-            String scopeType;
-            List<String> scopeRegexes = null;
-            if (allRadio.isSelected()) {
-                scopeType = "all";
-            } else if (burpSuiteRadio.isSelected()) {
-                scopeType = "burp";
-            } else {
-                scopeType = "custom";
-                scopeRegexes = new ArrayList<>();
-                String rx = customScopeField.getText();
-                if (rx != null && !rx.trim().isEmpty()) {
-                    scopeRegexes.add(rx.trim());
+                // Scope: one of "burp", "custom", or "all". For "custom", log an array of regex strings.
+                String scopeType;
+                List<String> scopeRegexes = null;
+                if (allRadio.isSelected()) {
+                    scopeType = "all";
+                } else if (burpSuiteRadio.isSelected()) {
+                    scopeType = "burp";
+                } else {
+                    scopeType = "custom";
+                    scopeRegexes = new ArrayList<>();
+                    String rx = customScopeField.getText();
+                    if (rx != null && !rx.trim().isEmpty()) {
+                        scopeRegexes.add(rx.trim());
+                    }
                 }
+
+                boolean filesEnabled = fileSinkCheckbox.isSelected();
+                boolean osEnabled    = openSearchSinkCheckbox.isSelected();
+                String  osUrl        = openSearchUrlField.getText();
+                String  filesRoot    = filePathField.getText();
+
+                String json = buildPrettyConfigJson(
+                        selectedSources,
+                        scopeType,
+                        scopeRegexes,
+                        filesEnabled,
+                        filesRoot,
+                        osEnabled,
+                        osUrl
+                );
+
+                Logger.logInfo("Saving config ...");
+                Logger.logInfo(json);
+
+                // Success: show "Saved!" then auto-hide after 3s.
+                updateAdminStatus("Saved!");
+                if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) {
+                    adminStatusHideTimer.stop();
+                }
+                adminStatusHideTimer = new Timer(3000, evt -> {
+                    adminStatusWrapper.setVisible(false);
+                    adminStatusWrapper.revalidate();
+                    adminStatusWrapper.repaint();
+                });
+                adminStatusHideTimer.setRepeats(false);
+                adminStatusHideTimer.start();
+
+            } catch (Exception ex) {
+                updateAdminStatus("✖ Error: " + ex.getMessage());
+                Logger.logError("Admin save error: " + ex.getMessage());
             }
-
-            boolean filesEnabled = fileSinkCheckbox.isSelected();
-            boolean osEnabled    = openSearchSinkCheckbox.isSelected();
-            String  osUrl        = openSearchUrlField.getText();
-            String  filesRoot    = filePathField.getText();
-
-            String json = buildPrettyConfigJson(
-                    selectedSources,
-                    scopeType,
-                    scopeRegexes,
-                    filesEnabled,
-                    filesRoot,
-                    osEnabled,
-                    osUrl
-            );
-
-            Logger.logInfo("Saving config ...");
-            Logger.logInfo(json);
         }
     }
 
