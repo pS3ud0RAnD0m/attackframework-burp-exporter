@@ -85,16 +85,15 @@ public class ConfigPanel extends JPanel {
      */
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
-        setPreferredSize(new Dimension(1200, 600));
 
         add(buildSourcesPanel(), "gaptop 5, gapbottom 5, wrap");
-        add(thickSeparator(), "growx, wrap");
+        add(panelSeparator(), "growx, wrap");
 
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
-        add(thickSeparator(), "growx, wrap");
+        add(panelSeparator(), "growx, wrap");
 
         add(buildSinksPanel(), "gaptop 10, gapbottom 5, wrap");
-        add(thickSeparator(), "growx, wrap");
+        add(panelSeparator(), "growx, wrap");
 
         add(buildAdminPanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
@@ -148,7 +147,7 @@ public class ConfigPanel extends JPanel {
 
     /** Sinks section (Files, OpenSearch) and status areas. */
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]15[]15[]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -174,25 +173,25 @@ public class ConfigPanel extends JPanel {
 
         panel.add(fileRow, "growx, wrap");
 
-        JPanel osRow = new JPanel(new MigLayout(
+        JPanel openSearchRow = new JPanel(new MigLayout(
                 "insets 0",
                 "[150!, left]20[pref]20[left]20[left, grow]"
         ));
-        osRow.setAlignmentX(LEFT_ALIGNMENT);
+        openSearchRow.setAlignmentX(LEFT_ALIGNMENT);
 
-        osRow.add(openSearchSinkCheckbox, "gapleft 30, top");
-        osRow.add(openSearchUrlField,     "alignx left, top");
-        osRow.add(testConnectionButton,   "split 2, alignx left, top");
-        osRow.add(createIndexesButton,    "alignx left, top");
+        openSearchRow.add(openSearchSinkCheckbox, "gapleft 30, top");
+        openSearchRow.add(openSearchUrlField,     "alignx left, top");
+        openSearchRow.add(testConnectionButton,   "split 2, alignx left, top");
+        openSearchRow.add(createIndexesButton,    "gapleft 15, alignx left, top");
 
         configureTextArea(openSearchStatus);
         statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         statusWrapper.removeAll();
         statusWrapper.add(openSearchStatus, "w pref!");
         statusWrapper.setVisible(false);
-        osRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
+        openSearchRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
-        panel.add(osRow, "growx, wrap");
+        panel.add(openSearchRow, "growx, wrap");
 
         wireButtonActions();
         return panel;
@@ -200,7 +199,7 @@ public class ConfigPanel extends JPanel {
 
     /** Admin section with Import/Export row and Save functionality. */
     private JPanel buildAdminPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", "[]15[]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Admin");
@@ -208,7 +207,7 @@ public class ConfigPanel extends JPanel {
         panel.add(header, "gapbottom 6");
 
         // Row 1: Import/Export + status (hidden until used)
-        JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]20[]20[left, grow]", ""));
+        JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]15[]15[left, grow]", ""));
         JButton importButton = new JButton("Import Config");
         JButton exportButton = new JButton("Export Config");
         importButton.addActionListener(e -> updateImportExportStatus("Importing ..."));
@@ -224,7 +223,7 @@ public class ConfigPanel extends JPanel {
         importExportRow.add(importExportStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
         // indent to match other panels
-        panel.add(importExportRow, "gapleft 30, wrap");
+        panel.add(importExportRow, "gapleft 35, wrap");
 
         // Row 2: Save + status (hidden until used)
         JPanel row = new JPanel(new MigLayout("insets 0", "[]", ""));
@@ -240,17 +239,17 @@ public class ConfigPanel extends JPanel {
         row.add(adminStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
         // indent to match other panels
-        panel.add(row, "gapleft 30");
+        panel.add(row, "gapleft 35");
 
         return panel;
     }
 
     /** 4px horizontal separator for section delineation. */
-    private JComponent thickSeparator() {
+    private JComponent panelSeparator() {
         return new JSeparator() {
             @Override
             public Dimension getPreferredSize() {
-                return new Dimension(super.getPreferredSize().width, 4);
+                return new Dimension(super.getPreferredSize().width, 2);
             }
 
             @Override
