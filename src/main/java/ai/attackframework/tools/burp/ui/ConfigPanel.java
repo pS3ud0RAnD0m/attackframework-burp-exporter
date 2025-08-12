@@ -36,6 +36,7 @@ import java.awt.Graphics;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
+import java.awt.event.ItemEvent;
 
 import java.nio.file.Path;
 
@@ -47,6 +48,12 @@ import java.util.List;
  * and logging/surfacing status. Comments are concise and focus on intent/design.
  */
 public class ConfigPanel extends JPanel {
+
+    // Layout & status sizing constants
+    private static final int INDENT = 30;
+    private static final int ROW_GAP = 15;
+    private static final int STATUS_MIN_COLS = 20;
+    private static final int STATUS_MAX_COLS = 200;
 
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
     private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
@@ -100,6 +107,9 @@ public class ConfigPanel extends JPanel {
 
         // Text-input UX: install undo/redo and Enter-to-action bindings.
         wireTextFieldEnhancements();
+
+        // Initialize enabled/disabled state based on checkboxes.
+        refreshEnabledStates();
     }
 
     /** Sources section. */
@@ -111,10 +121,10 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
-        panel.add(settingsCheckbox, "gapleft 30");
-        panel.add(sitemapCheckbox,  "gapleft 30");
-        panel.add(issuesCheckbox,   "gapleft 30");
-        panel.add(trafficCheckbox,  "gapleft 30");
+        panel.add(settingsCheckbox, "gapleft " + INDENT);
+        panel.add(sitemapCheckbox,  "gapleft " + INDENT);
+        panel.add(issuesCheckbox,   "gapleft " + INDENT);
+        panel.add(trafficCheckbox,  "gapleft " + INDENT);
 
         return panel;
     }
@@ -133,21 +143,21 @@ public class ConfigPanel extends JPanel {
         scopeGroup.add(customRadio);
         scopeGroup.add(allRadio);
 
-        panel.add(burpSuiteRadio, "gapleft 30");
+        panel.add(burpSuiteRadio, "gapleft " + INDENT);
 
         JPanel customRow = new JPanel(new MigLayout("insets 0", "[]20[]", ""));
         customRow.add(customRadio);
         customRow.add(customScopeField);
-        panel.add(customRow, "gapleft 30");
+        panel.add(customRow, "gapleft " + INDENT);
 
-        panel.add(allRadio, "gapleft 30");
+        panel.add(allRadio, "gapleft " + INDENT);
 
         return panel;
     }
 
     /** Sinks section (Files, OpenSearch) and status areas. */
     private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]15[]15[]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+ROW_GAP+"[]"+ROW_GAP+"[]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Data Sinks");
@@ -160,7 +170,7 @@ public class ConfigPanel extends JPanel {
         ));
         fileRow.setAlignmentX(LEFT_ALIGNMENT);
 
-        fileRow.add(fileSinkCheckbox, "gapleft 30, alignx left, top");
+        fileRow.add(fileSinkCheckbox, "gapleft " + INDENT + ", alignx left, top");
         fileRow.add(filePathField,    "alignx left, top");
         fileRow.add(createFilesButton, "alignx left, top");
 
@@ -179,7 +189,7 @@ public class ConfigPanel extends JPanel {
         ));
         openSearchRow.setAlignmentX(LEFT_ALIGNMENT);
 
-        openSearchRow.add(openSearchSinkCheckbox, "gapleft 30, top");
+        openSearchRow.add(openSearchSinkCheckbox, "gapleft " + INDENT + ", top");
         openSearchRow.add(openSearchUrlField,     "alignx left, top");
         openSearchRow.add(testConnectionButton,   "split 2, alignx left, top");
         openSearchRow.add(createIndexesButton,    "gapleft 15, alignx left, top");
@@ -199,7 +209,7 @@ public class ConfigPanel extends JPanel {
 
     /** Admin section with Import/Export row and Save functionality. */
     private JPanel buildAdminPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", "[]15[]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", "[]"+ROW_GAP+"[]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Admin");
@@ -223,7 +233,7 @@ public class ConfigPanel extends JPanel {
         importExportRow.add(importExportStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
         // indent to match other panels
-        panel.add(importExportRow, "gapleft 35, wrap");
+        panel.add(importExportRow, "gapleft " + INDENT + ", wrap");
 
         // Row 2: Save + status (hidden until used)
         JPanel row = new JPanel(new MigLayout("insets 0", "[]", ""));
@@ -239,12 +249,12 @@ public class ConfigPanel extends JPanel {
         row.add(adminStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
         // indent to match other panels
-        panel.add(row, "gapleft 35");
+        panel.add(row, "gapleft " + INDENT);
 
         return panel;
     }
 
-    /** 4px horizontal separator for section delineation. */
+    /** 2px horizontal separator for section delineation. */
     private JComponent panelSeparator() {
         return new JSeparator() {
             @Override
@@ -272,68 +282,37 @@ public class ConfigPanel extends JPanel {
         area.setColumns(1);
     }
 
-    /** Update OpenSearch status text and size to content. */
-    private void updateStatus(String message) {
-        openSearchStatus.setText(message);
-
+    // ---- DRY status updater helpers ----
+    private static void setStatus(JTextArea area, JPanel wrapper, String message) {
+        area.setText(message);
         String[] lines = message.split("\r\n|\r|\n", -1);
         int rows = Math.max(lines.length, 1);
-        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
+        int cols = Math.min(STATUS_MAX_COLS, Math.max(STATUS_MIN_COLS, maxLineLength(lines)));
+        area.setRows(rows);
+        area.setColumns(cols);
+        wrapper.setVisible(true);
+        wrapper.revalidate();
+        wrapper.repaint();
+    }
 
-        openSearchStatus.setRows(rows);
-        openSearchStatus.setColumns(cols);
-
-        statusWrapper.setVisible(true);
-        statusWrapper.revalidate();
-        statusWrapper.repaint();
+    /** Update OpenSearch status text and size to content. */
+    private void updateStatus(String message) {
+        setStatus(openSearchStatus, statusWrapper, message);
     }
 
     /** Update Files status text and size to content. */
     private void updateFileStatus(String message) {
-        fileStatus.setText(message);
-
-        String[] lines = message.split("\r\n|\r|\n", -1);
-        int rows = Math.max(lines.length, 1);
-        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
-
-        fileStatus.setRows(rows);
-        fileStatus.setColumns(cols);
-
-        fileStatusWrapper.setVisible(true);
-        fileStatusWrapper.revalidate();
-        fileStatusWrapper.repaint();
+        setStatus(fileStatus, fileStatusWrapper, message);
     }
 
     /** Update Admin save status text and size to content. */
     private void updateAdminStatus(String message) {
-        adminStatus.setText(message);
-
-        String[] lines = message.split("\r\n|\r|\n", -1);
-        int rows = Math.max(lines.length, 1);
-        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
-
-        adminStatus.setRows(rows);
-        adminStatus.setColumns(cols);
-
-        adminStatusWrapper.setVisible(true);
-        adminStatusWrapper.revalidate();
-        adminStatusWrapper.repaint();
+        setStatus(adminStatus, adminStatusWrapper, message);
     }
 
     /** Update Import/Export status text and size to content. */
     private void updateImportExportStatus(String message) {
-        importExportStatus.setText(message);
-
-        String[] lines = message.split("\r\n|\r|\n", -1);
-        int rows = Math.max(lines.length, 1);
-        int cols = Math.min(200, Math.max(20, maxLineLength(lines)));
-
-        importExportStatus.setRows(rows);
-        importExportStatus.setColumns(cols);
-
-        importExportStatusWrapper.setVisible(true);
-        importExportStatusWrapper.revalidate();
-        importExportStatusWrapper.repaint();
+        setStatus(importExportStatus, importExportStatusWrapper, message);
     }
 
     /** Longest line length (used to size status textareas). */
@@ -350,9 +329,18 @@ public class ConfigPanel extends JPanel {
      * Note: Files action runs on a SwingWorker so the "Creating files..." message paints immediately.
      */
     private void wireButtonActions() {
+        // Enable/disable associated fields when sinks are toggled
+        fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
+        openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
+
         createFilesButton.addActionListener(e -> {
             String root = filePathField.getText().trim();
+            if (root.isEmpty()) {
+                updateFileStatus("✖ Path required");
+                return;
+            }
             updateFileStatus("Creating files in " + root + " ...");
+            createFilesButton.setEnabled(false);
 
             // Run file creation off the EDT so the initial status is visible and UI stays responsive.
             new SwingWorker<List<FilesUtil.CreateResult>, Void>() {
@@ -398,18 +386,26 @@ public class ConfigPanel extends JPanel {
                     } catch (Exception ex) {
                         updateFileStatus("File creation error: " + ex.getMessage());
                         Logger.logError("File creation error: " + ex.getMessage());
+                    } finally {
+                        createFilesButton.setEnabled(true);
                     }
                 }
             }.execute();
         });
 
         testConnectionButton.addActionListener(e -> {
+            String url = openSearchUrlField.getText().trim();
+            if (url.isEmpty()) {
+                updateStatus("✖ URL required");
+                return;
+            }
             updateStatus("Testing ...");
+            testConnectionButton.setEnabled(false);
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
                 @Override
                 protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
-                    return OpenSearchClientWrapper.safeTestConnection(openSearchUrlField.getText());
+                    return OpenSearchClientWrapper.safeTestConnection(url);
                 }
 
                 @Override
@@ -420,7 +416,7 @@ public class ConfigPanel extends JPanel {
                             updateStatus(status.message() +
                                     " (" + status.distribution() + " v" + status.version() + ")");
                             Logger.logInfo("OpenSearch connection successful: " + status.message() +
-                                    " (" + status.distribution() + " v" + status.version() + ") at " + openSearchUrlField.getText());
+                                    " (" + status.distribution() + " v" + status.version() + ") at " + url);
                         } else {
                             updateStatus("✖ " + status.message());
                             Logger.logError("OpenSearch connection failed: " + status.message());
@@ -428,18 +424,26 @@ public class ConfigPanel extends JPanel {
                     } catch (Exception ex) {
                         updateStatus("✖ Error: " + ex.getMessage());
                         Logger.logError("OpenSearch connection error: " + ex.getMessage());
+                    } finally {
+                        testConnectionButton.setEnabled(true);
                     }
                 }
             }.execute();
         });
 
         createIndexesButton.addActionListener(e -> {
+            String url = openSearchUrlField.getText().trim();
+            if (url.isEmpty()) {
+                updateStatus("✖ URL required");
+                return;
+            }
             updateStatus("Creating indexes . . .");
+            createIndexesButton.setEnabled(false);
 
             new SwingWorker<List<IndexResult>, Void>() {
                 @Override
                 protected List<IndexResult> doInBackground() {
-                    return OpenSearchSink.createSelectedIndexes(openSearchUrlField.getText(), getSelectedSources());
+                    return OpenSearchSink.createSelectedIndexes(url, getSelectedSources());
                 }
 
                 @Override
@@ -485,6 +489,8 @@ public class ConfigPanel extends JPanel {
                     } catch (Exception ex) {
                         updateStatus("Index creation error: " + ex.getMessage());
                         Logger.logError("Index creation error: " + ex.getMessage());
+                    } finally {
+                        createIndexesButton.setEnabled(true);
                     }
                 }
             }.execute();
@@ -498,6 +504,17 @@ public class ConfigPanel extends JPanel {
         };
         filePathField.getDocument().addDocumentListener(relayout);
         openSearchUrlField.getDocument().addDocumentListener(relayout);
+    }
+
+    /** Toggle enabled state of controls based on sink checkboxes. */
+    private void refreshEnabledStates() {
+        boolean files = fileSinkCheckbox.isSelected();
+        filePathField.setEnabled(files);
+        createFilesButton.setEnabled(files);
+
+        boolean os = openSearchSinkCheckbox.isSelected();
+        // Keep buttons enabled so Test/Create can still be used for quick checks.
+        openSearchUrlField.setEnabled(os);
     }
 
     /** Selected short names used to compute index basenames. */
