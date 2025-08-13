@@ -27,13 +27,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * Headless verification of field-scoped Enter bindings in ConfigPanel.
  *
  * Goals:
- *  - Enter in filePathField triggers the same code path as clicking "Create Files".
+ *  - Enter in filePathField triggers the same code path as clicking "Create FileUtil".
  *  - Enter in openSearchUrlField triggers the same code path as clicking "Test Connection".
  *
  * Design notes (keep tests deterministic & fast):
  *  - We simulate Enter with postActionEvent() (no Toolkit / key events needed).
  *  - We await UI changes via a DocumentListener + CountDownLatch (EDT-safe, flake-resistant).
- *  - For the Files flow, we pre-create all expected files so the final status is predictably "already existed".
+ *  - For the FileUtil flow, we pre-create all expected files so the final status is predictably "already existed".
  *  - For OpenSearch, we point at 127.0.0.1:1 to force a quick, deterministic failure path (any final message is acceptable;
  *    we assert the transition from the transient "Testing ..." to a non-empty final state).
  */
@@ -66,7 +66,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
 
         onEdtAndWait(() -> pathField.setText(tmpDir.toString()));
 
-        // Act: simulate Enter in the field (wired in ConfigPanel to click "Create Files").
+        // Act: simulate Enter in the field (wired in ConfigPanel to click "Create FileUtil").
         onEdtAndWait(pathField::postActionEvent);
 
         // Assert: wait for a final message and verify the deterministic "already existed" outcome.
@@ -145,7 +145,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
         }
     }
 
-    /** Final-state detector for the Files flow—mirrors the UI wording to avoid coupling to implementation details. */
+    /** Final-state detector for the FileUtil flow—mirrors the UI wording to avoid coupling to implementation details. */
     private static boolean isFinalFileStatus(String s) {
         if (s == null) return false;
         String t = s.toLowerCase(Locale.ROOT);
@@ -158,7 +158,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
                 || t.startsWith("file creation error:");
     }
 
-    /** Waits for a final Files status or fails fast with a helpful message on timeout. */
+    /** Waits for a final FileUtil status or fails fast with a helpful message on timeout. */
     private static void waitForFinalFileStatus(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         DocumentListener[] holder = new DocumentListener[1];

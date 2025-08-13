@@ -1,11 +1,10 @@
-package ai.attackframework.tools.burp.utils.files;
+package ai.attackframework.tools.burp.utils;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,12 +12,12 @@ import java.util.List;
 /**
  * Small file utilities used by the UI and sinks. Keeps I/O concerns out of UI code.
  */
-public final class FilesUtil {
+public final class FileUtil {
 
     public enum Status { CREATED, EXISTS, FAILED }
     public record CreateResult(Path path, Status status, String error) {}
 
-    private FilesUtil() {}
+    private FileUtil() {}
 
     /**
      * Convenience overload to keep panel code free of Path construction.
@@ -36,7 +35,7 @@ public final class FilesUtil {
         List<CreateResult> out = new ArrayList<>(fileNames.size());
 
         try {
-            Files.createDirectories(rootDir);
+            java.nio.file.Files.createDirectories(rootDir);
         } catch (IOException e) {
             for (String n : fileNames) {
                 out.add(new CreateResult(rootDir.resolve(n), Status.FAILED, e.getMessage()));
@@ -47,24 +46,24 @@ public final class FilesUtil {
         for (String name : fileNames) {
             Path p = rootDir.resolve(name);
             try {
-                if (Files.exists(p)) {
+                if (java.nio.file.Files.exists(p)) {
                     out.add(new CreateResult(p, Status.EXISTS, null));
                     continue;
                 }
 
                 Path parent = p.getParent();
                 if (parent != null) {
-                    Files.createDirectories(parent);
+                    java.nio.file.Files.createDirectories(parent);
                 }
 
                 try {
-                    Files.createFile(p);
+                    java.nio.file.Files.createFile(p);
                 } catch (FileAlreadyExistsException ignored) {
                     out.add(new CreateResult(p, Status.EXISTS, null));
                     continue;
                 }
 
-                Files.writeString(p, "{}\n", StandardCharsets.UTF_8);
+                java.nio.file.Files.writeString(p, "{}\n", StandardCharsets.UTF_8);
                 out.add(new CreateResult(p, Status.CREATED, null));
 
             } catch (DirectoryNotEmptyException e) {
@@ -93,19 +92,19 @@ public final class FilesUtil {
     /** Write UTF-8 text to a file, creating parent directories if necessary. */
     public static void writeStringCreateDirs(Path file, String content) throws IOException {
         Path parent = file.getParent();
-        if (parent != null) Files.createDirectories(parent);
-        Files.writeString(file, content, StandardCharsets.UTF_8);
+        if (parent != null) java.nio.file.Files.createDirectories(parent);
+        java.nio.file.Files.writeString(file, content, StandardCharsets.UTF_8);
     }
 
     /** Read UTF-8 text from a file. */
     public static String readString(Path file) throws IOException {
-        return Files.readString(file, StandardCharsets.UTF_8);
+        return java.nio.file.Files.readString(file, StandardCharsets.UTF_8);
     }
 
     /** Create a temp file and write UTF-8 content to it. Returns the temp file path. */
     public static Path writeTempFile(String prefix, String suffix, String content) throws IOException {
-        Path p = Files.createTempFile(prefix, suffix);
-        Files.writeString(p, content, StandardCharsets.UTF_8);
+        Path p = java.nio.file.Files.createTempFile(prefix, suffix);
+        java.nio.file.Files.writeString(p, content, StandardCharsets.UTF_8);
         return p;
     }
 }
