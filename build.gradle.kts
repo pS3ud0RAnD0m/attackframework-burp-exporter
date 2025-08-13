@@ -22,6 +22,7 @@ repositories {
 
 dependencies {
     compileOnly("net.portswigger.burp.extensions:montoya-api:2025.6")
+    compileOnly("ch.qos.logback:logback-classic:1.5.18")
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -31,7 +32,8 @@ dependencies {
 
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testRuntimeOnly("org.slf4j:slf4j-simple:2.0.13")
+
+    runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
 
     implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2")
@@ -39,6 +41,7 @@ dependencies {
     implementation("jakarta.json:jakarta.json-api:2.1.1")
     implementation("org.glassfish:jakarta.json:2.0.1")
     implementation("org.opensearch.client:opensearch-java:3.1.0")
+    implementation("org.slf4j:slf4j-api:2.0.17")
 }
 
 // Toggle with: gradlew test -PverboseTests=true
@@ -53,7 +56,6 @@ tasks.test {
     }
 
     systemProperty("java.awt.headless", "true")
-    systemProperty("org.slf4j.simpleLogger.defaultLogLevel", if (verboseTests) "info" else "warn")
 
     testLogging {
         events("passed", "skipped", "failed")
