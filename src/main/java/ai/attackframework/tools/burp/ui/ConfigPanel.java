@@ -3,8 +3,8 @@ package ai.attackframework.tools.burp.ui;
 import ai.attackframework.tools.burp.sinks.OpenSearchSink;
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.FileUtil;
-import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.Json;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import net.miginfocom.swing.MigLayout;
@@ -17,20 +17,19 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
-import javax.swing.KeyStroke;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.undo.UndoManager;
-
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -39,16 +38,15 @@ import java.awt.Graphics;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
-
 import java.io.File;
 import java.io.IOException;
-
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * UI for selecting sources/scope, configuring sinks, running small actions,
- * and logging/surfacing status. Comments are concise and focus on intent/design.
+ * UI for selecting sources/scope, configuring sinks, kicking off small actions,
+ * and surfacing status. Comments favor intent/design over narration.
  */
 public class ConfigPanel extends JPanel {
 
@@ -58,22 +56,26 @@ public class ConfigPanel extends JPanel {
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
 
+    // Sources
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
     private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
     private final JCheckBox issuesCheckbox   = new JCheckBox("Issues",   true);
     private final JCheckBox trafficCheckbox  = new JCheckBox("Traffic",  true);
 
+    // Scope
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
     private final JRadioButton customRadio    = new JRadioButton("Custom (RegEx)");
     private final JTextField   customScopeField = new JTextField("^.*acme\\.com$");
 
+    // Files sink
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
     private final JButton    createFilesButton = new JButton("Create Files");
     private final JTextArea  fileStatus = new JTextArea();
     private final JPanel     fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
+    // OpenSearch sink
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
     private final JTextField openSearchUrlField    = new AutoSizingTextField("http://opensearch.url:9200");
     private final JButton    testConnectionButton  = new JButton("Test Connection");
@@ -81,16 +83,15 @@ public class ConfigPanel extends JPanel {
     private final JTextArea  openSearchStatus      = new JTextArea();
     private final JPanel     statusWrapper         = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
-    // Admin Save status UI (hidden until Save is clicked).
+    // Admin status areas
     private final JTextArea adminStatus = new JTextArea();
     private final JPanel    adminStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
     private Timer adminStatusHideTimer;
 
-    // Admin Import/Export status UI (hidden until either button is clicked).
     private final JTextArea importExportStatus = new JTextArea();
     private final JPanel    importExportStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
-    /** Creates a new ConfigPanel. */
+    /** Build the panel and wire actions. */
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
@@ -106,11 +107,9 @@ public class ConfigPanel extends JPanel {
         add(buildAdminPanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
 
-        // Text-input UX: install undo/redo and Enter-to-action bindings.
-        wireTextFieldEnhancements();
-
-        // Initialize enabled/disabled state based on checkboxes.
-        refreshEnabledStates();
+        assignComponentNames();     // stable identifiers for tests
+        wireTextFieldEnhancements(); // undo/redo + Enter bindings
+        refreshEnabledStates();      // reflect current checkbox state
     }
 
     /** Sources section. */
@@ -165,10 +164,7 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6, wrap");
 
-        JPanel fileRow = new JPanel(new MigLayout(
-                "insets 0",
-                "[150!, left]20[pref]20[left]20[left, grow]"
-        ));
+        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left, grow]"));
         fileRow.setAlignmentX(LEFT_ALIGNMENT);
 
         fileRow.add(fileSinkCheckbox, "gapleft " + INDENT + ", alignx left, top");
@@ -181,13 +177,9 @@ public class ConfigPanel extends JPanel {
         fileStatusWrapper.add(fileStatus, "w pref!");
         fileStatusWrapper.setVisible(false);
         fileRow.add(fileStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-
         panel.add(fileRow, "growx, wrap");
 
-        JPanel openSearchRow = new JPanel(new MigLayout(
-                "insets 0",
-                "[150!, left]20[pref]20[left]20[left, grow]"
-        ));
+        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left, grow]"));
         openSearchRow.setAlignmentX(LEFT_ALIGNMENT);
 
         openSearchRow.add(openSearchSinkCheckbox, "gapleft " + INDENT + ", top");
@@ -201,7 +193,6 @@ public class ConfigPanel extends JPanel {
         statusWrapper.add(openSearchStatus, "w pref!");
         statusWrapper.setVisible(false);
         openSearchRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-
         panel.add(openSearchRow, "growx, wrap");
 
         wireButtonActions();
@@ -217,7 +208,6 @@ public class ConfigPanel extends JPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
-        // Row 1: Import/Export + status (hidden until used)
         JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]15[]15[left, grow]", ""));
         JButton importButton = new JButton("Import Config");
         JButton exportButton = new JButton("Export Config");
@@ -233,10 +223,8 @@ public class ConfigPanel extends JPanel {
         importExportStatusWrapper.setVisible(false);
         importExportRow.add(importExportStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
-        // indent to match other panels
         panel.add(importExportRow, "gapleft " + INDENT + ", wrap");
 
-        // Row 2: Save + status (hidden until used)
         JPanel row = new JPanel(new MigLayout("insets 0", "[]", ""));
         JButton adminSaveButton = new JButton("Save");
         adminSaveButton.addActionListener(new AdminSaveButtonListener());
@@ -249,22 +237,17 @@ public class ConfigPanel extends JPanel {
         adminStatusWrapper.setVisible(false);
         row.add(adminStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
 
-        // indent to match other panels
         panel.add(row, "gapleft " + INDENT);
-
         return panel;
     }
 
-    /** 2px horizontal separator for section delineation. */
+    /** 2px horizontal separator. */
     private JComponent panelSeparator() {
         return new JSeparator() {
-            @Override
-            public Dimension getPreferredSize() {
+            @Override public Dimension getPreferredSize() {
                 return new Dimension(super.getPreferredSize().width, 2);
             }
-
-            @Override
-            protected void paintComponent(Graphics g) {
+            @Override protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 g.setColor(getForeground());
                 g.fillRect(0, 1, getWidth(), 2);
@@ -283,7 +266,7 @@ public class ConfigPanel extends JPanel {
         area.setColumns(1);
     }
 
-    // ---- DRY status updater helpers ----
+    // ---- DRY status updaters ----
     private static void setStatus(JTextArea area, JPanel wrapper, String message) {
         area.setText(message);
         String[] lines = message.split("\r\n|\r|\n", -1);
@@ -295,7 +278,6 @@ public class ConfigPanel extends JPanel {
         wrapper.revalidate();
         wrapper.repaint();
     }
-
     private void updateStatus(String message) { setStatus(openSearchStatus, statusWrapper, message); }
     private void updateFileStatus(String message) { setStatus(fileStatus, fileStatusWrapper, message); }
     private void updateAdminStatus(String message) { setStatus(adminStatus, adminStatusWrapper, message); }
@@ -307,7 +289,7 @@ public class ConfigPanel extends JPanel {
         return max;
     }
 
-    /** Button actions and small enable/disable UX. */
+    /** Button actions and enable/disable UX. */
     private void wireButtonActions() {
         fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
@@ -322,21 +304,17 @@ public class ConfigPanel extends JPanel {
             createFilesButton.setEnabled(false);
 
             new SwingWorker<List<FileUtil.CreateResult>, Void>() {
-                @Override
-                protected List<FileUtil.CreateResult> doInBackground() {
+                @Override protected List<FileUtil.CreateResult> doInBackground() {
                     List<String> baseNames = IndexNaming.computeIndexBaseNames(getSelectedSources());
                     List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
                     return FileUtil.ensureJsonFiles(root, jsonNames);
                 }
-                @Override
-                protected void done() {
+                @Override protected void done() {
                     try {
                         List<FileUtil.CreateResult> results = get();
-
                         List<String> created = new ArrayList<>();
                         List<String> exists  = new ArrayList<>();
                         List<String> failed  = new ArrayList<>();
-
                         for (FileUtil.CreateResult r : results) {
                             switch (r.status()) {
                                 case CREATED -> created.add(r.path().toString());
@@ -344,7 +322,6 @@ public class ConfigPanel extends JPanel {
                                 case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
                             }
                         }
-
                         StringBuilder sb = new StringBuilder();
                         if (!created.isEmpty()) {
                             sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
@@ -358,7 +335,6 @@ public class ConfigPanel extends JPanel {
                             sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
                                     .append(String.join("\n  ", failed)).append("\n");
                         }
-
                         updateFileStatus(sb.toString().trim());
                     } catch (Exception ex) {
                         updateFileStatus("File creation error: " + ex.getMessage());
@@ -380,18 +356,16 @@ public class ConfigPanel extends JPanel {
             testConnectionButton.setEnabled(false);
 
             new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
-                @Override
-                protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
+                @Override protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
                     return OpenSearchClientWrapper.safeTestConnection(url);
                 }
-                @Override
-                protected void done() {
+                @Override protected void done() {
                     try {
                         OpenSearchClientWrapper.OpenSearchStatus status = get();
                         if (status.success()) {
                             updateStatus(status.message() + " (" + status.distribution() + " v" + status.version() + ")");
-                            Logger.logInfo("OpenSearch connection successful: " + status.message() +
-                                    " (" + status.distribution() + " v" + status.version() + ") at " + url);
+                            Logger.logInfo("OpenSearch connection successful: " + status.message()
+                                    + " (" + status.distribution() + " v" + status.version() + ") at " + url);
                         } else {
                             updateStatus("✖ " + status.message());
                             Logger.logError("OpenSearch connection failed: " + status.message());
@@ -416,19 +390,15 @@ public class ConfigPanel extends JPanel {
             createIndexesButton.setEnabled(false);
 
             new SwingWorker<List<IndexResult>, Void>() {
-                @Override
-                protected List<IndexResult> doInBackground() {
+                @Override protected List<IndexResult> doInBackground() {
                     return OpenSearchSink.createSelectedIndexes(url, getSelectedSources());
                 }
-                @Override
-                protected void done() {
+                @Override protected void done() {
                     try {
                         List<IndexResult> results = get();
-
                         List<String> created = new ArrayList<>();
                         List<String> exists  = new ArrayList<>();
                         List<String> failed  = new ArrayList<>();
-
                         for (IndexResult r : results) {
                             switch (r.status()) {
                                 case CREATED -> created.add(r.fullName());
@@ -436,7 +406,6 @@ public class ConfigPanel extends JPanel {
                                 case FAILED  -> failed.add(r.fullName());
                             }
                         }
-
                         boolean allExist = !results.isEmpty() &&
                                 results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
 
@@ -455,9 +424,7 @@ public class ConfigPanel extends JPanel {
                         }
 
                         if (allExist) Logger.logInfo("All indexes already existed — no creation performed.");
-
                         updateStatus(sb.toString().trim());
-
                     } catch (Exception ex) {
                         updateStatus("Index creation error: " + ex.getMessage());
                         Logger.logError("Index creation error: " + ex.getMessage());
@@ -468,7 +435,7 @@ public class ConfigPanel extends JPanel {
             }.execute();
         });
 
-        // Keep text fields sizing to content as user types.
+        // Keep text fields sized to content while typing.
         DocumentListener relayout = new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
             public void removeUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
@@ -478,7 +445,7 @@ public class ConfigPanel extends JPanel {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
-    /** Toggle enabled state of controls based on sink checkboxes. */
+    /** Reflect sink checkboxes in control enablement. */
     private void refreshEnabledStates() {
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
@@ -488,7 +455,7 @@ public class ConfigPanel extends JPanel {
         openSearchUrlField.setEnabled(os);
     }
 
-    /** Selected short names used to compute index basenames. */
+    /** Short names used to compute index basenames. */
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add("settings");
@@ -498,7 +465,7 @@ public class ConfigPanel extends JPanel {
         return selected;
     }
 
-    /** Text field that computes preferred width from its content. */
+    /** Text field that sizes to its content. */
     private static class AutoSizingTextField extends JTextField {
         public AutoSizingTextField(String text) { super(text); }
         @Override public Dimension getPreferredSize() {
@@ -509,13 +476,11 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Save (Admin) logs selected sources, scope, and sinks as pretty JSON. */
+    /** Save logs a pretty JSON snapshot of current UI (non-secret settings only). */
     private class AdminSaveButtonListener implements ActionListener {
-        @Override
-        public void actionPerformed(ActionEvent e) {
+        @Override public void actionPerformed(ActionEvent e) {
             try {
                 String json = currentConfigJson();
-
                 Logger.logInfo("Saving config ...");
                 Logger.logInfo(json);
 
@@ -536,7 +501,7 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Build JSON snapshot of current UI (non-secret settings only). */
+    /** Build pretty JSON of current UI state (non-secret). */
     private String currentConfigJson() {
         List<String> selectedSources = getSelectedSources();
 
@@ -559,52 +524,38 @@ public class ConfigPanel extends JPanel {
         String  filesRoot    = filePathField.getText();
 
         return Json.buildPrettyConfigJson(
-                selectedSources,
-                scopeType,
-                scopeRegexes,
-                filesEnabled,
-                filesRoot,
-                osEnabled,
-                osUrl
+                selectedSources, scopeType, scopeRegexes,
+                filesEnabled, filesRoot, osEnabled, osUrl
         );
     }
 
-    /**
-     * Text-field UX:
-     *  - Undo/Redo: bind both Ctrl and Meta variants (plus Shift+Z redo).
-     *  - Enter on filePathField -> clicks Create Files
-     *  - Enter on openSearchUrlField -> clicks Test Connection
-     */
+    /** Text-input UX: undo/redo + Enter-to-action. */
     private void wireTextFieldEnhancements() {
         installUndoRedo(filePathField);
         installUndoRedo(openSearchUrlField);
         installUndoRedo(customScopeField);
 
+        // Enter on these fields triggers the relevant action
         filePathField.addActionListener(e -> createFilesButton.doClick());
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
     }
 
-    /** Robust undo/redo on a text field using key bindings + UndoManager. */
+    /** Undo/redo on a text field via key bindings. */
     private static void installUndoRedo(JTextField field) {
         UndoManager undo = new UndoManager();
         undo.setLimit(200);
         field.getDocument().addUndoableEditListener(undo);
 
-        // Undo
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK), "undo");
-        // Redo
+
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.META_DOWN_MASK), "redo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
         bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
 
-        field.getActionMap().put("undo", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }
-        });
-        field.getActionMap().put("redo", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }
-        });
+        field.getActionMap().put("undo", new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }});
+        field.getActionMap().put("redo", new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }});
     }
 
     private static void bind(JTextField field, KeyStroke ks, String actionKey) {
@@ -612,10 +563,10 @@ public class ConfigPanel extends JPanel {
     }
 
     // --------------------------
-    // Import / Export wiring
+    // Import / Export
     // --------------------------
 
-    /** Export current JSON to a file. */
+    /** Export current JSON to a file via chooser. */
     private void doExportConfig() {
         String json = currentConfigJson();
 
@@ -641,7 +592,7 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Import JSON from a file and apply it to the UI. */
+    /** Import JSON from a file via chooser and apply it to the UI. */
     private void doImportConfig() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Import Config");
@@ -657,39 +608,11 @@ public class ConfigPanel extends JPanel {
         try {
             String json = FileUtil.readString(file.toPath());
             Json.ImportedConfig cfg = Json.parseConfigJson(json);
-
-            // Apply to UI (sources)
-            settingsCheckbox.setSelected(cfg.dataSources.contains("settings"));
-            sitemapCheckbox.setSelected(cfg.dataSources.contains("sitemap"));
-            issuesCheckbox.setSelected(cfg.dataSources.contains("findings"));
-            trafficCheckbox.setSelected(cfg.dataSources.contains("traffic"));
-
-            // Apply scope
-            switch (cfg.scopeType) {
-                case "custom" -> {
-                    customRadio.setSelected(true);
-                    customScopeField.setText(cfg.scopeRegexes.isEmpty() ? "" : cfg.scopeRegexes.getFirst());
-                }
-                case "burp" -> burpSuiteRadio.setSelected(true);
-                default -> allRadio.setSelected(true); // "all"
-            }
-
-            // Apply sinks
-            if (cfg.filesPath != null) {
-                fileSinkCheckbox.setSelected(true);
-                filePathField.setText(cfg.filesPath);
-            } else {
-                fileSinkCheckbox.setSelected(false);
-            }
-            if (cfg.openSearchUrl != null) {
-                openSearchSinkCheckbox.setSelected(true);
-                openSearchUrlField.setText(cfg.openSearchUrl);
-            } else {
-                openSearchSinkCheckbox.setSelected(false);
-            }
+            applyImported(cfg);
 
             refreshEnabledStates();
             updateImportExportStatus("Imported from " + file.getAbsolutePath());
+            Logger.logInfo("Config imported from " + file.getAbsolutePath());
 
             if ("custom".equals(cfg.scopeType) && cfg.scopeRegexes.size() > 1) {
                 Logger.logInfo("Imported multiple custom regex entries; using the first. Additional fields will be supported later.");
@@ -699,5 +622,80 @@ public class ConfigPanel extends JPanel {
             updateImportExportStatus("✖ Import error: " + ex.getMessage());
             Logger.logError("Import error: " + ex.getMessage());
         }
+    }
+
+    // ---- chooser-free helpers (package-private for tests) ----
+
+    void exportConfigTo(Path out) throws IOException {
+        FileUtil.writeStringCreateDirs(out, currentConfigJson());
+        Logger.logInfo("Config exported to " + out.toAbsolutePath());
+    }
+
+    void importConfigFrom(Path in) throws IOException {
+        String json = FileUtil.readString(in);
+        Json.ImportedConfig cfg = Json.parseConfigJson(json);
+        applyImported(cfg);
+        refreshEnabledStates();
+        Logger.logInfo("Config imported from " + in.toAbsolutePath());
+    }
+
+    // ---- internal: apply imported values to the UI ----
+
+    private void applyImported(Json.ImportedConfig cfg) {
+        // Sources
+        settingsCheckbox.setSelected(cfg.dataSources.contains("settings"));
+        sitemapCheckbox.setSelected(cfg.dataSources.contains("sitemap"));
+        issuesCheckbox.setSelected(cfg.dataSources.contains("findings"));
+        trafficCheckbox.setSelected(cfg.dataSources.contains("traffic"));
+
+        // Scope
+        switch (cfg.scopeType) {
+            case "custom" -> {
+                customRadio.setSelected(true);
+                customScopeField.setText(cfg.scopeRegexes.isEmpty() ? "" : cfg.scopeRegexes.getFirst());
+            }
+            case "burp" -> burpSuiteRadio.setSelected(true);
+            default -> allRadio.setSelected(true); // "all"
+        }
+
+        // Sinks
+        if (cfg.filesPath != null) {
+            fileSinkCheckbox.setSelected(true);
+            filePathField.setText(cfg.filesPath);
+        } else {
+            fileSinkCheckbox.setSelected(false);
+        }
+        if (cfg.openSearchUrl != null) {
+            openSearchSinkCheckbox.setSelected(true);
+            openSearchUrlField.setText(cfg.openSearchUrl);
+        } else {
+            openSearchSinkCheckbox.setSelected(false);
+        }
+    }
+
+    /** Assign stable names so tests don't rely on visible labels. */
+    private void assignComponentNames() {
+        // sources
+        settingsCheckbox.setName("src.settings");
+        sitemapCheckbox.setName("src.sitemap");
+        issuesCheckbox.setName("src.issues");
+        trafficCheckbox.setName("src.traffic");
+
+        // scope
+        allRadio.setName("scope.all");
+        burpSuiteRadio.setName("scope.burp");
+        customRadio.setName("scope.custom");
+        customScopeField.setName("scope.custom.regex");
+
+        // files sink
+        fileSinkCheckbox.setName("files.enable");
+        filePathField.setName("files.path");
+        createFilesButton.setName("files.create");
+
+        // opensearch sink
+        openSearchSinkCheckbox.setName("os.enable");
+        openSearchUrlField.setName("os.url");
+        testConnectionButton.setName("os.test");
+        createIndexesButton.setName("os.createIndexes");
     }
 }
