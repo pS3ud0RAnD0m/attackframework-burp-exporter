@@ -517,9 +517,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
                 }
             }
             matches = found;
-        } catch (BadLocationException e) {
-            matches = List.of();
-        } catch (PatternSyntaxException e) {
+        } catch (BadLocationException | PatternSyntaxException e) {
             matches = List.of();
         }
         updateMatchCount();
