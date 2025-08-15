@@ -2,10 +2,13 @@ package ai.attackframework.tools.burp.ui;
 
 import org.junit.jupiter.api.Test;
 
-import javax.swing.JCheckBox;
-import javax.swing.JTextPane;
-
-import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.*;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.newPanel;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.realize;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.resetPanelState;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.setPaused;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.textPane;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.waitFor;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.onEdt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LogPanelAutoscrollHeadlessTest {
@@ -13,32 +16,34 @@ class LogPanelAutoscrollHeadlessTest {
     @Test
     void autoscroll_movesCaret_whenNotPaused() {
         LogPanel p = newPanel();
-        JCheckBox pause = check(p, "Pause autoscroll");
-        if (pause.isSelected()) click(pause); // ensure OFF
+        resetPanelState(p);
+        realize(p);
+        setPaused(p, false);
 
-        // emit some lines
-        p.onLog("INFO", "one");
-        p.onLog("INFO", "two");
-        p.onLog("INFO", "three");
+        onEdt(() -> textPane(p).setCaretPosition(0));
+        p.onLog("INFO", "moved-to-end");
 
-        JTextPane ed = editor(p);
-        int len = ed.getDocument().getLength();
-        assertThat(ed.getCaretPosition()).isEqualTo(len);
+        waitFor(() -> textPane(p).getDocument().getLength() > 0, 1500);
+
+        int caret = textPane(p).getCaretPosition();
+        int len = textPane(p).getDocument().getLength();
+        assertThat(caret).isEqualTo(len);
     }
 
     @Test
-    void autoscroll_stops_whenPaused() {
+    void autoscroll_paused_doesNotMoveCaret() {
         LogPanel p = newPanel();
-        JCheckBox pause = check(p, "Pause autoscroll");
-        if (!pause.isSelected()) click(pause); // turn ON
+        resetPanelState(p);
+        realize(p);
+        setPaused(p, true);
 
-        // move caret to start, then emit
-        editor(p).setCaretPosition(0);
+        onEdt(() -> textPane(p).setCaretPosition(0));
         p.onLog("INFO", "kept-in-place");
 
-        int caret = editor(p).getCaretPosition();
-        int len = editor(p).getDocument().getLength();
-        // caret should not follow to the end
+        waitFor(() -> textPane(p).getDocument().getLength() > 0, 1500);
+
+        int caret = textPane(p).getCaretPosition();
+        int len = textPane(p).getDocument().getLength();
         assertThat(caret).isLessThan(len);
     }
 }

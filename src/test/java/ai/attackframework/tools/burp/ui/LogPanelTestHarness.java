@@ -1,10 +1,28 @@
 package ai.attackframework.tools.burp.ui;
 
-import javax.swing.*;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.Document;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.event.ActionEvent;
+
+import javax.swing.AbstractButton;
+import javax.swing.Action;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.MenuElement;
+import javax.swing.JPopupMenu;
+import javax.swing.JTextField;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
+
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultCaret;
+import javax.swing.text.Document;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
@@ -13,19 +31,9 @@ import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 
-/**
- * Shared utilities for LogPanel headless tests.
- * - Creates components on the EDT
- * - Finds child components by name/tooltip/text
- * - Simple polling waitFor
- * - Text getters/setters and button clicks on the EDT
- * - Optional access to LogPanel's context menu via reflection (if needed by tests)
- */
 public class LogPanelTestHarness {
 
-    /** Public no-arg constructor so tests can extend this harness freely. */
     public LogPanelTestHarness() {}
 
     // ---------- EDT helpers ----------
@@ -72,12 +80,10 @@ public class LogPanelTestHarness {
 
     // ---------- Panel factory ----------
 
-    /** Create a new LogPanel on the EDT. */
     public static LogPanel newPanelOnEdt() {
         return onEdt(LogPanel::new);
     }
 
-    /** Alias some tests may call. */
     public static LogPanel newPanel() {
         return newPanelOnEdt();
     }
@@ -91,14 +97,16 @@ public class LogPanelTestHarness {
             while (!q.isEmpty()) {
                 Component c = q.remove();
                 if (p.test(c)) return c;
-                if (c instanceof JMenu) {
-                    for (Component child : ((JMenu) c).getMenuComponents()) q.add(child);
-                } else if (c instanceof JMenuBar) {
-                    for (MenuElement el : ((JMenuBar) c).getSubElements()) {
-                        if (el.getComponent() != null) q.add(el.getComponent());
+                switch (c) {
+                    case JMenu jMenu -> java.util.Collections.addAll(q, jMenu.getMenuComponents());
+                    case JMenuBar jMenuBar -> {
+                        for (MenuElement el : jMenuBar.getSubElements()) {
+                            if (el.getComponent() != null) q.add(el.getComponent());
+                        }
                     }
-                } else if (c instanceof Container) {
-                    for (Component child : ((Container) c).getComponents()) q.add(child);
+                    case Container container -> java.util.Collections.addAll(q, container.getComponents());
+                    default -> {
+                    }
                 }
             }
             return null;
@@ -107,14 +115,21 @@ public class LogPanelTestHarness {
 
     public static Component findByNameOrTooltipOrText(LogPanel root, String key) {
         return findBy(root, c -> {
-            String nm = (c instanceof JComponent) ? ((JComponent) c).getName() : null;
-            String tip = (c instanceof JComponent) ? ((JComponent) c).getToolTipText() : null;
-            String txt = (c instanceof AbstractButton) ? ((AbstractButton) c).getText()
-                    : (c instanceof JLabel) ? ((JLabel) c).getText()
-                    : null;
+            String nm = null, tip = null, txt = null;
+            if (c instanceof JComponent jc) {
+                nm = jc.getName();
+                tip = jc.getToolTipText();
+            }
+            if (c instanceof AbstractButton ab) {
+                txt = ab.getText();
+            } else if (c instanceof JLabel lbl) {
+                txt = lbl.getText();
+            }
             return Objects.equals(nm, key) || Objects.equals(tip, key) || Objects.equals(txt, key);
         });
     }
+
+    // ---------- Named finders ----------
 
     public static JTextField field(LogPanel root, String nameOrTooltipOrText) {
         Component c = findByNameOrTooltipOrText(root, nameOrTooltipOrText);
@@ -141,47 +156,37 @@ public class LogPanelTestHarness {
         return (JComboBox) c;
     }
 
-    public static JLabel labelMatching(LogPanel root, Pattern pattern) {
-        Component c = findBy(root, comp -> comp instanceof JLabel && pattern.matcher(((JLabel) comp).getText()).matches());
-        if (c == null) throw new IllegalStateException("No JLabel matching: " + pattern);
-        return (JLabel) c;
-    }
-
-    /** The match-count label in LogPanel shows as "n/m". We locate it by that pattern. */
+    /** Match-counter label text like "n/m". */
     public static String searchCountText(LogPanel root) {
-        JLabel lbl = (JLabel) findBy(root, comp -> comp instanceof JLabel &&
-                ((JLabel) comp).getText() != null &&
-                ((JLabel) comp).getText().matches("\\d+/\\d+"));
-        return onEdt(() -> lbl != null ? ((JLabel) lbl).getText() : "0/0");
+        JLabel lbl = (JLabel) findBy(root, comp -> comp instanceof JLabel l &&
+                l.getText() != null &&
+                l.getText().matches("\\d+/\\d+"));
+        return onEdt(() -> lbl != null ? lbl.getText() : "0/0");
     }
 
-    /** First (and only) JTextPane inside LogPanel, used to read visible text. */
+    /** First (and only) JTextPane inside LogPanel. */
     public static JTextPane textPane(LogPanel root) {
         Component c = findBy(root, comp -> comp instanceof JTextPane);
-        if (!(c instanceof JTextPane)) throw new IllegalStateException("No JTextPane found in LogPanel");
-        return (JTextPane) c;
+        if (c instanceof JTextPane pane) return pane;
+        throw new IllegalStateException("No JTextPane found in LogPanel");
     }
 
     // ---------- Convenience actions ----------
 
-    public static void setText(JTextField field, String value) {
-        onEdt(() -> field.setText(value));
+    public static void setText(JTextField f, String s) {
+        onEdt(() -> f.setText(s));
     }
 
     public static void click(AbstractButton b) {
-        onEdt(b::doClick);
+        onEdt(() -> b.doClick());
     }
 
     public static boolean waitFor(Supplier<Boolean> cond, long timeoutMs) {
         long until = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < until) {
             if (Boolean.TRUE.equals(cond.get())) return true;
-            // pump the EDT
             onEdt(() -> {});
-            try { Thread.sleep(15); } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
+            java.util.concurrent.locks.LockSupport.parkNanos(15_000_000L);
         }
         return false;
     }
@@ -198,7 +203,8 @@ public class LogPanelTestHarness {
         });
     }
 
-    /** Invoke LogPanel's private buildContextMenu via reflection (for context-menu tests). */
+    // ---------- Optional reflection helpers for context menu ----------
+
     public static JPopupMenu buildContextMenuViaReflection(LogPanel p) {
         return onEdt(() -> {
             try {
@@ -213,13 +219,67 @@ public class LogPanelTestHarness {
         });
     }
 
-    /** Simulate pressing Enter in the search field by invoking the bound action. */
     public static void triggerSearchNextViaEnter(LogPanel p) {
         onEdt(() -> {
             JTextField sf = field(p, "log.search.field");
             Action a = sf.getActionMap().get("log.search.next");
             if (a == null) throw new IllegalStateException("No action for 'log.search.next'");
             a.actionPerformed(new ActionEvent(sf, ActionEvent.ACTION_PERFORMED, "ENTER"));
+        });
+    }
+
+    // ---------- Test-state helpers ----------
+
+    /** Reset persisted UI state so each test starts clean. */
+    public static void resetPanelState(LogPanel p) {
+        @SuppressWarnings("unchecked")
+        JComboBox<String> level = (JComboBox<String>) combo(p, "log.filter.level");
+        onEdt(() -> level.setSelectedItem("INFO"));
+        JCheckBox fCase = check(p, "log.filter.case");
+        JCheckBox fRegex = check(p, "log.filter.regex");
+        if (fCase.isSelected()) click(fCase);
+        if (fRegex.isSelected()) click(fRegex);
+        setText(field(p, "log.filter.text"), "");
+
+        JCheckBox sCase = check(p, "log.search.case");
+        JCheckBox sRegex = check(p, "log.search.regex");
+        if (sCase.isSelected()) click(sCase);
+        if (sRegex.isSelected()) click(sRegex);
+        setText(field(p, "log.search.field"), "");
+    }
+
+    /**
+     * Ensure the panel and its text pane have a non-zero size and are laid out,
+     * so modelToView2D(...) returns a real rectangle in headless tests.
+     */
+    public static void realize(LogPanel p) {
+        onEdt(() -> {
+            if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+                p.setSize(900, 700);
+            }
+            p.doLayout();
+            JTextPane tp = textPane(p);
+            if (tp.getWidth() <= 0 || tp.getHeight() <= 0) {
+                tp.setSize(p.getWidth(), p.getHeight() - 40);
+            }
+            tp.doLayout();
+        });
+    }
+
+    /**
+     * Toggle pause via the checkbox (fires listeners) and align caret policy,
+     * so headless behavior matches the real UI.
+     */
+    public static void setPaused(LogPanel p, boolean paused) {
+        JCheckBox pause = check(p, "log.pause");
+        if (pause.isSelected() != paused) {
+            click(pause);
+        }
+        onEdt(() -> {
+            var caret = textPane(p).getCaret();
+            if (caret instanceof DefaultCaret dc) {
+                dc.setUpdatePolicy(paused ? DefaultCaret.NEVER_UPDATE : DefaultCaret.ALWAYS_UPDATE);
+            }
         });
     }
 }

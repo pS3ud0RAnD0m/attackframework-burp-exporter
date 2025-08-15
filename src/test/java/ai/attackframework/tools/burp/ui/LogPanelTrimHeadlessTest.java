@@ -2,17 +2,17 @@ package ai.attackframework.tools.burp.ui;
 
 import org.junit.jupiter.api.Test;
 
-import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.*;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.allText;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.newPanel;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.resetPanelState;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Verifies duplicate-compaction renders "(xN)" on consecutive identical messages.
- */
 class LogPanelTrimHeadlessTest {
 
     @Test
     void consecutiveDuplicates_compactWithCount() {
         LogPanel p = newPanel();
+        resetPanelState(p);
 
         p.onLog("INFO", "same");
         p.onLog("INFO", "same");
@@ -20,7 +20,6 @@ class LogPanelTrimHeadlessTest {
 
         String text = allText(p);
         assertThat(text).contains("(x3)");
-        // only one visual line for the compacted sequence
         assertThat(text).containsSubsequence("same");
         assertThat(text.indexOf("same")).isEqualTo(text.lastIndexOf("same"));
     }
