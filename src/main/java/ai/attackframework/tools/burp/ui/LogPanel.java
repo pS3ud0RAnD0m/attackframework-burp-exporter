@@ -51,6 +51,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 
 /**
  * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex),
@@ -169,9 +170,11 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         filterField.setName("log.filter.text");
         filterCaseToggle = new JCheckBox("Aa");
         filterCaseToggle.setToolTipText("Case-sensitive filter");
+        filterCaseToggle.setName("log.filter.case");
         filterCaseToggle.setSelected(PREFS.getBoolean(PREF_FILTER_CASE, false));
         filterRegexToggle = new JCheckBox(".*");
         filterRegexToggle.setToolTipText("Regex filter");
+        filterRegexToggle.setName("log.filter.regex");
         filterRegexToggle.setSelected(PREFS.getBoolean(PREF_FILTER_REGEX, false));
 
         // Search group (restore last search text only)
@@ -180,13 +183,16 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         searchField.setName("log.search.field");
         searchCaseToggle = new JCheckBox("Aa");
         searchCaseToggle.setToolTipText("Case-sensitive search");
+        searchCaseToggle.setName("log.search.case");
         searchRegexToggle = new JCheckBox(".*");
         searchRegexToggle.setToolTipText("Regex search");
+        searchRegexToggle.setName("log.search.regex");
         JButton searchPrevBtn = new JButton("Prev");
         searchPrevBtn.setName("log.search.prev");
         JButton searchNextBtn = new JButton("Next");
         searchNextBtn.setName("log.search.next");
         searchCountLabel = new JLabel("0/0");
+        searchCountLabel.setName("log.search.count");
 
         JButton clearBtn = new JButton("Clear");
         clearBtn.setName("log.clear");
@@ -376,7 +382,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
                         : m.toLowerCase(Locale.ROOT).contains(f.toLowerCase(Locale.ROOT));
             }
         } catch (PatternSyntaxException ex) {
-            // No logs: just treat as non-match and tint field via updateFilterRegexFeedback()
+            // Invalid regex => treat as non-match; field is tinted separately.
             return false;
         }
     }
@@ -414,9 +420,10 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private void trimIfNeeded() {
         if (entries.size() > MAX_MODEL_ENTRIES) {
             int remove = entries.size() - MAX_MODEL_ENTRIES;
-            // remove is guaranteed > 0 here; drop the oldest and rebuild
-            entries.subList(0, remove).clear();
-            rebuildView();
+            if (remove > 0) {
+                entries.subList(0, remove).clear();
+                rebuildView();
+            }
         }
     }
 
@@ -549,8 +556,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         try {
             Rectangle r = logTextPane.modelToView2D(offset).getBounds();
             logTextPane.scrollRectToVisible(r);
-        } catch (BadLocationException ignore) {
-        }
+        } catch (BadLocationException ignore) { }
     }
 
     private void updateMatchCount() {
@@ -585,16 +591,14 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             if (end < 0) end = text.length();
             String line = text.substring(start, end);
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(line), null);
-        } catch (BadLocationException ignore) {
-        }
+        } catch (BadLocationException ignore) { }
     }
 
     private void copyAll() {
         try {
             String all = doc.getText(0, doc.getLength());
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(all), null);
-        } catch (BadLocationException ignore) {
-        }
+        } catch (BadLocationException ignore) { }
     }
 
     private void saveVisible() {
@@ -611,6 +615,16 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             FileUtil.writeStringCreateDirs(out.toPath(), text);
         } catch (IOException | BadLocationException ex) {
             Logger.logError("Save failed: " + ex.getMessage());
+        }
+    }
+
+    // chooser-free helper for tests
+    void saveVisibleTo(Path out) throws IOException {
+        try {
+            String text = doc.getText(0, doc.getLength());
+            FileUtil.writeStringCreateDirs(out, text);
+        } catch (BadLocationException e) {
+            throw new IOException("Failed reading document", e);
         }
     }
 
@@ -674,10 +688,10 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         try {
             Pattern p = supplier.get(); // validation
             if (p != null) {
-                field.setBackground(tint(base, new Color(0, 180, 0))); // light green
+                field.setBackground(tint(base, new Color(0, 180, 0)));
             }
         } catch (PatternSyntaxException ex) {
-            field.setBackground(tint(base, new Color(200, 0, 0))); // light red
+            field.setBackground(tint(base, new Color(200, 0, 0)));
         }
     }
 
