@@ -1,15 +1,24 @@
 package ai.attackframework.tools.burp.utils.config;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Map;
 
 /**
  * Minimal JSON helpers for exporting/importing the ConfigPanel state.
- * Intentionally lightweight (no external JSON libs) and tailored to the panel’s format.
+ * Switched to Jackson for robust serialization/parsing to avoid fragile custom escaping.
+ * Public surface is kept identical so callers (e.g., ConfigPanel) need no changes.
  */
 public final class Json {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private Json() {}
 
@@ -32,170 +41,115 @@ public final class Json {
             boolean openSearchEnabled,
             String openSearchUrl) {
 
-        String indent = "  ";
-        String indent2 = indent + indent;
-        String indent3 = indent2 + indent;
+        Map<String, Object> root = new LinkedHashMap<>();
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\n");
+        // dataSources
+        root.put("dataSources", sources == null ? List.of() : sources);
 
-        sb.append(indent).append("\"dataSources\": [");
-        if (sources != null && !sources.isEmpty()) {
-            sb.append("\n");
-            for (int i = 0; i < sources.size(); i++) {
-                sb.append(indent2).append("\"").append(jsonEscape(sources.get(i))).append("\"");
-                if (i < sources.size() - 1) sb.append(",");
-                sb.append("\n");
-            }
-            sb.append(indent).append("],\n");
-        } else {
-            sb.append("],\n");
-        }
-
-        // scope object (tight form): { "custom": [ ... ] } OR { "burp": [] } OR { "all": [] }
-        sb.append(indent).append("\"scope\": {\n");
+        // scope
+        Map<String, Object> scope = new LinkedHashMap<>();
         if ("custom".equals(scopeType)) {
-            sb.append(indent2).append("\"custom\": [");
-            if (scopeRegexes != null && !scopeRegexes.isEmpty()) {
-                sb.append("\n");
-                for (int i = 0; i < scopeRegexes.size(); i++) {
-                    sb.append(indent3).append("\"").append(jsonEscape(scopeRegexes.get(i))).append("\"");
-                    if (i < scopeRegexes.size() - 1) sb.append(",");
-                    sb.append("\n");
-                }
-                sb.append(indent2).append("]\n");
-            } else {
-                sb.append("]\n");
-            }
+            scope.put("custom", scopeRegexes == null ? List.of() : scopeRegexes);
         } else if ("burp".equals(scopeType)) {
-            sb.append(indent2).append("\"burp\": []\n");
+            scope.put("burp", List.of());
         } else {
-            sb.append(indent2).append("\"all\": []\n");
+            scope.put("all", List.of());
         }
-        sb.append(indent).append("},\n");
+        root.put("scope", scope);
 
-        // sinks — only include selected sinks; values are direct strings (path or URL)
-        sb.append(indent).append("\"sinks\": {\n");
-        List<String> sinkLines = new ArrayList<>();
+        // sinks
+        Map<String, Object> sinks = new LinkedHashMap<>();
         if (filesEnabled) {
-            sinkLines.add(indent2 + "\"files\": \"" + jsonEscape(filesRoot != null ? filesRoot : "") + "\"");
+            sinks.put("files", filesRoot == null ? "" : filesRoot);
         }
         if (openSearchEnabled) {
-            sinkLines.add(indent2 + "\"openSearch\": \"" + jsonEscape(openSearchUrl != null ? openSearchUrl : "") + "\"");
+            sinks.put("openSearch", openSearchUrl == null ? "" : openSearchUrl);
         }
-        if (!sinkLines.isEmpty()) {
-            for (int i = 0; i < sinkLines.size(); i++) {
-                sb.append(sinkLines.get(i));
-                if (i < sinkLines.size() - 1) sb.append(",\n");
-            }
-            sb.append("\n").append(indent).append("}\n");
-        } else {
-            sb.append(indent).append("}\n");
-        }
+        root.put("sinks", sinks);
 
-        sb.append("}");
-        return sb.toString();
+        try {
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        } catch (JsonProcessingException e) {
+            return "{ \"dataSources\": [], \"scope\": { \"all\": [] }, \"sinks\": {} }";
+        }
     }
 
     /**
      * Parses the JSON produced by {@link #buildPrettyConfigJson}.
-     * Minimal/tolerant regex-based parser; not intended for general JSON.
+     * Uses Jackson for tolerant parsing.
      */
     public static ImportedConfig parseConfigJson(String json) {
         ImportedConfig cfg = new ImportedConfig();
-        String src = json == null ? "" : json;
+        if (json == null || json.isEmpty()) return cfg;
+        try {
+            JsonNode root = MAPPER.readTree(json);
 
-        // dataSources: extract ["...","..."]
-        Matcher mDs = Pattern.compile("\"dataSources\"\\s*:\\s*\\[(.*?)]", Pattern.DOTALL).matcher(src);
-        if (mDs.find()) {
-            String arr = mDs.group(1);
-            Matcher mVals = Pattern.compile("\"(.*?)\"", Pattern.DOTALL).matcher(arr);
-            while (mVals.find()) cfg.dataSources.add(jsonUnescape(mVals.group(1)));
-        }
-
-        // scope: { ... } then check which key exists
-        Matcher mScope = Pattern.compile("\"scope\"\\s*:\\s*\\{(.*?)}", Pattern.DOTALL).matcher(src);
-        if (mScope.find()) {
-            String inner = mScope.group(1);
-            if (inner.contains("\"custom\"")) {
-                cfg.scopeType = "custom";
-                Matcher mCustomArr = Pattern.compile("\"custom\"\\s*:\\s*\\[(.*?)]", Pattern.DOTALL).matcher(inner);
-                if (mCustomArr.find()) {
-                    String arr = mCustomArr.group(1);
-                    Matcher mVals = Pattern.compile("\"(.*?)\"", Pattern.DOTALL).matcher(arr);
-                    while (mVals.find()) cfg.scopeRegexes.add(jsonUnescape(mVals.group(1)));
-                }
-            } else if (inner.contains("\"burp\"")) {
-                cfg.scopeType = "burp";
-            } else {
-                cfg.scopeType = "all";
+            // dataSources
+            JsonNode ds = root.path("dataSources");
+            if (ds.isArray()) {
+                for (JsonNode n : ds) if (n.isTextual()) cfg.dataSources.add(n.asText());
             }
+
+            // scope
+            JsonNode scope = root.path("scope");
+            if (scope.isObject()) {
+                if (scope.has("custom")) {
+                    cfg.scopeType = "custom";
+                    JsonNode arr = scope.path("custom");
+                    if (arr.isArray()) {
+                        for (JsonNode n : arr) if (n.isTextual()) cfg.scopeRegexes.add(n.asText());
+                    }
+                } else if (scope.has("burp")) {
+                    cfg.scopeType = "burp";
+                } else {
+                    cfg.scopeType = "all";
+                }
+            }
+
+            // sinks
+            JsonNode sinks = root.path("sinks");
+            if (sinks.isObject()) {
+                if (sinks.has("files") && !sinks.path("files").isNull()) {
+                    String val = sinks.path("files").asText();
+                    cfg.filesPath = (val != null && !val.isEmpty()) ? val : null;
+                }
+                if (sinks.has("openSearch") && !sinks.path("openSearch").isNull()) {
+                    String val = sinks.path("openSearch").asText();
+                    cfg.openSearchUrl = (val != null && !val.isEmpty()) ? val : null;
+                }
+            }
+        } catch (Exception ignore) {
+            // Leave defaults if parsing fails
         }
-
-        // sinks: look for "files":"..." and/or "openSearch":"..."
-        Matcher mFiles = Pattern.compile("\"files\"\\s*:\\s*\"(.*?)\"", Pattern.DOTALL).matcher(src);
-        if (mFiles.find()) cfg.filesPath = jsonUnescape(mFiles.group(1));
-
-        Matcher mOs = Pattern.compile("\"openSearch\"\\s*:\\s*\"(.*?)\"", Pattern.DOTALL).matcher(src);
-        if (mOs.find()) cfg.openSearchUrl = jsonUnescape(mOs.group(1));
-
         return cfg;
     }
 
-    // ---- minimal escaping helpers ----
+    // ---- legacy helpers retained for compatibility; delegate to Jackson ----
 
-    private static String jsonEscape(String s) {
+    /** @deprecated Prefer treating JSON as data via write/read methods. */
+    @Deprecated
+    static String jsonEscape(String s) {
         if (s == null) return "";
-        StringBuilder out = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '\"': out.append("\\\""); break;
-                case '\\': out.append("\\\\"); break;
-                case '\b': out.append("\\b"); break;
-                case '\f': out.append("\\f"); break;
-                case '\n': out.append("\\n"); break;
-                case '\r': out.append("\\r"); break;
-                case '\t': out.append("\\t"); break;
-                default:
-                    if (c < 0x20) out.append(String.format("\\u%04x", (int) c));
-                    else out.append(c);
+        try {
+            String quoted = MAPPER.writeValueAsString(s);
+            int n = quoted.length();
+            if (n >= 2 && quoted.charAt(0) == '\"' && quoted.charAt(n - 1) == '\"') {
+                return quoted.substring(1, n - 1);
             }
+            return quoted;
+        } catch (Exception e) {
+            return s;
         }
-        return out.toString();
     }
 
-    private static String jsonUnescape(String s) {
-        if (s == null || s.indexOf('\\') < 0) return s;
-        StringBuilder out = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                char n = s.charAt(++i);
-                switch (n) {
-                    case '\"': out.append('\"'); break;
-                    case '\\': out.append('\\'); break;
-                    case '/':  out.append('/');  break;
-                    case 'b':  out.append('\b'); break;
-                    case 'f':  out.append('\f'); break;
-                    case 'n':  out.append('\n'); break;
-                    case 'r':  out.append('\r'); break;
-                    case 't':  out.append('\t'); break;
-                    case 'u':
-                        if (i + 4 < s.length()) {
-                            String hex = s.substring(i + 1, i + 5);
-                            try { out.append((char) Integer.parseInt(hex, 16)); i += 4; }
-                            catch (NumberFormatException nfe) { out.append("\\u").append(hex); i += 4; }
-                        } else {
-                            out.append("\\u");
-                        }
-                        break;
-                    default: out.append(n);
-                }
-            } else {
-                out.append(c);
-            }
+    /** @deprecated Prefer treating JSON as data via write/read methods. */
+    @Deprecated
+    static String jsonUnescape(String s) {
+        if (s == null) return null;
+        try {
+            return MAPPER.readValue('"' + s + '"', String.class);
+        } catch (Exception e) {
+            return s;
         }
-        return out.toString();
     }
 }
