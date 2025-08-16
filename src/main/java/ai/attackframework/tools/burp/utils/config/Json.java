@@ -8,22 +8,26 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 
 /**
  * JSON marshaling for ConfigPanel import/export.
- * Produces compact JSON with deterministic field order
- * (stable insertion order plus map-entry sorting).
+ * Produces compact JSON with deterministic field order (stable insertion order).
  */
 public final class Json {
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
-            // Keep map keys ordered to ensure stable output across JVMs.
-            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
             // Compact output (pretty printing not required).
             .configure(SerializationFeature.INDENT_OUTPUT, false);
+
+    // Resolve the app version once; prefer gradle.properties, then JAR manifest, else "dev".
+    private static final String VERSION = resolveVersion();
 
     private Json() { }
 
@@ -75,7 +79,15 @@ public final class Json {
 
     /**
      * Builder with per-entry kinds for the custom scope.
-     * Output keeps legacy {@code "scope.custom":[...]} and adds {@code "scope.customTypes":[...]}.
+     * Output shape:
+     * {@code
+     *   {
+     *     "version": "1.2.3",
+     *     "dataSources": [...],
+     *     "scope": { "custom": { "regex": "...", "regex2": "...", "string": "...", "string2": "..." } },
+     *     "sinks": { ... }
+     *   }
+     * }
      */
     public static String buildConfigJsonTyped(List<String> sources,
                                               String scopeType,
@@ -87,6 +99,9 @@ public final class Json {
                                               String osUrl) {
 
         ObjectNode root = MAPPER.createObjectNode();
+
+        // Put version first so it appears at the top of the document.
+        root.put("version", VERSION);
 
         // dataSources
         ArrayNode srcArr = root.putArray("dataSources");
@@ -103,16 +118,30 @@ public final class Json {
         } else if ("burp".equals(scopeType)) {
             scope.put("burp", true);
         } else { // "custom"
-            ArrayNode vals = scope.putArray("custom");
-            if (scopeValues != null) {
-                for (String v : scopeValues) {
-                    if (v != null) vals.add(v);
-                }
-            }
-            if (scopeKinds != null && scopeValues != null && scopeKinds.size() == scopeValues.size()) {
-                ArrayNode kinds = scope.putArray("customTypes");
-                for (String k : scopeKinds) {
-                    kinds.add(k);
+            ObjectNode custom = scope.putObject("custom");
+
+            if (scopeValues != null && !scopeValues.isEmpty()) {
+                int regexCount = 0;
+                int stringCount = 0;
+
+                boolean typed = scopeKinds != null && scopeKinds.size() == scopeValues.size();
+
+                for (int i = 0; i < scopeValues.size(); i++) {
+                    String value = scopeValues.get(i);
+                    if (value == null) continue;
+
+                    String kind = typed ? scopeKinds.get(i) : "regex";
+                    boolean isRegex = "regex".equalsIgnoreCase(kind);
+
+                    if (isRegex) {
+                        String key = (regexCount == 0) ? "regex" : "regex" + (regexCount + 1);
+                        custom.put(key, value);
+                        regexCount++;
+                    } else {
+                        String key = (stringCount == 0) ? "string" : "string" + (stringCount + 1);
+                        custom.put(key, value);
+                        stringCount++;
+                    }
                 }
             }
         }
@@ -133,7 +162,7 @@ public final class Json {
         }
     }
 
-    /** Lenient parser that accepts both legacy and typed custom-scope shapes. */
+    /** A lenient parser that accepts the legacy array, the typed arrays (with {@code customTypes}), and the new typed-object shape. */
     public static ImportedConfig parseConfigJson(String json) throws IOException {
         JsonNode root = MAPPER.readTree(json);
 
@@ -157,14 +186,34 @@ public final class Json {
         } else {
             scopeType = "custom";
             JsonNode custom = scope.path("custom");
-            if (custom.isArray()) {
+
+            if (custom.isObject()) {
+                // New shape: {"custom":{"regex":"...","regex2":"...","string":"...","string2":"..."}}
+                List<String> kindsList = new ArrayList<>();
+                for (Iterator<Map.Entry<String, JsonNode>> it = custom.fields(); it.hasNext(); ) {
+                    Map.Entry<String, JsonNode> e = it.next();
+                    JsonNode v = e.getValue();
+                    if (v.isTextual()) {
+                        String key = e.getKey();
+                        String kind = key.startsWith("string") ? "string" : "regex"; // default to regex for unknown keys
+                        kindsList.add(kind);
+                        scopeVals.add(v.asText());
+                    }
+                }
+                scopeKinds = kindsList;
+            } else if (custom.isArray()) {
+                // Older shapes:
+                // 1) legacy array only: {"custom":[ "...", "..." ]}
+                // 2) typed arrays: {"custom":[ ... ], "customTypes":[ "regex" | "string", ... ]}
                 for (JsonNode n : custom) if (n.isTextual()) scopeVals.add(n.asText());
-            }
-            JsonNode kinds = scope.path("customTypes");
-            if (kinds.isArray() && kinds.size() == scopeVals.size()) {
-                scopeKinds = new ArrayList<>();
-                for (JsonNode k : kinds) {
-                    scopeKinds.add(k.isTextual() ? k.asText() : "regex");
+
+                JsonNode kinds = scope.path("customTypes");
+                if (kinds.isArray() && kinds.size() == scopeVals.size()) {
+                    List<String> kindsList = new ArrayList<>();
+                    for (JsonNode k : kinds) {
+                        kindsList.add(k.isTextual() ? k.asText() : "regex");
+                    }
+                    scopeKinds = kindsList;
                 }
             }
         }
@@ -185,5 +234,35 @@ public final class Json {
         }
 
         return new ImportedConfig(sources, scopeType, scopeVals, scopeKinds, files, os);
+    }
+
+    /** Resolves the application version. */
+    private static String resolveVersion() {
+        // 1) Try gradle.properties on the classpath.
+        String v = readVersionFromGradleProperties();
+        if (v != null) return v;
+
+        // 2) Try the JAR manifest Implementation-Version.
+        Package p = Json.class.getPackage();
+        if (p != null) {
+            String mv = p.getImplementationVersion();
+            if (mv != null && !mv.isBlank()) return mv;
+        }
+
+        // 3) Fallback.
+        return "dev";
+    }
+
+    private static String readVersionFromGradleProperties() {
+        ClassLoader cl = Json.class.getClassLoader();
+        try (InputStream in = cl.getResourceAsStream("gradle.properties")) {
+            if (in == null) return null;
+            Properties props = new Properties();
+            props.load(in);
+            String v = props.getProperty("version");
+            return (v != null && !v.isBlank()) ? v.trim() : null;
+        } catch (IOException ignored) {
+            return null;
+        }
     }
 }
