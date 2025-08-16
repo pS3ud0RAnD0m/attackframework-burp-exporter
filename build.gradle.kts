@@ -100,6 +100,14 @@ tasks.register<Jar>("fatJar") {
     archiveVersion.set(project.property("version").toString())
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
+    // ensure the JAR exposes Implementation-Version for runtime reads
+    manifest {
+        attributes(
+            "Implementation-Title" to project.name,
+            "Implementation-Version" to project.version
+        )
+    }
+
     from(sourceSets.main.get().output)
 
     dependsOn(configurations.runtimeClasspath)

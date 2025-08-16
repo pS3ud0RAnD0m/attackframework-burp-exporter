@@ -23,10 +23,9 @@ import java.util.Properties;
 public final class Json {
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
-            // Compact output (pretty printing not required).
-            .configure(SerializationFeature.INDENT_OUTPUT, false);
+            .configure(SerializationFeature.INDENT_OUTPUT, false); // compact output
 
-    // Resolve the app version once; prefer gradle.properties, then JAR manifest, else "dev".
+    // Resolve the app version once; prefer JAR manifest, then configurable fallbacks.
     private static final String VERSION = resolveVersion();
 
     private Json() { }
@@ -80,13 +79,11 @@ public final class Json {
     /**
      * Builder with per-entry kinds for the custom scope.
      * Output shape:
-     * {@code
-     *   {
-     *     "version": "1.2.3",
-     *     "dataSources": [...],
-     *     "scope": { "custom": { "regex": "...", "regex2": "...", "string": "...", "string2": "..." } },
-     *     "sinks": { ... }
-     *   }
+     * {
+     *   "version": "1.2.3",
+     *   "dataSources": [...],
+     *   "scope": { "custom": { "regex1": "...", "regex2": "...", "string1": "...", "string2": "..." } },
+     *   "sinks": { ... }
      * }
      */
     public static String buildConfigJsonTyped(List<String> sources,
@@ -100,7 +97,7 @@ public final class Json {
 
         ObjectNode root = MAPPER.createObjectNode();
 
-        // Put version first so it appears at the top of the document.
+        // Put version first so it appears at the top.
         root.put("version", VERSION);
 
         // dataSources
@@ -134,13 +131,11 @@ public final class Json {
                     boolean isRegex = "regex".equalsIgnoreCase(kind);
 
                     if (isRegex) {
-                        String key = (regexCount == 0) ? "regex" : "regex" + (regexCount + 1);
-                        custom.put(key, value);
                         regexCount++;
+                        custom.put("regex" + regexCount, value);
                     } else {
-                        String key = (stringCount == 0) ? "string" : "string" + (stringCount + 1);
-                        custom.put(key, value);
                         stringCount++;
+                        custom.put("string" + stringCount, value);
                     }
                 }
             }
@@ -162,7 +157,7 @@ public final class Json {
         }
     }
 
-    /** A lenient parser that accepts the legacy array, the typed arrays (with {@code customTypes}), and the new typed-object shape. */
+    /** A lenient parser that accepts the legacy array, typed arrays (with {@code customTypes}), and the new typed-object shape. */
     public static ImportedConfig parseConfigJson(String json) throws IOException {
         JsonNode root = MAPPER.readTree(json);
 
@@ -188,14 +183,21 @@ public final class Json {
             JsonNode custom = scope.path("custom");
 
             if (custom.isObject()) {
-                // New shape: {"custom":{"regex":"...","regex2":"...","string":"...","string2":"..."}}
+                // New shape: {"custom":{"regex1":"...","regex2":"...","string1":"...","string2":"..."}}
                 List<String> kindsList = new ArrayList<>();
                 for (Iterator<Map.Entry<String, JsonNode>> it = custom.fields(); it.hasNext(); ) {
                     Map.Entry<String, JsonNode> e = it.next();
                     JsonNode v = e.getValue();
                     if (v.isTextual()) {
                         String key = e.getKey();
-                        String kind = key.startsWith("string") ? "string" : "regex"; // default to regex for unknown keys
+                        String kind;
+                        if (key.startsWith("string")) {
+                            kind = "string";
+                        } else if (key.startsWith("regex")) {
+                            kind = "regex";
+                        } else {
+                            kind = "regex"; // default
+                        }
                         kindsList.add(kind);
                         scopeVals.add(v.asText());
                     }
@@ -236,33 +238,47 @@ public final class Json {
         return new ImportedConfig(sources, scopeType, scopeVals, scopeKinds, files, os);
     }
 
-    /** Resolves the application version. */
+    /** Resolves the application version with multiple sources and fallbacks. */
     private static String resolveVersion() {
-        // 1) Try gradle.properties on the classpath.
-        String v = readVersionFromGradleProperties();
-        if (v != null) return v;
+        // 0) Explicit overrides.
+        String v = System.getProperty("attackframework.version");
+        if (nonBlank(v)) return v.trim();
+        v = System.getenv("ATTACKFRAMEWORK_VERSION");
+        if (nonBlank(v)) return v.trim();
 
-        // 2) Try the JAR manifest Implementation-Version.
+        // 1) JAR manifest Implementation-Version (best practice).
         Package p = Json.class.getPackage();
         if (p != null) {
             String mv = p.getImplementationVersion();
-            if (mv != null && !mv.isBlank()) return mv;
+            if (nonBlank(mv)) return mv.trim();
         }
 
-        // 3) Fallback.
+        // 2) gradle.properties packaged as a resource (optional).
+        v = readVersionFromPropertiesResource("gradle.properties");
+        if (v != null) return v;
+
+        // 3) generic version.properties on classpath (optional).
+        v = readVersionFromPropertiesResource("version.properties");
+        if (v != null) return v;
+
+        // 4) fallback.
         return "dev";
     }
 
-    private static String readVersionFromGradleProperties() {
+    private static String readVersionFromPropertiesResource(String resourceName) {
         ClassLoader cl = Json.class.getClassLoader();
-        try (InputStream in = cl.getResourceAsStream("gradle.properties")) {
+        try (InputStream in = cl.getResourceAsStream(resourceName)) {
             if (in == null) return null;
             Properties props = new Properties();
             props.load(in);
             String v = props.getProperty("version");
-            return (v != null && !v.isBlank()) ? v.trim() : null;
+            return nonBlank(v) ? v.trim() : null;
         } catch (IOException ignored) {
             return null;
         }
+    }
+
+    private static boolean nonBlank(String s) {
+        return s != null && !s.isBlank();
     }
 }
