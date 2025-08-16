@@ -26,6 +26,7 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -43,14 +44,16 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
- * UI for selecting sources/scope, configuring sinks, kicking off small actions,
- * and surfacing status. Comments favor intent/design over narration.
+ * UI for selecting sources/scope, configuring sinks, running actions,
+ * and surfacing status.
  */
 public class ConfigPanel extends JPanel {
 
-    // Layout & status sizing constants
+    // Layout & status sizing
     private static final int INDENT = 30;
     private static final int ROW_GAP = 15;
     private static final int STATUS_MIN_COLS = 20;
@@ -65,8 +68,17 @@ public class ConfigPanel extends JPanel {
     // Scope
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
-    private final JRadioButton customRadio    = new JRadioButton("Custom (RegEx)");
-    private final JTextField   customScopeField = new JTextField("^.*acme\\.com$");
+    private final JRadioButton customRadio    = new JRadioButton("Custom");
+    private final JTextField   customScopeField = new AutoSizingTextField("^.*acme\\.com$");
+
+    // Custom scope inputs live on a single row for compactness
+    private final JCheckBox customScopeRegexToggle = new JCheckBox(".*"); // unchecked = string match
+    private final JButton addCustomScopeButton = new JButton("Add");
+    private final JPanel customScopesContainer = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+    private JPanel customRow;
+    private final List<JTextField> customScopeFields = new ArrayList<>();
+    private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
+    private final List<JButton> customScopeDeleteButtons = new ArrayList<>(); // index 0 is null (first field not deletable)
 
     // Files sink
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
@@ -83,7 +95,7 @@ public class ConfigPanel extends JPanel {
     private final JTextArea  openSearchStatus      = new JTextArea();
     private final JPanel     statusWrapper         = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
-    // Admin status areas
+    // Admin status
     private final JTextArea adminStatus = new JTextArea();
     private final JPanel    adminStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
     private Timer adminStatusHideTimer;
@@ -91,7 +103,6 @@ public class ConfigPanel extends JPanel {
     private final JTextArea importExportStatus = new JTextArea();
     private final JPanel    importExportStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
 
-    /** Build the panel and wire actions. */
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
@@ -107,12 +118,11 @@ public class ConfigPanel extends JPanel {
         add(buildAdminPanel(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
 
-        assignComponentNames();     // stable identifiers for tests
-        wireTextFieldEnhancements(); // undo/redo + Enter bindings
-        refreshEnabledStates();      // reflect current checkbox state
+        assignComponentNames();
+        wireTextFieldEnhancements();
+        refreshEnabledStates();
     }
 
-    /** Sources section. */
     private JPanel buildSourcesPanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -129,7 +139,6 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
-    /** Scope selection (Burp scope, Custom regex, or All). */
     private JPanel buildScopePanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -145,17 +154,141 @@ public class ConfigPanel extends JPanel {
 
         panel.add(burpSuiteRadio, "gapleft " + INDENT);
 
-        JPanel customRow = new JPanel(new MigLayout("insets 0", "[]20[]", ""));
+        // single row for custom scope inputs
+        customRow = new JPanel(new MigLayout("insets 0, flowx", "", ""));
         customRow.add(customRadio);
-        customRow.add(customScopeField);
-        panel.add(customRow, "gapleft " + INDENT);
+        customRow.add(customScopeField, "gapleft 20");
+        customRow.add(customScopeRegexToggle, "gapleft 10");
+        customRow.add(addCustomScopeButton, "gapleft 10");
+
+        if (customScopeFields.isEmpty()) {
+            customScopeFields.add(customScopeField);
+            customScopeRegexToggles.add(customScopeRegexToggle);
+            customScopeDeleteButtons.add(null); // first field doesn't get a delete button
+        }
+
+        customScopesContainer.removeAll();
+        customScopesContainer.add(customRow, "growx");
+        panel.add(customScopesContainer, "gapleft " + INDENT + ", growx");
+
+        // regex validation colorization
+        customScopeRegexToggle.addActionListener(e -> updateCustomRegexFeedback());
+        customScopeField.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); customScopeField.revalidate(); }
+            public void removeUpdate(DocumentEvent e) { updateCustomRegexFeedback(); customScopeField.revalidate(); }
+            public void changedUpdate(DocumentEvent e) { updateCustomRegexFeedback(); customScopeField.revalidate(); }
+        });
+
+        addCustomScopeButton.addActionListener(e -> addCustomScopeFieldInline());
 
         panel.add(allRadio, "gapleft " + INDENT);
 
         return panel;
     }
 
-    /** Sinks section (Files, OpenSearch) and status areas. */
+    /** Adds another custom scope field (with regex toggle and delete) inline on the same row. */
+    private void addCustomScopeFieldInline() {
+        if (customScopeFields.size() >= 100) {
+            addCustomScopeButton.setEnabled(false);
+            return;
+        }
+
+        JTextField field = new AutoSizingTextField("");
+        JCheckBox toggle = new JCheckBox(".*");
+        toggle.setToolTipText("Regex (off = string match)");
+        JButton deleteBtn = new JButton("Delete");
+
+        int idx = customScopeFields.size() + 1;
+        field.setName("scope.custom.regex." + idx);
+        toggle.setName("scope.custom.regex.toggle." + idx);
+        deleteBtn.setName("scope.custom.regex.delete." + idx);
+        deleteBtn.setToolTipText("Remove this filter");
+
+        // keep Add button last
+        customRow.remove(addCustomScopeButton);
+        customRow.add(field, "gapleft 20");
+        customRow.add(toggle, "gapleft 10");
+        customRow.add(deleteBtn, "gapleft 10");
+        customRow.add(addCustomScopeButton, "gapleft 10");
+
+        customScopeFields.add(field);
+        customScopeRegexToggles.add(toggle);
+        customScopeDeleteButtons.add(deleteBtn);
+
+        toggle.addActionListener(e -> updateCustomRegexFeedback());
+        field.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); field.revalidate(); }
+            public void removeUpdate(DocumentEvent e) { updateCustomRegexFeedback(); field.revalidate(); }
+            public void changedUpdate(DocumentEvent e) { updateCustomRegexFeedback(); field.revalidate(); }
+        });
+
+        deleteBtn.addActionListener(e -> removeCustomScopeField(field));
+
+        if (customScopeFields.size() >= 100) {
+            addCustomScopeButton.setEnabled(false);
+        }
+
+        customRow.revalidate();
+        customRow.repaint();
+    }
+
+    /** Removes a specific custom scope field, its toggle, and its delete button. */
+    private void removeCustomScopeField(JTextField field) {
+        int i = customScopeFields.indexOf(field);
+        if (i <= 0) return; // don't remove the first field
+
+        JCheckBox toggle = customScopeRegexToggles.get(i);
+        JButton del = customScopeDeleteButtons.get(i);
+
+        customRow.remove(field);
+        customRow.remove(toggle);
+        if (del != null) customRow.remove(del);
+
+        customScopeFields.remove(i);
+        customScopeRegexToggles.remove(i);
+        customScopeDeleteButtons.remove(i);
+
+        addCustomScopeButton.setEnabled(true);
+        updateCustomRegexFeedback();
+
+        customRow.revalidate();
+        customRow.repaint();
+    }
+
+    /** Colors fields green/red when regex is enabled and compiles/fails. */
+    private void updateCustomRegexFeedback() {
+        for (int i = 0; i < customScopeFields.size(); i++) {
+            JTextField field = customScopeFields.get(i);
+            boolean regexOn = i < customScopeRegexToggles.size() && customScopeRegexToggles.get(i).isSelected();
+            applyRegexFeedback(field, regexOn);
+        }
+    }
+
+    private void applyRegexFeedback(JTextField field, boolean regexOn) {
+        Color base = UIManager.getColor("TextField.background");
+        if (base == null) base = field.getBackground();
+        if (!regexOn) {
+            field.setBackground(base);
+            return;
+        }
+        try {
+            Pattern.compile(field.getText());
+            field.setBackground(tint(base, new Color(0, 180, 0)));
+        } catch (PatternSyntaxException ex) {
+            field.setBackground(tint(base, new Color(200, 0, 0)));
+        }
+    }
+
+    private static Color tint(Color base, Color overlay) {
+        final float a = 0.18f;
+        int r = (int) (base.getRed() * (1 - a) + overlay.getRed() * a);
+        int g = (int) (base.getGreen() * (1 - a) + overlay.getGreen() * a);
+        int b = (int) (base.getBlue() * (1 - a) + overlay.getBlue() * a);
+        return new Color(Math.min(255, Math.max(0, r)),
+                Math.min(255, Math.max(0, g)),
+                Math.min(255, Math.max(0, b)));
+    }
+
     private JPanel buildSinksPanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+ROW_GAP+"[]"+ROW_GAP+"[]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -199,7 +332,6 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
-    /** Admin section with Import/Export row and Save functionality. */
     private JPanel buildAdminPanel() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", "[]"+ROW_GAP+"[]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -241,7 +373,6 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
-    /** 2px horizontal separator. */
     private JComponent panelSeparator() {
         return new JSeparator() {
             @Override public Dimension getPreferredSize() {
@@ -255,7 +386,6 @@ public class ConfigPanel extends JPanel {
         };
     }
 
-    /** Monospace, non-wrapping status areas for predictable layout. */
     private void configureTextArea(JTextArea area) {
         area.setEditable(false);
         area.setLineWrap(false);
@@ -266,7 +396,7 @@ public class ConfigPanel extends JPanel {
         area.setColumns(1);
     }
 
-    // ---- DRY status updaters ----
+    // Status helpers
     private static void setStatus(JTextArea area, JPanel wrapper, String message) {
         area.setText(message);
         String[] lines = message.split("\r\n|\r|\n", -1);
@@ -289,7 +419,6 @@ public class ConfigPanel extends JPanel {
         return max;
     }
 
-    /** Button actions and enable/disable UX. */
     private void wireButtonActions() {
         fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
@@ -435,7 +564,7 @@ public class ConfigPanel extends JPanel {
             }.execute();
         });
 
-        // Keep text fields sized to content while typing.
+        // Keep fields sized to content while typing.
         DocumentListener relayout = new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
             public void removeUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
@@ -445,17 +574,16 @@ public class ConfigPanel extends JPanel {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
-    /** Reflect sink checkboxes in control enablement. */
+    /** Disable sink text fields when deselected; leave action buttons enabled. */
     private void refreshEnabledStates() {
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
-        createFilesButton.setEnabled(files);
+        createFilesButton.setEnabled(true);
 
         boolean os = openSearchSinkCheckbox.isSelected();
         openSearchUrlField.setEnabled(os);
     }
 
-    /** Short names used to compute index basenames. */
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add("settings");
@@ -465,18 +593,18 @@ public class ConfigPanel extends JPanel {
         return selected;
     }
 
-    /** Text field that sizes to its content. */
+    // Autosizing text field
     private static class AutoSizingTextField extends JTextField {
         public AutoSizingTextField(String text) { super(text); }
         @Override public Dimension getPreferredSize() {
             FontMetrics fm = getFontMetrics(getFont());
             int textWidth = fm.stringWidth(getText()) + 20;
             int height = super.getPreferredSize().height;
-            return new Dimension(textWidth, height);
+            int w = Math.max(80, Math.min(900, textWidth));
+            return new Dimension(w, height);
         }
     }
 
-    /** Save logs a pretty JSON snapshot of current UI (non-secret settings only). */
     private class AdminSaveButtonListener implements ActionListener {
         @Override public void actionPerformed(ActionEvent e) {
             try {
@@ -501,21 +629,29 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Build pretty JSON of current UI state (non-secret). */
     private String currentConfigJson() {
         List<String> selectedSources = getSelectedSources();
 
         String scopeType;
-        List<String> scopeRegexes = null;
+        List<String> scopeValues = null;
+        List<String> scopeKinds = null;
         if (allRadio.isSelected()) {
             scopeType = "all";
         } else if (burpSuiteRadio.isSelected()) {
             scopeType = "burp";
         } else {
             scopeType = "custom";
-            scopeRegexes = new ArrayList<>();
-            String rx = customScopeField.getText();
-            if (rx != null && !rx.trim().isEmpty()) scopeRegexes.add(rx.trim());
+            scopeValues = new ArrayList<>();
+            scopeKinds = new ArrayList<>();
+            for (int i = 0; i < customScopeFields.size(); i++) {
+                JTextField f = customScopeFields.get(i);
+                String v = f.getText();
+                if (v != null && !v.trim().isEmpty()) {
+                    scopeValues.add(v.trim());
+                    boolean regexOn = i < customScopeRegexToggles.size() && customScopeRegexToggles.get(i).isSelected();
+                    scopeKinds.add(regexOn ? "regex" : "string");
+                }
+            }
         }
 
         boolean filesEnabled = fileSinkCheckbox.isSelected();
@@ -523,50 +659,14 @@ public class ConfigPanel extends JPanel {
         String  osUrl        = openSearchUrlField.getText();
         String  filesRoot    = filePathField.getText();
 
-        return Json.buildPrettyConfigJson(
-                selectedSources, scopeType, scopeRegexes,
+        return Json.buildConfigJsonTyped(
+                selectedSources, scopeType, scopeValues, scopeKinds,
                 filesEnabled, filesRoot, osEnabled, osUrl
         );
     }
 
-    /** Text-input UX: undo/redo + Enter-to-action. */
-    private void wireTextFieldEnhancements() {
-        installUndoRedo(filePathField);
-        installUndoRedo(openSearchUrlField);
-        installUndoRedo(customScopeField);
-
-        // Enter on these fields triggers the relevant action
-        filePathField.addActionListener(e -> createFilesButton.doClick());
-        openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
-    }
-
-    /** Undo/redo on a text field via key bindings. */
-    private static void installUndoRedo(JTextField field) {
-        UndoManager undo = new UndoManager();
-        undo.setLimit(200);
-        field.getDocument().addUndoableEditListener(undo);
-
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK), "undo");
-
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.META_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
-
-        field.getActionMap().put("undo", new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }});
-        field.getActionMap().put("redo", new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }});
-    }
-
-    private static void bind(JTextField field, KeyStroke ks, String actionKey) {
-        field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
-    }
-
-    // --------------------------
     // Import / Export
-    // --------------------------
 
-    /** Export current JSON to a file via chooser. */
     private void doExportConfig() {
         String json = currentConfigJson();
 
@@ -592,7 +692,6 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Import JSON from a file via chooser and apply it to the UI. */
     private void doImportConfig() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Import Config");
@@ -624,8 +723,7 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    // ---- chooser-free helpers (package-private for tests) ----
-
+    // chooser-free helpers (package-private for tests)
     void exportConfigTo(Path out) throws IOException {
         FileUtil.writeStringCreateDirs(out, currentConfigJson());
         Logger.logInfo("Config exported to " + out.toAbsolutePath());
@@ -639,8 +737,7 @@ public class ConfigPanel extends JPanel {
         Logger.logInfo("Config imported from " + in.toAbsolutePath());
     }
 
-    // ---- internal: apply imported values to the UI ----
-
+    // apply imported values to the UI
     private void applyImported(Json.ImportedConfig cfg) {
         // Sources
         settingsCheckbox.setSelected(cfg.dataSources.contains("settings"));
@@ -648,14 +745,14 @@ public class ConfigPanel extends JPanel {
         issuesCheckbox.setSelected(cfg.dataSources.contains("findings"));
         trafficCheckbox.setSelected(cfg.dataSources.contains("traffic"));
 
-        // Scope
+        // Scope (uses first custom entry if multiple are present)
         switch (cfg.scopeType) {
             case "custom" -> {
                 customRadio.setSelected(true);
                 customScopeField.setText(cfg.scopeRegexes.isEmpty() ? "" : cfg.scopeRegexes.getFirst());
             }
             case "burp" -> burpSuiteRadio.setSelected(true);
-            default -> allRadio.setSelected(true); // "all"
+            default -> allRadio.setSelected(true);
         }
 
         // Sinks
@@ -673,7 +770,6 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    /** Assign stable names so tests don't rely on visible labels. */
     private void assignComponentNames() {
         // sources
         settingsCheckbox.setName("src.settings");
@@ -698,4 +794,37 @@ public class ConfigPanel extends JPanel {
         testConnectionButton.setName("os.test");
         createIndexesButton.setName("os.createIndexes");
     }
+
+    // text-input helpers: undo/redo + Enter-to-action
+    private void wireTextFieldEnhancements() {
+        installUndoRedo(filePathField);
+        installUndoRedo(openSearchUrlField);
+        installUndoRedo(customScopeField);
+
+        filePathField.addActionListener(e -> createFilesButton.doClick());
+        openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
+    }
+
+    private static void installUndoRedo(JTextField field) {
+        UndoManager undo = new UndoManager();
+        undo.setLimit(200);
+        field.getDocument().addUndoableEditListener(undo);
+
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK), "undo");
+
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.META_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
+
+        field.getActionMap().put("undo", new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }});
+        field.getActionMap().put("redo", new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }});
+    }
+
+    private static void bind(JTextField field, KeyStroke ks, String actionKey) {
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
+    }
+
+    @Override public void paint(Graphics g) { super.paint(g); }
 }
