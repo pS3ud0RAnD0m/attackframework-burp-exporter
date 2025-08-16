@@ -420,12 +420,11 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private void trimIfNeeded() {
         if (entries.size() > MAX_MODEL_ENTRIES) {
             int remove = entries.size() - MAX_MODEL_ENTRIES;
-            if (remove > 0) {
-                entries.subList(0, remove).clear();
-                rebuildView();
-            }
+            entries.subList(0, remove).clear();
+            rebuildView();
         }
     }
+
 
     private String formatLine(LocalDateTime ts, L lvl, String msg, int repeats) {
         String timestamp = "[" + timestampFormat.format(ts == null ? LocalDateTime.now() : ts) + "]";
@@ -619,6 +618,8 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     }
 
     // chooser-free helper for tests
+
+    @SuppressWarnings("unused")
     void saveVisibleTo(Path out) throws IOException {
         try {
             String text = doc.getText(0, doc.getLength());
