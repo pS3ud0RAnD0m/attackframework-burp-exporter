@@ -26,7 +26,6 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
-import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -79,6 +78,8 @@ public class ConfigPanel extends JPanel {
     private final List<JTextField> customScopeFields = new ArrayList<>();
     private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
     private final List<JButton> customScopeDeleteButtons = new ArrayList<>(); // index 0 is null (first field not deletable)
+    // NEW: indicators shown only when regex toggle is on (✓ valid / ✖ invalid)
+    private final List<JLabel> customScopeIndicators = new ArrayList<>();
 
     // Files sink
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
@@ -159,19 +160,25 @@ public class ConfigPanel extends JPanel {
         customRow.add(customRadio);
         customRow.add(customScopeField, "gapleft 20");
         customRow.add(customScopeRegexToggle, "gapleft 10");
+
+        // first indicator + Add button
+        JLabel firstIndicator = new JLabel();
+        firstIndicator.setName("scope.custom.regex.indicator.1");
+        customRow.add(firstIndicator, "gapleft 6");
         customRow.add(addCustomScopeButton, "gapleft 10");
 
         if (customScopeFields.isEmpty()) {
             customScopeFields.add(customScopeField);
             customScopeRegexToggles.add(customScopeRegexToggle);
             customScopeDeleteButtons.add(null); // first field doesn't get a delete button
+            customScopeIndicators.add(firstIndicator);
         }
 
         customScopesContainer.removeAll();
         customScopesContainer.add(customRow, "growx");
         panel.add(customScopesContainer, "gapleft " + INDENT + ", growx");
 
-        // regex validation colorization
+        // regex indicator wiring (✓ valid / ✖ invalid, only when regex toggle is on)
         customScopeRegexToggle.addActionListener(e -> updateCustomRegexFeedback());
         customScopeField.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); customScopeField.revalidate(); }
@@ -186,7 +193,7 @@ public class ConfigPanel extends JPanel {
         return panel;
     }
 
-    /** Adds another custom scope field (with regex toggle and delete) inline on the same row. */
+    /** Adds another custom scope field (with regex toggle, indicator, and delete) inline on the same row. */
     private void addCustomScopeFieldInline() {
         if (customScopeFields.size() >= 100) {
             addCustomScopeButton.setEnabled(false);
@@ -196,11 +203,13 @@ public class ConfigPanel extends JPanel {
         JTextField field = new AutoSizingTextField("");
         JCheckBox toggle = new JCheckBox(".*");
         toggle.setToolTipText("Regex (off = string match)");
+        JLabel indicator = new JLabel();
         JButton deleteBtn = new JButton("Delete");
 
         int idx = customScopeFields.size() + 1;
         field.setName("scope.custom.regex." + idx);
         toggle.setName("scope.custom.regex.toggle." + idx);
+        indicator.setName("scope.custom.regex.indicator." + idx);
         deleteBtn.setName("scope.custom.regex.delete." + idx);
         deleteBtn.setToolTipText("Remove this filter");
 
@@ -208,11 +217,13 @@ public class ConfigPanel extends JPanel {
         customRow.remove(addCustomScopeButton);
         customRow.add(field, "gapleft 20");
         customRow.add(toggle, "gapleft 10");
+        customRow.add(indicator, "gapleft 6");
         customRow.add(deleteBtn, "gapleft 10");
         customRow.add(addCustomScopeButton, "gapleft 10");
 
         customScopeFields.add(field);
         customScopeRegexToggles.add(toggle);
+        customScopeIndicators.add(indicator);
         customScopeDeleteButtons.add(deleteBtn);
 
         toggle.addActionListener(e -> updateCustomRegexFeedback());
@@ -232,20 +243,23 @@ public class ConfigPanel extends JPanel {
         customRow.repaint();
     }
 
-    /** Removes a specific custom scope field, its toggle, and its delete button. */
+    /** Removes a specific custom scope field, its toggle, indicator, and its delete button. */
     private void removeCustomScopeField(JTextField field) {
         int i = customScopeFields.indexOf(field);
         if (i <= 0) return; // don't remove the first field
 
         JCheckBox toggle = customScopeRegexToggles.get(i);
+        JLabel indicator = customScopeIndicators.get(i);
         JButton del = customScopeDeleteButtons.get(i);
 
         customRow.remove(field);
         customRow.remove(toggle);
+        customRow.remove(indicator);
         if (del != null) customRow.remove(del);
 
         customScopeFields.remove(i);
         customScopeRegexToggles.remove(i);
+        customScopeIndicators.remove(i);
         customScopeDeleteButtons.remove(i);
 
         addCustomScopeButton.setEnabled(true);
@@ -255,38 +269,33 @@ public class ConfigPanel extends JPanel {
         customRow.repaint();
     }
 
-    /** Colors fields green/red when regex is enabled and compiles/fails. */
+    /** Updates ✓/✖ indicators; shows nothing when regex toggle is off or field is blank. */
     private void updateCustomRegexFeedback() {
         for (int i = 0; i < customScopeFields.size(); i++) {
             JTextField field = customScopeFields.get(i);
+            JLabel indicator = customScopeIndicators.get(i);
             boolean regexOn = i < customScopeRegexToggles.size() && customScopeRegexToggles.get(i).isSelected();
-            applyRegexFeedback(field, regexOn);
-        }
-    }
 
-    private void applyRegexFeedback(JTextField field, boolean regexOn) {
-        Color base = UIManager.getColor("TextField.background");
-        if (base == null) base = field.getBackground();
-        if (!regexOn) {
-            field.setBackground(base);
-            return;
-        }
-        try {
-            Pattern.compile(field.getText());
-            field.setBackground(tint(base, new Color(0, 180, 0)));
-        } catch (PatternSyntaxException ex) {
-            field.setBackground(tint(base, new Color(200, 0, 0)));
-        }
-    }
+            String text = field.getText();
+            if (!regexOn || text == null || text.isBlank()) {
+                indicator.setVisible(false);
+                indicator.setText("");
+                indicator.setToolTipText(null);
+                continue;
+            }
 
-    private static Color tint(Color base, Color overlay) {
-        final float a = 0.18f;
-        int r = (int) (base.getRed() * (1 - a) + overlay.getRed() * a);
-        int g = (int) (base.getGreen() * (1 - a) + overlay.getGreen() * a);
-        int b = (int) (base.getBlue() * (1 - a) + overlay.getBlue() * a);
-        return new Color(Math.min(255, Math.max(0, r)),
-                Math.min(255, Math.max(0, g)),
-                Math.min(255, Math.max(0, b)));
+            try {
+                Pattern.compile(text);
+                indicator.setForeground(new Color(0, 153, 0));
+                indicator.setText("✓");
+                indicator.setToolTipText("Valid regex");
+            } catch (PatternSyntaxException ex) {
+                indicator.setForeground(new Color(200, 0, 0));
+                indicator.setText("✖");
+                indicator.setToolTipText(ex.getDescription());
+            }
+            indicator.setVisible(true);
+        }
     }
 
     private JPanel buildSinksPanel() {
@@ -710,6 +719,7 @@ public class ConfigPanel extends JPanel {
             applyImported(cfg);
 
             refreshEnabledStates();
+            updateCustomRegexFeedback(); // reflect imported values in indicators
             updateImportExportStatus("Imported from " + file.getAbsolutePath());
             Logger.logInfo("Config imported from " + file.getAbsolutePath());
 
@@ -734,6 +744,7 @@ public class ConfigPanel extends JPanel {
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         applyImported(cfg);
         refreshEnabledStates();
+        updateCustomRegexFeedback();
         Logger.logInfo("Config imported from " + in.toAbsolutePath());
     }
 
