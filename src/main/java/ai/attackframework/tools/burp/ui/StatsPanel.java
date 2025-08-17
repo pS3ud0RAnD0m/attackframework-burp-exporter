@@ -16,7 +16,7 @@ public class StatsPanel extends JPanel {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));
 
-        JTextArea statsArea = new JTextArea("Stats coming soon...");
+        JTextArea statsArea = new JTextArea("\nStats coming soon...");
         statsArea.setEditable(false);
         statsArea.setLineWrap(true);
         statsArea.setWrapStyleWord(true);

@@ -1,5 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.utils.Version;
+
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -16,16 +18,20 @@ public class AboutPanel extends JPanel {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));
 
+        String version = Version.get();
+
         JTextArea aboutText = new JTextArea(
                 """
-                Attack Framework: Burp Exporter
+                
+                Attack Framework: Burp Exporter v%s
+                
                 This extension exports Burp Suite data into formats usable by data lakes and vector DBs
                 as part of the Attack Framework initiative.
 
                 GitHub:
                 https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter
                 https://github.com/attackframework
-                """
+                """.formatted(version)
         );
         aboutText.setEditable(false);
         aboutText.setLineWrap(true);

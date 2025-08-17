@@ -56,6 +56,8 @@ tasks.test {
     }
 
     systemProperty("java.awt.headless", "true")
+    // Provide a version override for tests so Version.get() can run without a jar manifest.
+    systemProperty("attackframework.version", project.version.toString())
 
     testLogging {
         events("passed", "skipped", "failed")

@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.utils.config;
 
+import ai.attackframework.tools.burp.utils.Version;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,13 +9,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 
 /**
  * JSON marshaling for ConfigPanel import/export.
@@ -25,8 +24,8 @@ public final class Json {
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(SerializationFeature.INDENT_OUTPUT, false); // compact output
 
-    // Resolve the app version once; prefer JAR manifest, then configurable fallbacks.
-    private static final String VERSION = resolveVersion();
+    // Version is obtained strictly from the JAR manifest's Implementation-Version.
+    private static final String VERSION = Version.get();
 
     private Json() { }
 
@@ -236,49 +235,5 @@ public final class Json {
         }
 
         return new ImportedConfig(sources, scopeType, scopeVals, scopeKinds, files, os);
-    }
-
-    /** Resolves the application version with multiple sources and fallbacks. */
-    private static String resolveVersion() {
-        // 0) Explicit overrides.
-        String v = System.getProperty("attackframework.version");
-        if (nonBlank(v)) return v.trim();
-        v = System.getenv("ATTACKFRAMEWORK_VERSION");
-        if (nonBlank(v)) return v.trim();
-
-        // 1) JAR manifest Implementation-Version (best practice).
-        Package p = Json.class.getPackage();
-        if (p != null) {
-            String mv = p.getImplementationVersion();
-            if (nonBlank(mv)) return mv.trim();
-        }
-
-        // 2) gradle.properties packaged as a resource (optional).
-        v = readVersionFromPropertiesResource("gradle.properties");
-        if (v != null) return v;
-
-        // 3) generic version.properties on classpath (optional).
-        v = readVersionFromPropertiesResource("version.properties");
-        if (v != null) return v;
-
-        // 4) fallback.
-        return "dev";
-    }
-
-    private static String readVersionFromPropertiesResource(String resourceName) {
-        ClassLoader cl = Json.class.getClassLoader();
-        try (InputStream in = cl.getResourceAsStream(resourceName)) {
-            if (in == null) return null;
-            Properties props = new Properties();
-            props.load(in);
-            String v = props.getProperty("version");
-            return nonBlank(v) ? v.trim() : null;
-        } catch (IOException ignored) {
-            return null;
-        }
-    }
-
-    private static boolean nonBlank(String s) {
-        return s != null && !s.isBlank();
     }
 }
