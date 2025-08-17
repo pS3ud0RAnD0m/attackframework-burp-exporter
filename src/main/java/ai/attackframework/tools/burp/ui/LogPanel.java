@@ -75,11 +75,13 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private final JTextField filterField;
     private final JCheckBox filterCaseToggle;
     private final JCheckBox filterRegexToggle;
+    private final JLabel filterRegexIndicator = new JLabel();
 
     // Search controls
     private final JTextField searchField;
     private final JCheckBox searchCaseToggle;
     private final JCheckBox searchRegexToggle;
+    private final JLabel searchRegexIndicator = new JLabel();
     private final JLabel searchCountLabel;
 
     // Model and view state
@@ -210,6 +212,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         toolbar.add(filterField, "gapx 0");
         toolbar.add(filterCaseToggle, "gapx 4");
         toolbar.add(filterRegexToggle, "gapx 4");
+        toolbar.add(filterRegexIndicator, "gapx 6");
 
         toolbar.add(new JSeparator(JSeparator.VERTICAL), "h 18!, gapx 8");
 
@@ -217,6 +220,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         toolbar.add(searchField, "gapx 0");
         toolbar.add(searchCaseToggle, "gapx 4");
         toolbar.add(searchRegexToggle, "gapx 4");
+        toolbar.add(searchRegexIndicator, "gapx 6");
         toolbar.add(searchPrevBtn, "gapx 4");
         toolbar.add(searchNextBtn, "gapx 4");
         toolbar.add(searchCountLabel, "gapx 6");
@@ -658,22 +662,68 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         return menu;
     }
 
-    // ---- Regex validity tint (theme-aware) ----
+    // ---- Regex validity indicators ----
 
     private void updateSearchRegexFeedback() {
-        applyRegexFeedback(searchField, searchRegexToggle.isSelected(), () -> {
+        String txt = searchField.getText();
+        boolean regexOn = searchRegexToggle.isSelected();
+
+        Color base = UIManager.getColor("TextField.background");
+        if (base == null) base = logTextPane.getBackground();
+        searchField.setBackground(base);
+
+        if (!regexOn || txt == null || txt.isBlank()) {
+            searchRegexIndicator.setVisible(false);
+            searchRegexIndicator.setText("");
+            searchRegexIndicator.setToolTipText(null);
+            return;
+        }
+
+        try {
             int flags = searchCaseToggle.isSelected()
                     ? Pattern.MULTILINE
                     : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.MULTILINE);
-            return Pattern.compile(searchField.getText(), flags);
-        });
+            Pattern.compile(txt, flags);
+            searchRegexIndicator.setForeground(new Color(0, 153, 0));
+            searchRegexIndicator.setText("\u2713");
+            searchRegexIndicator.setToolTipText("Valid regex");
+            searchRegexIndicator.setVisible(true);
+        } catch (PatternSyntaxException ex) {
+            searchRegexIndicator.setForeground(new Color(200, 0, 0));
+            searchRegexIndicator.setText("\u2716");
+            searchRegexIndicator.setToolTipText(ex.getDescription());
+            searchRegexIndicator.setVisible(true);
+        }
     }
 
     private void updateFilterRegexFeedback() {
-        applyRegexFeedback(filterField, filterRegexToggle.isSelected(), () -> {
+        String txt = filterField.getText();
+        boolean regexOn = filterRegexToggle.isSelected();
+
+        Color base = UIManager.getColor("TextField.background");
+        if (base == null) base = logTextPane.getBackground();
+        filterField.setBackground(base);
+
+        if (!regexOn || txt == null || txt.isBlank()) {
+            filterRegexIndicator.setVisible(false);
+            filterRegexIndicator.setText("");
+            filterRegexIndicator.setToolTipText(null);
+            return;
+        }
+
+        try {
             int flags = filterCaseToggle.isSelected() ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
-            return Pattern.compile(filterField.getText(), flags);
-        });
+            Pattern.compile(txt, flags);
+            filterRegexIndicator.setForeground(new Color(0, 153, 0));
+            filterRegexIndicator.setText("\u2713");
+            filterRegexIndicator.setToolTipText("Valid regex");
+            filterRegexIndicator.setVisible(true);
+        } catch (PatternSyntaxException ex) {
+            filterRegexIndicator.setForeground(new Color(200, 0, 0));
+            filterRegexIndicator.setText("\u2716");
+            filterRegexIndicator.setToolTipText(ex.getDescription());
+            filterRegexIndicator.setVisible(true);
+        }
     }
 
     @FunctionalInterface

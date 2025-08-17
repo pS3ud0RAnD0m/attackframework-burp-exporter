@@ -158,14 +158,14 @@ public class ConfigPanel extends JPanel {
         // single row for custom scope inputs
         customRow = new JPanel(new MigLayout("insets 0, flowx", "", ""));
         customRow.add(customRadio);
-        customRow.add(customScopeField, "gapleft 20");
-        customRow.add(customScopeRegexToggle, "gapleft 10");
+        customRow.add(customScopeField, "gapleft 53");
+        customRow.add(customScopeRegexToggle, "gapleft 3");
 
         // first indicator + Add button
         JLabel firstIndicator = new JLabel();
         firstIndicator.setName("scope.custom.regex.indicator.1");
-        customRow.add(firstIndicator, "gapleft 6");
-        customRow.add(addCustomScopeButton, "gapleft 10");
+        customRow.add(firstIndicator, "gapleft 3");
+        customRow.add(addCustomScopeButton, "gapleft 20");
 
         if (customScopeFields.isEmpty()) {
             customScopeFields.add(customScopeField);
@@ -216,10 +216,10 @@ public class ConfigPanel extends JPanel {
         // keep Add button last
         customRow.remove(addCustomScopeButton);
         customRow.add(field, "gapleft 20");
-        customRow.add(toggle, "gapleft 10");
-        customRow.add(indicator, "gapleft 6");
-        customRow.add(deleteBtn, "gapleft 10");
-        customRow.add(addCustomScopeButton, "gapleft 10");
+        customRow.add(toggle, "gapleft 5");
+        customRow.add(indicator, "gapleft 5");
+        customRow.add(deleteBtn, "gapleft 5");
+        customRow.add(addCustomScopeButton, "gapleft 20");
 
         customScopeFields.add(field);
         customScopeRegexToggles.add(toggle);
