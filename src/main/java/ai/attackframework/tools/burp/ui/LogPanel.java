@@ -60,7 +60,7 @@ import java.nio.file.Path;
  */
 public class LogPanel extends JPanel implements Logger.LogListener {
 
-    // Editor + styles
+    // Editor and styles
     private final JTextPane logTextPane;
     private final StyledDocument doc;
     private final Style infoStyle;
@@ -89,7 +89,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private int lastLineStart = 0; // last rendered line offset
     private int lastLineLen   = 0; // last rendered line length
 
-    // Search state & highlighting
+    // Search state and highlighting
     private final Highlighter.HighlightPainter matchPainter;
     private final List<Object> matchTags = new ArrayList<>();
     private List<int[]> matches = List.of(); // [start, end] pairs
@@ -114,7 +114,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         catch (IllegalArgumentException ex) { return L.INFO; }
     }
 
-    /** Minimal event; repeats tracks consecutive duplicates at ingest time. */
+    /** Minimal event; repeats tracks consecutive duplicates during ingestion. */
     private static final class Entry {
         final LocalDateTime ts;
         final L level;
@@ -325,13 +325,13 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         SwingUtilities.invokeLater(() -> ingest(level, message));
     }
 
-    // ---- Ingest + rendering ----
+    // ---- Ingest and rendering ----
 
     private void ingest(String levelStr, String message) {
         L lvl = toLevel(levelStr);
         LocalDateTime now = LocalDateTime.now();
 
-        // Compact consecutive duplicates at ingest time
+        // Compact consecutive duplicates during ingestion
         if (!entries.isEmpty()) {
             Entry last = entries.getLast();
             if (last.level == lvl && Objects.equals(last.message, message)) {
@@ -386,7 +386,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
                         : m.toLowerCase(Locale.ROOT).contains(f.toLowerCase(Locale.ROOT));
             }
         } catch (PatternSyntaxException ex) {
-            // Invalid regex => treat as non-match; field is tinted separately.
+            // Invalid regex => treat as non-match.
             return false;
         }
     }
@@ -428,7 +428,6 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             rebuildView();
         }
     }
-
 
     private String formatLine(LocalDateTime ts, L lvl, String msg, int repeats) {
         String timestamp = "[" + timestampFormat.format(ts == null ? LocalDateTime.now() : ts) + "]";
@@ -473,7 +472,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
     }
 
-    // ---- Search + highlight ----
+    // ---- Search and highlight ----
 
     private void computeMatchesAndJumpFirst() {
         recomputeMatchesAfterDocChange();
@@ -665,94 +664,59 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     // ---- Regex validity indicators ----
 
     private void updateSearchRegexFeedback() {
-        String txt = searchField.getText();
-        boolean regexOn = searchRegexToggle.isSelected();
-
-        Color base = UIManager.getColor("TextField.background");
-        if (base == null) base = logTextPane.getBackground();
-        searchField.setBackground(base);
-
-        if (!regexOn || txt == null || txt.isBlank()) {
-            searchRegexIndicator.setVisible(false);
-            searchRegexIndicator.setText("");
-            searchRegexIndicator.setToolTipText(null);
-            return;
-        }
-
-        try {
-            int flags = searchCaseToggle.isSelected()
-                    ? Pattern.MULTILINE
-                    : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.MULTILINE);
-            Pattern.compile(txt, flags);
-            searchRegexIndicator.setForeground(new Color(0, 153, 0));
-            searchRegexIndicator.setText("\u2713");
-            searchRegexIndicator.setToolTipText("Valid regex");
-            searchRegexIndicator.setVisible(true);
-        } catch (PatternSyntaxException ex) {
-            searchRegexIndicator.setForeground(new Color(200, 0, 0));
-            searchRegexIndicator.setText("\u2716");
-            searchRegexIndicator.setToolTipText(ex.getDescription());
-            searchRegexIndicator.setVisible(true);
-        }
+        updateRegexIndicator(
+                searchField,
+                searchRegexToggle,
+                searchCaseToggle,
+                true,
+                searchRegexIndicator
+        );
     }
 
     private void updateFilterRegexFeedback() {
-        String txt = filterField.getText();
-        boolean regexOn = filterRegexToggle.isSelected();
+        updateRegexIndicator(
+                filterField,
+                filterRegexToggle,
+                filterCaseToggle,
+                false,
+                filterRegexIndicator
+        );
+    }
+
+    private void updateRegexIndicator(
+            JTextField field,
+            JCheckBox regexToggle,
+            JCheckBox caseToggle,
+            boolean includeMultilineFlag,
+            JLabel indicator
+    ) {
+        String txt = field.getText();
 
         Color base = UIManager.getColor("TextField.background");
         if (base == null) base = logTextPane.getBackground();
-        filterField.setBackground(base);
+        field.setBackground(base);
 
-        if (!regexOn || txt == null || txt.isBlank()) {
-            filterRegexIndicator.setVisible(false);
-            filterRegexIndicator.setText("");
-            filterRegexIndicator.setToolTipText(null);
+        if (!regexToggle.isSelected() || txt == null || txt.isBlank()) {
+            indicator.setVisible(false);
+            indicator.setText("");
+            indicator.setToolTipText(null);
             return;
         }
 
         try {
-            int flags = filterCaseToggle.isSelected() ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+            int flags = caseToggle.isSelected()
+                    ? (includeMultilineFlag ? Pattern.MULTILINE : 0)
+                    : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | (includeMultilineFlag ? Pattern.MULTILINE : 0));
             Pattern.compile(txt, flags);
-            filterRegexIndicator.setForeground(new Color(0, 153, 0));
-            filterRegexIndicator.setText("\u2713");
-            filterRegexIndicator.setToolTipText("Valid regex");
-            filterRegexIndicator.setVisible(true);
+            indicator.setForeground(new Color(0, 153, 0));
+            indicator.setText("✓");
+            indicator.setToolTipText("Valid regex");
+            indicator.setVisible(true);
         } catch (PatternSyntaxException ex) {
-            filterRegexIndicator.setForeground(new Color(200, 0, 0));
-            filterRegexIndicator.setText("\u2716");
-            filterRegexIndicator.setToolTipText(ex.getDescription());
-            filterRegexIndicator.setVisible(true);
+            indicator.setForeground(new Color(200, 0, 0));
+            indicator.setText("✖");
+            indicator.setToolTipText(ex.getDescription());
+            indicator.setVisible(true);
         }
     }
-
-    @FunctionalInterface
-    private interface PatternSupplier { Pattern get() throws PatternSyntaxException; }
-
-    private void applyRegexFeedback(JTextField field, boolean regexOn, PatternSupplier supplier) {
-        if (!regexOn) {
-            field.setBackground(UIManager.getColor("TextField.background"));
-            return;
-        }
-        Color base = UIManager.getColor("TextField.background");
-        if (base == null) base = logTextPane.getBackground();
-        try {
-            Pattern p = supplier.get(); // validation
-            if (p != null) {
-                field.setBackground(tint(base, new Color(0, 180, 0)));
-            }
-        } catch (PatternSyntaxException ex) {
-            field.setBackground(tint(base, new Color(200, 0, 0)));
-        }
-    }
-
-    private static Color tint(Color base, Color overlay) {
-        final float alpha = 0.18f;
-        int r = (int) (base.getRed()   * (1 - alpha) + overlay.getRed()   * alpha);
-        int g = (int) (base.getGreen() * (1 - alpha) + overlay.getGreen() * alpha);
-        int b = (int) (base.getBlue()  * (1 - alpha) + overlay.getBlue()  * alpha);
-        return new Color(clamp(r), clamp(g), clamp(b));
-    }
-
-    private static int clamp(int v) { return Math.min(255, Math.max(0, v)); }
 }
