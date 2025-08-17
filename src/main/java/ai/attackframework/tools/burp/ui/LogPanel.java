@@ -554,11 +554,18 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         ensureVisible(m[0]);
     }
 
+    // Guard against null from modelToView2D when the component isn't realized yet (e.g., headless tests).
     private void ensureVisible(int offset) {
         try {
-            Rectangle r = logTextPane.modelToView2D(offset).getBounds();
+            var r2d = logTextPane.modelToView2D(offset);
+            if (r2d == null) {
+                return; // not displayable yet; skip scrolling
+            }
+            java.awt.Rectangle r = r2d.getBounds();
             logTextPane.scrollRectToVisible(r);
-        } catch (BadLocationException ignore) { }
+        } catch (javax.swing.text.BadLocationException ignore) {
+            // ignore invalid offsets
+        }
     }
 
     private void updateMatchCount() {
