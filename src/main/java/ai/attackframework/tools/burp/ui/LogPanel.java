@@ -33,7 +33,6 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -386,12 +385,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
                         : m.toLowerCase(Locale.ROOT).contains(f.toLowerCase(Locale.ROOT));
             }
         } catch (PatternSyntaxException ex) {
-            // Invalid regex => treat as non-match.
+            // Invalid regexes => treat as non-match.
             return false;
         }
     }
 
-    /** Rebuilds the document from model with current level/text filters. */
+    /** Rebuilds the document from a model with current level/text filters. */
     private void rebuildView() {
         clearDoc();
 
