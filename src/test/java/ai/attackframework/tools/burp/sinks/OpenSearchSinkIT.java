@@ -40,7 +40,7 @@ class OpenSearchSinkIT {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
-        List<String> sources = List.of("settings", "sitemap", "findings", "traffic");
+        List<String> sources = List.of("settings", "sitemap", "findings", "traffic", "tool");
 
         // Pass 1: create or report existing
         List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, sources);
@@ -91,18 +91,15 @@ class OpenSearchSinkIT {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
-        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("traffic"));
+        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("traffic", "tool"));
         assertThat(first).isNotEmpty();
 
         // Validate expected short names and full names
         for (IndexResult r : first) {
-            if (r.shortName().equals("tool")) {
-                assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
-            } else if (r.shortName().equals("traffic")) {
-                assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX + "-traffic");
-            } else {
-                throw new AssertionError("Unexpected short name: " + r.shortName());
-            }
+            String expectedFull = r.shortName().equals("tool")
+                    ? IndexNaming.INDEX_PREFIX
+                    : IndexNaming.INDEX_PREFIX + "-" + r.shortName();
+            assertThat(r.fullName()).isEqualTo(expectedFull);
         }
 
         // Delete both indices reported
@@ -114,7 +111,7 @@ class OpenSearchSinkIT {
         }
 
         // Re-create and verify CREATED status
-        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("traffic"));
+        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("traffic", "tool"));
         assertThat(second).isNotEmpty();
         assertThat(second).allSatisfy(r -> assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED));
     }

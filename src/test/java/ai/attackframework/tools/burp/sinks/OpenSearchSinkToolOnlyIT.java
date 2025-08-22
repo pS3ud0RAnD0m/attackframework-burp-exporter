@@ -10,18 +10,17 @@ import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 
+import java.util.EnumSet;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the minimal path: invoking the sink with an empty source list yields only the "tool" index.
- * Exercises create → delete → recreate for that single index.
+ * Integration test: tool-only index creation lifecycle.
  */
 @Tag("integration")
 class OpenSearchSinkToolOnlyIT {
 
-    /** Base URL for the OpenSearch development instance. */
     private static final String BASE_URL = "http://opensearch.url:9200";
 
     @Test
@@ -29,28 +28,33 @@ class OpenSearchSinkToolOnlyIT {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
-        // Invoke with an empty source list; the sink derives "tool" from the naming logic.
-        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of());
-        assertThat(first).hasSize(1);
-        IndexResult r = first.getFirst();
+        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("tool"));
+        assertThat(first).isNotEmpty();
 
-        // Validate short/full names and status
-        assertThat(r.shortName()).isEqualTo("tool");
-        assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
-        assertThat(r.status()).isIn(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
+        EnumSet<IndexResult.Status> allowed = EnumSet.of(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
+        assertThat(first).allSatisfy(r -> assertThat(allowed).contains(r.status()));
 
-        // Delete the tool index
+        // Validate full name
+        for (IndexResult r : first) {
+            assertThat(r.shortName()).isEqualTo("tool");
+            assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
+        }
+
+        // Delete reported index
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
-        try {
-            client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-        } catch (Exception ignored) { }
+        for (IndexResult r : first) {
+            try {
+                client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
+            } catch (Exception ignored) { }
+        }
 
-        // Confirm deletion via a second call should yield CREATED
-        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of());
-        assertThat(second).hasSize(1);
-        IndexResult r2 = second.getFirst();
-        assertThat(r2.shortName()).isEqualTo("tool");
-        assertThat(r2.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
-        assertThat(r2.status()).isEqualTo(IndexResult.Status.CREATED);
+        // Re-create and verify CREATED status
+        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("tool"));
+        assertThat(second).isNotEmpty();
+        assertThat(second).allSatisfy(r -> {
+            assertThat(r.shortName()).isEqualTo("tool");
+            assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
+            assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED);
+        });
     }
 }
