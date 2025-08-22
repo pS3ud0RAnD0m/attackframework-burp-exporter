@@ -1,6 +1,8 @@
 package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +38,9 @@ class OpenSearchSinkConcurrencyIT {
 
     @Test
     void createIndexes_concurrently_completes_withoutDeadlock() throws Exception {
+        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
+        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+
         try (ExecutorService pool = Executors.newFixedThreadPool(SOURCES.size())) {
             List<Callable<IndexResult>> tasks = SOURCES.stream()
                     .map(shortName -> (Callable<IndexResult>) () ->
