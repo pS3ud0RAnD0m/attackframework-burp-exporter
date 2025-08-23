@@ -12,4 +12,4 @@ We welcome ideas, feedback, and pull requests. Feel free to open a discussion, i
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE). 
+This project is licensed under the [MIT License](LICENSE).

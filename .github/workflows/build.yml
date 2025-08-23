@@ -21,7 +21,7 @@ jobs:
           java-version: '21'
           distribution: 'corretto'
 
-      - name: Grant Gradle permission
+      - name: Grant Gradle execute permission
         run: chmod +x gradlew
 
       - name: Build extension
@@ -30,29 +30,27 @@ jobs:
       - name: Read Gradle properties
         id: props
         run: |
-          ARCHIVES_BASENAME=$(grep '^archivesBaseName=' gradle.properties | cut -d'=' -f2)
-          VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
-          echo "basename=$ARCHIVES_BASENAME" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          BASE=$(grep '^archivesBaseName=' gradle.properties | cut -d'=' -f2)
+          VER=$(grep '^version=' gradle.properties | cut -d'=' -f2)
+          echo "basename=$BASE" >> $GITHUB_OUTPUT
+          echo "version=$VER" >> $GITHUB_OUTPUT
 
-      - name: Package source
+      - name: Package source archives
         run: |
           git archive --format=zip HEAD > source-v${{ steps.props.outputs.version }}.zip
           git archive --format=tar.gz HEAD > source-v${{ steps.props.outputs.version }}.tar.gz
 
-      - name: Create or update GitHub Release
-        uses: ncipollo/release-action@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag: v${{ steps.props.outputs.version }}
+          tag_name: v${{ steps.props.outputs.version }}
           name: v${{ steps.props.outputs.version }}
-          allowUpdates: true
-          replacesArtifacts: true
-          generateReleaseNotes: false
-          artifacts: |
-            build/libs/${{ steps.props.outputs.basename }}-${{ steps.props.outputs.version }}.jar,
-            source-v${{ steps.props.outputs.version }}.zip,
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          files: |
+            build/libs/${{ steps.props.outputs.basename }}-${{ steps.props.outputs.version }}.jar
+            source-v${{ steps.props.outputs.version }}.zip
             source-v${{ steps.props.outputs.version }}.tar.gz
-          token: ${{ secrets.GH_PAT }}
-          body: |
-            Automated build from latest commit to master.
-            Always reflects the current state of v${{ steps.props.outputs.version }}.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
