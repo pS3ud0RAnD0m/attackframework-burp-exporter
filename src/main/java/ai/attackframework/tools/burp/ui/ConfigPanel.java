@@ -78,7 +78,7 @@ public class ConfigPanel extends JPanel {
     private final List<JTextField> customScopeFields = new ArrayList<>();
     private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
     private final List<JButton> customScopeDeleteButtons = new ArrayList<>(); // index 0 is null (first field not deletable)
-    // NEW: indicators shown only when regex toggle is on (✓ valid / ✖ invalid)
+    // NEW: indicators shown only when the regex toggle is on (✓ valid / ✖ invalid)
     private final List<JLabel> customScopeIndicators = new ArrayList<>();
 
     // Files sink
@@ -170,7 +170,7 @@ public class ConfigPanel extends JPanel {
         if (customScopeFields.isEmpty()) {
             customScopeFields.add(customScopeField);
             customScopeRegexToggles.add(customScopeRegexToggle);
-            customScopeDeleteButtons.add(null); // first field doesn't get a delete button
+            customScopeDeleteButtons.add(null); // the first field doesn't get a delete button
             customScopeIndicators.add(firstIndicator);
         }
 
@@ -269,7 +269,7 @@ public class ConfigPanel extends JPanel {
         customRow.repaint();
     }
 
-    /** Updates ✓/✖ indicators; shows nothing when regex toggle is off or field is blank. */
+    /** Updates ✓/✖ indicators; shows nothing when the regex toggle is off or the field is blank. */
     private void updateCustomRegexFeedback() {
         for (int i = 0; i < customScopeFields.size(); i++) {
             JTextField field = customScopeFields.get(i);
@@ -602,7 +602,7 @@ public class ConfigPanel extends JPanel {
         return selected;
     }
 
-    // Autosizing text field
+    // Auto-sizing text field
     private static class AutoSizingTextField extends JTextField {
         public AutoSizingTextField(String text) { super(text); }
         @Override public Dimension getPreferredSize() {
@@ -723,7 +723,7 @@ public class ConfigPanel extends JPanel {
             updateImportExportStatus("Imported from " + file.getAbsolutePath());
             Logger.logInfo("Config imported from " + file.getAbsolutePath());
 
-            if ("custom".equals(cfg.scopeType) && cfg.scopeRegexes.size() > 1) {
+            if ("custom".equals(cfg.scopeType()) && cfg.scopeRegexes().size() > 1) {
                 Logger.logInfo("Imported multiple custom regex entries; using the first. Additional fields will be supported later.");
             }
 
@@ -751,31 +751,31 @@ public class ConfigPanel extends JPanel {
     // apply imported values to the UI
     private void applyImported(Json.ImportedConfig cfg) {
         // Sources
-        settingsCheckbox.setSelected(cfg.dataSources.contains("settings"));
-        sitemapCheckbox.setSelected(cfg.dataSources.contains("sitemap"));
-        issuesCheckbox.setSelected(cfg.dataSources.contains("findings"));
-        trafficCheckbox.setSelected(cfg.dataSources.contains("traffic"));
+        settingsCheckbox.setSelected(cfg.dataSources().contains("settings"));
+        sitemapCheckbox.setSelected(cfg.dataSources().contains("sitemap"));
+        issuesCheckbox.setSelected(cfg.dataSources().contains("findings"));
+        trafficCheckbox.setSelected(cfg.dataSources().contains("traffic"));
 
-        // Scope (uses first custom entry if multiple are present)
-        switch (cfg.scopeType) {
+        // Scope (uses first custom entry if multiples are present)
+        switch (cfg.scopeType()) {
             case "custom" -> {
                 customRadio.setSelected(true);
-                customScopeField.setText(cfg.scopeRegexes.isEmpty() ? "" : cfg.scopeRegexes.getFirst());
+                customScopeField.setText(cfg.scopeRegexes().isEmpty() ? "" : cfg.scopeRegexes().getFirst());
             }
             case "burp" -> burpSuiteRadio.setSelected(true);
             default -> allRadio.setSelected(true);
         }
 
         // Sinks
-        if (cfg.filesPath != null) {
+        if (cfg.filesPath() != null) {
             fileSinkCheckbox.setSelected(true);
-            filePathField.setText(cfg.filesPath);
+            filePathField.setText(cfg.filesPath());
         } else {
             fileSinkCheckbox.setSelected(false);
         }
-        if (cfg.openSearchUrl != null) {
+        if (cfg.openSearchUrl() != null) {
             openSearchSinkCheckbox.setSelected(true);
-            openSearchUrlField.setText(cfg.openSearchUrl);
+            openSearchUrlField.setText(cfg.openSearchUrl());
         } else {
             openSearchSinkCheckbox.setSelected(false);
         }

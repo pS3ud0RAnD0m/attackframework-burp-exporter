@@ -29,27 +29,25 @@ public final class Json {
 
     private Json() { }
 
-    /** Parsed config projection used by the UI. */
-    public static final class ImportedConfig {
-        public final List<String> dataSources;
-        public final String scopeType;          // "all", "burp", or "custom"
-        public final List<String> scopeRegexes; // For "custom": values as entered
-        public final List<String> scopeKinds;   // Optional: "regex" or "string" per entry (can be null)
-        public final String filesPath;          // Null if disabled or empty
-        public final String openSearchUrl;      // Null if disabled or empty
-
-        public ImportedConfig(List<String> dataSources,
-                              String scopeType,
-                              List<String> scopeRegexes,
-                              List<String> scopeKinds,
-                              String filesPath,
-                              String openSearchUrl) {
-            this.dataSources = dataSources != null ? dataSources : Collections.emptyList();
-            this.scopeType = scopeType != null ? scopeType : "all";
-            this.scopeRegexes = scopeRegexes != null ? scopeRegexes : Collections.emptyList();
-            this.scopeKinds = scopeKinds;
-            this.filesPath = filesPath;
-            this.openSearchUrl = openSearchUrl;
+    /**
+     * Parsed config projection used by the UI.
+     * Converted to a record for immutability and conciseness, while preserving
+     * null/empty defaulting behavior via a canonical constructor.
+     */
+    public record ImportedConfig(
+            List<String> dataSources,
+            String scopeType,
+            List<String> scopeRegexes,
+            List<String> scopeKinds,
+            String filesPath,
+            String openSearchUrl
+    ) {
+        public ImportedConfig {
+            dataSources = dataSources != null ? dataSources : Collections.emptyList();
+            scopeType = scopeType != null ? scopeType : "all";
+            scopeRegexes = scopeRegexes != null ? scopeRegexes : Collections.emptyList();
+            // scopeKinds may remain null
+            // filesPath and openSearchUrl may remain null
         }
     }
 

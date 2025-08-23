@@ -20,8 +20,8 @@ class JsonKeyOrderTest {
                 "custom",
                 List.of("^foo$", "aaa", "bar.*"),
                 List.of("regex", "string", "regex"),
-                true, "/tmp/out",
-                true, "http://localhost:9200"
+                true, "/path/to/directory",
+                true, "http://opensearch.url:9200"
         );
 
         JsonNode root = M.readTree(json);

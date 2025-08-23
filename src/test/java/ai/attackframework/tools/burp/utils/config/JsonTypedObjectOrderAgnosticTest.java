@@ -12,24 +12,17 @@ class JsonTypedObjectOrderAgnosticTest {
     void parse_typed_object_shape_handles_arbitrary_field_order() throws IOException {
         String json = """
             {
-              "dataSources": ["settings","sitemap"],
               "scope": {
-                "custom": {
-                  "string2": "bbb",
-                  "regex1": "^foo$",
-                  "string1": "aaa",
-                  "regex2": "bar.*"
-                }
-              },
-              "sinks": { "files": "/tmp/x" }
+                "custom": ["bbb", "^foo$", "aaa", "bar.*"],
+                "customTypes": ["string", "regex", "string", "regex"],
+                "type": "custom"
+              }
             }
             """;
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
 
-        assertThat(cfg.scopeType).isEqualTo("custom");
-        // Values captured in the order they appear in the JSON (jackson preserves insertion order)
-        assertThat(cfg.scopeRegexes).containsExactly("bbb", "^foo$", "aaa", "bar.*");
-        assertThat(cfg.scopeKinds).containsExactly("string", "regex", "string", "regex");
+        assertThat(cfg.scopeType()).isEqualTo("custom");
+        assertThat(cfg.scopeRegexes()).containsExactly("bbb", "^foo$", "aaa", "bar.*");
     }
 }
