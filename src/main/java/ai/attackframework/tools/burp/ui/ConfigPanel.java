@@ -202,7 +202,7 @@ public class ConfigPanel extends JPanel {
         JLabel indicator = new JLabel();
         JButton deleteBtn = new JButton("Delete");
 
-        int rowIndex = customScopeFields.size(); // next available row index (0 already used by default)
+        int rowIndex = customScopeFields.size(); // next available row index
         int idx = rowIndex + 1;
 
         field.setName("scope.custom.regex." + idx);
@@ -211,7 +211,7 @@ public class ConfigPanel extends JPanel {
         deleteBtn.setName("scope.custom.regex.delete." + idx);
         deleteBtn.setToolTipText("Remove this filter");
 
-        // Add directly into the shared container by row
+        // Add directly into the shared container grid
         customScopesContainer.add(field,     "cell 1 " + rowIndex + ", growx");
         customScopesContainer.add(toggle,    "cell 2 " + rowIndex);
         customScopesContainer.add(indicator, "cell 3 " + rowIndex);
@@ -262,13 +262,11 @@ public class ConfigPanel extends JPanel {
         JCheckBox firstToggle = customScopeRegexToggles.getFirst();
         JLabel firstIndicator = customScopeIndicators.getFirst();
 
-        JPanel firstRow = new JPanel(new MigLayout("insets 0, flowx", "", ""));
-        firstRow.add(customRadio);
-        firstRow.add(firstField, "gapleft 20");
-        firstRow.add(firstToggle, "gapleft 3");
-        firstRow.add(firstIndicator, "gapleft 3");
-        firstRow.add(addCustomScopeButton, "gapleft 20");
-        customScopesContainer.add(firstRow, "growx, wrap");
+        customScopesContainer.add(customRadio,           "cell 0 0");
+        customScopesContainer.add(firstField,            "cell 1 0, growx");
+        customScopesContainer.add(firstToggle,           "cell 2 0");
+        customScopesContainer.add(firstIndicator,        "cell 3 0");
+        customScopesContainer.add(addCustomScopeButton,  "cell 4 0");
 
         // Subsequent rows: field + toggle + indicator + delete
         for (int j = 1; j < customScopeFields.size(); j++) {
@@ -278,14 +276,12 @@ public class ConfigPanel extends JPanel {
             JButton deleteBtn = new JButton("Delete");
             deleteBtn.setName("scope.custom.regex.delete." + (j + 1));
 
-            JPanel row = new JPanel(new MigLayout("insets 0, flowx", "", ""));
-            row.add(field, "gapleft 53");
-            row.add(toggle, "gapleft 3");
-            row.add(indicator, "gapleft 3");
-            row.add(deleteBtn, "gapleft 5");
+            customScopesContainer.add(field,     "cell 1 " + j + ", growx");
+            customScopesContainer.add(toggle,    "cell 2 " + j);
+            customScopesContainer.add(indicator, "cell 3 " + j);
+            customScopesContainer.add(deleteBtn, "cell 4 " + j);
 
             deleteBtn.addActionListener(e -> removeCustomScopeFieldRow(field));
-            customScopesContainer.add(row, "growx, wrap");
         }
 
         customScopesContainer.revalidate();
