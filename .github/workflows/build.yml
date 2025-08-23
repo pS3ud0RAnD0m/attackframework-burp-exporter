@@ -52,5 +52,4 @@ jobs:
           artifacts: build/libs/${{ steps.props.outputs.basename }}-${{ steps.props.outputs.version }}.jar
           token: ${{ secrets.GH_PAT }}
           body: |
-            Automated build from latest commit to master.
-            Always reflects the current state of v${{ steps.props.outputs.version }}.
+            In early development.
