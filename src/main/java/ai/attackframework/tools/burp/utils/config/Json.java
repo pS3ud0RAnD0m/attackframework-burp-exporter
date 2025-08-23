@@ -101,7 +101,7 @@ public final class Json {
 
         ObjectNode root = MAPPER.createObjectNode();
 
-        // Put version first so it appears at the top.
+        // Put the version first so it appears at the top.
         root.put("version", VERSION);
 
         // dataSources

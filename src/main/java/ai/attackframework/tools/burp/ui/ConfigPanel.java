@@ -72,13 +72,13 @@ public class ConfigPanel extends JPanel {
 
     // Custom scope inputs live on a single row for compactness
     private final JCheckBox customScopeRegexToggle = new JCheckBox(".*"); // unchecked = string match
-    private final JButton addCustomScopeButton = new JButton("Add");
-    private final JPanel customScopesContainer = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
-    private JPanel customRow;
-    private final List<JTextField> customScopeFields = new ArrayList<>();
+    final JButton addCustomScopeButton = new JButton("Add");
+    // Container uses explicit columns so fields/buttons align
+    private final JPanel customScopesContainer = new JPanel(
+            new MigLayout("insets 0, wrap 1", "[left][grow,fill][left][left][left]")
+    );
+    final List<JTextField> customScopeFields = new ArrayList<>();
     private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
-    private final List<JButton> customScopeDeleteButtons = new ArrayList<>(); // index 0 is null (first field not deletable)
-    // NEW: indicators shown only when the regex toggle is on (✓ valid / ✖ invalid)
     private final List<JLabel> customScopeIndicators = new ArrayList<>();
 
     // Files sink
@@ -155,30 +155,26 @@ public class ConfigPanel extends JPanel {
 
         panel.add(burpSuiteRadio, "gapleft " + INDENT);
 
-        // single row for custom scope inputs
-        customRow = new JPanel(new MigLayout("insets 0, flowx", "", ""));
-        customRow.add(customRadio);
-        customRow.add(customScopeField, "gapleft 53");
-        customRow.add(customScopeRegexToggle, "gapleft 3");
-
-        // first indicator + Add button
+        // First row: radio + field + toggle + indicator + Add button
         JLabel firstIndicator = new JLabel();
         firstIndicator.setName("scope.custom.regex.indicator.1");
-        customRow.add(firstIndicator, "gapleft 3");
-        customRow.add(addCustomScopeButton, "gapleft 20");
+
+        customScopesContainer.removeAll();
+        customScopesContainer.add(customRadio,           "cell 0 0");
+        customScopesContainer.add(customScopeField,      "cell 1 0, growx");
+        customScopesContainer.add(customScopeRegexToggle,"cell 2 0");
+        customScopesContainer.add(firstIndicator,        "cell 3 0");
+        customScopesContainer.add(addCustomScopeButton,  "cell 4 0");
 
         if (customScopeFields.isEmpty()) {
             customScopeFields.add(customScopeField);
             customScopeRegexToggles.add(customScopeRegexToggle);
-            customScopeDeleteButtons.add(null); // the first field doesn't get a delete button
             customScopeIndicators.add(firstIndicator);
         }
 
-        customScopesContainer.removeAll();
-        customScopesContainer.add(customRow, "growx");
         panel.add(customScopesContainer, "gapleft " + INDENT + ", growx");
 
-        // regex indicator wiring (✓ valid / ✖ invalid, only when regex toggle is on)
+        // Wiring for the first field
         customScopeRegexToggle.addActionListener(e -> updateCustomRegexFeedback());
         customScopeField.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); customScopeField.revalidate(); }
@@ -186,15 +182,15 @@ public class ConfigPanel extends JPanel {
             public void changedUpdate(DocumentEvent e) { updateCustomRegexFeedback(); customScopeField.revalidate(); }
         });
 
-        addCustomScopeButton.addActionListener(e -> addCustomScopeFieldInline());
+        addCustomScopeButton.addActionListener(e -> addCustomScopeFieldRow());
 
         panel.add(allRadio, "gapleft " + INDENT);
 
         return panel;
     }
 
-    /** Adds another custom scope field (with regex toggle, indicator, and delete) inline on the same row. */
-    private void addCustomScopeFieldInline() {
+    /** Adds another custom scope field (stacked vertically under the first). */
+    private void addCustomScopeFieldRow() {
         if (customScopeFields.size() >= 100) {
             addCustomScopeButton.setEnabled(false);
             return;
@@ -206,26 +202,27 @@ public class ConfigPanel extends JPanel {
         JLabel indicator = new JLabel();
         JButton deleteBtn = new JButton("Delete");
 
-        int idx = customScopeFields.size() + 1;
+        int rowIndex = customScopeFields.size(); // next available row index (0 already used by default)
+        int idx = rowIndex + 1;
+
         field.setName("scope.custom.regex." + idx);
         toggle.setName("scope.custom.regex.toggle." + idx);
         indicator.setName("scope.custom.regex.indicator." + idx);
         deleteBtn.setName("scope.custom.regex.delete." + idx);
         deleteBtn.setToolTipText("Remove this filter");
 
-        // keep Add button last
-        customRow.remove(addCustomScopeButton);
-        customRow.add(field, "gapleft 20");
-        customRow.add(toggle, "gapleft 5");
-        customRow.add(indicator, "gapleft 5");
-        customRow.add(deleteBtn, "gapleft 5");
-        customRow.add(addCustomScopeButton, "gapleft 20");
+        // Add directly into the shared container by row
+        customScopesContainer.add(field,     "cell 1 " + rowIndex + ", growx");
+        customScopesContainer.add(toggle,    "cell 2 " + rowIndex);
+        customScopesContainer.add(indicator, "cell 3 " + rowIndex);
+        customScopesContainer.add(deleteBtn, "cell 4 " + rowIndex);
 
         customScopeFields.add(field);
         customScopeRegexToggles.add(toggle);
         customScopeIndicators.add(indicator);
-        customScopeDeleteButtons.add(deleteBtn);
 
+        // Undo/redo + wiring
+        installUndoRedo(field);
         toggle.addActionListener(e -> updateCustomRegexFeedback());
         field.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); field.revalidate(); }
@@ -233,40 +230,66 @@ public class ConfigPanel extends JPanel {
             public void changedUpdate(DocumentEvent e) { updateCustomRegexFeedback(); field.revalidate(); }
         });
 
-        deleteBtn.addActionListener(e -> removeCustomScopeField(field));
+        deleteBtn.addActionListener(e -> removeCustomScopeFieldRow(field));
 
         if (customScopeFields.size() >= 100) {
             addCustomScopeButton.setEnabled(false);
         }
 
-        customRow.revalidate();
-        customRow.repaint();
+        customScopesContainer.revalidate();
+        customScopesContainer.repaint();
     }
 
-    /** Removes a specific custom scope field, its toggle, indicator, and its delete button. */
-    private void removeCustomScopeField(JTextField field) {
+    /** Removes a specific custom scope field row and rebuilds the layout. */
+    void removeCustomScopeFieldRow(JTextField field) {
         int i = customScopeFields.indexOf(field);
-        if (i <= 0) return; // don't remove the first field
-
-        JCheckBox toggle = customScopeRegexToggles.get(i);
-        JLabel indicator = customScopeIndicators.get(i);
-        JButton del = customScopeDeleteButtons.get(i);
-
-        customRow.remove(field);
-        customRow.remove(toggle);
-        customRow.remove(indicator);
-        if (del != null) customRow.remove(del);
+        if (i <= 0) return; // do not remove the first field
 
         customScopeFields.remove(i);
         customScopeRegexToggles.remove(i);
         customScopeIndicators.remove(i);
-        customScopeDeleteButtons.remove(i);
 
+        rebuildCustomScopeRows();
         addCustomScopeButton.setEnabled(true);
-        updateCustomRegexFeedback();
+    }
 
-        customRow.revalidate();
-        customRow.repaint();
+    /** Rebuilds all custom scope rows to keep MigLayout indices consistent. */
+    private void rebuildCustomScopeRows() {
+        customScopesContainer.removeAll();
+
+        // First row: radio + first field + toggle + indicator + Add button
+        JTextField firstField = customScopeFields.getFirst();
+        JCheckBox firstToggle = customScopeRegexToggles.getFirst();
+        JLabel firstIndicator = customScopeIndicators.getFirst();
+
+        JPanel firstRow = new JPanel(new MigLayout("insets 0, flowx", "", ""));
+        firstRow.add(customRadio);
+        firstRow.add(firstField, "gapleft 20");
+        firstRow.add(firstToggle, "gapleft 3");
+        firstRow.add(firstIndicator, "gapleft 3");
+        firstRow.add(addCustomScopeButton, "gapleft 20");
+        customScopesContainer.add(firstRow, "growx, wrap");
+
+        // Subsequent rows: field + toggle + indicator + delete
+        for (int j = 1; j < customScopeFields.size(); j++) {
+            JTextField field = customScopeFields.get(j);
+            JCheckBox toggle = customScopeRegexToggles.get(j);
+            JLabel indicator = customScopeIndicators.get(j);
+            JButton deleteBtn = new JButton("Delete");
+            deleteBtn.setName("scope.custom.regex.delete." + (j + 1));
+
+            JPanel row = new JPanel(new MigLayout("insets 0, flowx", "", ""));
+            row.add(field, "gapleft 53");
+            row.add(toggle, "gapleft 3");
+            row.add(indicator, "gapleft 3");
+            row.add(deleteBtn, "gapleft 5");
+
+            deleteBtn.addActionListener(e -> removeCustomScopeFieldRow(field));
+            customScopesContainer.add(row, "growx, wrap");
+        }
+
+        customScopesContainer.revalidate();
+        customScopesContainer.repaint();
     }
 
     /** Updates ✓/✖ indicators; shows nothing when the regex toggle is off or the field is blank. */
