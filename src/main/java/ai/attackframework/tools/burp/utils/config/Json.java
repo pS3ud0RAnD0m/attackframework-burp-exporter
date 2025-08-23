@@ -81,7 +81,14 @@ public final class Json {
      * {
      *   "version": "1.2.3",
      *   "dataSources": [...],
-     *   "scope": { "custom": { "regex1": "...", "regex2": "...", "string1": "...", "string2": "..." } },
+     *   "scope": {
+     *     "custom": {
+     *       "regex1": "...",
+     *       "regex2": "...",
+     *       "string1": "...",
+     *       "string2": "..."
+     *     }
+     *   },
      *   "sinks": { ... }
      * }
      */
@@ -156,7 +163,15 @@ public final class Json {
         }
     }
 
-    /** A lenient parser that accepts the legacy array, typed arrays (with {@code customTypes}), and the new typed-object shape. */
+    /**
+     * Parser that accepts:
+     *  - New typed-object shape: {"custom": {"regex1": "...", "string1": "..."}}
+     *  - Legacy array: {"custom": ["...", "..."]}
+     *  - Typed arrays with "customTypes"
+     *
+     * Relies on the ObjectNode insertion order to preserve the sequence
+     * of entries as they originally appeared in the JSON document.
+     */
     public static ImportedConfig parseConfigJson(String json) throws IOException {
         JsonNode root = MAPPER.readTree(json);
 
@@ -164,7 +179,9 @@ public final class Json {
         List<String> sources = new ArrayList<>();
         JsonNode ds = root.path("dataSources");
         if (ds.isArray()) {
-            for (JsonNode n : ds) if (n.isTextual()) sources.add(n.asText());
+            for (JsonNode n : ds) {
+                if (n.isTextual()) sources.add(n.asText());
+            }
         }
 
         // scope
@@ -182,9 +199,9 @@ public final class Json {
             JsonNode custom = scope.path("custom");
 
             if (custom.isObject()) {
-                // New shape: {"custom":{"regex1":"...","regex2":"...","string1":"...","string2":"..."}}
+                // Iterate in insertion order (ObjectNode preserves order using LinkedHashMap)
                 List<String> kindsList = new ArrayList<>();
-                for (Iterator<Map.Entry<String, JsonNode>> it = custom.fields(); it.hasNext(); ) {
+                for (Iterator<Map.Entry<String, JsonNode>> it = custom.fields(); it.hasNext();) {
                     Map.Entry<String, JsonNode> e = it.next();
                     JsonNode v = e.getValue();
                     if (v.isTextual()) {
@@ -203,10 +220,10 @@ public final class Json {
                 }
                 scopeKinds = kindsList;
             } else if (custom.isArray()) {
-                // Older shapes:
-                // 1) legacy array only: {"custom":[ "...", "..." ]}
-                // 2) typed arrays: {"custom":[ ... ], "customTypes":[ "regex" | "string", ... ]}
-                for (JsonNode n : custom) if (n.isTextual()) scopeVals.add(n.asText());
+                // Legacy support
+                for (JsonNode n : custom) {
+                    if (n.isTextual()) scopeVals.add(n.asText());
+                }
 
                 JsonNode kinds = scope.path("customTypes");
                 if (kinds.isArray() && kinds.size() == scopeVals.size()) {
