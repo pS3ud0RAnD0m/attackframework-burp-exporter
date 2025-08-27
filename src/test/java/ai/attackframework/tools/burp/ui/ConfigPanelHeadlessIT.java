@@ -10,16 +10,25 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Headless smoke tests for ConfigPanel actions. These tests avoid layout assertions and
- * verify that clicking the buttons completes and produces a non-empty status.
+ * Headless smoke tests for ConfigPanel actions.
+ *
+ * Intent:
+ * - Clicking “Test Connection” completes and writes a non-empty status.
+ * - Clicking “Create Indexes” completes and writes a status describing the outcome.
+ *
+ * Approach:
+ * - Assume an OpenSearch dev cluster is reachable before running each test.
+ * - Access private Swing fields with the shared Reflection test helper to keep production visibility minimal.
+ * - Await asynchronous completion using a DocumentListener + CountDownLatch (no sleeps).
+ * - Run UI mutations on the EDT via onEdtAndWait helpers.
  */
 @Tag("integration")
 class ConfigPanelHeadlessIT {
@@ -33,16 +42,19 @@ class ConfigPanelHeadlessIT {
 
         ConfigPanel panel = onEdtAndWait(ConfigPanel::new);
 
-        JButton testBtn = getPrivate(panel, "testConnectionButton", JButton.class);
-        JTextArea statusArea = getPrivate(panel, "openSearchStatus", JTextArea.class);
+        JButton testBtn   = get(panel, "testConnectionButton");
+        JTextArea statusA = get(panel, "openSearchStatus");
 
-        onEdtAndWait(() -> statusArea.setText(""));
+        onEdtAndWait(() -> statusA.setText(""));
 
+        // Use a lambda to disambiguate JButton#doClick() vs doClick(int)
         onEdtAndWait(() -> testBtn.doClick());
-        awaitStatusUpdate(statusArea, 15_000);
+        awaitStatusUpdate(statusA, 15_000);
 
-        String text = statusArea.getText().trim();
+        String text = statusA.getText().trim();
         assertThat(text).isNotBlank();
+        // Success example: "OpenSearch ... (OpenSearch vX.Y.Z)"
+        // Failure example: "✖ <message>"
         assertThat(text.startsWith("✖ ") || text.contains("(")).isTrue();
     }
 
@@ -53,15 +65,16 @@ class ConfigPanelHeadlessIT {
 
         ConfigPanel panel = onEdtAndWait(ConfigPanel::new);
 
-        JButton createBtn = getPrivate(panel, "createIndexesButton", JButton.class);
-        JTextArea statusArea = getPrivate(panel, "openSearchStatus", JTextArea.class);
+        JButton createBtn = get(panel, "createIndexesButton");
+        JTextArea statusA = get(panel, "openSearchStatus");
 
-        onEdtAndWait(() -> statusArea.setText(""));
+        onEdtAndWait(() -> statusA.setText(""));
 
+        // Use a lambda to disambiguate JButton#doClick() vs doClick(int)
         onEdtAndWait(() -> createBtn.doClick());
-        awaitStatusUpdate(statusArea, 30_000);
+        awaitStatusUpdate(statusA, 30_000);
 
-        String text = statusArea.getText().trim();
+        String text = statusA.getText().trim();
         assertThat(text).isNotBlank();
         assertThat(text).containsAnyOf(
                 "Index created:", "Indexes created:",
@@ -72,12 +85,9 @@ class ConfigPanelHeadlessIT {
 
     // ---------- helpers ----------
 
-    private static <T> T getPrivate(Object target, String fieldName, Class<T> type) throws Exception {
-        Field f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return type.cast(f.get(target));
-    }
-
+    /**
+     * Creates a value on the EDT and returns it, propagating any exception.
+     */
     private static <T> T onEdtAndWait(java.util.concurrent.Callable<T> c) throws Exception {
         AtomicReference<T> ref = new AtomicReference<>();
         AtomicReference<Exception> err = new AtomicReference<>();
@@ -92,6 +102,9 @@ class ConfigPanelHeadlessIT {
         return ref.get();
     }
 
+    /**
+     * Runs a task on the EDT and blocks until completion, propagating any exception.
+     */
     private static void onEdtAndWait(Runnable r) throws Exception {
         AtomicReference<Exception> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -104,12 +117,18 @@ class ConfigPanelHeadlessIT {
         if (err.get() != null) throw err.get();
     }
 
+    /**
+     * Returns true when the status text is a non-placeholder value (i.e., not a transient “busy” message).
+     */
     private static boolean isFinalStatus(String text) {
         if (text == null || text.isBlank()) return false;
         return !text.equals("Testing ...") && !text.equals("Creating indexes . . .");
     }
 
-    /** Waits until the status area’s text becomes a non-placeholder value (no busy-waiting). */
+    /**
+     * Waits until the status area’s text becomes a non-placeholder value or times out.
+     * Uses a listener to react immediately when the worker updates the document.
+     */
     private static void awaitStatusUpdate(JTextArea area, long timeoutMs) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<DocumentListener> ref = new AtomicReference<>();
@@ -128,7 +147,7 @@ class ConfigPanelHeadlessIT {
             };
             ref.set(dl);
             area.getDocument().addDocumentListener(dl);
-            // If the worker already finished before we attached the listener
+            // Handle the case where the worker completed before the listener was attached.
             if (isFinalStatus(area.getText())) {
                 latch.countDown();
             }
@@ -136,10 +155,17 @@ class ConfigPanelHeadlessIT {
 
         boolean ok = latch.await(timeoutMs, TimeUnit.MILLISECONDS);
 
-        onEdtAndWait(() -> area.getDocument().removeDocumentListener(ref.get()));
+        onEdtAndWait(() -> {
+            DocumentListener dl = ref.get();
+            if (dl != null) {
+                area.getDocument().removeDocumentListener(dl);
+            }
+        });
 
         if (!ok) {
-            throw new AssertionError("Timed out waiting for status text update; last value: \"" + area.getText() + "\"");
+            throw new AssertionError(
+                    "Timed out waiting for status text update; last value: \"" + area.getText() + "\""
+            );
         }
     }
 }

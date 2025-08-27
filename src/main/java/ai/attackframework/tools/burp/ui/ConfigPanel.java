@@ -72,11 +72,11 @@ public class ConfigPanel extends JPanel {
 
     // Custom scope UI elements
     private final JCheckBox customScopeRegexToggle = new JCheckBox(".*");
-    final JButton addCustomScopeButton = new JButton("Add");
+    private final JButton addCustomScopeButton = new JButton("Add");
     private final JPanel customScopesContainer = new JPanel(
             new MigLayout("insets 0, wrap 1", "[grow]")
     );
-    final List<JTextField> customScopeFields = new ArrayList<>();
+    private final List<JTextField> customScopeFields = new ArrayList<>();
     private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
     private final List<JLabel> customScopeIndicators = new ArrayList<>();
 
@@ -313,7 +313,7 @@ public class ConfigPanel extends JPanel {
      * Removes a custom scope row and rebuilds all rows to preserve alignment,
      * naming, and 4-column layout consistency.
      */
-    void removeCustomScopeFieldRow(JTextField field) {
+    private void removeCustomScopeFieldRow(JTextField field) {
         int idx = customScopeFields.indexOf(field);
         if (idx <= 0) {
             return; // the first field cannot be removed
@@ -865,12 +865,12 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    void exportConfigTo(Path out) throws IOException {
+    private void exportConfigTo(Path out) throws IOException {
         FileUtil.writeStringCreateDirs(out, currentConfigJson());
         Logger.logInfo("Config exported to " + out.toAbsolutePath());
     }
 
-    void importConfigFrom(Path in) throws IOException {
+    private void importConfigFrom(Path in) throws IOException {
         String json = FileUtil.readString(in);
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         applyImported(cfg);

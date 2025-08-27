@@ -10,7 +10,6 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,8 +19,22 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Headless verification of the File sink flow in ConfigPanel.
+ *
+ * Intent:
+ * - Clicking “Create Files” creates (or reports on) the expected JSON files.
+ * - Final status is deterministic by pre-creating the files so the result must include “already existed”.
+ *
+ * Approach:
+ * - Derive expected file names with IndexNaming to mirror production logic.
+ * - Reach private Swing fields via the shared test Reflect helper to keep production visibility minimal.
+ * - Wait for the worker completion using a DocumentListener + CountDownLatch (no sleeps).
+ * - Run UI mutations on the EDT via onEdtAndWait.
+ */
 @Tag("headless")
 public class ConfigPanelFileSinkHeadlessTest {
 
@@ -29,10 +42,11 @@ public class ConfigPanelFileSinkHeadlessTest {
 
     @Test
     void createFilesButton_createsExpectedJsonFiles_andUpdatesStatus() throws Exception {
+        // Arrange
         ConfigPanel panel = new ConfigPanel();
 
-        // Build the list of expected JSON filenames and pre-create them
-        // so the final status must include "already existed".
+        // Build the list of expected JSON filenames and pre-create them so the final
+        // status must include “already existed”.
         List<String> sources = new ArrayList<>();
         sources.add("settings");
         sources.add("sitemap");
@@ -47,31 +61,26 @@ public class ConfigPanelFileSinkHeadlessTest {
             Files.createFile(tmpDir.resolve(name));
         }
 
-        // Reflect private UI fields we need to drive the interaction.
-        JTextField pathField   = (JTextField) getPrivate(panel, "filePathField");
-        JButton createBtn      = (JButton) getPrivate(panel, "createFilesButton");
-        JTextArea statusArea   = (JTextArea) getPrivate(panel, "fileStatus");
+        // Access private UI fields via the shared test Reflect helper.
+        JTextField pathField = get(panel, "filePathField");
+        JButton createBtn    = get(panel, "createFilesButton");
+        JTextArea statusArea = get(panel, "fileStatus");
 
-        // Set path and click on the EDT.
+        // Act: set the path and click on the EDT.
         onEdtAndWait(() -> pathField.setText(tmpDir.toString()));
         onEdtAndWait(createBtn::doClick);
 
-        // Wait for the asynchronous worker to post the final status.
+        // Assert: wait for the asynchronous worker to post the final status and verify the outcome.
         waitForFinalFileStatus(statusArea);
 
         String status = statusArea.getText().toLowerCase(Locale.ROOT);
         assertTrue(status.contains("already existed"),
-                "Expecting final status to mention already existed; actual:\n" + statusArea.getText());
+                "Expecting final status to mention 'already existed'; actual:\n" + statusArea.getText());
     }
 
-    /** Reflects a private field by name. */
-    private static Object getPrivate(Object target, String fieldName) throws Exception {
-        Field f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return f.get(target);
-    }
-
-    /** Runs the given runnable on the EDT and blocks until complete. */
+    /**
+     * Runs the given task on the EDT and blocks until completion to avoid UI races.
+     */
     private static void onEdtAndWait(Runnable r) throws Exception {
         if (SwingUtilities.isEventDispatchThread()) {
             r.run();
@@ -80,7 +89,10 @@ public class ConfigPanelFileSinkHeadlessTest {
         }
     }
 
-    /** True iff the status text represents a final (post-worker) state. */
+    /**
+     * Returns true when the status text represents a final state after the worker completes.
+     * Uses user-visible phrasing to avoid brittle coupling to implementation details.
+     */
     private static boolean isFinalStatus(String s) {
         if (s == null) return false;
         String t = s.toLowerCase(Locale.ROOT);
@@ -94,8 +106,8 @@ public class ConfigPanelFileSinkHeadlessTest {
     }
 
     /**
-     * Waits until the file status text reaches a final state or times out.
-     * Uses a DocumentListener to react as soon as the SwingWorker completes.
+     * Waits until the file-status text reaches a final state or times out.
+     * Attaches a listener so the test reacts immediately when the worker completes.
      */
     private static void waitForFinalFileStatus(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
@@ -115,7 +127,7 @@ public class ConfigPanelFileSinkHeadlessTest {
             ref.set(dl);
             area.getDocument().addDocumentListener(dl);
 
-            // Handle the rare case the worker finished before we attached.
+            // Handle the case where the worker finished before the listener was attached.
             if (isFinalStatus(area.getText())) {
                 latch.countDown();
             }

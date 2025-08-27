@@ -12,7 +12,6 @@ import javax.swing.KeyStroke;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.event.KeyEvent;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -21,19 +20,23 @@ import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Headless verification of field-scoped Enter bindings in ConfigPanel.
  *
  * Goals:
- *  - Enter in filePathField triggers the same code path as clicking "Create FileUtil".
+ *  - Enter in filePathField triggers the same code path as clicking "Create Files".
  *  - Enter in openSearchUrlField triggers the same code path as clicking "Test Connection".
  *
  * Design notes (keep tests deterministic & fast):
  *  - We simulate Enter with postActionEvent() (no Toolkit / key events needed).
  *  - We await UI changes via a DocumentListener + CountDownLatch (EDT-safe, flake-resistant).
- *  - For the FileUtil flow, we pre-create all expected files so the final status is predictably "already existed".
+ *  - For the files flow, we pre-create all expected files so the final status is predictably "already existed".
  *  - For OpenSearch, we point at 127.0.0.1:1 to force a quick, deterministic failure path (any final message is acceptable;
  *    we assert the transition from the transient "Testing ..." to a non-empty final state).
  */
@@ -48,8 +51,8 @@ public class ConfigPanelEnterBindingsHeadlessTest {
     void enterInFilePathField_triggersCreateFiles_andUpdatesStatus() throws Exception {
         ConfigPanel panel = new ConfigPanel();
 
-        JTextField pathField = (JTextField) getPrivate(panel, "filePathField");
-        JTextArea fileStatus = (JTextArea) getPrivate(panel, "fileStatus");
+        JTextField pathField = get(panel, "filePathField");
+        JTextArea fileStatus = get(panel, "fileStatus");
 
         // Sanity: ensure Enter is actually mapped for this field (guards against accidental regression).
         assertEnterBindingPresent(pathField);
@@ -66,7 +69,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
 
         onEdtAndWait(() -> pathField.setText(tmpDir.toString()));
 
-        // Act: simulate Enter in the field (wired in ConfigPanel to click "Create FileUtil").
+        // Act: simulate Enter in the field (wired in ConfigPanel to click "Create Files").
         onEdtAndWait(pathField::postActionEvent);
 
         // Assert: wait for a final message and verify the deterministic "already existed" outcome.
@@ -81,8 +84,8 @@ public class ConfigPanelEnterBindingsHeadlessTest {
     void enterInOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() throws Exception {
         ConfigPanel panel = new ConfigPanel();
 
-        JTextField urlField = (JTextField) getPrivate(panel, "openSearchUrlField");
-        JTextArea osStatus  = (JTextArea) getPrivate(panel, "openSearchStatus");
+        JTextField urlField = get(panel, "openSearchUrlField");
+        JTextArea osStatus  = get(panel, "openSearchStatus");
 
         // Sanity: ensure Enter is actually mapped for this field.
         assertEnterBindingPresent(urlField);
@@ -145,7 +148,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
         }
     }
 
-    /** Final-state detector for the FileUtil flow—mirrors the UI wording to avoid coupling to implementation details. */
+    /** Final-state detector for the files flow—mirrors the UI wording to avoid coupling to implementation details. */
     private static boolean isFinalFileStatus(String s) {
         if (s == null) return false;
         String t = s.toLowerCase(Locale.ROOT);
@@ -158,7 +161,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
                 || t.startsWith("file creation error:");
     }
 
-    /** Waits for a final FileUtil status or fails fast with a helpful message on timeout. */
+    /** Waits for a final file status or fails fast with a helpful message on timeout. */
     private static void waitForFinalFileStatus(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         DocumentListener[] holder = new DocumentListener[1];
@@ -220,13 +223,6 @@ public class ConfigPanelEnterBindingsHeadlessTest {
         if (!ok) {
             fail("Timed out waiting for OpenSearch status to advance beyond '" + TESTING_TEXT + "'. Last value: " + area.getText());
         }
-    }
-
-    /** Small reflection helper for private UI fields—keeps test code focused on behavior. */
-    private static Object getPrivate(Object target, String fieldName) throws Exception {
-        Field f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return f.get(target);
     }
 
     /** Runs the given block on the EDT, blocking until completion (avoids race conditions in tests). */

@@ -6,19 +6,26 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import java.lang.reflect.Field;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Verifies the regex validity indicators in LogPanel:
+ * - When the regex toggle is off, the indicator is hidden and empty.
+ * - When the regex toggle is on, the indicator shows ✖ for invalid input and ✓ for valid input.
+ *
+ * Private UI fields are accessed via the shared Reflection test utility to keep production visibility minimal.
+ */
 class LogPanelRegexIndicatorHeadlessTest {
 
     @Test
     void filter_regex_indicator_shows_check_or_cross() throws Exception {
         LogPanel panel = new LogPanel();
 
-        JTextField filterField = get(panel, "filterField", JTextField.class);
-        JCheckBox filterRegexToggle = get(panel, "filterRegexToggle", JCheckBox.class);
-        JLabel indicator = get(panel, "filterRegexIndicator", JLabel.class);
+        JTextField filterField = get(panel, "filterField");
+        JCheckBox filterRegexToggle = get(panel, "filterRegexToggle");
+        JLabel indicator = get(panel, "filterRegexIndicator");
 
         // Off -> hidden
         SwingUtilities.invokeAndWait(() -> {
@@ -46,9 +53,9 @@ class LogPanelRegexIndicatorHeadlessTest {
     void search_regex_indicator_shows_check_or_cross() throws Exception {
         LogPanel panel = new LogPanel();
 
-        JTextField searchField = get(panel, "searchField", JTextField.class);
-        JCheckBox searchRegexToggle = get(panel, "searchRegexToggle", JCheckBox.class);
-        JLabel indicator = get(panel, "searchRegexIndicator", JLabel.class);
+        JTextField searchField = get(panel, "searchField");
+        JCheckBox searchRegexToggle = get(panel, "searchRegexToggle");
+        JLabel indicator = get(panel, "searchRegexIndicator");
 
         // Off -> hidden
         SwingUtilities.invokeAndWait(() -> {
@@ -70,13 +77,5 @@ class LogPanelRegexIndicatorHeadlessTest {
         SwingUtilities.invokeAndWait(() -> searchField.setText("\\bfoo\\b"));
         assertThat(indicator.isVisible()).isTrue();
         assertThat(indicator.getText()).isEqualTo("✓");
-    }
-
-    // ---- reflection helper ----
-    private static <T> T get(Object target, String fieldName, Class<T> type) throws Exception {
-        Field f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        Object v = f.get(target);
-        return type.cast(v);
     }
 }

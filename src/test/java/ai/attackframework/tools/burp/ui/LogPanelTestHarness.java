@@ -23,8 +23,6 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultCaret;
 import javax.swing.text.Document;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Queue;
@@ -32,12 +30,32 @@ import java.util.concurrent.Callable;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
+
+/**
+ * Test-only harness for working with LogPanel in headless mode.
+ *
+ * Intent:
+ * - Provide safe helpers for executing actions on the EDT.
+ * - Offer resilient component discovery by name, tooltip, or text.
+ * - Expose convenient actions and state management primitives for tests.
+ *
+ * Notes:
+ * - All Swing mutations run on the EDT via onEdt(Runnable) / onEdt(Callable).
+ * - The harness avoids reflection except where the production class deliberately
+ *   hides behavior; when needed, reflection goes through the shared test utility.
+ */
 public class LogPanelTestHarness {
 
+    /** Public no-arg constructor so tests can instantiate freely. */
     public LogPanelTestHarness() {}
 
     // ---------- EDT helpers ----------
 
+    /**
+     * Runs the given runnable on the EDT, blocking until completion.
+     * Any exception is rethrown as a RuntimeException.
+     */
     public static void onEdt(Runnable r) {
         if (SwingUtilities.isEventDispatchThread()) {
             r.run();
@@ -48,11 +66,15 @@ public class LogPanelTestHarness {
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(ie);
-        } catch (InvocationTargetException ite) {
-            throw asRuntime(ite.getTargetException());
+        } catch (Exception ite) {
+            throw asRuntime(ite.getCause() == null ? ite : ite.getCause());
         }
     }
 
+    /**
+     * Calls the given callable on the EDT and returns its result.
+     * Any checked exception is rethrown as a RuntimeException.
+     */
     public static <T> T onEdt(Callable<T> c) {
         if (SwingUtilities.isEventDispatchThread()) {
             try {
@@ -80,16 +102,22 @@ public class LogPanelTestHarness {
 
     // ---------- Panel factory ----------
 
+    /** Creates a new LogPanel on the EDT. */
     public static LogPanel newPanelOnEdt() {
         return onEdt(LogPanel::new);
     }
 
+    /** Alias to emphasize tests should construct on the EDT. */
     public static LogPanel newPanel() {
         return newPanelOnEdt();
     }
 
     // ---------- Generic component lookup ----------
 
+    /**
+     * Breadth-first search for a component that matches the supplied predicate.
+     * The search traverses standard Swing containers and menu structures.
+     */
     public static Component findBy(LogPanel root, Predicate<Component> p) {
         return onEdt(() -> {
             Queue<Component> q = new ArrayDeque<>();
@@ -105,14 +133,17 @@ public class LogPanelTestHarness {
                         }
                     }
                     case Container container -> java.util.Collections.addAll(q, container.getComponents());
-                    default -> {
-                    }
+                    default -> { /* ignore */ }
                 }
             }
             return null;
         });
     }
 
+    /**
+     * Finds a component by matching any of: getName(), getToolTipText(),
+     * or, for buttons/labels, getText().
+     */
     public static Component findByNameOrTooltipOrText(LogPanel root, String key) {
         return findBy(root, c -> {
             String nm = null, tip = null, txt = null;
@@ -164,7 +195,7 @@ public class LogPanelTestHarness {
         return onEdt(() -> lbl != null ? lbl.getText() : "0/0");
     }
 
-    /** First (and only) JTextPane inside LogPanel. */
+    /** First (and only) text pane inside the panel. */
     public static JTextPane textPane(LogPanel root) {
         Component c = findBy(root, comp -> comp instanceof JTextPane);
         if (c instanceof JTextPane pane) return pane;
@@ -173,24 +204,32 @@ public class LogPanelTestHarness {
 
     // ---------- Convenience actions ----------
 
+    /** Sets text on a field on the EDT. */
     public static void setText(JTextField f, String s) {
         onEdt(() -> f.setText(s));
     }
 
+    /** Clicks a button/checkbox on the EDT. */
     public static void click(AbstractButton b) {
+        // Use a lambda to disambiguate doClick() vs doClick(int)
         onEdt(() -> b.doClick());
     }
 
+    /**
+     * Waits until the condition becomes true or the timeout elapses.
+     * Pumps the EDT and parks briefly between checks.
+     */
     public static boolean waitFor(Supplier<Boolean> cond, long timeoutMs) {
         long until = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < until) {
             if (Boolean.TRUE.equals(cond.get())) return true;
-            onEdt(() -> {});
+            onEdt(() -> { /* pump */ });
             java.util.concurrent.locks.LockSupport.parkNanos(15_000_000L);
         }
         return false;
     }
 
+    /** Returns all text currently displayed in the panel’s text pane. */
     public static String allText(LogPanel p) {
         return onEdt(() -> {
             JTextPane pane = textPane(p);
@@ -203,22 +242,26 @@ public class LogPanelTestHarness {
         });
     }
 
-    // ---------- Optional reflection helpers for context menu ----------
+    // ---------- Optional reflection-backed helpers for context menu ----------
 
+    /**
+     * Invokes the panel’s internal context-menu builder via the shared Reflection utility.
+     * Allows tests to assert menu structure without widening production visibility.
+     */
     public static JPopupMenu buildContextMenuViaReflection(LogPanel p) {
         return onEdt(() -> {
-            try {
-                Method m = LogPanel.class.getDeclaredMethod("buildContextMenu");
-                m.setAccessible(true);
-                Object o = m.invoke(p);
-                if (!(o instanceof JPopupMenu)) throw new IllegalStateException("Unexpected menu: " + o);
-                return (JPopupMenu) o;
-            } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-                throw asRuntime(e);
+            Object o = call(p, "buildContextMenu");
+            if (!(o instanceof JPopupMenu menu)) {
+                throw new IllegalStateException("Unexpected menu: " + o);
             }
+            return menu;
         });
     }
 
+    /**
+     * Fires the “search next” action bound to Enter in the search field.
+     * Uses the action map key rather than synthesizing a key event.
+     */
     public static void triggerSearchNextViaEnter(LogPanel p) {
         onEdt(() -> {
             JTextField sf = field(p, "log.search.field");
@@ -230,11 +273,12 @@ public class LogPanelTestHarness {
 
     // ---------- Test-state helpers ----------
 
-    /** Reset persisted UI state so each test starts clean. */
+    /** Resets persisted UI state so each test starts from a clean baseline. */
     public static void resetPanelState(LogPanel p) {
         @SuppressWarnings("unchecked")
         JComboBox<String> level = (JComboBox<String>) combo(p, "log.filter.level");
         onEdt(() -> level.setSelectedItem("INFO"));
+
         JCheckBox fCase = check(p, "log.filter.case");
         JCheckBox fRegex = check(p, "log.filter.regex");
         if (fCase.isSelected()) click(fCase);
@@ -249,8 +293,8 @@ public class LogPanelTestHarness {
     }
 
     /**
-     * Ensure the panel and its text pane have a non-zero size and are laid out,
-     * so modelToView2D(...) returns a real rectangle in headless tests.
+     * Ensures the panel and its text pane have a non-zero size and are laid out,
+     * so geometry-dependent APIs (for example, modelToView2D) return real rectangles.
      */
     public static void realize(LogPanel p) {
         onEdt(() -> {
@@ -267,8 +311,8 @@ public class LogPanelTestHarness {
     }
 
     /**
-     * Toggle pause via the checkbox (fires listeners) and align caret policy,
-     * so headless behavior matches the real UI.
+     * Toggles pause via the checkbox (firing listeners) and aligns the caret update policy,
+     * so headless behavior matches the interactive UI.
      */
     public static void setPaused(LogPanel p, boolean paused) {
         JCheckBox pause = check(p, "log.pause");
