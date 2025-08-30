@@ -40,7 +40,6 @@ import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -488,8 +487,8 @@ public class ConfigPanel extends JPanel {
         JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]15[]15[left, grow]", ""));
         JButton importButton = new JButton("Import Config");
         JButton exportButton = new JButton("Export Config");
-        importButton.addActionListener(e -> doImportConfig());
-        exportButton.addActionListener(e -> doExportConfig());
+        importButton.addActionListener(e -> importConfig());
+        exportButton.addActionListener(e -> exportConfig());
         importExportRow.add(importButton);
         importExportRow.add(exportButton);
 
@@ -808,7 +807,7 @@ public class ConfigPanel extends JPanel {
         );
     }
 
-    private void doExportConfig() {
+    private void exportConfig() {
         String json = currentConfigJson();
 
         JFileChooser chooser = new JFileChooser();
@@ -833,7 +832,7 @@ public class ConfigPanel extends JPanel {
         }
     }
 
-    private void doImportConfig() {
+    private void importConfig() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Import Config");
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
@@ -863,20 +862,6 @@ public class ConfigPanel extends JPanel {
             updateImportExportStatus("✖ Import error: " + ex.getMessage());
             Logger.logError("Import error: " + ex.getMessage());
         }
-    }
-
-    private void exportConfigTo(Path out) throws IOException {
-        FileUtil.writeStringCreateDirs(out, currentConfigJson());
-        Logger.logInfo("Config exported to " + out.toAbsolutePath());
-    }
-
-    private void importConfigFrom(Path in) throws IOException {
-        String json = FileUtil.readString(in);
-        Json.ImportedConfig cfg = Json.parseConfigJson(json);
-        applyImported(cfg);
-        refreshEnabledStates();
-        updateCustomRegexFeedback();
-        Logger.logInfo("Config imported from " + in.toAbsolutePath());
     }
 
     private void applyImported(Json.ImportedConfig cfg) {

@@ -11,13 +11,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Lightweight reflection helpers for tests. Centralized here to keep production
- * visibility minimal (private) while allowing tests to reach implementation details.
- *
- * Notes:
- * - Handles superclasses when locating fields/methods.
- * - Supports null arguments, primitive parameters, and overload resolution.
- * - Avoids wildcard imports by design.
+ * Lightweight reflection helpers for tests.
+ * Supports null arguments, primitive parameters, and overload resolution.
  */
 public final class Reflect {
 

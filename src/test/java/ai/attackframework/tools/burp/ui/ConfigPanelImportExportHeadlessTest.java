@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.utils.config.Json;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JCheckBox;
@@ -9,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.callVoid;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,17 +50,23 @@ class ConfigPanelImportExportHeadlessTest {
         String expectedOsUrl = "http://opensearch.url:9200";
         openSearchUrlField1.setText(expectedOsUrl);
 
-        // Export to a temp JSON file via the private helper.
+        // Export to a temp JSON file by reflecting currentConfigJson() and writing it.
         Path tmpDir = Files.createTempDirectory("cfg-export-");
         Path out = tmpDir.resolve("config-roundtrip.json");
-        callVoid(panel1, "exportConfigTo", out);
+        String json = (String) call(panel1, "currentConfigJson");
+        Files.writeString(out, json);
 
         assertThat(Files.exists(out)).as("exported config file should exist").isTrue();
         assertThat(Files.size(out)).as("exported config should not be empty").isGreaterThan(0L);
 
-        // Import into a fresh panel via the private helper.
+        // Import into a fresh panel by parsing JSON and reflecting applyImported(...).
         ConfigPanel panel2 = new ConfigPanel();
-        callVoid(panel2, "importConfigFrom", out);
+        String imported = Files.readString(out);
+        Json.ImportedConfig cfg = Json.parseConfigJson(imported);
+        callVoid(panel2, "applyImported", cfg);
+        // Mirror non-UI side-effects of the old import helper.
+        callVoid(panel2, "refreshEnabledStates");
+        callVoid(panel2, "updateCustomRegexFeedback");
 
         // Validate scope restored.
         JRadioButton customRadio2 = get(panel2, "customRadio");
