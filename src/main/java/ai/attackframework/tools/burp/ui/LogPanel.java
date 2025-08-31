@@ -24,11 +24,15 @@ import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter;
+import javax.swing.text.Highlighter.HighlightPainter;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
 import javax.swing.AbstractAction;
 import javax.swing.KeyStroke;
+import javax.swing.JComponent;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -38,6 +42,10 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
+import java.io.IOException;
+import java.io.Serial;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -48,9 +56,6 @@ import java.util.prefs.Preferences;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
 
 /**
  * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex),
@@ -59,12 +64,33 @@ import java.nio.file.Path;
  */
 public class LogPanel extends JPanel implements Logger.LogListener {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // UIManager keys
+    private static final String UI_TEXT_FOREGROUND = "TextPane.foreground";
+    private static final String UI_TEXT_BACKGROUND = "TextPane.background";
+    private static final String UI_SEL_BG_FIELD    = "TextField.selectionBackground";
+    private static final String UI_SEL_BG_AREA     = "TextArea.selectionBackground";
+
+    // MigLayout snippets
+    private static final String MIG_TOOLBAR_INSETS = "insets 6 8 6 8, fillx, novisualpadding, gapx 6";
+    private static final String MIG_SEP            = "h 18!, gapx 8";
+    private static final String GAP0               = "gapx 0";
+    private static final String GAP4               = "gapx 4";
+    private static final String GAP6               = "gapx 6";
+    private static final String GAP8               = "gapx 8";
+
+    // Actions / defaults
+    private static final String ACTION_SEARCH_NEXT = "log.search.next";
+    private static final String DEFAULT_MIN_LEVEL  = "DEBUG";
+
     // Editor and styles
     private final JTextPane logTextPane;
-    private final StyledDocument doc;
-    private final Style infoStyle;
-    private final Style errorStyle;
-    private final DateTimeFormatter timestampFormat;
+    private final transient StyledDocument doc;
+    private final transient Style infoStyle;
+    private final transient Style errorStyle;
+    private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // Controls
     private final JComboBox<String> levelCombo;
@@ -85,12 +111,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     // Model and view state
     private final List<Entry> entries = new ArrayList<>();
-    private int lastLineStart = 0; // last rendered line offset
-    private int lastLineLen   = 0; // last rendered line length
+    private int lastLineStart = 0;
+    private int lastLineLen   = 0;
 
     // Search state and highlighting
-    private final Highlighter.HighlightPainter matchPainter;
-    private final List<Object> matchTags = new ArrayList<>();
+    private final transient HighlightPainter matchPainter;
+    private final transient List<Object> matchTags = new ArrayList<>();
     private List<int[]> matches = List.of(); // [start, end] pairs
     private int matchIndex = -1;
 
@@ -132,34 +158,30 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         logTextPane = new JTextPane();
         logTextPane.setEditable(false);
         logTextPane.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        logTextPane.setBackground(UIManager.getColor("TextPane.background"));
-        logTextPane.setForeground(UIManager.getColor("TextPane.foreground"));
+        logTextPane.setBackground(UIManager.getColor(UI_TEXT_BACKGROUND));
+        logTextPane.setForeground(UIManager.getColor(UI_TEXT_FOREGROUND));
         doc = logTextPane.getStyledDocument();
 
-        timestampFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
         infoStyle = doc.addStyle("INFO", null);
-        StyleConstants.setForeground(infoStyle, UIManager.getColor("TextPane.foreground"));
+        StyleConstants.setForeground(infoStyle, UIManager.getColor(UI_TEXT_FOREGROUND));
 
         errorStyle = doc.addStyle("ERROR", null);
-        StyleConstants.setForeground(errorStyle, UIManager.getColor("TextPane.foreground"));
+        StyleConstants.setForeground(errorStyle, UIManager.getColor(UI_TEXT_FOREGROUND));
         StyleConstants.setBold(errorStyle, true);
 
         // Highlight color from LAF
-        Color sel = UIManager.getColor("TextField.selectionBackground");
-        if (sel == null) sel = UIManager.getColor("TextArea.selectionBackground");
+        Color sel = UIManager.getColor(UI_SEL_BG_FIELD);
+        if (sel == null) sel = UIManager.getColor(UI_SEL_BG_AREA);
         if (sel == null) sel = new Color(180, 200, 255);
         matchPainter = new DefaultHighlighter.DefaultHighlightPainter(sel);
 
         // Toolbar
-        JPanel toolbar = new JPanel(new MigLayout(
-                "insets 6 8 6 8, fillx, novisualpadding, gapx 6",
-                "", "[]"));
+        JPanel toolbar = new JPanel(new MigLayout(MIG_TOOLBAR_INSETS, "", "[]"));
         toolbar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Separator.foreground")));
 
-        levelCombo = new JComboBox<>(new String[]{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"});
+        levelCombo = new JComboBox<>(new String[]{"TRACE", DEFAULT_MIN_LEVEL, "INFO", "WARN", "ERROR"});
         levelCombo.setName("log.filter.level");
-        levelCombo.setSelectedItem(PREFS.get(PREF_MIN_LEVEL, "DEBUG"));
+        levelCombo.setSelectedItem(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL));
 
         pauseAutoscroll = new JCheckBox("Pause autoscroll");
         pauseAutoscroll.setName("log.pause");
@@ -191,7 +213,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         JButton searchPrevBtn = new JButton("Prev");
         searchPrevBtn.setName("log.search.prev");
         JButton searchNextBtn = new JButton("Next");
-        searchNextBtn.setName("log.search.next");
+        searchNextBtn.setName(ACTION_SEARCH_NEXT);
         searchCountLabel = new JLabel("0/0");
         searchCountLabel.setName("log.search.count");
 
@@ -205,39 +227,39 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         // Build toolbar
         toolbar.add(new JLabel("Min level:"));
         toolbar.add(levelCombo, "w 110!");
-        toolbar.add(new JSeparator(JSeparator.VERTICAL), "h 18!, gapx 8");
+        toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
 
-        toolbar.add(new JLabel("Filter:"), "gapx 0");
-        toolbar.add(filterField, "gapx 0");
-        toolbar.add(filterCaseToggle, "gapx 4");
-        toolbar.add(filterRegexToggle, "gapx 4");
-        toolbar.add(filterRegexIndicator, "gapx 6");
+        toolbar.add(new JLabel("Filter:"), GAP0);
+        toolbar.add(filterField, GAP0);
+        toolbar.add(filterCaseToggle, GAP4);
+        toolbar.add(filterRegexToggle, GAP4);
+        toolbar.add(filterRegexIndicator, GAP6);
 
-        toolbar.add(new JSeparator(JSeparator.VERTICAL), "h 18!, gapx 8");
+        toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
 
-        toolbar.add(new JLabel("Find:"), "gapx 0");
-        toolbar.add(searchField, "gapx 0");
-        toolbar.add(searchCaseToggle, "gapx 4");
-        toolbar.add(searchRegexToggle, "gapx 4");
-        toolbar.add(searchRegexIndicator, "gapx 6");
-        toolbar.add(searchPrevBtn, "gapx 4");
-        toolbar.add(searchNextBtn, "gapx 4");
-        toolbar.add(searchCountLabel, "gapx 6");
+        toolbar.add(new JLabel("Find:"), GAP0);
+        toolbar.add(searchField, GAP0);
+        toolbar.add(searchCaseToggle, GAP4);
+        toolbar.add(searchRegexToggle, GAP4);
+        toolbar.add(searchRegexIndicator, GAP6);
+        toolbar.add(searchPrevBtn, GAP4);
+        toolbar.add(searchNextBtn, GAP4);
+        toolbar.add(searchCountLabel, GAP6);
 
         toolbar.add(new JLabel(), "pushx, growx");
 
-        toolbar.add(new JSeparator(JSeparator.VERTICAL), "h 18!, gapx 8");
+        toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
         toolbar.add(pauseAutoscroll);
-        toolbar.add(clearBtn, "gapx 8");
-        toolbar.add(copyBtn, "gapx 4");
-        toolbar.add(saveBtn, "gapx 4");
+        toolbar.add(clearBtn, GAP8);
+        toolbar.add(copyBtn, GAP4);
+        toolbar.add(saveBtn, GAP4);
 
         add(toolbar, BorderLayout.NORTH);
 
         JScrollPane scrollPane = new JScrollPane(
                 logTextPane,
-                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
         );
         add(scrollPane, BorderLayout.CENTER);
 
@@ -253,7 +275,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         // Wiring
         levelCombo.addActionListener(e -> {
-            PREFS.put(PREF_MIN_LEVEL, Objects.toString(levelCombo.getSelectedItem(), "DEBUG"));
+            PREFS.put(PREF_MIN_LEVEL, Objects.toString(levelCombo.getSelectedItem(), DEFAULT_MIN_LEVEL));
             rebuildView();
         });
 
@@ -264,24 +286,23 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             }
         });
 
-        DocumentListener filterChange = new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { saveFilterPrefsAndRebuild(); updateFilterRegexFeedback(); }
-            public void removeUpdate(DocumentEvent e) { saveFilterPrefsAndRebuild(); updateFilterRegexFeedback(); }
-            public void changedUpdate(DocumentEvent e) { saveFilterPrefsAndRebuild(); updateFilterRegexFeedback(); }
-        };
+        DocumentListener filterChange = onDocChange(() -> {
+            saveFilterPrefsAndRebuild();
+            updateFilterRegexFeedback();
+        });
         filterField.getDocument().addDocumentListener(filterChange);
         filterCaseToggle.addActionListener(e -> saveFilterPrefsAndRebuild());
         filterRegexToggle.addActionListener(e -> { saveFilterPrefsAndRebuild(); updateFilterRegexFeedback(); });
 
-        DocumentListener searchChange = new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { PREFS.put(PREF_LAST_SEARCH, searchField.getText()); updateSearchRegexFeedback(); computeMatchesAndJumpFirst(); }
-            public void removeUpdate(DocumentEvent e) { PREFS.put(PREF_LAST_SEARCH, searchField.getText()); updateSearchRegexFeedback(); computeMatchesAndJumpFirst(); }
-            public void changedUpdate(DocumentEvent e) { PREFS.put(PREF_LAST_SEARCH, searchField.getText()); updateSearchRegexFeedback(); computeMatchesAndJumpFirst(); }
-        };
+        DocumentListener searchChange = onDocChange(() -> {
+            PREFS.put(PREF_LAST_SEARCH, searchField.getText());
+            updateSearchRegexFeedback();
+            computeMatchesAndJumpFirst();
+        });
         searchField.getDocument().addDocumentListener(searchChange);
-        searchField.getInputMap(JTextField.WHEN_FOCUSED)
-                .put(KeyStroke.getKeyStroke("ENTER"), "log.search.next");
-        searchField.getActionMap().put("log.search.next", new AbstractAction() {
+        searchField.getInputMap(JComponent.WHEN_FOCUSED)
+                .put(KeyStroke.getKeyStroke("ENTER"), ACTION_SEARCH_NEXT);
+        searchField.getActionMap().put(ACTION_SEARCH_NEXT, new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { jumpMatch(+1); }
         });
         searchCaseToggle.addActionListener(e -> { updateSearchRegexFeedback(); computeMatchesAndJumpFirst(); });
@@ -394,30 +415,40 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private void rebuildView() {
         clearDoc();
 
-        LocalDateTime ts = null;
-        L lvl = null;
-        String msg = null;
-        int count = 0;
+        LocalDateTime aggTs = null;
+        L aggLvl = null;
+        String aggMsg = null;
+        int aggCount = 0;
 
         for (Entry e : entries) {
-            if (!visible(e.level, e.message)) continue;
+            if (!visible(e.level, e.message)) {
+                continue;
+            }
 
-            if (lvl == e.level && Objects.equals(msg, e.message)) {
-                count += e.repeats;
-                ts = e.ts;
+            boolean same = (aggLvl == e.level && Objects.equals(aggMsg, e.message));
+            if (same) {
+                aggCount += e.repeats;
+                aggTs = e.ts;
             } else {
-                if (lvl != null) {
-                    appendLine(formatLine(ts, lvl, msg, count), lvl == L.ERROR ? errorStyle : infoStyle);
+                if (aggLvl != null) {
+                    appendAggregated(aggTs, aggLvl, aggMsg, aggCount);
                 }
-                ts = e.ts; lvl = e.level; msg = e.message; count = e.repeats;
+                aggTs = e.ts;
+                aggLvl = e.level;
+                aggMsg = e.message;
+                aggCount = e.repeats;
             }
         }
-        if (lvl != null) {
-            appendLine(formatLine(ts, lvl, msg, count), lvl == L.ERROR ? errorStyle : infoStyle);
+        if (aggLvl != null) {
+            appendAggregated(aggTs, aggLvl, aggMsg, aggCount);
         }
 
         autoscrollIfNeeded();
         recomputeMatchesAfterDocChange();
+    }
+
+    private void appendAggregated(LocalDateTime ts, L lvl, String msg, int count) {
+        appendLine(formatLine(ts, lvl, msg, count), lvl == L.ERROR ? errorStyle : infoStyle);
     }
 
     private void trimIfNeeded() {
@@ -429,7 +460,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     }
 
     private String formatLine(LocalDateTime ts, L lvl, String msg, int repeats) {
-        String timestamp = "[" + timestampFormat.format(ts == null ? LocalDateTime.now() : ts) + "]";
+        String timestamp = "[" + TIMESTAMP_FORMAT.format(ts == null ? LocalDateTime.now() : ts) + "]";
         String base = String.format("%s [%s] %s", timestamp, lvl.name(), msg == null ? "" : msg);
         return repeats > 1 ? base + "  (x" + repeats + ")\n" : base + "\n";
     }
@@ -495,46 +526,72 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         try {
             String hay = doc.getText(0, doc.getLength());
-            List<int[]> found = new ArrayList<>();
+            List<int[]> found = searchRegexToggle.isSelected()
+                    ? findRegexMatches(hay, q, searchCaseToggle.isSelected())
+                    : findSubstringMatches(hay, q, searchCaseToggle.isSelected());
 
-            if (searchRegexToggle.isSelected()) {
-                int flags = searchCaseToggle.isSelected()
-                        ? Pattern.MULTILINE
-                        : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.MULTILINE);
-                Pattern p = Pattern.compile(q, flags);
-                Matcher m = p.matcher(hay);
-                while (m.find()) {
-                    int s = m.start();
-                    int e = m.end();
-                    found.add(new int[]{s, e});
-                    Object tag = logTextPane.getHighlighter().addHighlight(s, e, matchPainter);
-                    matchTags.add(tag);
-                }
-            } else {
-                String hay2 = searchCaseToggle.isSelected() ? hay : hay.toLowerCase(Locale.ROOT);
-                String q2 = searchCaseToggle.isSelected() ? q : q.toLowerCase(Locale.ROOT);
-                int idx = 0;
-                while (true) {
-                    idx = hay2.indexOf(q2, idx);
-                    if (idx < 0) break;
-                    int end = idx + q2.length();
-                    found.add(new int[]{idx, end});
-                    Object tag = logTextPane.getHighlighter().addHighlight(idx, end, matchPainter);
-                    matchTags.add(tag);
-                    idx = end;
-                }
-            }
+            applyHighlights(found);
             matches = found;
         } catch (BadLocationException | PatternSyntaxException e) {
             matches = List.of();
         }
+
         updateMatchCount();
+    }
+
+    private List<int[]> findRegexMatches(String hay, String q, boolean caseSensitive) {
+        Pattern p = compilePatternWithFlags(q, computeRegexFlags(caseSensitive, true));
+        Matcher m = p.matcher(hay);
+        List<int[]> found = new ArrayList<>();
+        while (m.find()) {
+            found.add(new int[]{m.start(), m.end()});
+        }
+        return found;
+    }
+
+    private List<int[]> findSubstringMatches(String hay, String q, boolean caseSensitive) {
+        String hay2 = caseSensitive ? hay : hay.toLowerCase(Locale.ROOT);
+        String q2 = caseSensitive ? q : q.toLowerCase(Locale.ROOT);
+        List<int[]> found = new ArrayList<>();
+        int idx = 0;
+        while (true) {
+            idx = hay2.indexOf(q2, idx);
+            if (idx < 0) break;
+            int end = idx + q2.length();
+            found.add(new int[]{idx, end});
+            idx = end;
+        }
+        return found;
+    }
+
+    private void applyHighlights(List<int[]> ranges) throws BadLocationException {
+        Highlighter h = logTextPane.getHighlighter();
+        for (int[] r : ranges) {
+            Object tag = h.addHighlight(r[0], r[1], matchPainter);
+            matchTags.add(tag);
+        }
+    }
+
+    private static int computeRegexFlags(boolean caseSensitive, boolean multiline) {
+        int flags = 0;
+        if (!caseSensitive) flags |= (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+        if (multiline)      flags |= Pattern.MULTILINE;
+        return flags;
+    }
+
+    @SuppressWarnings("MagicConstant")
+    private static Pattern compilePatternWithFlags(String pattern, int flags) {
+        return Pattern.compile(pattern, flags);
     }
 
     private void clearSearchHighlights() {
         Highlighter h = logTextPane.getHighlighter();
         for (Object tag : matchTags) {
-            try { h.removeHighlight(tag); } catch (RuntimeException ignore) { }
+            try {
+                h.removeHighlight(tag);
+            } catch (RuntimeException ignore) {
+                // Best-effort: tag may be stale if the document changed aggressively.
+            }
         }
         matchTags.clear();
     }
@@ -563,7 +620,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             java.awt.Rectangle r = r2d.getBounds();
             logTextPane.scrollRectToVisible(r);
         } catch (javax.swing.text.BadLocationException ignore) {
-            // ignore invalid offsets
+            // Invalid offsets are harmless; visibility is best-effort.
         }
     }
 
@@ -599,14 +656,18 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             if (end < 0) end = text.length();
             String line = text.substring(start, end);
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(line), null);
-        } catch (BadLocationException ignore) { }
+        } catch (BadLocationException ignore) {
+            // Selection helpers are best-effort; ignore bad caret offsets.
+        }
     }
 
     private void copyAll() {
         try {
             String all = doc.getText(0, doc.getLength());
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(all), null);
-        } catch (BadLocationException ignore) { }
+        } catch (BadLocationException ignore) {
+            // Best-effort: if the document length changed mid-read, skip copy.
+        }
     }
 
     private void saveVisible() {
@@ -710,10 +771,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
 
         try {
-            int flags = caseToggle.isSelected()
-                    ? (includeMultilineFlag ? Pattern.MULTILINE : 0)
-                    : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | (includeMultilineFlag ? Pattern.MULTILINE : 0));
-            Pattern.compile(txt, flags);
+            compilePatternWithFlags(txt, computeRegexFlags(caseToggle.isSelected(), includeMultilineFlag));
             indicator.setForeground(new Color(0, 153, 0));
             indicator.setText("✓");
             indicator.setToolTipText("Valid regex");
@@ -724,5 +782,15 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             indicator.setToolTipText(ex.getDescription());
             indicator.setVisible(true);
         }
+    }
+
+    // ---- Small helper to avoid duplicated DocumentListener bodies ----
+    private static DocumentListener onDocChange(Runnable action) {
+        return new DocumentListener() {
+            private void on() { action.run(); }
+            @Override public void insertUpdate(DocumentEvent e) { on(); }
+            @Override public void removeUpdate(DocumentEvent e) { on(); }
+            @Override public void changedUpdate(DocumentEvent e) { on(); }
+        };
     }
 }
