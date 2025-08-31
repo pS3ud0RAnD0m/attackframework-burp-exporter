@@ -105,7 +105,8 @@ public class ConfigPanel extends JPanel {
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
-        add(buildSourcesPanel(), "gaptop 5, gapbottom 5, wrap");
+        add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, INDENT).build(),
+                "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), "growx, wrap");
 
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
@@ -120,22 +121,6 @@ public class ConfigPanel extends JPanel {
         assignComponentNames();
         wireTextFieldEnhancements();
         refreshEnabledStates();
-    }
-
-    private JPanel buildSourcesPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
-        panel.setAlignmentX(LEFT_ALIGNMENT);
-
-        JLabel header = new JLabel("Data Sources");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6");
-
-        panel.add(settingsCheckbox, "gapleft " + INDENT);
-        panel.add(sitemapCheckbox,  "gapleft " + INDENT);
-        panel.add(issuesCheckbox,   "gapleft " + INDENT);
-        panel.add(trafficCheckbox,  "gapleft " + INDENT);
-
-        return panel;
     }
 
     /**
