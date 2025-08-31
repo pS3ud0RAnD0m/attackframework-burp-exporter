@@ -32,14 +32,15 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
-import java.awt.Graphics;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -54,6 +55,24 @@ public class ConfigPanel extends JPanel {
     private static final int ROW_GAP = 15;
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
+
+    // Common MigLayout strings
+    private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
+    private static final String MIG_PREF_COL = "[pref!]";
+    private static final String MIG_INSETS0 = "insets 0";
+    private static final String MIG_INSETS0_WRAP1 = "insets 0, wrap 1";
+    private static final String MIG_GROWX = "growx";
+    private static final String MIG_GROWX_WRAP = "growx, wrap";
+
+    // Scope type literals
+    private static final String SCOPE_ALL = "all";
+    private static final String SCOPE_BURP = "burp";
+    private static final String SCOPE_CUSTOM = "custom";
+
+    // Error/status prefixes
+    private static final String ERR_PREFIX = "✖ Error: ";
+    private static final String ERR_FILE_CREATE = "File creation error: ";
+    private static final String ERR_INDEX_CREATE = "Index creation error: ";
 
     // Sources
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
@@ -71,7 +90,7 @@ public class ConfigPanel extends JPanel {
     private final JCheckBox customScopeRegexToggle = new JCheckBox(".*");
     private final JButton addCustomScopeButton = new JButton("Add");
     private final JPanel customScopesContainer = new JPanel(
-            new MigLayout("insets 0, wrap 1", "[grow]")
+            new MigLayout(MIG_INSETS0_WRAP1, "[grow]")
     );
     private final List<JTextField> customScopeFields = new ArrayList<>();
     private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
@@ -82,7 +101,7 @@ public class ConfigPanel extends JPanel {
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
     private final JButton    createFilesButton = new JButton("Create Files");
     private final JTextArea  fileStatus = new JTextArea();
-    private final JPanel     fileStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private final JPanel     fileStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
     // OpenSearch sink
     private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
@@ -90,22 +109,22 @@ public class ConfigPanel extends JPanel {
     private final JButton    testConnectionButton  = new JButton("Test Connection");
     private final JButton    createIndexesButton   = new JButton("Create Indexes");
     private final JTextArea  openSearchStatus      = new JTextArea();
-    private final JPanel     statusWrapper         = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private final JPanel     statusWrapper         = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
     // Admin status
     private final JTextArea adminStatus = new JTextArea();
-    private final JPanel    adminStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private final JPanel    adminStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
     private Timer adminStatusHideTimer;
 
     private final JTextArea importExportStatus = new JTextArea();
-    private final JPanel    importExportStatusWrapper = new JPanel(new MigLayout("insets 5, novisualpadding", "[pref!]"));
+    private final JPanel    importExportStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
         add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
-        add(panelSeparator(), "growx, wrap");
+        add(panelSeparator(), MIG_GROWX_WRAP);
 
         add(new ConfigScopePanel(
                 allRadio,
@@ -125,7 +144,7 @@ public class ConfigPanel extends JPanel {
                 this::scopeCols,
                 this::sizeIndicatorLabel
         ).build(), "gaptop 10, gapbottom 5, wrap");
-        add(panelSeparator(), "growx, wrap");
+        add(panelSeparator(), MIG_GROWX_WRAP);
 
         add(new ConfigSinksPanel(
                 fileSinkCheckbox,
@@ -144,7 +163,7 @@ public class ConfigPanel extends JPanel {
                 this::configureTextArea
         ).build(), "gaptop 10, gapbottom 5, wrap");
         wireButtonActions();
-        add(panelSeparator(), "growx, wrap");
+        add(panelSeparator(), MIG_GROWX_WRAP);
 
         add(new ConfigAdminPanel(
                 importExportStatus,
@@ -157,7 +176,7 @@ public class ConfigPanel extends JPanel {
                 this::importConfig,
                 this::exportConfig,
                 new AdminSaveButtonListener()
-        ).build(), "growx, wrap");
+        ).build(), MIG_GROWX_WRAP);
         add(Box.createVerticalGlue(), "growy, wrap");
 
         assignComponentNames();
@@ -165,10 +184,7 @@ public class ConfigPanel extends JPanel {
         refreshEnabledStates();
     }
 
-    /**
-     * Width reserved for the radio column (col 1) so subsequent rows
-     * align even when they only have a placeholder in that column.
-     */
+    /** Width reserved for the radio column (col 1) so subsequent rows align. */
     private int radioColWidthPx() {
         Dimension d = customRadio.getPreferredSize();
         int w = (d != null ? d.width : 0);
@@ -177,7 +193,6 @@ public class ConfigPanel extends JPanel {
 
     /** Max width of the validity indicator. */
     private int indicatorSlotWidthPx() {
-        // Pick the widest of the two glyphs we use.
         JLabel ok = new JLabel("✔");
         JLabel bad = new JLabel("✖");
         int w1 = ok.getPreferredSize() != null ? ok.getPreferredSize().width : 12;
@@ -210,22 +225,19 @@ public class ConfigPanel extends JPanel {
     private int toggleColWidthPx() {
         Dimension td = customScopeRegexToggle.getPreferredSize();
         int toggleW = (td != null ? td.width : 18);
-        int gap = 6; // small space between checkbox and indicator
+        int gap = 6; // space between checkbox and indicator
         return toggleW + indicatorSlotWidthPx() + gap;
     }
 
     /** Column spec for the 4-column scope rows. */
     private String scopeCols() {
-        return "[" + radioColWidthPx() + "!,left]10"   // col 1: radio / placeholder
-                + "[grow,fill]10"                         // col 2: text (grow)
-                + "[" + toggleColWidthPx() + "!,left]10"  // col 3: toggle+indicator (fixed)
-                + "[left]";                               // col 4: Add/Delete
+        return "[" + radioColWidthPx() + "!,left]10"
+                + "[grow,fill]10"
+                + "[" + toggleColWidthPx() + "!,left]10"
+                + "[left]";
     }
 
-    /**
-     * Adds a new custom scope row to the unified 4-column grid.
-     * Columns: [placeholder] [text] [toggle+indicator] [Delete]
-     */
+    /** Adds a new custom scope row to the unified 4-column grid. */
     private void addCustomScopeFieldRow() {
         if (customScopeFields.size() >= 100) {
             addCustomScopeButton.setEnabled(false);
@@ -241,27 +253,26 @@ public class ConfigPanel extends JPanel {
         indicator.setName("scope.custom.regex.indicator." + index);
         sizeIndicatorLabel(indicator);
 
-        JPanel row = new JPanel(new MigLayout("insets 0", scopeCols()));
-        row.add(Box.createHorizontalStrut(radioColWidthPx())); // col 1 (fixed placeholder)
-        row.add(field, "growx");                               // col 2
-        row.add(toggle, "split 2");                            // col 3
+        JPanel row = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
+        row.add(Box.createHorizontalStrut(radioColWidthPx())); // col 1
+        row.add(field, MIG_GROWX);                             // col 2
+        row.add(toggle, MIG_GROWX);                            // col 3
         row.add(indicator);
         JButton deleteButton = new JButton("Delete");          // col 4
         deleteButton.addActionListener(e -> removeCustomScopeFieldRow(field));
         row.add(deleteButton);
 
-        customScopesContainer.add(row, "growx, wrap");
+        customScopesContainer.add(row, MIG_GROWX_WRAP);
 
         customScopeFields.add(field);
         customScopeRegexToggles.add(toggle);
         customScopeIndicators.add(indicator);
 
         toggle.addActionListener(e -> updateCustomRegexFeedback());
-        field.getDocument().addDocumentListener(new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); adjustScopeFieldWidths(); }
-            public void removeUpdate(DocumentEvent e) { updateCustomRegexFeedback(); adjustScopeFieldWidths(); }
-            public void changedUpdate(DocumentEvent e) { updateCustomRegexFeedback(); adjustScopeFieldWidths(); }
-        });
+        field.getDocument().addDocumentListener(onDocChange(() -> {
+            updateCustomRegexFeedback();
+            adjustScopeFieldWidths();
+        }));
 
         if (customScopeFields.size() >= 100) {
             addCustomScopeButton.setEnabled(false);
@@ -290,15 +301,15 @@ public class ConfigPanel extends JPanel {
         customScopesContainer.removeAll();
 
         // First row (radio present)
-        JPanel firstRow = new JPanel(new MigLayout("insets 0", scopeCols()));
+        JPanel firstRow = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
         customScopeFields.getFirst().setName("scope.custom.regex");
         sizeIndicatorLabel(customScopeIndicators.getFirst());
         firstRow.add(customRadio);
-        firstRow.add(customScopeFields.getFirst(), "growx");
-        firstRow.add(customScopeRegexToggles.getFirst(), "split 2");
+        firstRow.add(customScopeFields.getFirst(), MIG_GROWX);
+        firstRow.add(customScopeRegexToggles.getFirst(), MIG_GROWX);
         firstRow.add(customScopeIndicators.getFirst());
         firstRow.add(addCustomScopeButton);
-        customScopesContainer.add(firstRow, "growx, wrap");
+        customScopesContainer.add(firstRow, MIG_GROWX_WRAP);
 
         // Subsequent rows (placeholder present)
         for (int i = 1; i < customScopeFields.size(); i++) {
@@ -309,15 +320,15 @@ public class ConfigPanel extends JPanel {
             ind.setName("scope.custom.regex.indicator." + (i + 1));
             sizeIndicatorLabel(ind);
 
-            JPanel row = new JPanel(new MigLayout("insets 0", scopeCols()));
-            row.add(Box.createHorizontalStrut(radioColWidthPx())); // col 1
-            row.add(f, "growx");                                   // col 2
-            row.add(t, "split 2");                                 // col 3
-            row.add(ind);
-            JButton deleteButton = new JButton("Delete");          // col 4
-            deleteButton.addActionListener(e -> removeCustomScopeFieldRow(f));
-            row.add(deleteButton);
-            customScopesContainer.add(row, "growx, wrap");
+            JPanel r = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
+            r.add(Box.createHorizontalStrut(radioColWidthPx())); // col 1
+            r.add(f, MIG_GROWX);                                 // col 2
+            r.add(t, MIG_GROWX);                                 // col 3
+            r.add(ind);
+            JButton del = new JButton("Delete");                 // col 4
+            del.addActionListener(e -> removeCustomScopeFieldRow(f));
+            r.add(del);
+            customScopesContainer.add(r, MIG_GROWX_WRAP);
         }
 
         if (customScopeFields.size() < 100) {
@@ -330,10 +341,7 @@ public class ConfigPanel extends JPanel {
         repaint();
     }
 
-    /**
-     * Updates regex validity indicators for each custom scope field.
-     * Shows ✔ (green) for valid, ✖ (red) for invalid, and empty if no input.
-     */
+    /** Updates regex validity indicators for each custom scope field. */
     private void updateCustomRegexFeedback() {
         for (int i = 0; i < customScopeFields.size(); i++) {
             JTextField field = customScopeFields.get(i);
@@ -372,7 +380,6 @@ public class ConfigPanel extends JPanel {
     private void adjustScopeFieldWidths() {
         if (customScopeFields.isEmpty()) return;
 
-        // Compute max text width among all fields
         int maxTextPx = 0;
         int height = customScopeFields.getFirst().getPreferredSize().height;
         for (JTextField f : customScopeFields) {
@@ -381,13 +388,12 @@ public class ConfigPanel extends JPanel {
             if (w > maxTextPx) maxTextPx = w;
         }
 
-        // Padding and bounds to avoid jitter
-        final int padding = 20;          // visual breathing room
-        final int minW = 120;            // never get too small
-        final int maxW = 900;            // avoid runaway growth
-        int targetW = Math.max(minW, Math.min(maxW, maxTextPx + padding));
+        final int padding = 20;
+        final int minW = 120;
+        final int maxW = 900;
+        int sum = maxTextPx + padding;
+        int targetW = Math.clamp(sum, minW, maxW);
 
-        // Apply the same width to all fields
         for (JTextField f : customScopeFields) {
             Dimension d = new Dimension(targetW, height);
             f.setPreferredSize(d);
@@ -403,7 +409,7 @@ public class ConfigPanel extends JPanel {
             @Override public Dimension getPreferredSize() {
                 return new Dimension(super.getPreferredSize().width, 2);
             }
-            @Override protected void paintComponent(Graphics g) {
+            @Override protected void paintComponent(java.awt.Graphics g) {
                 super.paintComponent(g);
                 g.setColor(getForeground());
                 g.fillRect(0, 1, getWidth(), 2);
@@ -426,7 +432,7 @@ public class ConfigPanel extends JPanel {
         area.setText(message);
         String[] lines = message.split("\r\n|\r|\n", -1);
         int rows = Math.max(lines.length, 1);
-        int cols = Math.min(STATUS_MAX_COLS, Math.max(STATUS_MIN_COLS, maxLineLength(lines)));
+        int cols = Math.clamp(maxLineLength(lines), STATUS_MIN_COLS, STATUS_MAX_COLS);
         area.setRows(rows);
         area.setColumns(cols);
         wrapper.setVisible(true);
@@ -435,7 +441,6 @@ public class ConfigPanel extends JPanel {
     }
     private void updateStatus(String message) { setStatus(openSearchStatus, statusWrapper, message); }
     private void updateFileStatus(String message) { setStatus(fileStatus, fileStatusWrapper, message); }
-    private void updateAdminStatus(String message) { setStatus(adminStatus, adminStatusWrapper, message); }
     private void updateImportExportStatus(String message) { setStatus(importExportStatus, importExportStatusWrapper, message); }
 
     private static int maxLineLength(String[] lines) {
@@ -445,9 +450,19 @@ public class ConfigPanel extends JPanel {
     }
 
     private void wireButtonActions() {
+        wireSinkEnablement();
+        wireCreateFilesAction();
+        wireTestConnectionAction();
+        wireCreateIndexesAction();
+        wireRelayoutDocListeners();
+    }
+
+    private void wireSinkEnablement() {
         fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
+    }
 
+    private void wireCreateFilesAction() {
         createFilesButton.addActionListener(e -> {
             String root = filePathField.getText().trim();
             if (root.isEmpty()) {
@@ -466,74 +481,101 @@ public class ConfigPanel extends JPanel {
                 @Override protected void done() {
                     try {
                         List<FileUtil.CreateResult> results = get();
-                        List<String> created = new ArrayList<>();
-                        List<String> exists  = new ArrayList<>();
-                        List<String> failed  = new ArrayList<>();
-                        for (FileUtil.CreateResult r : results) {
-                            switch (r.status()) {
-                                case CREATED -> created.add(r.path().toString());
-                                case EXISTS  -> exists.add(r.path().toString());
-                                case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
-                            }
-                        }
-                        StringBuilder sb = new StringBuilder();
-                        if (!created.isEmpty()) {
-                            sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
-                                    .append(String.join("\n  ", created)).append("\n");
-                        }
-                        if (!exists.isEmpty()) {
-                            sb.append(exists.size() == 1 ? "File already existed:\n  " : "Files already existed:\n  ")
-                                    .append(String.join("\n  ", exists)).append("\n");
-                        }
-                        if (!failed.isEmpty()) {
-                            sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
-                                    .append(String.join("\n  ", failed)).append("\n");
-                        }
-                        updateFileStatus(sb.toString().trim());
+                        updateFileStatus(summarizeFileCreateResults(results));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        updateFileStatus("✖ File creation interrupted");
+                        Logger.logError("File creation interrupted: " + ie.getMessage());
+                    } catch (ExecutionException ee) {
+                        String msg = (ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage());
+                        updateFileStatus(ERR_FILE_CREATE + msg);
+                        Logger.logError(ERR_FILE_CREATE + ee);
                     } catch (Exception ex) {
-                        updateFileStatus("File creation error: " + ex.getMessage());
-                        Logger.logError("File creation error: " + ex.getMessage());
+                        updateFileStatus(ERR_FILE_CREATE + ex.getMessage());
+                        Logger.logError(ERR_FILE_CREATE + ex.getMessage());
                     } finally {
                         createFilesButton.setEnabled(true);
                     }
                 }
             }.execute();
         });
+    }
 
-        testConnectionButton.addActionListener(e -> {
-            String url = openSearchUrlField.getText().trim();
-            if (url.isEmpty()) {
-                updateStatus("✖ URL required");
-                return;
+    private String summarizeFileCreateResults(List<FileUtil.CreateResult> results) {
+        List<String> created = new ArrayList<>();
+        List<String> exists  = new ArrayList<>();
+        List<String> failed  = new ArrayList<>();
+        for (FileUtil.CreateResult r : results) {
+            switch (r.status()) {
+                case CREATED -> created.add(r.path().toString());
+                case EXISTS  -> exists.add(r.path().toString());
+                case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
             }
-            updateStatus("Testing ...");
-            testConnectionButton.setEnabled(false);
+        }
+        StringBuilder sb = new StringBuilder();
+        if (!created.isEmpty()) {
+            sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
+                    .append(String.join("\n  ", created)).append("\n");
+        }
+        if (!exists.isEmpty()) {
+            sb.append(exists.size() == 1 ? "File already existed:\n  " : "Files already existed:\n  ")
+                    .append(String.join("\n  ", exists)).append("\n");
+        }
+        if (!failed.isEmpty()) {
+            sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
+                    .append(String.join("\n  ", failed)).append("\n");
+        }
+        return sb.toString().trim();
+    }
 
-            new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
-                @Override protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
-                    return OpenSearchClientWrapper.safeTestConnection(url);
-                }
-                @Override protected void done() {
-                    try {
-                        OpenSearchClientWrapper.OpenSearchStatus status = get();
-                        if (status.success()) {
-                            updateStatus(status.message() + " (" + status.distribution() + " v" + status.version() + ")");
-                            Logger.logInfo("OpenSearch connection successful: " + status.message()
-                                    + " (" + status.distribution() + " v" + status.version() + ") at " + url);
-                        } else {
-                            updateStatus("✖ " + status.message());
-                            Logger.logError("OpenSearch connection failed: " + status.message());
-                        }
-                    } catch (Exception ex) {
-                        updateStatus("✖ Error: " + ex.getMessage());
-                        Logger.logError("OpenSearch connection error: " + ex.getMessage());
-                    } finally {
-                        testConnectionButton.setEnabled(true);
+    private void wireTestConnectionAction() {
+        testConnectionButton.addActionListener(e -> onTestConnection());
+    }
+
+    private void onTestConnection() {
+        String url = openSearchUrlField.getText().trim();
+        if (url.isEmpty()) {
+            updateStatus("✖ URL required");
+            return;
+        }
+        updateStatus("Testing ...");
+        testConnectionButton.setEnabled(false);
+
+        new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
+            @Override protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
+                return OpenSearchClientWrapper.safeTestConnection(url);
+            }
+            @Override protected void done() {
+                try {
+                    OpenSearchClientWrapper.OpenSearchStatus status = get();
+                    if (status.success()) {
+                        updateStatus(status.message() + " (" + status.distribution() + " v" + status.version() + ")");
+                        Logger.logInfo("OpenSearch connection successful: " + status.message()
+                                + " (" + status.distribution() + " v" + status.version() + ") at " + url);
+                    } else {
+                        updateStatus("✖ " + status.message());
+                        Logger.logError("OpenSearch connection failed: " + status.message());
                     }
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    updateStatus("✖ Connection test interrupted");
+                    Logger.logError("OpenSearch connection interrupted: " + ie.getMessage());
+                } catch (ExecutionException ee) {
+                    // FIX: simplify nested ternary
+                    String msg = (ee.getCause() != null) ? ee.getCause().getMessage() : ee.getMessage();
+                    updateStatus(ERR_PREFIX + msg);
+                    Logger.logError("OpenSearch connection error: " + ee);
+                } catch (Exception ex) {
+                    updateStatus(ERR_PREFIX + ex.getMessage());
+                    Logger.logError("OpenSearch connection error: " + ex.getMessage());
+                } finally {
+                    testConnectionButton.setEnabled(true);
                 }
-            }.execute();
-        });
+            }
+        }.execute();
+    }
 
+    private void wireCreateIndexesAction() {
         createIndexesButton.addActionListener(e -> {
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) {
@@ -550,50 +592,61 @@ public class ConfigPanel extends JPanel {
                 @Override protected void done() {
                     try {
                         List<IndexResult> results = get();
-                        List<String> created = new ArrayList<>();
-                        List<String> exists  = new ArrayList<>();
-                        List<String> failed  = new ArrayList<>();
-                        for (IndexResult r : results) {
-                            switch (r.status()) {
-                                case CREATED -> created.add(r.fullName());
-                                case EXISTS  -> exists.add(r.fullName());
-                                case FAILED  -> failed.add(r.fullName());
-                            }
-                        }
-                        boolean allExist = !results.isEmpty() &&
-                                results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
-
-                        StringBuilder sb = new StringBuilder();
-                        if (!created.isEmpty()) {
-                            sb.append(created.size() == 1 ? "Index created:\n  " : "Indexes created:\n  ")
-                                    .append(String.join("\n  ", created)).append("\n");
-                        }
-                        if (!exists.isEmpty()) {
-                            sb.append(exists.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ")
-                                    .append(String.join("\n  ", exists)).append("\n");
-                        }
-                        if (!failed.isEmpty()) {
-                            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ")
-                                    .append(String.join("\n  ", failed)).append("\n");
-                        }
-
-                        if (allExist) Logger.logInfo("All indexes already existed — no creation performed.");
-                        updateStatus(sb.toString().trim());
+                        updateStatus(summarizeIndexResults(results));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        updateStatus("✖ Index creation interrupted");
+                        Logger.logError("Index creation interrupted: " + ie.getMessage());
+                    } catch (ExecutionException ee) {
+                        String msg = (ee.getCause() != null) ? ee.getCause().getMessage() : ee.getMessage();
+                        updateStatus(ERR_INDEX_CREATE + msg);
+                        Logger.logError(ERR_INDEX_CREATE + ee);
                     } catch (Exception ex) {
-                        updateStatus("Index creation error: " + ex.getMessage());
-                        Logger.logError("Index creation error: " + ex.getMessage());
+                        updateStatus(ERR_INDEX_CREATE + ex.getMessage());
+                        Logger.logError(ERR_INDEX_CREATE + ex.getMessage());
                     } finally {
                         createIndexesButton.setEnabled(true);
                     }
                 }
             }.execute();
         });
+    }
 
-        DocumentListener relayout = new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
-            public void removeUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
-            public void changedUpdate(DocumentEvent e) { filePathField.revalidate(); openSearchUrlField.revalidate(); }
-        };
+    private String summarizeIndexResults(List<IndexResult> results) {
+        List<String> created = new ArrayList<>();
+        List<String> exists  = new ArrayList<>();
+        List<String> failed  = new ArrayList<>();
+        for (IndexResult r : results) {
+            switch (r.status()) {
+                case CREATED -> created.add(r.fullName());
+                case EXISTS  -> exists.add(r.fullName());
+                case FAILED  -> failed.add(r.fullName());
+            }
+        }
+        boolean allExist = !results.isEmpty() && results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
+
+        StringBuilder sb = new StringBuilder();
+        if (!created.isEmpty()) {
+            sb.append(created.size() == 1 ? "Index created:\n  " : "Indexes created:\n  ")
+                    .append(String.join("\n  ", created)).append("\n");
+        }
+        if (!exists.isEmpty()) {
+            sb.append(exists.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ")
+                    .append(String.join("\n  ", exists)).append("\n");
+        }
+        if (!failed.isEmpty()) {
+            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ")
+                    .append(String.join("\n  ", failed)).append("\n");
+        }
+        if (allExist) Logger.logInfo("All indexes already existed — no creation performed.");
+        return sb.toString().trim();
+    }
+
+    private void wireRelayoutDocListeners() {
+        DocumentListener relayout = onDocChange(() -> {
+            filePathField.revalidate();
+            openSearchUrlField.revalidate();
+        });
         filePathField.getDocument().addDocumentListener(relayout);
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
@@ -623,7 +676,7 @@ public class ConfigPanel extends JPanel {
             FontMetrics fm = getFontMetrics(getFont());
             int textWidth = fm.stringWidth(getText()) + 20;
             int height = super.getPreferredSize().height;
-            int w = Math.max(80, Math.min(900, textWidth));
+            int w = Math.clamp(textWidth, 80, 900);
             return new Dimension(w, height);
         }
     }
@@ -635,7 +688,7 @@ public class ConfigPanel extends JPanel {
                 Logger.logInfo("Saving config ...");
                 Logger.logInfo(json);
 
-                updateAdminStatus("Saved!");
+                setAdminStatus("Saved!");
                 if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
                 adminStatusHideTimer = new Timer(3000, evt -> {
                     adminStatusWrapper.setVisible(false);
@@ -646,9 +699,12 @@ public class ConfigPanel extends JPanel {
                 adminStatusHideTimer.start();
 
             } catch (Exception ex) {
-                updateAdminStatus("✖ Error: " + ex.getMessage());
+                setAdminStatus(ERR_PREFIX + ex.getMessage());
                 Logger.logError("Admin save error: " + ex.getMessage());
             }
+        }
+        private void setAdminStatus(String message) {
+            setStatus(adminStatus, adminStatusWrapper, message);
         }
     }
 
@@ -659,11 +715,11 @@ public class ConfigPanel extends JPanel {
         List<String> scopeValues = null;
         List<String> scopeKinds = null;
         if (allRadio.isSelected()) {
-            scopeType = "all";
+            scopeType = SCOPE_ALL;
         } else if (burpSuiteRadio.isSelected()) {
-            scopeType = "burp";
+            scopeType = SCOPE_BURP;
         } else {
-            scopeType = "custom";
+            scopeType = SCOPE_CUSTOM;
             scopeValues = new ArrayList<>();
             scopeKinds = new ArrayList<>();
             for (int i = 0; i < customScopeFields.size(); i++) {
@@ -708,7 +764,7 @@ public class ConfigPanel extends JPanel {
             updateImportExportStatus("Exported to " + file.getAbsolutePath());
             Logger.logInfo("Config exported to " + file.getAbsolutePath());
         } catch (IOException ioe) {
-            updateImportExportStatus("✖ Export error: " + ioe.getMessage());
+            updateImportExportStatus(ERR_PREFIX + ioe.getMessage());
             Logger.logError("Export error: " + ioe.getMessage());
         }
     }
@@ -735,12 +791,12 @@ public class ConfigPanel extends JPanel {
             updateImportExportStatus("Imported from " + file.getAbsolutePath());
             Logger.logInfo("Config imported from " + file.getAbsolutePath());
 
-            if ("custom".equals(cfg.scopeType()) && cfg.scopeRegexes().size() > 1) {
+            if (SCOPE_CUSTOM.equals(cfg.scopeType()) && cfg.scopeRegexes().size() > 1) {
                 Logger.logInfo("Imported multiple custom regex entries; using the first. Additional fields will be supported later.");
             }
 
         } catch (Exception ex) {
-            updateImportExportStatus("✖ Import error: " + ex.getMessage());
+            updateImportExportStatus(ERR_PREFIX + ex.getMessage());
             Logger.logError("Import error: " + ex.getMessage());
         }
     }
@@ -752,11 +808,11 @@ public class ConfigPanel extends JPanel {
         trafficCheckbox.setSelected(cfg.dataSources().contains("traffic"));
 
         switch (cfg.scopeType()) {
-            case "custom" -> {
+            case SCOPE_CUSTOM -> {
                 customRadio.setSelected(true);
                 customScopeField.setText(cfg.scopeRegexes().isEmpty() ? "" : cfg.scopeRegexes().getFirst());
             }
-            case "burp" -> burpSuiteRadio.setSelected(true);
+            case SCOPE_BURP -> burpSuiteRadio.setSelected(true);
             default -> allRadio.setSelected(true);
         }
 
@@ -809,13 +865,13 @@ public class ConfigPanel extends JPanel {
         undo.setLimit(200);
         field.getDocument().addUndoableEditListener(undo);
 
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK), "undo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK), "undo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK), "undo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.META_DOWN_MASK), "undo");
 
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.CTRL_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, KeyEvent.META_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, KeyEvent.META_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.META_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "redo");
+        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.META_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "redo");
 
         field.getActionMap().put("undo", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }
@@ -829,5 +885,13 @@ public class ConfigPanel extends JPanel {
         field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
     }
 
-    @Override public void paint(Graphics g) { super.paint(g); }
+    // Small helper to avoid duplicated DocumentListener bodies
+    private static DocumentListener onDocChange(Runnable action) {
+        return new DocumentListener() {
+            private void on() { action.run(); }
+            @Override public void insertUpdate(DocumentEvent e) { on(); }
+            @Override public void removeUpdate(DocumentEvent e) { on(); }
+            @Override public void changedUpdate(DocumentEvent e) { on(); }
+        };
+    }
 }
