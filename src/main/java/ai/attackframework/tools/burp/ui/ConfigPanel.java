@@ -10,9 +10,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.AbstractAction;
-import javax.swing.BorderFactory;
 import javax.swing.Box;
-import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
@@ -109,13 +107,57 @@ public class ConfigPanel extends JPanel {
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), "growx, wrap");
 
-        add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
+        add(new ConfigScopePanel(
+                allRadio,
+                burpSuiteRadio,
+                customRadio,
+                customScopeField,
+                customScopeRegexToggle,
+                addCustomScopeButton,
+                customScopesContainer,
+                customScopeFields,
+                customScopeRegexToggles,
+                customScopeIndicators,
+                INDENT,
+                this::updateCustomRegexFeedback,
+                this::adjustScopeFieldWidths,
+                this::addCustomScopeFieldRow,
+                this::scopeCols,
+                this::sizeIndicatorLabel
+        ).build(), "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), "growx, wrap");
 
-        add(buildSinksPanel(), "gaptop 10, gapbottom 5, wrap");
+        add(new ConfigSinksPanel(
+                fileSinkCheckbox,
+                filePathField,
+                createFilesButton,
+                fileStatus,
+                fileStatusWrapper,
+                openSearchSinkCheckbox,
+                openSearchUrlField,
+                testConnectionButton,
+                createIndexesButton,
+                openSearchStatus,
+                statusWrapper,
+                INDENT,
+                ROW_GAP,
+                this::configureTextArea
+        ).build(), "gaptop 10, gapbottom 5, wrap");
+        wireButtonActions();
         add(panelSeparator(), "growx, wrap");
 
-        add(buildAdminPanel(), "growx, wrap");
+        add(new ConfigAdminPanel(
+                importExportStatus,
+                importExportStatusWrapper,
+                adminStatus,
+                adminStatusWrapper,
+                INDENT,
+                ROW_GAP,
+                this::configureTextArea,
+                this::importConfig,
+                this::exportConfig,
+                new AdminSaveButtonListener()
+        ).build(), "growx, wrap");
         add(Box.createVerticalGlue(), "growy, wrap");
 
         assignComponentNames();
@@ -178,68 +220,6 @@ public class ConfigPanel extends JPanel {
                 + "[grow,fill]10"                         // col 2: text (grow)
                 + "[" + toggleColWidthPx() + "!,left]10"  // col 3: toggle+indicator (fixed)
                 + "[left]";                               // col 4: Add/Delete
-    }
-
-    /**
-     * Builds the scope section, including the first custom scope row.
-     * 4 columns, left-aligned: [radio] [text] [toggle+indicator] [Add/Delete]
-     */
-    private JPanel buildScopePanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
-        panel.setAlignmentX(LEFT_ALIGNMENT);
-
-        JLabel header = new JLabel("Scope");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6");
-
-        ButtonGroup scopeGroup = new ButtonGroup();
-        scopeGroup.add(burpSuiteRadio);
-        scopeGroup.add(customRadio);
-        scopeGroup.add(allRadio);
-
-        panel.add(burpSuiteRadio, "gapleft " + INDENT);
-
-        customScopesContainer.removeAll();
-        customScopesContainer.setLayout(new MigLayout("insets 0, wrap 1", "[grow]"));
-
-        JLabel firstIndicator = new JLabel();
-        firstIndicator.setName("scope.custom.regex.indicator.1");
-        sizeIndicatorLabel(firstIndicator);
-
-        // 4 columns: [radio] [text] [toggle+indicator] [Add]
-        JPanel firstRow = new JPanel(new MigLayout("insets 0", scopeCols()));
-        customScopeField.setName("scope.custom.regex");
-        firstRow.add(customRadio);                                 // col 1
-        firstRow.add(customScopeField, "growx");                   // col 2
-        firstRow.add(customScopeRegexToggle, "split 2");           // col 3
-        firstRow.add(firstIndicator);
-        firstRow.add(addCustomScopeButton);                        // col 4
-        customScopesContainer.add(firstRow, "growx, wrap");
-
-        if (customScopeFields.isEmpty()) {
-            customScopeFields.add(customScopeField);
-            customScopeRegexToggles.add(customScopeRegexToggle);
-            customScopeIndicators.add(firstIndicator);
-        }
-
-        panel.add(customScopesContainer, "gapleft " + INDENT + ", growx");
-
-        // Behaviors (first row)
-        customScopeRegexToggle.addActionListener(e -> updateCustomRegexFeedback());
-        customScopeField.getDocument().addDocumentListener(new DocumentListener() {
-            public void insertUpdate(DocumentEvent e) { updateCustomRegexFeedback(); adjustScopeFieldWidths(); }
-            public void removeUpdate(DocumentEvent e) { updateCustomRegexFeedback(); adjustScopeFieldWidths(); }
-            public void changedUpdate(DocumentEvent e) { updateCustomRegexFeedback(); adjustScopeFieldWidths(); }
-        });
-
-        addCustomScopeButton.addActionListener(e -> addCustomScopeFieldRow());
-
-        panel.add(allRadio, "gapleft " + INDENT);
-
-        // Ensure initial uniform width
-        adjustScopeFieldWidths();
-
-        return panel;
     }
 
     /**
@@ -416,90 +396,6 @@ public class ConfigPanel extends JPanel {
 
         customScopesContainer.revalidate();
         customScopesContainer.repaint();
-    }
-
-    private JPanel buildSinksPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+ROW_GAP+"[]"+ROW_GAP+"[]"));
-        panel.setAlignmentX(LEFT_ALIGNMENT);
-
-        JLabel header = new JLabel("Data Sinks");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6, wrap");
-
-        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left, grow]"));
-        fileRow.setAlignmentX(LEFT_ALIGNMENT);
-
-        fileRow.add(fileSinkCheckbox, "gapleft " + INDENT + ", alignx left, top");
-        fileRow.add(filePathField,    "alignx left, top");
-        fileRow.add(createFilesButton, "alignx left, top");
-
-        configureTextArea(fileStatus);
-        fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        fileStatusWrapper.removeAll();
-        fileStatusWrapper.add(fileStatus, "w pref!");
-        fileStatusWrapper.setVisible(false);
-        fileRow.add(fileStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-        panel.add(fileRow, "growx, wrap");
-
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left, grow]"));
-        openSearchRow.setAlignmentX(LEFT_ALIGNMENT);
-
-        openSearchRow.add(openSearchSinkCheckbox, "gapleft " + INDENT + ", top");
-        openSearchRow.add(openSearchUrlField,     "alignx left, top");
-        openSearchRow.add(testConnectionButton,   "split 2, alignx left, top");
-        openSearchRow.add(createIndexesButton,    "gapleft 15, alignx left, top");
-
-        configureTextArea(openSearchStatus);
-        statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        statusWrapper.removeAll();
-        statusWrapper.add(openSearchStatus, "w pref!");
-        statusWrapper.setVisible(false);
-        openSearchRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-        panel.add(openSearchRow, "growx, wrap");
-
-        wireButtonActions();
-        return panel;
-    }
-
-    private JPanel buildAdminPanel() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", "[]"+ROW_GAP+"[]"));
-        panel.setAlignmentX(LEFT_ALIGNMENT);
-
-        JLabel header = new JLabel("Admin");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6");
-
-        JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]15[]15[left, grow]", ""));
-        JButton importButton = new JButton("Import Config");
-        JButton exportButton = new JButton("Export Config");
-        importButton.addActionListener(e -> importConfig());
-        exportButton.addActionListener(e -> exportConfig());
-        importExportRow.add(importButton);
-        importExportRow.add(exportButton);
-
-        configureTextArea(importExportStatus);
-        importExportStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        importExportStatusWrapper.removeAll();
-        importExportStatusWrapper.add(importExportStatus, "w pref!");
-        importExportStatusWrapper.setVisible(false);
-        importExportRow.add(importExportStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-
-        panel.add(importExportRow, "gapleft " + INDENT + ", wrap");
-
-        JPanel row = new JPanel(new MigLayout("insets 0", "[]", ""));
-        JButton adminSaveButton = new JButton("Save");
-        adminSaveButton.addActionListener(new AdminSaveButtonListener());
-        row.add(adminSaveButton);
-
-        configureTextArea(adminStatus);
-        adminStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        adminStatusWrapper.removeAll();
-        adminStatusWrapper.add(adminStatus, "w pref!");
-        adminStatusWrapper.setVisible(false);
-        row.add(adminStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-
-        panel.add(row, "gapleft " + INDENT);
-        return panel;
     }
 
     private JComponent panelSeparator() {
