@@ -7,10 +7,13 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.Json;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.ui.text.Doc;
+import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.AbstractAction;
 import javax.swing.Box;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
@@ -24,11 +27,9 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
-import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.undo.UndoManager;
-import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -38,17 +39,21 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * UI panel for configuring data sources, scope, sinks, and admin actions.
  * Provides buttons for managing sinks, configuring scope fields, and displaying status.
+ *
+ * <p>All Swing updates are expected on the EDT.</p>
  */
 public class ConfigPanel extends JPanel {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     // Layout & status sizing
     private static final int INDENT = 30;
@@ -56,18 +61,21 @@ public class ConfigPanel extends JPanel {
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
 
-    // Common MigLayout strings
+    // MigLayout snippets
     private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
     private static final String MIG_PREF_COL = "[pref!]";
     private static final String MIG_INSETS0 = "insets 0";
     private static final String MIG_INSETS0_WRAP1 = "insets 0, wrap 1";
     private static final String MIG_GROWX = "growx";
     private static final String MIG_GROWX_WRAP = "growx, wrap";
+    private static final String MIG_SPLIT_2 = "split 2";
+    private static final String GAPLEFT = "gapleft ";
 
     // Scope type literals
     private static final String SCOPE_ALL = "all";
     private static final String SCOPE_BURP = "burp";
     private static final String SCOPE_CUSTOM = "custom";
+    private static final String NAME_SCOPE_CUSTOM_REGEX = "scope.custom.regex";
 
     // Error/status prefixes
     private static final String ERR_PREFIX = "✖ Error: ";
@@ -89,12 +97,13 @@ public class ConfigPanel extends JPanel {
     // Custom scope UI elements
     private final JCheckBox customScopeRegexToggle = new JCheckBox(".*");
     private final JButton addCustomScopeButton = new JButton("Add");
-    private final JPanel customScopesContainer = new JPanel(
-            new MigLayout(MIG_INSETS0_WRAP1, "[grow]")
-    );
+    private final JPanel customScopesContainer = new JPanel(new MigLayout(MIG_INSETS0_WRAP1, "[grow]"));
     private final List<JTextField> customScopeFields = new ArrayList<>();
     private final List<JCheckBox> customScopeRegexToggles = new ArrayList<>();
     private final List<JLabel> customScopeIndicators = new ArrayList<>();
+
+    // Track AutoCloseable binders for scope indicators
+    private final List<AutoCloseable> scopeIndicatorBindings = new ArrayList<>();
 
     // Files sink
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
@@ -126,26 +135,11 @@ public class ConfigPanel extends JPanel {
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
-        add(new ConfigScopePanel(
-                allRadio,
-                burpSuiteRadio,
-                customRadio,
-                customScopeField,
-                customScopeRegexToggle,
-                addCustomScopeButton,
-                customScopesContainer,
-                customScopeFields,
-                customScopeRegexToggles,
-                customScopeIndicators,
-                INDENT,
-                this::updateCustomRegexFeedback,
-                this::adjustScopeFieldWidths,
-                this::addCustomScopeFieldRow,
-                this::scopeCols,
-                this::sizeIndicatorLabel
-        ).build(), "gaptop 10, gapbottom 5, wrap");
+        // Scope section
+        add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
+        // Sinks and Admin
         add(new ConfigSinksPanel(
                 fileSinkCheckbox,
                 filePathField,
@@ -184,7 +178,67 @@ public class ConfigPanel extends JPanel {
         refreshEnabledStates();
     }
 
-    /** Width reserved for the radio column (col 1) so subsequent rows align. */
+    @Override
+    public void removeNotify() {
+        super.removeNotify();
+        closeScopeIndicatorBindings();
+    }
+
+    /** Build the scope section and bind ✓/✖ indicators for the current rows. */
+    private JPanel buildScopePanel() {
+        JPanel panel = new JPanel(new MigLayout(MIG_INSETS0_WRAP1, "[left]"));
+        panel.setAlignmentX(LEFT_ALIGNMENT);
+
+        JLabel header = new JLabel("Scope");
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        panel.add(header, "gapbottom 6");
+
+        ButtonGroup scopeGroup = new ButtonGroup();
+        scopeGroup.add(burpSuiteRadio);
+        scopeGroup.add(customRadio);
+        scopeGroup.add(allRadio);
+
+        panel.add(burpSuiteRadio, GAPLEFT + INDENT);
+
+        customScopesContainer.removeAll();
+        customScopesContainer.setLayout(new MigLayout(MIG_INSETS0_WRAP1, "[grow]"));
+
+        JLabel firstIndicator = new JLabel();
+        firstIndicator.setName("scope.custom.regex.indicator.1");
+        sizeIndicatorLabel(firstIndicator);
+
+        JPanel firstRow = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
+        customScopeField.setName(NAME_SCOPE_CUSTOM_REGEX);
+        firstRow.add(customRadio);
+        firstRow.add(customScopeField, MIG_GROWX);
+        firstRow.add(customScopeRegexToggle, MIG_SPLIT_2);
+        firstRow.add(firstIndicator);
+        firstRow.add(addCustomScopeButton);
+        customScopesContainer.add(firstRow, MIG_GROWX_WRAP);
+
+        if (customScopeFields.isEmpty()) {
+            customScopeFields.add(customScopeField);
+            customScopeRegexToggles.add(customScopeRegexToggle);
+            customScopeIndicators.add(firstIndicator);
+        }
+
+        // Bind indicators for existing rows (first row)
+        closeScopeIndicatorBindings();
+        scopeIndicatorBindings.add(RegexIndicatorBinder.bind(customScopeField, customScopeRegexToggle, null, false, firstIndicator));
+
+        // Width harmonization for the first row
+        DocumentListener widthDl = Doc.onChange(this::adjustScopeFieldWidths);
+        customScopeField.getDocument().addDocumentListener(widthDl);
+        addCustomScopeButton.addActionListener(e -> addCustomScopeFieldRow());
+
+        panel.add(customScopesContainer, GAPLEFT + INDENT + ", growx");
+        panel.add(allRadio, GAPLEFT + INDENT);
+
+        adjustScopeFieldWidths();
+        return panel;
+    }
+
+    /** Width reserved for the radio column (col 1). */
     private int radioColWidthPx() {
         Dimension d = customRadio.getPreferredSize();
         int w = (d != null ? d.width : 0);
@@ -225,7 +279,7 @@ public class ConfigPanel extends JPanel {
     private int toggleColWidthPx() {
         Dimension td = customScopeRegexToggle.getPreferredSize();
         int toggleW = (td != null ? td.width : 18);
-        int gap = 6; // space between checkbox and indicator
+        int gap = 6;
         return toggleW + indicatorSlotWidthPx() + gap;
     }
 
@@ -237,7 +291,7 @@ public class ConfigPanel extends JPanel {
                 + "[left]";
     }
 
-    /** Adds a new custom scope row to the unified 4-column grid. */
+    /** Adds a new custom scope row to the 4-column grid. */
     private void addCustomScopeFieldRow() {
         if (customScopeFields.size() >= 100) {
             addCustomScopeButton.setEnabled(false);
@@ -247,18 +301,18 @@ public class ConfigPanel extends JPanel {
         int index = customScopeFields.size() + 1;
 
         JTextField field = new JTextField();
-        field.setName("scope.custom.regex." + index);
+        field.setName(NAME_SCOPE_CUSTOM_REGEX + "." + index);
         JCheckBox toggle = new JCheckBox(".*");
         JLabel indicator = new JLabel();
         indicator.setName("scope.custom.regex.indicator." + index);
         sizeIndicatorLabel(indicator);
 
         JPanel row = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
-        row.add(Box.createHorizontalStrut(radioColWidthPx())); // col 1
-        row.add(field, MIG_GROWX);                             // col 2
-        row.add(toggle, MIG_GROWX);                            // col 3
+        row.add(Box.createHorizontalStrut(radioColWidthPx()));
+        row.add(field, MIG_GROWX);
+        row.add(toggle, MIG_SPLIT_2);
         row.add(indicator);
-        JButton deleteButton = new JButton("Delete");          // col 4
+        JButton deleteButton = new JButton("Delete");
         deleteButton.addActionListener(e -> removeCustomScopeFieldRow(field));
         row.add(deleteButton);
 
@@ -268,115 +322,91 @@ public class ConfigPanel extends JPanel {
         customScopeRegexToggles.add(toggle);
         customScopeIndicators.add(indicator);
 
-        toggle.addActionListener(e -> updateCustomRegexFeedback());
-        field.getDocument().addDocumentListener(onDocChange(() -> {
-            updateCustomRegexFeedback();
-            adjustScopeFieldWidths();
-        }));
+        scopeIndicatorBindings.add(RegexIndicatorBinder.bind(field, toggle, null, false, indicator));
+        field.getDocument().addDocumentListener(Doc.onChange(this::adjustScopeFieldWidths));
 
-        if (customScopeFields.size() >= 100) {
-            addCustomScopeButton.setEnabled(false);
-        }
+        if (customScopeFields.size() >= 100) addCustomScopeButton.setEnabled(false);
 
         adjustScopeFieldWidths();
-
         revalidate();
         repaint();
     }
 
-    /**
-     * Removes a custom scope row and rebuilds all rows to preserve alignment,
-     * naming, and 4-column layout consistency.
-     */
+    /** Removes a custom scope row and rebuilds rows to preserve alignment/naming/consistency. */
     private void removeCustomScopeFieldRow(JTextField field) {
         int idx = customScopeFields.indexOf(field);
-        if (idx <= 0) {
-            return; // the first field cannot be removed
-        }
+        if (idx <= 0) return; // the first field cannot be removed
 
         customScopeFields.remove(idx);
         customScopeRegexToggles.remove(idx);
         customScopeIndicators.remove(idx);
 
         customScopesContainer.removeAll();
+        closeScopeIndicatorBindings();
 
-        // First row (radio present)
+        // First row
         JPanel firstRow = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
-        customScopeFields.getFirst().setName("scope.custom.regex");
+        customScopeFields.getFirst().setName(NAME_SCOPE_CUSTOM_REGEX);
         sizeIndicatorLabel(customScopeIndicators.getFirst());
         firstRow.add(customRadio);
         firstRow.add(customScopeFields.getFirst(), MIG_GROWX);
-        firstRow.add(customScopeRegexToggles.getFirst(), MIG_GROWX);
+        firstRow.add(customScopeRegexToggles.getFirst(), MIG_SPLIT_2);
         firstRow.add(customScopeIndicators.getFirst());
         firstRow.add(addCustomScopeButton);
         customScopesContainer.add(firstRow, MIG_GROWX_WRAP);
 
-        // Subsequent rows (placeholder present)
+        scopeIndicatorBindings.add(RegexIndicatorBinder.bind(
+                customScopeFields.getFirst(),
+                customScopeRegexToggles.getFirst(),
+                null,
+                false,
+                customScopeIndicators.getFirst()
+        ));
+
+        // Subsequent rows
         for (int i = 1; i < customScopeFields.size(); i++) {
             JTextField f = customScopeFields.get(i);
-            f.setName("scope.custom.regex." + (i + 1));
+            f.setName(NAME_SCOPE_CUSTOM_REGEX + "." + (i + 1));
             JCheckBox t = customScopeRegexToggles.get(i);
             JLabel ind = customScopeIndicators.get(i);
             ind.setName("scope.custom.regex.indicator." + (i + 1));
             sizeIndicatorLabel(ind);
 
             JPanel r = new JPanel(new MigLayout(MIG_INSETS0, scopeCols()));
-            r.add(Box.createHorizontalStrut(radioColWidthPx())); // col 1
-            r.add(f, MIG_GROWX);                                 // col 2
-            r.add(t, MIG_GROWX);                                 // col 3
+            r.add(Box.createHorizontalStrut(radioColWidthPx()));
+            r.add(f, MIG_GROWX);
+            r.add(t, MIG_SPLIT_2);
             r.add(ind);
-            JButton del = new JButton("Delete");                 // col 4
+            JButton del = new JButton("Delete");
             del.addActionListener(e -> removeCustomScopeFieldRow(f));
             r.add(del);
             customScopesContainer.add(r, MIG_GROWX_WRAP);
+
+            scopeIndicatorBindings.add(RegexIndicatorBinder.bind(f, t, null, false, ind));
+            f.getDocument().addDocumentListener(Doc.onChange(this::adjustScopeFieldWidths));
         }
 
-        if (customScopeFields.size() < 100) {
-            addCustomScopeButton.setEnabled(true);
-        }
+        if (customScopeFields.size() < 100) addCustomScopeButton.setEnabled(true);
 
         adjustScopeFieldWidths();
-
         revalidate();
         repaint();
     }
 
-    /** Updates regex validity indicators for each custom scope field. */
-    private void updateCustomRegexFeedback() {
-        for (int i = 0; i < customScopeFields.size(); i++) {
-            JTextField field = customScopeFields.get(i);
-            JCheckBox toggle = customScopeRegexToggles.get(i);
-            JLabel indicator = customScopeIndicators.get(i);
-
-            String text = field.getText();
-            if (!toggle.isSelected() || text.isEmpty()) {
-                indicator.setText("");
-                indicator.setForeground(Color.BLACK);
-                continue;
-            }
-
-            boolean valid;
+    /** Close and clear all stored scope indicator bindings. */
+    private void closeScopeIndicatorBindings() {
+        if (scopeIndicatorBindings.isEmpty()) return;
+        for (AutoCloseable c : scopeIndicatorBindings) {
             try {
-                Pattern.compile(text);
-                valid = true;
-            } catch (PatternSyntaxException ex) {
-                valid = false;
-            }
-
-            if (valid) {
-                indicator.setText("✔");
-                indicator.setForeground(new Color(0, 153, 0));
-            } else {
-                indicator.setText("✖");
-                indicator.setForeground(Color.RED);
+                if (c != null) c.close();
+            } catch (Exception ignore) {
+                // Best-effort: binder close during disposal should never be fatal.
             }
         }
+        scopeIndicatorBindings.clear();
     }
 
-    /**
-     * Ensures all custom scope text fields share the same preferred width,
-     * equal to the longest field's text width (with padding), clamped to sane bounds.
-     */
+    /** Ensures all custom scope text fields share the same preferred width, clamped to sane bounds. */
     private void adjustScopeFieldWidths() {
         if (customScopeFields.isEmpty()) return;
 
@@ -449,6 +479,8 @@ public class ConfigPanel extends JPanel {
         return max;
     }
 
+    // ---- Wiring (reduced complexity into helpers) ----
+
     private void wireButtonActions() {
         wireSinkEnablement();
         wireCreateFilesAction();
@@ -487,7 +519,7 @@ public class ConfigPanel extends JPanel {
                         updateFileStatus("✖ File creation interrupted");
                         Logger.logError("File creation interrupted: " + ie.getMessage());
                     } catch (ExecutionException ee) {
-                        String msg = (ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage());
+                        String msg = ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage();
                         updateFileStatus(ERR_FILE_CREATE + msg);
                         Logger.logError(ERR_FILE_CREATE + ee);
                     } catch (Exception ex) {
@@ -532,6 +564,7 @@ public class ConfigPanel extends JPanel {
         testConnectionButton.addActionListener(e -> onTestConnection());
     }
 
+    /** Extracted to reduce complexity in the action listener body. */
     private void onTestConnection() {
         String url = openSearchUrlField.getText().trim();
         if (url.isEmpty()) {
@@ -561,8 +594,7 @@ public class ConfigPanel extends JPanel {
                     updateStatus("✖ Connection test interrupted");
                     Logger.logError("OpenSearch connection interrupted: " + ie.getMessage());
                 } catch (ExecutionException ee) {
-                    // FIX: simplify nested ternary
-                    String msg = (ee.getCause() != null) ? ee.getCause().getMessage() : ee.getMessage();
+                    String msg = ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage();
                     updateStatus(ERR_PREFIX + msg);
                     Logger.logError("OpenSearch connection error: " + ee);
                 } catch (Exception ex) {
@@ -598,7 +630,7 @@ public class ConfigPanel extends JPanel {
                         updateStatus("✖ Index creation interrupted");
                         Logger.logError("Index creation interrupted: " + ie.getMessage());
                     } catch (ExecutionException ee) {
-                        String msg = (ee.getCause() != null) ? ee.getCause().getMessage() : ee.getMessage();
+                        String msg = ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage();
                         updateStatus(ERR_INDEX_CREATE + msg);
                         Logger.logError(ERR_INDEX_CREATE + ee);
                     } catch (Exception ex) {
@@ -643,7 +675,7 @@ public class ConfigPanel extends JPanel {
     }
 
     private void wireRelayoutDocListeners() {
-        DocumentListener relayout = onDocChange(() -> {
+        DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
         });
@@ -688,7 +720,8 @@ public class ConfigPanel extends JPanel {
                 Logger.logInfo("Saving config ...");
                 Logger.logInfo(json);
 
-                setAdminStatus("Saved!");
+                // Inline status update to avoid “move this method” inspection
+                setStatus(adminStatus, adminStatusWrapper, "Saved!");
                 if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
                 adminStatusHideTimer = new Timer(3000, evt -> {
                     adminStatusWrapper.setVisible(false);
@@ -699,12 +732,9 @@ public class ConfigPanel extends JPanel {
                 adminStatusHideTimer.start();
 
             } catch (Exception ex) {
-                setAdminStatus(ERR_PREFIX + ex.getMessage());
+                setStatus(adminStatus, adminStatusWrapper, ERR_PREFIX + ex.getMessage());
                 Logger.logError("Admin save error: " + ex.getMessage());
             }
-        }
-        private void setAdminStatus(String message) {
-            setStatus(adminStatus, adminStatusWrapper, message);
         }
     }
 
@@ -787,7 +817,6 @@ public class ConfigPanel extends JPanel {
             applyImported(cfg);
 
             refreshEnabledStates();
-            updateCustomRegexFeedback();
             updateImportExportStatus("Imported from " + file.getAbsolutePath());
             Logger.logInfo("Config imported from " + file.getAbsolutePath());
 
@@ -839,7 +868,7 @@ public class ConfigPanel extends JPanel {
         allRadio.setName("scope.all");
         burpSuiteRadio.setName("scope.burp");
         customRadio.setName("scope.custom");
-        customScopeField.setName("scope.custom.regex");
+        customScopeField.setName(NAME_SCOPE_CUSTOM_REGEX);
 
         fileSinkCheckbox.setName("files.enable");
         filePathField.setName("files.path");
@@ -883,15 +912,5 @@ public class ConfigPanel extends JPanel {
 
     private static void bind(JTextField field, KeyStroke ks, String actionKey) {
         field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
-    }
-
-    // Small helper to avoid duplicated DocumentListener bodies
-    private static DocumentListener onDocChange(Runnable action) {
-        return new DocumentListener() {
-            private void on() { action.run(); }
-            @Override public void insertUpdate(DocumentEvent e) { on(); }
-            @Override public void removeUpdate(DocumentEvent e) { on(); }
-            @Override public void changedUpdate(DocumentEvent e) { on(); }
-        };
     }
 }

@@ -16,8 +16,18 @@ import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies export/import round-trip for ConfigPanel configuration without using UI choosers.
- * Private members are accessed via the shared Reflect helper to keep production visibility minimal.
+ * Headless round-trip test for {@link ConfigPanel} import/export behavior without UI choosers.
+ *
+ * <p>Approach:</p>
+ * <ol>
+ *   <li>Construct a panel and set explicit non-default values.</li>
+ *   <li>Export by reflecting {@code currentConfigJson()} and writing to a temp file.</li>
+ *   <li>Import by parsing JSON and reflecting {@code applyImported(...)} on a fresh panel.</li>
+ *   <li>Assert that scope and sinks are restored.</li>
+ * </ol>
+ *
+ * <p>Private members are accessed via the shared {@code Reflect} helper to keep production
+ * visibility minimal.</p>
  */
 class ConfigPanelImportExportHeadlessTest {
 
@@ -64,9 +74,8 @@ class ConfigPanelImportExportHeadlessTest {
         String imported = Files.readString(out);
         Json.ImportedConfig cfg = Json.parseConfigJson(imported);
         callVoid(panel2, "applyImported", cfg);
-        // Mirror non-UI side-effects of the old import helper.
+        // Mirror non-UI side effects that legacy import helpers performed.
         callVoid(panel2, "refreshEnabledStates");
-        callVoid(panel2, "updateCustomRegexFeedback");
 
         // Validate scope restored.
         JRadioButton customRadio2 = get(panel2, "customRadio");
@@ -75,9 +84,8 @@ class ConfigPanelImportExportHeadlessTest {
         JTextField customScopeField2 = get(panel2, "customScopeField");
         assertThat(customScopeField2.getText()).as("custom scope value restored").isEqualTo(expectedRegex);
 
-        // Note: current import logic restores the value, not the regex/string kind toggle.
+        // Current import logic restores the value, not the regex/string kind toggle.
         // Verify the toggle defaults to unchecked here; when import supports kinds, this can be tightened.
-        @SuppressWarnings("unchecked")
         List<JCheckBox> toggles2 = get(panel2, "customScopeRegexToggles");
         assertThat(toggles2.getFirst().isSelected()).as("regex toggle defaults unchecked on import").isFalse();
 

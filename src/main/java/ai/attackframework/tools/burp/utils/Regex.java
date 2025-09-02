@@ -1,32 +1,47 @@
 package ai.attackframework.tools.burp.utils;
 
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
-/** Minimal, UI-agnostic regex validation helper. */
+/**
+ * Centralized helpers for regex compilation and flag derivation.
+ *
+ * <p>Keeping flag logic in one place avoids drift between UI components and utilities.</p>
+ */
 public final class Regex {
-    private Regex() { }
 
-    /** Result of validating a pattern. {@code error} is null when {@code valid} is true. */
-    public record Validation(boolean valid, String error) { }
-
-    /** Validate a pattern with Pattern flags. Empty/null patterns are treated as valid. */
-    @SuppressWarnings("MagicConstant")
-    public static Validation validate(String pattern, int flags) {
-        if (pattern == null || pattern.isBlank()) {
-            return new Validation(true, null);
-        }
-        try {
-            Pattern.compile(pattern, flags);
-            return new Validation(true, null);
-        } catch (PatternSyntaxException ex) {
-            return new Validation(false, ex.getMessage());
-        }
+    private Regex() {
+        // utility class
     }
 
-    /** Convenience: true if the pattern compiles (or is empty/null). */
-    @SuppressWarnings("unused")
-    public static boolean isValid(String pattern, int flags) {
-        return validate(pattern, flags).valid();
+    /**
+     * Derive {@link Pattern} flags from UI toggles.
+     *
+     * @param caseSensitive whether the match is case-sensitive
+     * @param multiline     whether {@link Pattern#MULTILINE} should be applied
+     * @return combined flags for {@link Pattern#compile(String, int)}
+     */
+    public static int flags(boolean caseSensitive, boolean multiline) {
+        int flags = 0;
+        if (!caseSensitive) {
+            flags |= Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+        }
+        if (multiline) {
+            flags |= Pattern.MULTILINE;
+        }
+        return flags;
+    }
+
+    /**
+     * Compile a pattern with flags derived from the provided toggles.
+     *
+     * @param pattern       the regex pattern text
+     * @param caseSensitive whether the match is case-sensitive
+     * @param multiline     whether {@link Pattern#MULTILINE} should be applied
+     * @return compiled {@link Pattern}
+     * @throws java.util.regex.PatternSyntaxException if the pattern is invalid
+     */
+    @SuppressWarnings("MagicConstant") // flags(caseSensitive, multiline) intentionally combines valid Pattern flags
+    public static Pattern compile(String pattern, boolean caseSensitive, boolean multiline) {
+        return Pattern.compile(pattern, flags(caseSensitive, multiline));
     }
 }

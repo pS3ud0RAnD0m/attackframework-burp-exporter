@@ -6,76 +6,112 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import java.awt.Component;
+import java.awt.Container;
+import java.util.ArrayDeque;
+import java.util.Collections;
+import java.util.Deque;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the regex validity indicators in LogPanel:
- * - When the regex toggle is off, the indicator is hidden and empty.
- * - When the regex toggle is on, the indicator shows ✖ for invalid input and ✓ for valid input.
+ * Headless tests for the regex validity indicators in {@link LogPanel}.
  *
- * Private UI fields are accessed via the shared Reflection test utility to keep production visibility minimal.
+ * <p>These tests locate indicator labels by stable component names rather than reflecting
+ * private fields. This is refactor-safe and aligns with best practices for UI testing.</p>
  */
 class LogPanelRegexIndicatorHeadlessTest {
 
+    /**
+     * Verifies the filter indicator shows ✖ for an invalid pattern, ✓ for a valid one,
+     * and hides when regex mode is disabled.
+     */
     @Test
-    void filter_regex_indicator_shows_check_or_cross() throws Exception {
+    void filter_regex_indicator_shows_check_or_cross() {
         LogPanel panel = new LogPanel();
 
-        JTextField filterField = get(panel, "filterField");
-        JCheckBox filterRegexToggle = get(panel, "filterRegexToggle");
-        JLabel indicator = get(panel, "filterRegexIndicator");
+        JTextField field = byName(panel, "log.filter.text", JTextField.class);
+        JCheckBox regex = byName(panel, "log.filter.regex", JCheckBox.class);
+        JLabel indicator = byName(panel, "log.filter.regex.indicator", JLabel.class);
 
-        // Off -> hidden
-        SwingUtilities.invokeAndWait(() -> {
-            filterRegexToggle.setSelected(false);
-            filterField.setText("("); // invalid if regex were on
-        });
-        assertThat(indicator.isVisible()).isFalse();
-        assertThat(indicator.getText()).isEmpty();
+        // Turn regex mode on and enter an invalid pattern
+        regex.setSelected(true);
+        flushEdt();
+        field.setText("[unterminated");
+        flushEdt();
+        assertThat(indicator.getText()).as("invalid regex shows ✖").isEqualTo("✖");
 
-        // On + invalid -> ✖
-        SwingUtilities.invokeAndWait(() -> {
-            filterRegexToggle.setSelected(true);
-            filterField.setText("("); // invalid regex
-        });
-        assertThat(indicator.isVisible()).isTrue();
-        assertThat(indicator.getText()).isEqualTo("✖");
+        // Now enter a valid pattern
+        field.setText("a.*b");
+        flushEdt();
+        assertThat(indicator.getText()).as("valid regex shows ✓").isEqualTo("✓");
 
-        // On + valid -> ✓
-        SwingUtilities.invokeAndWait(() -> filterField.setText("foo.*bar"));
-        assertThat(indicator.isVisible()).isTrue();
-        assertThat(indicator.getText()).isEqualTo("✓");
+        // Turn regex mode off — indicator should hide
+        regex.setSelected(false);
+        flushEdt();
+        assertThat(indicator.isVisible()).as("indicator hides when regex mode is off").isFalse();
     }
 
+    /**
+     * Verifies the search indicator shows ✖ for an invalid pattern, ✓ for a valid one,
+     * and hides when regex mode is disabled.
+     */
     @Test
-    void search_regex_indicator_shows_check_or_cross() throws Exception {
+    void search_regex_indicator_shows_check_or_cross() {
         LogPanel panel = new LogPanel();
 
-        JTextField searchField = get(panel, "searchField");
-        JCheckBox searchRegexToggle = get(panel, "searchRegexToggle");
-        JLabel indicator = get(panel, "searchRegexIndicator");
+        JTextField field = byName(panel, "log.search.field", JTextField.class);
+        JCheckBox regex = byName(panel, "log.search.regex", JCheckBox.class);
+        JLabel indicator = byName(panel, "log.search.regex.indicator", JLabel.class);
 
-        // Off -> hidden
-        SwingUtilities.invokeAndWait(() -> {
-            searchRegexToggle.setSelected(false);
-            searchField.setText("(");
-        });
-        assertThat(indicator.isVisible()).isFalse();
-        assertThat(indicator.getText()).isEmpty();
+        // Turn regex mode on and enter an invalid pattern
+        regex.setSelected(true);
+        flushEdt();
+        field.setText("[unterminated");
+        flushEdt();
+        assertThat(indicator.getText()).as("invalid regex shows ✖").isEqualTo("✖");
 
-        // On + invalid -> ✖
-        SwingUtilities.invokeAndWait(() -> {
-            searchRegexToggle.setSelected(true);
-            searchField.setText("(");
-        });
-        assertThat(indicator.isVisible()).isTrue();
-        assertThat(indicator.getText()).isEqualTo("✖");
+        // Now enter a valid pattern
+        field.setText("^foo.*bar$");
+        flushEdt();
+        assertThat(indicator.getText()).as("valid regex shows ✓").isEqualTo("✓");
 
-        // On + valid -> ✓
-        SwingUtilities.invokeAndWait(() -> searchField.setText("\\bfoo\\b"));
-        assertThat(indicator.isVisible()).isTrue();
-        assertThat(indicator.getText()).isEqualTo("✓");
+        // Turn regex mode off — indicator should hide
+        regex.setSelected(false);
+        flushEdt();
+        assertThat(indicator.isVisible()).as("indicator hides when regex mode is off").isFalse();
+    }
+
+    /**
+     * Breadth-first search for a component by {@link Component#getName() name} and type.
+     *
+     * @param root container to search
+     * @param name expected component name
+     * @param type expected component type
+     * @return the first matching component
+     * @throws AssertionError if not found
+     */
+    private static <T extends Component> T byName(Container root, String name, Class<T> type) {
+        Deque<Component> q = new ArrayDeque<>();
+        q.add(root);
+        while (!q.isEmpty()) {
+            Component c = q.removeFirst();
+            if (name.equals(c.getName()) && type.isInstance(c)) {
+                return type.cast(c);
+            }
+            if (c instanceof Container cont) {
+                Collections.addAll(q, cont.getComponents());
+            }
+        }
+        throw new AssertionError("Component not found: name=" + name + ", type=" + type.getSimpleName());
+    }
+
+    /** Flush the EDT so listener-side effects (binder updates) are applied before assertions. */
+    private static void flushEdt() {
+        try {
+            SwingUtilities.invokeAndWait(() -> { /* no-op */ });
+        } catch (Exception e) {
+            throw new RuntimeException("EDT flush failed", e);
+        }
     }
 }

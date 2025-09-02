@@ -87,11 +87,11 @@ public record ConfigScopePanel(
 
         JPanel firstRow = new JPanel(new MigLayout("insets 0", scopeColsSupplier.get()));
         customScopeField.setName("scope.custom.regex");
-        firstRow.add(customRadio);                               // col 1
+        firstRow.add(customRadio);                                         // col 1
         firstRow.add(customScopeField, "growx");                 // col 2
         firstRow.add(customScopeRegexToggle, "split 2");         // col 3
         firstRow.add(firstIndicator);
-        firstRow.add(addCustomScopeButton);                      // col 4
+        firstRow.add(addCustomScopeButton);                                // col 4
         customScopesContainer.add(firstRow, "growx, wrap");
 
         if (customScopeFields.isEmpty()) {
