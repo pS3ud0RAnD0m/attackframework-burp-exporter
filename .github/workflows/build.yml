@@ -40,7 +40,7 @@ jobs:
           gh release delete v${{ steps.props.outputs.version }} -y || true
           git push origin :refs/tags/v${{ steps.props.outputs.version }} || true
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create or update GitHub Release
         uses: ncipollo/release-action@v1
@@ -50,6 +50,6 @@ jobs:
           allowUpdates: true
           replacesArtifacts: true
           artifacts: build/libs/${{ steps.props.outputs.basename }}-${{ steps.props.outputs.version }}.jar
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             In early development.
