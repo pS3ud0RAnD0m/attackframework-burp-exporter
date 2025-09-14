@@ -1,6 +1,8 @@
 import org.gradle.api.tasks.testing.TestDescriptor
 import org.gradle.api.tasks.testing.TestListener
 import org.gradle.api.tasks.testing.TestResult
+import org.gradle.jvm.tasks.Jar
+import org.gradle.testing.jacoco.tasks.JacocoReport
 
 plugins {
     id("java")
@@ -21,27 +23,32 @@ repositories {
 }
 
 dependencies {
-    compileOnly("net.portswigger.burp.extensions:montoya-api:2025.6")
-    compileOnly("ch.qos.logback:logback-classic:1.5.18")
+    // --- compileOnly ---
+    compileOnly(libs.montoya)
+    compileOnly(libs.logbackClassic)
 
-    testImplementation(platform("org.junit:junit-bom:5.10.0"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation("org.mockito:mockito-core:5.12.0")
-    testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
-    testImplementation("org.assertj:assertj-core:3.26.3")
+    // --- implementation ---
+    implementation(libs.jacksonCore)
+    implementation(libs.jacksonDatabind)
+    implementation(libs.miglayoutSwing)
+    implementation(libs.jakartaJsonApi)
+    implementation(libs.glassfishJson)
+    implementation(libs.opensearchJava)
+    implementation(libs.slf4jApi)
 
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // --- testImplementation ---
+    testImplementation(platform(libs.junitBom))
+    testImplementation(libs.junitJupiter)
+    testImplementation(libs.mockitoCore)
+    testImplementation(libs.mockitoJunitJupiter)
+    testImplementation(libs.assertjCore)
 
-    runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
+    // --- testRuntimeOnly ---
+    testRuntimeOnly(libs.junitJupiterEngine)
+    testRuntimeOnly(libs.junitPlatformLauncher)
 
-    implementation("com.fasterxml.jackson.core:jackson-core:2.15.2")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.15.2")
-    implementation("com.miglayout:miglayout-swing:11.0")
-    implementation("jakarta.json:jakarta.json-api:2.1.1")
-    implementation("org.glassfish:jakarta.json:2.0.1")
-    implementation("org.opensearch.client:opensearch-java:3.1.0")
-    implementation("org.slf4j:slf4j-api:2.0.17")
+    // --- runtimeOnly ---
+    runtimeOnly(libs.logbackClassic)
 }
 
 // Toggle with: gradlew test -PverboseTests=true
@@ -56,7 +63,6 @@ tasks.test {
     }
 
     systemProperty("java.awt.headless", "true")
-    // Provide a version override for tests so Version.get() can run without a jar manifest.
     systemProperty("attackframework.version", project.version.toString())
 
     testLogging {
@@ -98,11 +104,13 @@ tasks.named<JacocoReport>("jacocoTestReport") {
 }
 
 tasks.register<Jar>("fatJar") {
+    group = "build"
+    description = "Assembles a fat JAR containing compiled classes and runtime dependencies."
+
     archiveBaseName.set(project.property("archivesBaseName").toString())
     archiveVersion.set(project.property("version").toString())
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-    // ensure the JAR exposes Implementation-Version for runtime reads
     manifest {
         attributes(
             "Implementation-Title" to project.name,

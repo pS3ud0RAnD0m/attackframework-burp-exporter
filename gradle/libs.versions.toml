@@ -1,0 +1,38 @@
+[versions]
+montoya = "2025.6"
+logback = "1.5.18"
+junit = "5.10.0"
+mockito = "5.12.0"
+assertj = "3.26.3"
+jackson = "2.15.2"
+miglayout = "11.0"
+jakartaJsonApi = "2.1.1"
+glassfishJson = "2.0.1"
+opensearchJava = "3.1.0"
+slf4j = "2.0.17"
+
+[libraries]
+montoya = { group = "net.portswigger.burp.extensions", name = "montoya-api", version.ref = "montoya" }
+logbackClassic = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
+
+junitBom = { group = "org.junit", name = "junit-bom", version.ref = "junit" }
+junitJupiter = { group = "org.junit.jupiter", name = "junit-jupiter" }
+junitJupiterEngine = { group = "org.junit.jupiter", name = "junit-jupiter-engine" }
+junitPlatformLauncher = { group = "org.junit.platform", name = "junit-platform-launcher" }
+
+mockitoCore = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
+mockitoJunitJupiter = { group = "org.mockito", name = "mockito-junit-jupiter", version.ref = "mockito" }
+
+assertjCore = { group = "org.assertj", name = "assertj-core", version.ref = "assertj" }
+
+jacksonCore = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
+jacksonDatabind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
+
+miglayoutSwing = { group = "com.miglayout", name = "miglayout-swing", version.ref = "miglayout" }
+
+jakartaJsonApi = { group = "jakarta.json", name = "jakarta.json-api", version.ref = "jakartaJsonApi" }
+glassfishJson = { group = "org.glassfish", name = "jakarta.json", version.ref = "glassfishJson" }
+
+opensearchJava = { group = "org.opensearch.client", name = "opensearch-java", version.ref = "opensearchJava" }
+
+slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }

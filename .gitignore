@@ -14,7 +14,7 @@
 !gradlew
 !gradlew.bat
 !gradle.properties
-!gradle/wrapper/**
+!gradle/**
 
 # Source code
 !src/**
