@@ -21,6 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Validate Gradle Wrapper JAR checksums before running anything Gradle
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@v3
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:

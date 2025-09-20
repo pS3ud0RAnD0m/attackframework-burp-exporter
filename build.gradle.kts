@@ -68,8 +68,8 @@ tasks.test {
 
     testLogging {
         events("passed", "skipped", "failed")
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showStandardStreams = verboseTests
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 
     if (verboseTests) {
@@ -104,18 +104,23 @@ tasks.named<JacocoReport>("jacocoTestReport") {
     }
 }
 
+// ---- Javadoc: doclint policy = all checks except "missing"; fail on real errors ----
 tasks.withType<Javadoc>().configureEach {
-    isFailOnError = false
+    // Let real doc errors fail CI (unknown tags, bad HTML, etc.)
+    isFailOnError = true
+
     @Suppress("UNCHECKED_CAST")
     (options as StandardJavadocDocletOptions).apply {
-        // Use boolean options so flags are emitted correctly:
-        addBooleanOption("Xdoclint:none", true)  // -> -Xdoclint:none
-        addBooleanOption("quiet", true)          // -> -quiet
+        // Enable all doclint checks but exclude "missing" so @param/@return omissions are warnings
+        addStringOption("Xdoclint", "all,-missing")
+        // Keep output quieter
+        addBooleanOption("quiet", true)
 
         encoding = "UTF-8"
         charSet = "UTF-8"
         docEncoding = "UTF-8"
         locale = "en_US"
+        // Link Java 21 API
         links("https://docs.oracle.com/en/java/javase/21/docs/api/")
     }
 }
