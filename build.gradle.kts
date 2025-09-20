@@ -3,6 +3,7 @@ import org.gradle.api.tasks.testing.TestListener
 import org.gradle.api.tasks.testing.TestResult
 import org.gradle.jvm.tasks.Jar
 import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.external.javadoc.StandardJavadocDocletOptions
 
 plugins {
     id("java")
@@ -67,8 +68,8 @@ tasks.test {
 
     testLogging {
         events("passed", "skipped", "failed")
-        showStandardStreams = verboseTests
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = verboseTests
     }
 
     if (verboseTests) {
@@ -100,6 +101,22 @@ tasks.named<JacocoReport>("jacocoTestReport") {
         xml.required.set(false)
         csv.required.set(false)
         html.required.set(true)
+    }
+}
+
+tasks.withType<Javadoc>().configureEach {
+    isFailOnError = false
+    @Suppress("UNCHECKED_CAST")
+    (options as StandardJavadocDocletOptions).apply {
+        // Use boolean options so flags are emitted correctly:
+        addBooleanOption("Xdoclint:none", true)  // -> -Xdoclint:none
+        addBooleanOption("quiet", true)          // -> -quiet
+
+        encoding = "UTF-8"
+        charSet = "UTF-8"
+        docEncoding = "UTF-8"
+        locale = "en_US"
+        links("https://docs.oracle.com/en/java/javase/21/docs/api/")
     }
 }
 
