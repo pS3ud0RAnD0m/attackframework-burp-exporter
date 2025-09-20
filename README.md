@@ -10,6 +10,10 @@ By externalizing Burp’s insights into searchable, semantically indexed stores,
 
 We welcome ideas, feedback, and pull requests. Feel free to open a discussion, issue, or submit a PR.
 
+## Documentation
+- Usage: https://wiki.attackframework.ai/tools/burp-exporter (Coming soon!)
+- Javadocs: https://ps3ud0rand0m.github.io/attackframework-burp-exporter/
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
