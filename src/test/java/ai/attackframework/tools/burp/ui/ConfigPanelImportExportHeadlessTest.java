@@ -1,103 +1,158 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.Json;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import javax.swing.SwingUtilities;
+import java.util.ArrayList;
 import java.util.List;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.call;
-import static ai.attackframework.tools.burp.testutils.Reflect.callVoid;
-import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Headless round-trip test for {@link ConfigPanel} import/export behavior without UI choosers.
+ * Headless test for {@link ConfigPanel} export behavior without file choosers or reflection.
  *
- * <p>Approach:</p>
+ * <p>Approach:
  * <ol>
- *   <li>Construct a panel and set explicit non-default values.</li>
- *   <li>Export by reflecting {@code currentConfigJson()} and writing to a temp file.</li>
- *   <li>Import by parsing JSON and reflecting {@code applyImported(...)} on a fresh panel.</li>
- *   <li>Assert that scope and sinks are restored.</li>
+ *   <li>Construct a panel and set explicit non-default values using visible UI controls.</li>
+ *   <li>Click the "Save" button to trigger export; capture the emitted JSON via {@link Logger} listener.</li>
+ *   <li>Parse the captured JSON with {@link Json#parseConfigJson(String)} and assert scope & sinks.</li>
  * </ol>
  *
- * <p>Private members are accessed via the shared {@code Reflect} helper to keep production
- * visibility minimal.</p>
+ * <p>Notes:
+ * <ul>
+ *   <li>Import UI uses a {@code JFileChooser}; import-path integration is validated elsewhere (Json tests).
+ *       This test focuses on export-through-UI correctness with no private access.</li>
+ *   <li>All UI actions are executed on the EDT.</li>
+ * </ul>
  */
 class ConfigPanelImportExportHeadlessTest {
 
     @Test
-    void export_then_import_roundtrip_with_custom_values() throws Exception {
-        // Arrange a first panel with explicit, non-default values.
-        ConfigPanel panel1 = new ConfigPanel();
+    void export_via_save_logs_expected_json() throws Exception {
+        // Arrange: construct panel and choose custom scope.
+        ConfigPanel panel = new ConfigPanel();
 
-        // Choose custom scope and set a regex value.
-        JRadioButton customRadio1 = get(panel1, "customRadio");
-        customRadio1.setSelected(true);
+        // Scope: select "Custom", set regex value, enable regex toggle.
+        JRadioButton customRadio = findByName(panel, "scope.custom", JRadioButton.class);
+        JTextField firstField = findByName(panel, "scope.custom.regex", JTextField.class);
+        JCheckBox firstToggle = findRegexToggleForRow(firstField);
 
-        JTextField customScopeField1 = get(panel1, "customScopeField");
         String expectedRegex = "^(?:foo|bar)\\.example\\.com$";
-        customScopeField1.setText(expectedRegex);
+        runEdt(() -> {
+            customRadio.setSelected(true);
+            firstToggle.setSelected(true);
+            firstField.setText(expectedRegex);
+        });
 
-        JCheckBox customScopeRegexToggle1 = get(panel1, "customScopeRegexToggle");
-        customScopeRegexToggle1.setSelected(true);
+        // Sinks: enable files + os and set values.
+        JCheckBox fileSink = findByName(panel, "files.enable", JCheckBox.class);
+        JTextField filePath = findByName(panel, "files.path", JTextField.class);
+        JCheckBox osSink = findByName(panel, "os.enable", JCheckBox.class);
+        JTextField osUrl = findByName(panel, "os.url", JTextField.class);
 
-        // Enable both sinks and set values.
-        JCheckBox fileSinkCheckbox1 = get(panel1, "fileSinkCheckbox");
-        fileSinkCheckbox1.setSelected(true);
-        JTextField filePathField1 = get(panel1, "filePathField");
-        String expectedFilesPath = "c:/path/to/files"; // textual value for JSON round-trip
-        filePathField1.setText(expectedFilesPath);
-
-        JCheckBox openSearchSinkCheckbox1 = get(panel1, "openSearchSinkCheckbox");
-        openSearchSinkCheckbox1.setSelected(true);
-        JTextField openSearchUrlField1 = get(panel1, "openSearchUrlField");
+        String expectedFilesPath = "c:/path/to/files";
         String expectedOsUrl = "http://opensearch.url:9200";
-        openSearchUrlField1.setText(expectedOsUrl);
 
-        // Export to a temp JSON file by reflecting currentConfigJson() and writing it.
-        Path tmpDir = Files.createTempDirectory("cfg-export-");
-        Path out = tmpDir.resolve("config-roundtrip.json");
-        String json = (String) call(panel1, "currentConfigJson");
-        Files.writeString(out, json);
+        runEdt(() -> {
+            fileSink.setSelected(true);
+            filePath.setText(expectedFilesPath);
+            osSink.setSelected(true);
+            osUrl.setText(expectedOsUrl);
+        });
 
-        assertThat(Files.exists(out)).as("exported config file should exist").isTrue();
-        assertThat(Files.size(out)).as("exported config should not be empty").isGreaterThan(0L);
+        // Capture export JSON via Logger when clicking "Save".
+        CapturingListener cap = new CapturingListener();
+        Logger.registerListener(cap);
+        try {
+            JButton save = findSaveButton(panel);
+            runEdt(save::doClick);
 
-        // Import into a fresh panel by parsing JSON and reflecting applyImported(...).
-        ConfigPanel panel2 = new ConfigPanel();
-        String imported = Files.readString(out);
-        Json.ImportedConfig cfg = Json.parseConfigJson(imported);
-        callVoid(panel2, "applyImported", cfg);
-        // Mirror non-UI side effects that legacy import helpers performed.
-        callVoid(panel2, "refreshEnabledStates");
+            // The AdminSave handler logs a line with the JSON; capture the last well-formed JSON payload.
+            String loggedJson = cap.lastJson();
+            assertThat(loggedJson).as("save should log JSON").isNotBlank();
 
-        // Validate scope restored.
-        JRadioButton customRadio2 = get(panel2, "customRadio");
-        assertThat(customRadio2.isSelected()).as("custom scope radio restored").isTrue();
+            Json.ImportedConfig cfg = Json.parseConfigJson(loggedJson);
 
-        JTextField customScopeField2 = get(panel2, "customScopeField");
-        assertThat(customScopeField2.getText()).as("custom scope value restored").isEqualTo(expectedRegex);
+            // Validate scope restored from JSON
+            assertThat(cfg.scopeType()).as("scope type").isEqualTo("custom");
+            assertThat(cfg.scopeRegexes()).isNotNull();
+            assertThat(cfg.scopeRegexes()).isNotEmpty();
+            assertThat(cfg.scopeRegexes().getFirst()).isEqualTo(expectedRegex);
 
-        // Current import logic restores the value, not the regex/string kind toggle.
-        // Verify the toggle defaults to unchecked here; when import supports kinds, this can be tightened.
-        List<JCheckBox> toggles2 = get(panel2, "customScopeRegexToggles");
-        assertThat(toggles2.getFirst().isSelected()).as("regex toggle defaults unchecked on import").isFalse();
+            // Validate sinks restored from JSON
+            assertThat(cfg.filesPath()).as("files path").isEqualTo(expectedFilesPath);
+            assertThat(cfg.openSearchUrl()).as("os url").isEqualTo(expectedOsUrl);
+        } finally {
+            Logger.unregisterListener(cap);
+        }
+    }
 
-        // Validate sinks restored.
-        JCheckBox fileSinkCheckbox2 = get(panel2, "fileSinkCheckbox");
-        assertThat(fileSinkCheckbox2.isSelected()).as("file sink restored").isTrue();
-        JTextField filePathField2 = get(panel2, "filePathField");
-        assertThat(filePathField2.getText()).as("files path restored").isEqualTo(expectedFilesPath);
+    /* ----------------------------- helpers ----------------------------- */
 
-        JCheckBox openSearchSinkCheckbox2 = get(panel2, "openSearchSinkCheckbox");
-        assertThat(openSearchSinkCheckbox2.isSelected()).as("OpenSearch sink restored").isTrue();
-        JTextField openSearchUrlField2 = get(panel2, "openSearchUrlField");
-        assertThat(openSearchUrlField2.getText()).as("OpenSearch URL restored").isEqualTo(expectedOsUrl);
+    /** Logger listener that captures the most recent JSON-looking payload from INFO lines. */
+    private static final class CapturingListener implements Logger.LogListener {
+        private String lastJson = null;
+
+        @Override
+        public void onLog(String level, String message) {
+            // We only care about INFO "json" lines; simple heuristic: looks like an object
+            if (!"INFO".equalsIgnoreCase(level)) return;
+            String m = message == null ? "" : message.trim();
+            if (m.startsWith("{") && m.endsWith("}")) {
+                lastJson = m;
+            }
+        }
+
+        String lastJson() { return lastJson == null ? "" : lastJson; }
+    }
+
+    private static JButton findSaveButton(JComponent root) {
+        // Traverse for a JButton with text "Save"
+        List<JButton> all = new ArrayList<>();
+        collect(root, JButton.class, all);
+        for (JButton b : all) {
+            if ("Save".equals(b.getText())) return b;
+        }
+        throw new AssertionError("Save button not found");
+    }
+
+    private static JCheckBox findRegexToggleForRow(JTextField fieldInRow) {
+        var row = fieldInRow.getParent();
+        for (var c : row.getComponents()) {
+            if (c instanceof JCheckBox cb && ".*".equals(cb.getText())) return cb;
+        }
+        throw new AssertionError("Regex toggle (.*) not found in row");
+    }
+
+    private static <T extends JComponent> T findByName(JComponent root, String name, Class<T> type) {
+        List<T> all = new ArrayList<>();
+        collect(root, type, all);
+        for (T c : all) {
+            if (name.equals(c.getName())) return c;
+        }
+        throw new AssertionError("Component not found: " + name + " (" + type.getSimpleName() + ")");
+    }
+
+    private static <T extends JComponent> void collect(JComponent root, Class<T> type, List<T> out) {
+        if (type.isInstance(root)) out.add(type.cast(root));
+        for (var comp : root.getComponents()) {
+            if (comp instanceof JComponent jc) collect(jc, type, out);
+        }
+    }
+
+    /** Run the given action on the EDT and block until it completes. */
+    private static void runEdt(Runnable action) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            action.run();
+        } else {
+            SwingUtilities.invokeAndWait(action);
+        }
     }
 }

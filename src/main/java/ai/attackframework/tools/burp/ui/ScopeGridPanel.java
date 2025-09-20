@@ -17,15 +17,30 @@ import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.io.Serial;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
- * Grid for managing custom scope rows: first row with a radio, subsequent rows with a placeholder,
- * per-row regex toggle, ✓/✖ indicator, and width harmonization of text fields.
+ * Custom-scope grid for {@link ConfigPanel}.
  *
- * <p>Pure UI: no JSON/business logic. Bindings to {@link RegexIndicatorBinder} install in {@link #addNotify()}
- * and close in {@link #removeNotify()}. All UI updates are expected on the EDT.</p>
+ * <p>Responsibilities:
+ * <ul>
+ *   <li>Own row management (add/remove/renumber with first row protected).</li>
+ *   <li>Own column layout and width harmonization for the text fields.</li>
+ *   <li>Bind/unbind regex validity indicators (✓/✖) on a per-row basis.</li>
+ * </ul>
+ *
+ * <p>Usage contract:
+ * <ul>
+ *   <li>All UI updates occur on the EDT.</li>
+ *   <li>Listeners are installed at construction (for headless determinism) and re-installed in {@link #addNotify()},
+ *       then closed in {@link #removeNotify()}.</li>
+ *   <li>Stable component names are part of the testing contract:
+ *       <code>scope.custom.regex</code> (first field),
+ *       <code>scope.custom.regex.N</code> (N≥2),
+ *       <code>scope.custom.regex.indicator.N</code> for indicators.</li>
+ * </ul>
+ *
+ * <p>Pure UI component — no JSON/business logic.</p>
  */
 public final class ScopeGridPanel extends JPanel {
 
@@ -45,7 +60,7 @@ public final class ScopeGridPanel extends JPanel {
     private static final String MIG_SPLIT_2 = "split 2";
 
     // First-row controls
-    private final JRadioButton customRadio; // exposed via accessor
+    private final JRadioButton customRadio;
     private final JButton addButton;
 
     // Rows model (parallel lists; index 0 is the first, protected row)
@@ -66,12 +81,12 @@ public final class ScopeGridPanel extends JPanel {
     public record ScopeEntryInit(String value, boolean regex) { }
 
     /**
-     * Constructs the grid with optional initial rows and an indent hint. The indent parameter is
-     * accepted for API stability; external callers apply indentation via layout constraints.
+     * Constructs the grid with optional initial rows and an indent hint (stored only for completeness).
+     * External indentation is applied by the parent layout.
      */
     public ScopeGridPanel(List<ScopeEntryInit> initial, int indentPx) {
         super(new MigLayout(MIG_INSETS0_WRAP1, "[grow]"));
-        putClientProperty("indentPx", indentPx); // keep signature stable; avoid unused param
+        putClientProperty("indentPx", indentPx);
 
         this.rowsContainer = new JPanel(new MigLayout(MIG_INSETS0_WRAP1, "[grow]"));
 
@@ -95,17 +110,16 @@ public final class ScopeGridPanel extends JPanel {
         sizeIndicatorLabel(firstIndicator, firstToggle, firstField);
         rowsContainer.add(buildRow(0, true), MIG_GROWX_WRAP);
 
-        // Apply initial values (index 0) if provided
+        // Apply initial values (index 0) if provided; append additional rows if present
         if (initial != null && !initial.isEmpty()) {
             ScopeEntryInit init0 = initial.getFirst();
             if (init0 != null) {
                 if (init0.value() != null) firstField.setText(init0.value());
                 firstToggle.setSelected(init0.regex());
             }
-            // Additional rows
             for (int i = 1; i < Math.min(initial.size(), MAX_ROWS); i++) {
                 ScopeEntryInit it = initial.get(i);
-                addRow(); // appends a new row at the end
+                addRow();
                 String v = (it == null || it.value() == null) ? "" : it.value();
                 fields.get(i).setText(v);
                 toggles.get(i).setSelected(it != null && it.regex());
@@ -114,9 +128,7 @@ public final class ScopeGridPanel extends JPanel {
 
         // Width harmonization: track all field changes
         DocumentListener dl = Doc.onChange(this::adjustFieldWidths);
-        for (JTextField f : fields) {
-            f.getDocument().addDocumentListener(dl);
-        }
+        for (JTextField f : fields) f.getDocument().addDocumentListener(dl);
 
         add(rowsContainer, MIG_GROWX_WRAP);
 
@@ -144,25 +156,14 @@ public final class ScopeGridPanel extends JPanel {
     /** The "Custom" radio used for scope selection; intended to join an external ButtonGroup. */
     public JRadioButton customRadio() { return customRadio; }
 
-    /** Package-private: expose first field to allow ConfigPanel to keep legacy private field alias. */
-    JTextField firstField() { return fields.getFirst(); }
-
-    /** Package-private: expose Add button to allow ConfigPanel to keep legacy private field alias. */
-    JButton addButton() { return addButton; }
-
-    /** Read-only live views for tests (via ConfigPanel aliases). */
-    List<JTextField> fieldsView() { return Collections.unmodifiableList(fields); }
-    List<JCheckBox> togglesView() { return Collections.unmodifiableList(toggles); }
-    List<JLabel> indicatorsView() { return Collections.unmodifiableList(indicators); }
-
-    /** Returns current row values in visual order (one per field). */
+    /** Current row values in visual order. */
     public List<String> values() {
         List<String> out = new ArrayList<>(fields.size());
         for (JTextField f : fields) out.add(f.getText());
         return out;
     }
 
-    /** Returns regex kinds (true=regex, false=string) per row in visual order. */
+    /** Regex kinds (true=regex, false=string) per row in visual order. */
     public List<Boolean> regexKinds() {
         List<Boolean> out = new ArrayList<>(toggles.size());
         for (JCheckBox c : toggles) out.add(c.isSelected());
@@ -184,7 +185,7 @@ public final class ScopeGridPanel extends JPanel {
             addButton.setEnabled(false);
             return;
         }
-        int nextIndex = fields.size(); // 0-based; first extra row will be index 1
+        int nextIndex = fields.size(); // first extra row will be index 1
 
         JTextField field = new JTextField();
         field.setName(NAME_SCOPE_CUSTOM_REGEX + "." + (nextIndex + 1)); // first is unsuffixed; extras start at .2
@@ -199,10 +200,8 @@ public final class ScopeGridPanel extends JPanel {
 
         rowsContainer.add(buildRow(nextIndex, false), MIG_GROWX_WRAP);
 
-        // Harmonize width tracking for the new field
         field.getDocument().addDocumentListener(Doc.onChange(this::adjustFieldWidths));
 
-        // Rebind indicators if displayable
         if (isDisplayable()) rebindIndicators();
 
         if (fields.size() >= MAX_ROWS) addButton.setEnabled(false);
@@ -213,11 +212,11 @@ public final class ScopeGridPanel extends JPanel {
     }
 
     /**
-     * Removes the row at the given visual index (0-based). Index {@code 0} is protected and ignored.
-     * Renumbers subsequent rows to preserve {@code .N} suffixes and indicator names.
+     * Removes the row at the given visual index (0-based). Index 0 is protected.
+     * Renumbers subsequent rows to preserve .N suffixes and indicator names.
      */
     public void removeRow(int index) {
-        if (index <= 0 || index >= fields.size()) return; // protect first row and bounds
+        if (index <= 0 || index >= fields.size()) return;
 
         fields.remove(index);
         toggles.remove(index);
@@ -241,7 +240,6 @@ public final class ScopeGridPanel extends JPanel {
 
         if (fields.size() < MAX_ROWS) addButton.setEnabled(true);
 
-        // Rebind indicators if displayable
         if (isDisplayable()) rebindIndicators();
 
         adjustFieldWidths();
@@ -272,12 +270,12 @@ public final class ScopeGridPanel extends JPanel {
         return row;
     }
 
-    /** Column spec for a 4-column row: radio/placeholder, text field, toggle+indicator, trailing button. */
+    /** Column spec: radio/placeholder, text field, toggle+indicator, trailing button. */
     private String scopeCols() {
-        return "[" + radioColWidthPx() + "!,left]10"    // col 1: radio/placeholder
-                + "[grow,fill]10"                       // col 2: field
-                + "[" + toggleColWidthPx() + "!,left]10"// col 3: toggle+indicator block
-                + "[left]";                             // col 4: button
+        return "[" + radioColWidthPx() + "!,left]10"
+                + "[grow,fill]10"
+                + "[" + toggleColWidthPx() + "!,left]10"
+                + "[left]";
     }
 
     /** Width reserved for the radio column (col 1). */

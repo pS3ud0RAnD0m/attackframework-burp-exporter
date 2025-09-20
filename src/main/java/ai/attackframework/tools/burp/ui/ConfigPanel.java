@@ -86,28 +86,11 @@ public class ConfigPanel extends JPanel {
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
 
-    // Scope grid (custom)
+    // Scope grid (custom). The grid owns rows/sizing/glyphs.
     private final ScopeGridPanel scopeGrid = new ScopeGridPanel(
             List.of(new ScopeGridPanel.ScopeEntryInit("^.*acme\\.com$", false)),
             INDENT
     );
-
-    // ---- Back-compat private field aliases for existing tests (do not remove) ----
-    @SuppressWarnings("unused")
-    private final JButton addCustomScopeButton = scopeGrid.addButton();
-    @SuppressWarnings("unused")
-    private final JRadioButton customRadio = scopeGrid.customRadio();
-    @SuppressWarnings("unused")
-    private final JTextField customScopeField = scopeGrid.firstField();
-    @SuppressWarnings("unused")
-    private final List<JTextField> customScopeFields = scopeGrid.fieldsView();
-    @SuppressWarnings("unused")
-    private final List<JCheckBox> customScopeRegexToggles = scopeGrid.togglesView();
-    @SuppressWarnings("unused")
-    private final JCheckBox customScopeRegexToggle = scopeGrid.togglesView().get(0);
-    @SuppressWarnings("unused")
-    private final java.util.List<javax.swing.JLabel> customScopeIndicators = scopeGrid.indicatorsView();
-    // -----------------------------------------------------------------------------
 
     // Files sink
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
@@ -139,7 +122,9 @@ public class ConfigPanel extends JPanel {
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
-        // Scope section
+        // Scope section:
+        // - Uses ScopeGridPanel for custom rows (UI only, no JSON/business logic here).
+        // - ButtonGroup owns selection across 'All', 'Burp Suite', and 'Custom'.
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
@@ -363,7 +348,7 @@ public class ConfigPanel extends JPanel {
                     updateStatus("✖ Connection test interrupted");
                     Logger.logError("OpenSearch connection interrupted: " + ie.getMessage());
                 } catch (ExecutionException ee) {
-                    String msg = ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage();
+                    String msg = ee.getCause() != null ? ee.getCause() + "" : ee.getMessage();
                     updateStatus(ERR_PREFIX + msg);
                     Logger.logError("OpenSearch connection error: " + ee);
                 } catch (Exception ex) {
@@ -669,13 +654,19 @@ public class ConfigPanel extends JPanel {
         undo.setLimit(200);
         field.getDocument().addUndoableEditListener(undo);
 
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.CTRL_DOWN_MASK), "undo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.META_DOWN_MASK), "undo");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.CTRL_DOWN_MASK), "undo");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.META_DOWN_MASK), "undo");
 
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, java.awt.event.InputEvent.CTRL_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Y, java.awt.event.InputEvent.META_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.CTRL_DOWN_MASK | java.awt.event.InputEvent.SHIFT_DOWN_MASK), "redo");
-        bind(field, KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.META_DOWN_MASK | java.awt.event.InputEvent.SHIFT_DOWN_MASK), "redo");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Y, java.awt.event.InputEvent.CTRL_DOWN_MASK), "redo");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Y, java.awt.event.InputEvent.META_DOWN_MASK), "redo");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.CTRL_DOWN_MASK | java.awt.event.InputEvent.SHIFT_DOWN_MASK), "redo");
+        field.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, java.awt.event.InputEvent.META_DOWN_MASK | java.awt.event.InputEvent.SHIFT_DOWN_MASK), "redo");
 
         field.getActionMap().put("undo", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { if (undo.canUndo()) undo.undo(); }
@@ -684,18 +675,4 @@ public class ConfigPanel extends JPanel {
             @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }
         });
     }
-
-    private static void bind(JTextField field, KeyStroke ks, String actionKey) {
-        field.getInputMap(JComponent.WHEN_FOCUSED).put(ks, actionKey);
-    }
-
-    // ------------ Legacy private adapter for tests (pre-extraction contract) ------------
-    private void removeCustomScopeFieldRow(JTextField field) {
-        int idx = customScopeFields.indexOf(field);
-        if (idx <= 0) return; // first row protected, or not found
-        scopeGrid.removeRow(idx);
-        revalidate();
-        repaint();
-    }
-    // ------------------------------------------------------------------------------------
 }
