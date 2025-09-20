@@ -13,10 +13,12 @@ class JsonSinksOmissionTest {
 
     @Test
     void build_omits_blank_sinks_fields() throws IOException {
-        String json = Json.buildConfigJsonTyped(
-                null, "all", null, null,
-                false, "", false, ""
+        var state = new ConfigState.State(
+                null, "all", null,
+                new ConfigState.Sinks(false, "", false, "")
         );
+
+        String json = ConfigJsonMapper.build(state);
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         assertThat(cfg.filesPath()).isNull();
@@ -25,10 +27,12 @@ class JsonSinksOmissionTest {
 
     @Test
     void build_includes_nonEmpty_sinks_fields() throws IOException {
-        String json = Json.buildConfigJsonTyped(
-                null, "all", null, null,
-                true, FILES_ROOT, true, OS_URL
+        var state = new ConfigState.State(
+                null, "all", null,
+                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL)
         );
+
+        String json = ConfigJsonMapper.build(state);
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         assertThat(cfg.filesPath()).isEqualTo(FILES_ROOT);

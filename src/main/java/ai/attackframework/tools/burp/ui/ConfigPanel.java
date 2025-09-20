@@ -5,7 +5,8 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.config.Json;
+import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import net.miginfocom.swing.MigLayout;
@@ -348,7 +349,7 @@ public class ConfigPanel extends JPanel {
                     updateStatus("✖ Connection test interrupted");
                     Logger.logError("OpenSearch connection interrupted: " + ie.getMessage());
                 } catch (ExecutionException ee) {
-                    String msg = ee.getCause() != null ? ee.getCause() + "" : ee.getMessage();
+                    String msg = ee.getCause() != null ? String.valueOf(ee.getCause()) : ee.getMessage();
                     updateStatus(ERR_PREFIX + msg);
                     Logger.logError("OpenSearch connection error: " + ee);
                 } catch (Exception ex) {
@@ -492,33 +493,33 @@ public class ConfigPanel extends JPanel {
         }
     }
 
+    /**
+     * Builds the current config JSON via the typed model and mapper.
+     * Keeps output shape compatible with the legacy JSON.
+     */
     private String currentConfigJson() {
         List<String> selectedSources = getSelectedSources();
 
         String scopeType;
-        List<String> scopeValues = null;
-        List<String> scopeKinds = null;
+        List<ConfigState.ScopeEntry> custom = new ArrayList<>();
         if (allRadio.isSelected()) {
             scopeType = SCOPE_ALL;
         } else if (burpSuiteRadio.isSelected()) {
             scopeType = SCOPE_BURP;
         } else if (scopeGrid.customRadio().isSelected()) {
             scopeType = SCOPE_CUSTOM;
-            scopeValues = new ArrayList<>();
-            scopeKinds = new ArrayList<>();
-
-            List<String> vals = scopeGrid.values();
+            List<String> vals  = scopeGrid.values();
             List<Boolean> kinds = scopeGrid.regexKinds();
             int n = Math.min(vals.size(), kinds.size());
             for (int i = 0; i < n; i++) {
                 String v = vals.get(i);
-                if (v != null && !v.trim().isEmpty()) {
-                    scopeValues.add(v.trim());
-                    scopeKinds.add(Boolean.TRUE.equals(kinds.get(i)) ? "regex" : "string");
-                }
+                if (v == null || v.trim().isEmpty()) continue;
+                boolean isRegex = Boolean.TRUE.equals(kinds.get(i));
+                custom.add(new ConfigState.ScopeEntry(
+                        v.trim(), isRegex ? ConfigState.Kind.REGEX : ConfigState.Kind.STRING));
             }
         } else {
-            scopeType = SCOPE_ALL;
+            scopeType = SCOPE_ALL; // defensive fallback
         }
 
         boolean filesEnabled = fileSinkCheckbox.isSelected();
@@ -526,10 +527,14 @@ public class ConfigPanel extends JPanel {
         String  osUrl        = openSearchUrlField.getText();
         String  filesRoot    = filePathField.getText();
 
-        return Json.buildConfigJsonTyped(
-                selectedSources, scopeType, scopeValues, scopeKinds,
-                filesEnabled, filesRoot, osEnabled, osUrl
+        ConfigState.State state = new ConfigState.State(
+                selectedSources,
+                scopeType,
+                custom,
+                new ConfigState.Sinks(filesEnabled, filesRoot, osEnabled, osUrl)
         );
+
+        return ConfigJsonMapper.build(state);
     }
 
     private void exportConfig() {
@@ -571,53 +576,52 @@ public class ConfigPanel extends JPanel {
         File file = chooser.getSelectedFile();
         try {
             String json = FileUtil.readString(file.toPath());
-            Json.ImportedConfig cfg = Json.parseConfigJson(json);
-            applyImported(cfg);
+
+            // Parse via typed mapper and apply to UI (no reflection, no legacy shims).
+            ConfigState.State state = ConfigJsonMapper.parse(json);
+
+            // Data sources
+            settingsCheckbox.setSelected(state.dataSources().contains("settings"));
+            sitemapCheckbox.setSelected(state.dataSources().contains("sitemap"));
+            issuesCheckbox.setSelected(state.dataSources().contains("findings"));
+            trafficCheckbox.setSelected(state.dataSources().contains("traffic"));
+
+            // Scope
+            switch (state.scopeType()) {
+                case SCOPE_CUSTOM -> {
+                    scopeGrid.customRadio().setSelected(true);
+                    // Back-compat: only set the first value (same UX as before)
+                    if (!state.customEntries().isEmpty()) {
+                        scopeGrid.setFirstValue(state.customEntries().getFirst().value());
+                    } else {
+                        scopeGrid.setFirstValue("");
+                    }
+                }
+                case SCOPE_BURP -> burpSuiteRadio.setSelected(true);
+                default -> allRadio.setSelected(true);
+            }
+
+            // Sinks
+            if (state.sinks().filesEnabled() && state.sinks().filesPath() != null) {
+                fileSinkCheckbox.setSelected(true);
+                filePathField.setText(state.sinks().filesPath());
+            } else {
+                fileSinkCheckbox.setSelected(false);
+            }
+            if (state.sinks().osEnabled() && state.sinks().openSearchUrl() != null) {
+                openSearchSinkCheckbox.setSelected(true);
+                openSearchUrlField.setText(state.sinks().openSearchUrl());
+            } else {
+                openSearchSinkCheckbox.setSelected(false);
+            }
 
             refreshEnabledStates();
             updateImportExportStatus("Imported from " + file.getAbsolutePath());
             Logger.logInfo("Config imported from " + file.getAbsolutePath());
 
-            if (SCOPE_CUSTOM.equals(cfg.scopeType()) && cfg.scopeRegexes().size() > 1) {
-                Logger.logInfo("Imported multiple custom regex entries; using the first. Additional fields will be supported later.");
-            }
-
         } catch (Exception ex) {
             updateImportExportStatus(ERR_PREFIX + ex.getMessage());
             Logger.logError("Import error: " + ex.getMessage());
-        }
-    }
-
-    private void applyImported(Json.ImportedConfig cfg) {
-        settingsCheckbox.setSelected(cfg.dataSources().contains("settings"));
-        sitemapCheckbox.setSelected(cfg.dataSources().contains("sitemap"));
-        issuesCheckbox.setSelected(cfg.dataSources().contains("findings"));
-        trafficCheckbox.setSelected(cfg.dataSources().contains("traffic"));
-
-        switch (cfg.scopeType()) {
-            case SCOPE_CUSTOM -> {
-                scopeGrid.customRadio().setSelected(true);
-                if (!cfg.scopeRegexes().isEmpty()) {
-                    scopeGrid.setFirstValue(cfg.scopeRegexes().getFirst());
-                } else {
-                    scopeGrid.setFirstValue("");
-                }
-            }
-            case SCOPE_BURP -> burpSuiteRadio.setSelected(true);
-            default -> allRadio.setSelected(true);
-        }
-
-        if (cfg.filesPath() != null) {
-            fileSinkCheckbox.setSelected(true);
-            filePathField.setText(cfg.filesPath());
-        } else {
-            fileSinkCheckbox.setSelected(false);
-        }
-        if (cfg.openSearchUrl() != null) {
-            openSearchSinkCheckbox.setSelected(true);
-            openSearchUrlField.setText(cfg.openSearchUrl());
-        } else {
-            openSearchSinkCheckbox.setSelected(false);
         }
     }
 

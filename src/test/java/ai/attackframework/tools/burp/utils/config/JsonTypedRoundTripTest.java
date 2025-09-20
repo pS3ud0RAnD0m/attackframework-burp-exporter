@@ -12,30 +12,34 @@ class JsonTypedRoundTripTest {
     @Test
     void build_and_parse_typed_custom_scope_preserves_order_and_kinds() throws IOException {
         List<String> sources = List.of("settings", "traffic");
-        List<String> values = List.of("x", "y");
-        List<String> kinds = List.of("regex", "string");
 
-        String json = Json.buildConfigJsonTyped(
-                sources, "custom", values, kinds,
-                true, "/path/to/directory", true, "http://opensearch.url:9200"
+        var state = new ConfigState.State(
+                sources, "custom",
+                List.of(
+                        new ConfigState.ScopeEntry("x", ConfigState.Kind.REGEX),
+                        new ConfigState.ScopeEntry("y", ConfigState.Kind.STRING)
+                ),
+                new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200")
         );
 
+        String json = ConfigJsonMapper.build(state);
         Json.ImportedConfig parsed = Json.parseConfigJson(json);
 
         assertThat(parsed.dataSources()).containsExactlyElementsOf(sources);
         assertThat(parsed.scopeType()).isEqualTo("custom");
-        assertThat(parsed.scopeRegexes()).containsExactlyElementsOf(values);
+        assertThat(parsed.scopeRegexes()).containsExactly("x", "y");
         assertThat(parsed.filesPath()).isEqualTo("/path/to/directory");
         assertThat(parsed.openSearchUrl()).isEqualTo("http://opensearch.url:9200");
     }
 
     @Test
     void build_all_scope_sets_flag_only() throws IOException {
-        String json = Json.buildConfigJsonTyped(
-                List.of("settings"), "all", null, null,
-                false, null, false, null
+        var state = new ConfigState.State(
+                List.of("settings"), "all", null,
+                new ConfigState.Sinks(false, null, false, null)
         );
 
+        String json = ConfigJsonMapper.build(state);
         Json.ImportedConfig parsed = Json.parseConfigJson(json);
 
         assertThat(parsed.scopeType()).isEqualTo("all");
@@ -44,11 +48,12 @@ class JsonTypedRoundTripTest {
 
     @Test
     void build_burp_scope_sets_flag_only() throws IOException {
-        String json = Json.buildConfigJsonTyped(
-                List.of("traffic"), "burp", null, null,
-                false, null, false, null
+        var state = new ConfigState.State(
+                List.of("traffic"), "burp", null,
+                new ConfigState.Sinks(false, null, false, null)
         );
 
+        String json = ConfigJsonMapper.build(state);
         Json.ImportedConfig parsed = Json.parseConfigJson(json);
 
         assertThat(parsed.scopeType()).isEqualTo("burp");

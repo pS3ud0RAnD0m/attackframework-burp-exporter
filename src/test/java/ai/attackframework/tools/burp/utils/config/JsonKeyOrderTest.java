@@ -15,14 +15,18 @@ class JsonKeyOrderTest {
 
     @Test
     void top_level_keys_are_in_deterministic_order() throws Exception {
-        String json = Json.buildConfigJsonTyped(
+        var state = new ConfigState.State(
                 List.of("settings", "sitemap"),
                 "custom",
-                List.of("^foo$", "aaa", "bar.*"),
-                List.of("regex", "string", "regex"),
-                true, "/path/to/directory",
-                true, "http://opensearch.url:9200"
+                List.of(
+                        new ConfigState.ScopeEntry("^foo$", ConfigState.Kind.REGEX),
+                        new ConfigState.ScopeEntry("aaa",   ConfigState.Kind.STRING),
+                        new ConfigState.ScopeEntry("bar.*", ConfigState.Kind.REGEX)
+                ),
+                new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200")
         );
+
+        String json = ConfigJsonMapper.build(state);
 
         JsonNode root = M.readTree(json);
         List<String> keys = new ArrayList<>();
@@ -33,14 +37,18 @@ class JsonKeyOrderTest {
 
     @Test
     void custom_scope_preserves_insertion_order_of_typed_entries() throws Exception {
-        String json = Json.buildConfigJsonTyped(
+        var state = new ConfigState.State(
                 List.of("settings"),
                 "custom",
-                List.of("^foo$", "aaa", "bar.*"),
-                List.of("regex", "string", "regex"),
-                false, null,
-                false, null
+                List.of(
+                        new ConfigState.ScopeEntry("^foo$", ConfigState.Kind.REGEX),
+                        new ConfigState.ScopeEntry("aaa",   ConfigState.Kind.STRING),
+                        new ConfigState.ScopeEntry("bar.*", ConfigState.Kind.REGEX)
+                ),
+                new ConfigState.Sinks(false, null, false, null)
         );
+
+        String json = ConfigJsonMapper.build(state);
 
         JsonNode custom = M.readTree(json).path("scope").path("custom");
         List<String> keys = new ArrayList<>();
