@@ -1,13 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink;
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.FileUtil;
-import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import net.miginfocom.swing.MigLayout;
 
@@ -25,7 +19,6 @@ import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
-import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -38,18 +31,18 @@ import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serial;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 
 /**
  * UI panel for configuring data sources, scope, sinks, and admin actions.
- * Provides buttons for managing sinks, configuring scope fields, and displaying status.
  *
  * <p>All Swing updates are expected on the EDT.</p>
  */
-public class ConfigPanel extends JPanel {
+public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -72,11 +65,6 @@ public class ConfigPanel extends JPanel {
     private static final String SCOPE_BURP = "burp";
     private static final String SCOPE_CUSTOM = "custom";
 
-    // Error/status prefixes
-    private static final String ERR_PREFIX = "✖ Error: ";
-    private static final String ERR_FILE_CREATE = "File creation error: ";
-    private static final String ERR_INDEX_CREATE = "Index creation error: ";
-
     // Sources
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
     private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
@@ -87,7 +75,7 @@ public class ConfigPanel extends JPanel {
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
 
-    // Scope grid (custom). The grid owns rows/sizing/glyphs.
+    // Scope grid (custom)
     private final ScopeGridPanel scopeGrid = new ScopeGridPanel(
             List.of(new ScopeGridPanel.ScopeEntryInit("^.*acme\\.com$", false)),
             INDENT
@@ -113,8 +101,14 @@ public class ConfigPanel extends JPanel {
     private final JPanel    adminStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
     private Timer adminStatusHideTimer;
 
-    private final JTextArea importExportStatus = new JTextArea();
-    private final JPanel    importExportStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
+    /**
+     * Controller for long-running actions.
+     *
+     * <p>Marked {@code transient} because {@link javax.swing.JPanel} is {@link java.io.Serializable}
+     * but this collaborator is not. The controller is reconstructed by a private
+     * {@code readObject(ObjectInputStream)} after deserialization.</p>
+     */
+    private transient ConfigController controller = new ConfigController(this);
 
     public ConfigPanel() {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
@@ -123,13 +117,13 @@ public class ConfigPanel extends JPanel {
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
-        // Scope section:
-        // - Uses ScopeGridPanel for custom rows (UI only, no JSON/business logic here).
-        // - ButtonGroup owns selection across 'All', 'Burp Suite', and 'Custom'.
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
-        // Sinks and Admin
+        // Locals: import/export status area (used only to build the admin panel)
+        JTextArea importExportStatus = new JTextArea();
+        JPanel importExportStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
+
         add(new ConfigSinksPanel(
                 fileSinkCheckbox,
                 filePathField,
@@ -212,7 +206,71 @@ public class ConfigPanel extends JPanel {
         area.setColumns(1);
     }
 
-    // Status helpers
+    // ---- ConfigController.Ui implementation ----
+
+    @Override
+    public void onFileStatus(String message) {
+        setStatus(fileStatus, fileStatusWrapper, message);
+    }
+
+    @Override
+    public void onOpenSearchStatus(String message) {
+        setStatus(openSearchStatus, statusWrapper, message);
+    }
+
+    @Override
+    public void onAdminStatus(String message) {
+        setStatus(adminStatus, adminStatusWrapper, message);
+        // preserve the existing timed hide behavior
+        if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
+        adminStatusHideTimer = new Timer(3000, evt -> {
+            adminStatusWrapper.setVisible(false);
+            adminStatusWrapper.revalidate();
+            adminStatusWrapper.repaint();
+        });
+        adminStatusHideTimer.setRepeats(false);
+        adminStatusHideTimer.start();
+    }
+
+    @Override
+    public void onImportResult(ConfigState.State state) {
+        // Apply typed state to UI (EDT).
+        settingsCheckbox.setSelected(state.dataSources().contains("settings"));
+        sitemapCheckbox.setSelected(state.dataSources().contains("sitemap"));
+        issuesCheckbox.setSelected(state.dataSources().contains("findings"));
+        trafficCheckbox.setSelected(state.dataSources().contains("traffic"));
+
+        switch (state.scopeType()) {
+            case SCOPE_CUSTOM -> {
+                scopeGrid.customRadio().setSelected(true);
+                if (!state.customEntries().isEmpty()) {
+                    scopeGrid.setFirstValue(state.customEntries().getFirst().value());
+                } else {
+                    scopeGrid.setFirstValue("");
+                }
+            }
+            case SCOPE_BURP -> burpSuiteRadio.setSelected(true);
+            default -> allRadio.setSelected(true);
+        }
+
+        if (state.sinks().filesEnabled() && state.sinks().filesPath() != null) {
+            fileSinkCheckbox.setSelected(true);
+            filePathField.setText(state.sinks().filesPath());
+        } else {
+            fileSinkCheckbox.setSelected(false);
+        }
+        if (state.sinks().osEnabled() && state.sinks().openSearchUrl() != null) {
+            openSearchSinkCheckbox.setSelected(true);
+            openSearchUrlField.setText(state.sinks().openSearchUrl());
+        } else {
+            openSearchSinkCheckbox.setSelected(false);
+        }
+
+        refreshEnabledStates();
+    }
+
+    // ---- Status helpers ----
+
     private static void setStatus(JTextArea area, JPanel wrapper, String message) {
         area.setText(message);
         String[] lines = message.split("\r\n|\r|\n", -1);
@@ -224,9 +282,6 @@ public class ConfigPanel extends JPanel {
         wrapper.revalidate();
         wrapper.repaint();
     }
-    private void updateStatus(String message) { setStatus(openSearchStatus, statusWrapper, message); }
-    private void updateFileStatus(String message) { setStatus(fileStatus, fileStatusWrapper, message); }
-    private void updateImportExportStatus(String message) { setStatus(importExportStatus, importExportStatusWrapper, message); }
 
     private static int maxLineLength(String[] lines) {
         int max = 1;
@@ -234,202 +289,40 @@ public class ConfigPanel extends JPanel {
         return max;
     }
 
-    // ---- Wiring (reduced complexity into helpers) ----
+    // ---- Wiring (delegates to controller) ----
 
     private void wireButtonActions() {
-        wireSinkEnablement();
-        wireCreateFilesAction();
-        wireTestConnectionAction();
-        wireCreateIndexesAction();
-        wireRelayoutDocListeners();
-    }
-
-    private void wireSinkEnablement() {
         fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
-    }
 
-    private void wireCreateFilesAction() {
         createFilesButton.addActionListener(e -> {
             String root = filePathField.getText().trim();
             if (root.isEmpty()) {
-                updateFileStatus("✖ Path required");
+                onFileStatus("✖ Path required");
                 return;
             }
-            updateFileStatus("Creating files in " + root + " ...");
-            createFilesButton.setEnabled(false);
-
-            new SwingWorker<List<FileUtil.CreateResult>, Void>() {
-                @Override protected List<FileUtil.CreateResult> doInBackground() {
-                    List<String> baseNames = IndexNaming.computeIndexBaseNames(getSelectedSources());
-                    List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
-                    return FileUtil.ensureJsonFiles(root, jsonNames);
-                }
-                @Override protected void done() {
-                    try {
-                        List<FileUtil.CreateResult> results = get();
-                        updateFileStatus(summarizeFileCreateResults(results));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        updateFileStatus("✖ File creation interrupted");
-                        Logger.logError("File creation interrupted: " + ie.getMessage());
-                    } catch (ExecutionException ee) {
-                        String msg = ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage();
-                        updateFileStatus(ERR_FILE_CREATE + msg);
-                        Logger.logError(ERR_FILE_CREATE + ee);
-                    } catch (Exception ex) {
-                        updateFileStatus(ERR_FILE_CREATE + ex.getMessage());
-                        Logger.logError(ERR_FILE_CREATE + ex.getMessage());
-                    } finally {
-                        createFilesButton.setEnabled(true);
-                    }
-                }
-            }.execute();
+            controller.createFilesAsync(root, getSelectedSources());
         });
-    }
 
-    private String summarizeFileCreateResults(List<FileUtil.CreateResult> results) {
-        List<String> created = new ArrayList<>();
-        List<String> exists  = new ArrayList<>();
-        List<String> failed  = new ArrayList<>();
-        for (FileUtil.CreateResult r : results) {
-            switch (r.status()) {
-                case CREATED -> created.add(r.path().toString());
-                case EXISTS  -> exists.add(r.path().toString());
-                case FAILED  -> failed.add(r.path().toString() + " — " + r.error());
+        testConnectionButton.addActionListener(e -> {
+            String url = openSearchUrlField.getText().trim();
+            if (url.isEmpty()) {
+                onOpenSearchStatus("✖ URL required");
+                return;
             }
-        }
-        StringBuilder sb = new StringBuilder();
-        if (!created.isEmpty()) {
-            sb.append(created.size() == 1 ? "File created:\n  " : "Files created:\n  ")
-                    .append(String.join("\n  ", created)).append("\n");
-        }
-        if (!exists.isEmpty()) {
-            sb.append(exists.size() == 1 ? "File already existed:\n  " : "Files already existed:\n  ")
-                    .append(String.join("\n  ", exists)).append("\n");
-        }
-        if (!failed.isEmpty()) {
-            sb.append(failed.size() == 1 ? "File creation failed:\n  " : "File creations failed:\n  ")
-                    .append(String.join("\n  ", failed)).append("\n");
-        }
-        return sb.toString().trim();
-    }
+            controller.testConnectionAsync(url);
+        });
 
-    private void wireTestConnectionAction() {
-        testConnectionButton.addActionListener(e -> onTestConnection());
-    }
-
-    /** Extracted to reduce complexity in the action listener body. */
-    private void onTestConnection() {
-        String url = openSearchUrlField.getText().trim();
-        if (url.isEmpty()) {
-            updateStatus("✖ URL required");
-            return;
-        }
-        updateStatus("Testing ...");
-        testConnectionButton.setEnabled(false);
-
-        new SwingWorker<OpenSearchClientWrapper.OpenSearchStatus, Void>() {
-            @Override protected OpenSearchClientWrapper.OpenSearchStatus doInBackground() {
-                return OpenSearchClientWrapper.safeTestConnection(url);
-            }
-            @Override protected void done() {
-                try {
-                    OpenSearchClientWrapper.OpenSearchStatus status = get();
-                    if (status.success()) {
-                        updateStatus(status.message() + " (" + status.distribution() + " v" + status.version() + ")");
-                        Logger.logInfo("OpenSearch connection successful: " + status.message()
-                                + " (" + status.distribution() + " v" + status.version() + ") at " + url);
-                    } else {
-                        updateStatus("✖ " + status.message());
-                        Logger.logError("OpenSearch connection failed: " + status.message());
-                    }
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    updateStatus("✖ Connection test interrupted");
-                    Logger.logError("OpenSearch connection interrupted: " + ie.getMessage());
-                } catch (ExecutionException ee) {
-                    String msg = ee.getCause() != null ? String.valueOf(ee.getCause()) : ee.getMessage();
-                    updateStatus(ERR_PREFIX + msg);
-                    Logger.logError("OpenSearch connection error: " + ee);
-                } catch (Exception ex) {
-                    updateStatus(ERR_PREFIX + ex.getMessage());
-                    Logger.logError("OpenSearch connection error: " + ex.getMessage());
-                } finally {
-                    testConnectionButton.setEnabled(true);
-                }
-            }
-        }.execute();
-    }
-
-    private void wireCreateIndexesAction() {
         createIndexesButton.addActionListener(e -> {
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) {
-                updateStatus("✖ URL required");
+                onOpenSearchStatus("✖ URL required");
                 return;
             }
-            updateStatus("Creating indexes . . .");
-            createIndexesButton.setEnabled(false);
-
-            new SwingWorker<List<IndexResult>, Void>() {
-                @Override protected List<IndexResult> doInBackground() {
-                    return OpenSearchSink.createSelectedIndexes(url, getSelectedSources());
-                }
-                @Override protected void done() {
-                    try {
-                        List<IndexResult> results = get();
-                        updateStatus(summarizeIndexResults(results));
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        updateStatus("✖ Index creation interrupted");
-                        Logger.logError("Index creation interrupted: " + ie.getMessage());
-                    } catch (ExecutionException ee) {
-                        String msg = ee.getCause() != null ? ee.getCause().getMessage() : ee.getMessage();
-                        updateStatus(ERR_INDEX_CREATE + msg);
-                        Logger.logError(ERR_INDEX_CREATE + ee);
-                    } catch (Exception ex) {
-                        updateStatus(ERR_INDEX_CREATE + ex.getMessage());
-                        Logger.logError(ERR_INDEX_CREATE + ex.getMessage());
-                    } finally {
-                        createIndexesButton.setEnabled(true);
-                    }
-                }
-            }.execute();
+            controller.createIndexesAsync(url, getSelectedSources());
         });
-    }
 
-    private String summarizeIndexResults(List<IndexResult> results) {
-        List<String> created = new ArrayList<>();
-        List<String> exists  = new ArrayList<>();
-        List<String> failed  = new ArrayList<>();
-        for (IndexResult r : results) {
-            switch (r.status()) {
-                case CREATED -> created.add(r.fullName());
-                case EXISTS  -> exists.add(r.fullName());
-                case FAILED  -> failed.add(r.fullName());
-            }
-        }
-        boolean allExist = !results.isEmpty() && results.stream().allMatch(r -> r.status() == IndexResult.Status.EXISTS);
-
-        StringBuilder sb = new StringBuilder();
-        if (!created.isEmpty()) {
-            sb.append(created.size() == 1 ? "Index created:\n  " : "Indexes created:\n  ")
-                    .append(String.join("\n  ", created)).append("\n");
-        }
-        if (!exists.isEmpty()) {
-            sb.append(exists.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ")
-                    .append(String.join("\n  ", exists)).append("\n");
-        }
-        if (!failed.isEmpty()) {
-            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ")
-                    .append(String.join("\n  ", failed)).append("\n");
-        }
-        if (allExist) Logger.logInfo("All indexes already existed — no creation performed.");
-        return sb.toString().trim();
-    }
-
-    private void wireRelayoutDocListeners() {
+        // re-layout textfields when content changes
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
@@ -470,34 +363,12 @@ public class ConfigPanel extends JPanel {
 
     private class AdminSaveButtonListener implements ActionListener {
         @Override public void actionPerformed(ActionEvent e) {
-            try {
-                String json = currentConfigJson();
-                Logger.logInfo("Saving config ...");
-                Logger.logInfo(json);
-
-                // Inline status update
-                setStatus(adminStatus, adminStatusWrapper, "Saved!");
-                if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
-                adminStatusHideTimer = new Timer(3000, evt -> {
-                    adminStatusWrapper.setVisible(false);
-                    adminStatusWrapper.revalidate();
-                    adminStatusWrapper.repaint();
-                });
-                adminStatusHideTimer.setRepeats(false);
-                adminStatusHideTimer.start();
-
-            } catch (Exception ex) {
-                setStatus(adminStatus, adminStatusWrapper, ERR_PREFIX + ex.getMessage());
-                Logger.logError("Admin save error: " + ex.getMessage());
-            }
+            controller.saveAsync(buildCurrentState());
         }
     }
 
-    /**
-     * Builds the current config JSON via the typed model and mapper.
-     * Keeps output shape compatible with the legacy JSON.
-     */
-    private String currentConfigJson() {
+    /** Compose the current typed state from UI controls (EDT). */
+    private ConfigState.State buildCurrentState() {
         List<String> selectedSources = getSelectedSources();
 
         String scopeType;
@@ -519,7 +390,7 @@ public class ConfigPanel extends JPanel {
                         v.trim(), isRegex ? ConfigState.Kind.REGEX : ConfigState.Kind.STRING));
             }
         } else {
-            scopeType = SCOPE_ALL; // defensive fallback
+            scopeType = SCOPE_ALL;
         }
 
         boolean filesEnabled = fileSinkCheckbox.isSelected();
@@ -527,18 +398,18 @@ public class ConfigPanel extends JPanel {
         String  osUrl        = openSearchUrlField.getText();
         String  filesRoot    = filePathField.getText();
 
-        ConfigState.State state = new ConfigState.State(
+        return new ConfigState.State(
                 selectedSources,
                 scopeType,
                 custom,
                 new ConfigState.Sinks(filesEnabled, filesRoot, osEnabled, osUrl)
         );
-
-        return ConfigJsonMapper.build(state);
     }
 
+    // ---- Import / Export dialog handlers (delegating to controller) ----
+
     private void exportConfig() {
-        String json = currentConfigJson();
+        String json = ConfigJsonMapper.build(buildCurrentState());
 
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Export Config");
@@ -547,19 +418,12 @@ public class ConfigPanel extends JPanel {
 
         int result = chooser.showSaveDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) {
-            updateImportExportStatus("Export cancelled.");
+            onAdminStatus("Export cancelled.");
             return;
         }
-
-        File file = FileUtil.ensureJsonExtension(chooser.getSelectedFile());
-        try {
-            FileUtil.writeStringCreateDirs(file.toPath(), json);
-            updateImportExportStatus("Exported to " + file.getAbsolutePath());
-            Logger.logInfo("Config exported to " + file.getAbsolutePath());
-        } catch (IOException ioe) {
-            updateImportExportStatus(ERR_PREFIX + ioe.getMessage());
-            Logger.logError("Export error: " + ioe.getMessage());
-        }
+        Path out = ai.attackframework.tools.burp.utils.FileUtil
+                .ensureJsonExtension(chooser.getSelectedFile()).toPath();
+        controller.exportConfigAsync(out, json);
     }
 
     private void importConfig() {
@@ -569,60 +433,10 @@ public class ConfigPanel extends JPanel {
 
         int result = chooser.showOpenDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) {
-            updateImportExportStatus("Import cancelled.");
+            onAdminStatus("Import cancelled.");
             return;
         }
-
-        File file = chooser.getSelectedFile();
-        try {
-            String json = FileUtil.readString(file.toPath());
-
-            // Parse via typed mapper and apply to UI (no reflection, no legacy shims).
-            ConfigState.State state = ConfigJsonMapper.parse(json);
-
-            // Data sources
-            settingsCheckbox.setSelected(state.dataSources().contains("settings"));
-            sitemapCheckbox.setSelected(state.dataSources().contains("sitemap"));
-            issuesCheckbox.setSelected(state.dataSources().contains("findings"));
-            trafficCheckbox.setSelected(state.dataSources().contains("traffic"));
-
-            // Scope
-            switch (state.scopeType()) {
-                case SCOPE_CUSTOM -> {
-                    scopeGrid.customRadio().setSelected(true);
-                    // Back-compat: only set the first value (same UX as before)
-                    if (!state.customEntries().isEmpty()) {
-                        scopeGrid.setFirstValue(state.customEntries().getFirst().value());
-                    } else {
-                        scopeGrid.setFirstValue("");
-                    }
-                }
-                case SCOPE_BURP -> burpSuiteRadio.setSelected(true);
-                default -> allRadio.setSelected(true);
-            }
-
-            // Sinks
-            if (state.sinks().filesEnabled() && state.sinks().filesPath() != null) {
-                fileSinkCheckbox.setSelected(true);
-                filePathField.setText(state.sinks().filesPath());
-            } else {
-                fileSinkCheckbox.setSelected(false);
-            }
-            if (state.sinks().osEnabled() && state.sinks().openSearchUrl() != null) {
-                openSearchSinkCheckbox.setSelected(true);
-                openSearchUrlField.setText(state.sinks().openSearchUrl());
-            } else {
-                openSearchSinkCheckbox.setSelected(false);
-            }
-
-            refreshEnabledStates();
-            updateImportExportStatus("Imported from " + file.getAbsolutePath());
-            Logger.logInfo("Config imported from " + file.getAbsolutePath());
-
-        } catch (Exception ex) {
-            updateImportExportStatus(ERR_PREFIX + ex.getMessage());
-            Logger.logError("Import error: " + ex.getMessage());
-        }
+        controller.importConfigAsync(chooser.getSelectedFile().toPath());
     }
 
     private void assignComponentNames() {
@@ -678,5 +492,20 @@ public class ConfigPanel extends JPanel {
         field.getActionMap().put("redo", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { if (undo.canRedo()) undo.redo(); }
         });
+    }
+
+    /* ------------ Deserialization hook: rebuild transient collaborators ------------ */
+
+    /**
+     * Rebuilds the {@link #controller} after default deserialization.
+     *
+     * @param in the stream to read from
+     * @throws IOException if the stream read fails
+     * @throws ClassNotFoundException if a required class cannot be found
+     */
+    @Serial
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        this.controller = new ConfigController(this);
     }
 }
