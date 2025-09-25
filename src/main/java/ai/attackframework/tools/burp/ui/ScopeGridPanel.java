@@ -18,12 +18,10 @@ import java.util.Objects;
 
 /**
  * Custom-scope rows rendered in a single 4-column grid:
- * <ol>
- *   <li>Radio (row 1) / placeholder (rows &gt; 1)</li>
- *   <li>Text field (size-grouped so all fields share the same width)</li>
- *   <li>{@code ".*"} toggle + indicator (same cell)</li>
- *   <li>Action button (Add on row 1, Delete on rows &gt; 1; size-grouped)</li>
- * </ol>
+ * 1) Radio (row 1) / placeholder (rows > 1)
+ * 2) Text field (size-grouped so all fields share the same width)
+ * 3) ".*" toggle + indicator (same cell)
+ * 4) Action button (Add on row 1, Delete on rows > 1; size-grouped)
  *
  * <p><strong>EDT:</strong> Public mutators expect to be called on the EDT.</p>
  */
@@ -40,6 +38,10 @@ public class ScopeGridPanel implements Serializable {
     private static final String SG_FIELD = "sg field";
     private static final String SG_BTN   = "sg btn";
     private static final String GROWX    = "growx";
+
+    /** Tooltip shown on the regex toggle control (plain text). */
+    private static final String REGEX_TOGGLE_TIP =
+            "Interpret value as a regular expression.";
 
     /**
      * Single grid containing all rows (no forced wrap-per-component).
@@ -127,10 +129,10 @@ public class ScopeGridPanel implements Serializable {
     private void updateEnabledState(boolean customSelected) {
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
-            boolean enableRow = customSelected;
-            r.field.setEnabled(enableRow);
-            r.toggle.setEnabled(enableRow);
-            r.delete.setEnabled(enableRow && i > 0); // row 1 has no Delete
+            r.field.setEnabled(customSelected);
+            r.toggle.setEnabled(customSelected);
+            // Indicator is a label; leave it as-is (read-only visual).
+            r.delete.setEnabled(customSelected && i > 0); // row 1 has no Delete
         }
         addButton.setEnabled(customSelected && rows.size() < MAX_ROWS);
         grid.revalidate();
@@ -153,7 +155,7 @@ public class ScopeGridPanel implements Serializable {
                 // Row 1: Custom radio | field | toggle+indicator | Add
                 grid.add(customRadio);                       // col 1
                 grid.add(r.field, GROWX);                    // col 2 (sg field)
-                ensureToggleText(r);
+                ensureToggleTextAndTip(r);
                 grid.add(r.toggle, "split 2");               // col 3 (toggle + indicator)
                 grid.add(r.indicator);
                 grid.add(addButton);                         // col 4 (sg btn)
@@ -163,7 +165,7 @@ public class ScopeGridPanel implements Serializable {
                 placeholder.setPreferredSize(new Dimension(radioSize.width, radioSize.height));
                 grid.add(placeholder);                       // col 1
                 grid.add(r.field, GROWX);                    // col 2 (sg field)
-                ensureToggleText(r);
+                ensureToggleTextAndTip(r);
                 grid.add(r.toggle, "split 2");               // col 3
                 grid.add(r.indicator);
                 r.ensureDeleteHandler(() -> {
@@ -184,8 +186,9 @@ public class ScopeGridPanel implements Serializable {
         grid.repaint();
     }
 
-    private static void ensureToggleText(Row r) {
+    private static void ensureToggleTextAndTip(Row r) {
         if (!".*".equals(r.toggle.getText())) r.toggle.setText(".*");
+        r.toggle.setToolTipText(REGEX_TOGGLE_TIP);
     }
 
     /** Row model: text field, toggle, indicator, and (rows &gt; 1) a delete button. */
@@ -202,6 +205,7 @@ public class ScopeGridPanel implements Serializable {
         Row(String value, boolean isRegex) {
             field.setText(value);
             toggle.setSelected(isRegex);
+            toggle.setToolTipText(REGEX_TOGGLE_TIP);
             binding = RegexIndicatorBinder.bind(field, toggle, null, false, indicator);
         }
 
