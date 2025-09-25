@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
 import javax.swing.JComponent;
-import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import java.util.ArrayList;
@@ -35,6 +35,10 @@ class ConfigPanelCustomScopeAlignmentHeadlessTest {
     void fields_remain_aligned_after_delete() throws Exception {
         ConfigPanel panel = new ConfigPanel();
 
+        // Enable the Custom scope so Add/Delete are active
+        JRadioButton custom = findByName(panel, "scope.custom", JRadioButton.class);
+        runEdt(() -> custom.setSelected(true));
+
         JButton add = findAddButton(panel);
         runEdt(() -> {
             add.doClick();
@@ -45,9 +49,9 @@ class ConfigPanelCustomScopeAlignmentHeadlessTest {
         List<JTextField> fields = findScopeFieldsSorted(panel);
         assertThat(fields).hasSize(4);
 
-        // Delete the second row by clicking the row "Delete" button
+        // Delete the second row via its named Delete button
         JTextField second = fields.get(1);
-        JButton delete2 = findDeleteButtonForRow(second);
+        JButton delete2 = findDeleteButtonForRow(panel, second);
         runEdt(delete2::doClick);
 
         // Re-read fields after rebuild
@@ -70,6 +74,10 @@ class ConfigPanelCustomScopeAlignmentHeadlessTest {
     void first_field_has_no_delete_button() throws Exception {
         ConfigPanel panel = new ConfigPanel();
 
+        // Enable the Custom scope so Add/Delete are active
+        JRadioButton custom = findByName(panel, "scope.custom", JRadioButton.class);
+        runEdt(() -> custom.setSelected(true));
+
         JButton add = findAddButton(panel);
         runEdt(() -> {
             add.doClick();
@@ -79,40 +87,32 @@ class ConfigPanelCustomScopeAlignmentHeadlessTest {
         List<JTextField> fields = findScopeFieldsSorted(panel);
         assertThat(fields).hasSize(3);
 
-        // The first row should NOT have a delete button
-        assertThat(hasDeleteButton(fields.getFirst())).isFalse();
+        // The first row should NOT have a delete button (no button named scope.custom.delete.1)
+        assertThat(hasDeleteButton(panel, fields.getFirst())).isFalse();
 
         // All subsequent rows SHOULD have a delete button
         for (int i = 1; i < fields.size(); i++) {
-            assertThat(hasDeleteButton(fields.get(i))).isTrue();
+            assertThat(hasDeleteButton(panel, fields.get(i))).isTrue();
         }
     }
 
     /* ----------------------------- helpers ----------------------------- */
 
     private static JButton findAddButton(JComponent root) {
-        JTextField first = firstScopeField(root);
-        JPanel row = (JPanel) first.getParent();
-        for (var c : row.getComponents()) {
-            if (c instanceof JButton b && "Add".equals(b.getText())) return b;
-        }
-        throw new AssertionError("Add button not found in the first row");
+        // Named lookup to decouple from container topology
+        return findByName(root, "scope.custom.add", JButton.class);
     }
 
-    private static JButton findDeleteButtonForRow(JTextField field) {
-        JPanel row = (JPanel) field.getParent();
-        for (var c : row.getComponents()) {
-            if (c instanceof JButton b && "Delete".equals(b.getText())) return b;
-        }
-        throw new AssertionError("Delete button not found for row: " + field.getName());
+    private static JButton findDeleteButtonForRow(JComponent root, JTextField field) {
+        int idx = indexFromFieldName(field);
+        String name = "scope.custom.delete." + idx;
+        return findByName(root, name, JButton.class);
     }
 
-    private static boolean hasDeleteButton(JTextField field) {
-        JPanel row = (JPanel) field.getParent();
-        for (var c : row.getComponents()) {
-            if (c instanceof JButton b && "Delete".equals(b.getText())) return true;
-        }
-        return false;
+    private static boolean hasDeleteButton(JComponent root, JTextField field) {
+        int idx = indexFromFieldName(field);
+        String name = "scope.custom.delete." + idx;
+        return findOptionalByName(root, name, JButton.class) != null;
     }
 
     /** Return all scope text fields in visual order, sorted by numeric suffix (base field first). */
@@ -133,14 +133,27 @@ class ConfigPanelCustomScopeAlignmentHeadlessTest {
         return Integer.parseInt(n.substring(dot + 1));
     }
 
-    /** Finds the first-row scope text field by its stable component name. */
-    private static JTextField firstScopeField(JComponent root) {
-        List<JTextField> all = new ArrayList<>();
-        collect(root, JTextField.class, all);
-        for (JTextField f : all) {
-            if ("scope.custom.regex".equals(f.getName())) return f;
+    private static int indexFromFieldName(JTextField f) {
+        String n = f.getName();
+        if ("scope.custom.regex".equals(n)) return 1;
+        int dot = n.lastIndexOf('.');
+        if (dot < 0) throw new IllegalArgumentException("Unexpected field name: " + n);
+        return Integer.parseInt(n.substring(dot + 1));
+    }
+
+    private static <T extends JComponent> T findByName(JComponent root, String name, Class<T> type) {
+        T c = findOptionalByName(root, name, type);
+        if (c != null) return c;
+        throw new AssertionError("Component not found: " + name + " (" + type.getSimpleName() + ")");
+    }
+
+    private static <T extends JComponent> T findOptionalByName(JComponent root, String name, Class<T> type) {
+        List<T> all = new ArrayList<>();
+        collect(root, type, all);
+        for (T c : all) {
+            if (name.equals(c.getName())) return c;
         }
-        throw new AssertionError("Component not found: scope.custom.regex (JTextField)");
+        return null;
     }
 
     private static <T extends JComponent> void collect(JComponent root, Class<T> type, List<T> out) {
