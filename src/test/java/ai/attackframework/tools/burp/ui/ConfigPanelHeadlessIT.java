@@ -19,11 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Headless smoke tests for ConfigPanel actions.
- *
  * Intent:
  * - Clicking “Test Connection” completes and writes a non-empty status.
  * - Clicking “Create Indexes” completes and writes a status describing the outcome.
- *
  * Approach:
  * - Assume an OpenSearch dev cluster is reachable before running each test.
  * - Access private Swing fields with the shared Reflection test helper to keep production visibility minimal.
@@ -40,22 +38,21 @@ class ConfigPanelHeadlessIT {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
-        ConfigPanel panel = onEdtAndWait(ConfigPanel::new);
+        ConfigPanel panel = callEdt(ConfigPanel::new);
 
         JButton testBtn   = get(panel, "testConnectionButton");
         JTextArea statusA = get(panel, "openSearchStatus");
 
         onEdtAndWait(() -> statusA.setText(""));
 
-        // Use a lambda to disambiguate JButton#doClick() vs doClick(int)
-        onEdtAndWait(() -> testBtn.doClick());
+        // Avoid JButton#doClick(int) overload by casting method ref to Runnable
+        onEdtAndWait((Runnable) testBtn::doClick);
         awaitStatusUpdate(statusA, 15_000);
 
         String text = statusA.getText().trim();
-        assertThat(text).isNotBlank();
-        // Success example: "OpenSearch ... (OpenSearch vX.Y.Z)"
-        // Failure example: "✖ <message>"
-        assertThat(text.startsWith("✖ ") || text.contains("(")).isTrue();
+        assertThat(text)
+                .isNotBlank()
+                .matches(t -> t.startsWith("✖ ") || t.contains("("));
     }
 
     @Test
@@ -63,31 +60,34 @@ class ConfigPanelHeadlessIT {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
-        ConfigPanel panel = onEdtAndWait(ConfigPanel::new);
+        ConfigPanel panel = callEdt(ConfigPanel::new);
 
         JButton createBtn = get(panel, "createIndexesButton");
         JTextArea statusA = get(panel, "openSearchStatus");
 
         onEdtAndWait(() -> statusA.setText(""));
 
-        // Use a lambda to disambiguate JButton#doClick() vs doClick(int)
-        onEdtAndWait(() -> createBtn.doClick());
+        onEdtAndWait((Runnable) createBtn::doClick);
         awaitStatusUpdate(statusA, 30_000);
 
         String text = statusA.getText().trim();
-        assertThat(text).isNotBlank();
-        assertThat(text).containsAnyOf(
-                "Index created:", "Indexes created:",
-                "Index already existed:", "Indexes already existed:",
-                "Index failed:", "Indexes failed:"
-        );
+        assertThat(text)
+                .isNotBlank()
+                .containsAnyOf(
+                        "Index created:", "Indexes created:",
+                        "Index already existed:", "Indexes already existed:",
+                        "Index failed:", "Indexes failed:"
+                );
     }
 
     // ---------- helpers ----------
 
-    /**
-     * Creates a value on the EDT and returns it, propagating any exception.
-     */
+    /** Convenience wrapper to explicitly pick the Callable<T> overload without casts in callsites. */
+    private static <T> T callEdt(java.util.concurrent.Callable<T> c) throws Exception {
+        return onEdtAndWait(c);
+    }
+
+    /** Creates a value on the EDT and returns it, propagating any exception. */
     private static <T> T onEdtAndWait(java.util.concurrent.Callable<T> c) throws Exception {
         AtomicReference<T> ref = new AtomicReference<>();
         AtomicReference<Exception> err = new AtomicReference<>();
@@ -102,9 +102,7 @@ class ConfigPanelHeadlessIT {
         return ref.get();
     }
 
-    /**
-     * Runs a task on the EDT and blocks until completion, propagating any exception.
-     */
+    /** Runs a task on the EDT and blocks until completion, propagating any exception. */
     private static void onEdtAndWait(Runnable r) throws Exception {
         AtomicReference<Exception> err = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -117,9 +115,7 @@ class ConfigPanelHeadlessIT {
         if (err.get() != null) throw err.get();
     }
 
-    /**
-     * Returns true when the status text is a non-placeholder value (i.e., not a transient “busy” message).
-     */
+    /** Returns true when the status text is a non-placeholder value. */
     private static boolean isFinalStatus(String text) {
         if (text == null || text.isBlank()) return false;
         return !text.equals("Testing ...") && !text.equals("Creating indexes . . .");
@@ -147,7 +143,6 @@ class ConfigPanelHeadlessIT {
             };
             ref.set(dl);
             area.getDocument().addDocumentListener(dl);
-            // Handle the case where the worker completed before the listener was attached.
             if (isFinalStatus(area.getText())) {
                 latch.countDown();
             }
