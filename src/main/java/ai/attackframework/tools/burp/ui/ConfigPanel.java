@@ -235,7 +235,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
             switch (state.scopeType()) {
                 case ConfigKeys.SCOPE_CUSTOM -> {
-                    scopeGrid.customRadio().setSelected(true);
+                    // IMPORTANT: build rows first, then flip the radio so enable/disable runs on final state
                     if (!state.customEntries().isEmpty()) {
                         List<ScopeGridPanel.ScopeEntryInit> init = new ArrayList<>(state.customEntries().size());
                         for (ConfigState.ScopeEntry ce : state.customEntries()) {
@@ -246,6 +246,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     } else {
                         scopeGrid.setEntries(List.of(new ScopeGridPanel.ScopeEntryInit("", true)));
                     }
+                    scopeGrid.customRadio().setSelected(true);
                 }
                 case ConfigKeys.SCOPE_BURP -> burpSuiteRadio.setSelected(true);
                 default -> allRadio.setSelected(true);
@@ -386,7 +387,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         chooser.setDialogTitle("Import Config");
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
         int result = chooser.showOpenDialog(this);
-        if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Import cancelled."); return; }
+        if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Export cancelled."); return; }
         controller.importConfigAsync(chooser.getSelectedFile().toPath());
     }
 

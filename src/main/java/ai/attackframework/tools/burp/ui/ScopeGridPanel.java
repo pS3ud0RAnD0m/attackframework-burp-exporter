@@ -45,7 +45,7 @@ public class ScopeGridPanel implements Serializable {
 
     /**
      * Single grid containing all rows (no forced wrap-per-component).
-     * Columns: radio/placeholder | field | regex+indicator | button.
+     * cols: [radio/placeholder] [field sg:field grow] [".*"+indicator] [button sg:btn]
      */
     private final JPanel grid = new JPanel(
             new MigLayout(
@@ -205,7 +205,7 @@ public class ScopeGridPanel implements Serializable {
         Row(String value, boolean isRegex) {
             field.setText(value);
             toggle.setSelected(isRegex);
-            toggle.setToolTipText(REGEX_TOGGLE_TIP);
+            // Single source of truth for tooltip: set during rebuild via ensureToggleTextAndTip(...)
             binding = RegexIndicatorBinder.bind(field, toggle, null, false, indicator);
         }
 
