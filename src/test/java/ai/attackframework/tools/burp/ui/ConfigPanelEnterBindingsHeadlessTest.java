@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.InputMap;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -30,49 +31,40 @@ import static org.junit.jupiter.api.Assertions.fail;
  * Headless verification of field-scoped Enter bindings in ConfigPanel.
  *
  * Goals:
- *  - Enter in filePathField triggers the same code path as clicking "Create Files".
- *  - Enter in openSearchUrlField triggers the same code path as clicking "Test Connection".
+ *  - Press Enter on {@code filePathField} to trigger the same code path as clicking "Create Files".
+ *  - Press Enter on {@code openSearchUrlField} to trigger the same code path as clicking "Test Connection".
  *
- * Design notes (keep tests deterministic & fast):
- *  - We simulate Enter with postActionEvent() (no Toolkit / key events needed).
- *  - We await UI changes via a DocumentListener + CountDownLatch (EDT-safe, flake-resistant).
- *  - For the files flow, we pre-create all expected files so the final status is predictably "already existed".
- *  - For OpenSearch, we point at 127.0.0.1:1 to force a quick, deterministic failure path (any final message is acceptable;
- *    we assert the transition from the transient "Testing ..." to a non-empty final state).
+ * Design notes (deterministic & fast):
+ *  - We simulate Enter via {@link JTextField#postActionEvent()} (no Toolkit events).
+ *  - We await UI changes via a DocumentListener + CountDownLatch (EDT-safe).
+ *  - For files, we pre-create all expected files to yield the deterministic “already existed” outcome.
+ *  - For OpenSearch, we point to 127.0.0.1:1 to force a quick failure path; we assert transition
+ *    from “Testing ...” to a non-empty final state.
  */
 @Tag("headless")
-public class ConfigPanelEnterBindingsHeadlessTest {
-
-    private static final long DEFAULT_WAIT_MS  = 8000;
-    private static final long TESTING_WAIT_MS  = 3000;
-    private static final String TESTING_TEXT   = "Testing ...";
+class ConfigPanelEnterBindingsHeadlessTest {
+    private static final long DEFAULT_WAIT_MS = 8000;
+    private static final long TESTING_WAIT_MS = 3000;
+    private static final String TESTING_TEXT  = "Testing ...";
 
     @Test
-    void enterInFilePathField_triggersCreateFiles_andUpdatesStatus() throws Exception {
+    void pressEnterOnFilePathField_triggersCreateFiles_andUpdatesStatus() throws Exception {
         ConfigPanel panel = new ConfigPanel();
 
         JTextField pathField = get(panel, "filePathField");
         JTextArea fileStatus = get(panel, "fileStatus");
-
-        // Sanity: ensure Enter is actually mapped for this field (guards against accidental regression).
         assertEnterBindingPresent(pathField);
 
-        // Arrange (deterministic outcome): precreate the expected JSON files so status will include "already existed".
-        List<String> sources = Arrays.asList("settings", "sitemap", "findings", "traffic");
+        List<String> sources   = Arrays.asList("settings", "sitemap", "findings", "traffic");
         List<String> baseNames = IndexNaming.computeIndexBaseNames(sources);
         List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
 
         Path tmpDir = Files.createTempDirectory("af-burp-enter-files-");
-        for (String name : jsonNames) {
-            Files.createFile(tmpDir.resolve(name));
-        }
+        for (String name : jsonNames) Files.createFile(tmpDir.resolve(name));
 
         onEdtAndWait(() -> pathField.setText(tmpDir.toString()));
-
-        // Act: simulate Enter in the field (wired in ConfigPanel to click "Create Files").
         onEdtAndWait(pathField::postActionEvent);
 
-        // Assert: wait for a final message and verify the deterministic "already existed" outcome.
         waitForFinalFileStatus(fileStatus);
 
         String status = fileStatus.getText().toLowerCase(Locale.ROOT);
@@ -81,22 +73,19 @@ public class ConfigPanelEnterBindingsHeadlessTest {
     }
 
     @Test
-    void enterInOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() throws Exception {
+    void pressEnterOnOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() throws Exception {
         ConfigPanel panel = new ConfigPanel();
+
+        JCheckBox osEnable = get(panel, "openSearchSinkCheckbox");
+        onEdtAndWait(() -> osEnable.setSelected(true));
 
         JTextField urlField = get(panel, "openSearchUrlField");
         JTextArea osStatus  = get(panel, "openSearchStatus");
-
-        // Sanity: ensure Enter is actually mapped for this field.
         assertEnterBindingPresent(urlField);
 
-        // Arrange (deterministic/fast): use an unreachable address so we get a final failure message quickly.
         onEdtAndWait(() -> urlField.setText("http://127.0.0.1:1"));
-
-        // Act: simulate Enter in the field (wired in ConfigPanel to click "Test Connection").
         onEdtAndWait(urlField::postActionEvent);
 
-        // Assert: we should first see "Testing ...", then transition to a final (non-empty) message.
         waitForTestingStatus(osStatus);
         waitForOpenSearchFinal(osStatus);
 
@@ -108,10 +97,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
 
     // ---------- helpers ----------
 
-    /**
-     * Confirms Enter is mapped in the InputMap and resolvable in the ActionMap.
-     * This catches regressions where the field's action isn't wired (tests would otherwise still pass by calling doClick()).
-     */
+    /** Confirms Enter is mapped in the InputMap and resolvable in the ActionMap. */
     private static void assertEnterBindingPresent(JTextField field) {
         InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
         Object actionKey = im.get(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
@@ -120,7 +106,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
                 "Expected an ActionMap entry for the VK_ENTER binding key: " + actionKey);
     }
 
-    /** Waits specifically for the transient "Testing ..." text used by the Test Connection flow. */
+    /** Waits specifically for the transient “Testing ...” text used by the Test Connection flow. */
     private static void waitForTestingStatus(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         DocumentListener[] holder = new DocumentListener[1];
@@ -143,12 +129,9 @@ public class ConfigPanelEnterBindingsHeadlessTest {
             if (holder[0] != null) area.getDocument().removeDocumentListener(holder[0]);
         });
 
-        if (!ok) {
-            fail("Timed out waiting for OpenSearch status to equal '" + TESTING_TEXT + "'. Last value: " + area.getText());
-        }
+        if (!ok) fail("Timed out waiting for OpenSearch status to equal '" + TESTING_TEXT + "'. Last value: " + area.getText());
     }
 
-    /** Final-state detector for the files flow—mirrors the UI wording to avoid coupling to implementation details. */
     private static boolean isFinalFileStatus(String s) {
         if (s == null) return false;
         String t = s.toLowerCase(Locale.ROOT);
@@ -161,7 +144,6 @@ public class ConfigPanelEnterBindingsHeadlessTest {
                 || t.startsWith("file creation error:");
     }
 
-    /** Waits for a final file status or fails fast with a helpful message on timeout. */
     private static void waitForFinalFileStatus(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         DocumentListener[] holder = new DocumentListener[1];
@@ -184,12 +166,10 @@ public class ConfigPanelEnterBindingsHeadlessTest {
             if (holder[0] != null) area.getDocument().removeDocumentListener(holder[0]);
         });
 
-        if (!ok) {
-            fail("Timed out waiting for file status update; last value: \"" + area.getText() + "\"");
-        }
+        if (!ok) fail("Timed out waiting for file status update; last value: \"" + area.getText() + "\"");
     }
 
-    /** Waits for OpenSearch status to advance past the transient "Testing ..." message. */
+    /** Waits for OpenSearch status to advance past the transient “Testing ...” message. */
     private static void waitForOpenSearchFinal(JTextArea area) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         DocumentListener[] holder = new DocumentListener[1];
@@ -220,9 +200,7 @@ public class ConfigPanelEnterBindingsHeadlessTest {
             if (holder[0] != null) area.getDocument().removeDocumentListener(holder[0]);
         });
 
-        if (!ok) {
-            fail("Timed out waiting for OpenSearch status to advance beyond '" + TESTING_TEXT + "'. Last value: " + area.getText());
-        }
+        if (!ok) fail("Timed out waiting for OpenSearch status to advance beyond '" + TESTING_TEXT + "'. Last value: " + area.getText());
     }
 
     /** Runs the given block on the EDT, blocking until completion (avoids race conditions in tests). */

@@ -132,9 +132,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private static final int MAX_MODEL_ENTRIES = 5000;
 
     // Indicator binding handles (kept as fields so removeNotify() can unbind explicitly)
-    @SuppressWarnings("FieldCanBeLocal")
     private final transient AutoCloseable searchIndicatorBinding;
-    @SuppressWarnings("FieldCanBeLocal")
     private final transient AutoCloseable filterIndicatorBinding;
 
     // Levels (TRACE < DEBUG < INFO < WARN < ERROR)
@@ -662,7 +660,6 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     }
 
     // chooser-free helper for tests
-    @SuppressWarnings("unused")
     void saveVisibleTo(Path out) throws IOException {
         try {
             String text = doc.getText(0, doc.getLength());

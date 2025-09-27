@@ -69,7 +69,6 @@ public class OpenSearchSink {
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
             }
 
-            @SuppressWarnings("resource") // client owns transport, do not close here
             Transport transport = client._transport();
             JsonpMapper mapper = transport.jsonpMapper();
 

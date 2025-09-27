@@ -300,14 +300,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
-    /** Enables/disables sink text fields according to the checkboxes. */
+    /** Enables/disables sink text fields and action buttons according to the checkboxes. */
     private void refreshEnabledStates() {
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
-        createFilesButton.setEnabled(true);
+        createFilesButton.setEnabled(files);
 
         boolean os = openSearchSinkCheckbox.isSelected();
         openSearchUrlField.setEnabled(os);
+        testConnectionButton.setEnabled(os);
+        createIndexesButton.setEnabled(os);
     }
 
     /** Collects selected source keys for the current panel state. */

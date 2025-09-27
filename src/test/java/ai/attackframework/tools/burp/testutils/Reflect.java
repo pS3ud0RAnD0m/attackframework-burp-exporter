@@ -26,7 +26,6 @@ public final class Reflect {
      * @param <T>       expected type
      * @return field value cast to T
      */
-    @SuppressWarnings("unchecked")
     public static <T> T get(Object target, String fieldName) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(fieldName, "fieldName");
