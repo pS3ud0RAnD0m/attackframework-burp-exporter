@@ -5,22 +5,33 @@ import ai.attackframework.tools.burp.utils.Version;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
+import javax.swing.ScrollPaneConstants;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
 
 public class AboutPanel extends JPanel {
 
-    /**
-     * Creates a new AboutPanel.
-     */
+    /** Creates a new AboutPanel. */
     public AboutPanel() {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));
 
         String version = Version.get();
+        JTextArea aboutText = buildAboutText(version);
 
-        JTextArea aboutText = new JTextArea(
+        JScrollPane scrollPane = new JScrollPane(
+                aboutText,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+        );
+
+        add(scrollPane, BorderLayout.CENTER);
+    }
+
+    /** Builds the static about text area. */
+    private static JTextArea buildAboutText(String version) {
+        JTextArea area = new JTextArea(
                 """
                 
                 Attack Framework: Burp Exporter v%s
@@ -33,15 +44,10 @@ public class AboutPanel extends JPanel {
                 https://github.com/attackframework
                 """.formatted(version)
         );
-        aboutText.setEditable(false);
-        aboutText.setLineWrap(true);
-        aboutText.setWrapStyleWord(true);
-        aboutText.setFont(new Font("Monospaced", Font.PLAIN, 12));
-
-        JScrollPane scrollPane = new JScrollPane(aboutText,
-                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-
-        add(scrollPane, BorderLayout.CENTER);
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        return area;
     }
 }

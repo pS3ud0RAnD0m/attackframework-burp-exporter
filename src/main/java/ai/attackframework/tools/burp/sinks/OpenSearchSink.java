@@ -8,12 +8,12 @@ import jakarta.json.JsonObject;
 import jakarta.json.JsonReader;
 import jakarta.json.stream.JsonParser;
 import org.opensearch.client.json.JsonpMapper;
+import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.CreateIndexRequest;
 import org.opensearch.client.opensearch.indices.CreateIndexResponse;
 import org.opensearch.client.opensearch.indices.IndexSettings;
 import org.opensearch.client.opensearch._types.mapping.TypeMapping;
-import org.opensearch.client.transport.Transport;
 
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -23,18 +23,55 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Scanner;
 
+/**
+ * OpenSearch sink for creating indices from bundled JSON mapping files.
+ * <p>
+ * Ownership model:
+ * - The OpenSearchClient is managed by {@link OpenSearchConnector}; this class never closes it.
+ * - JSON mapping files are read from the classpath and parsed locally before issuing create requests.
+ */
 public class OpenSearchSink {
 
-    private static final String MAPPINGS_PATH = "/opensearch/mappings/";
+    /**
+     * Default classpath root for mapping files. Can be overridden at runtime via
+     * the system property {@code attackframework.mappings.root}.
+     */
+    private static final String DEFAULT_MAPPINGS_RESOURCE_ROOT = "/opensearch/mappings/";
 
+    /**
+     * Creates an index using a mapping file named {@code <shortName>.json} located under the
+     * mappings resource root. The resource root can be set via the system property
+     * {@code attackframework.mappings.root}; otherwise {@link #DEFAULT_MAPPINGS_RESOURCE_ROOT} is used.
+     *
+     * @param baseUrl   OpenSearch base URL (e.g., http://host:9200)
+     * @param shortName logical short name (e.g., "traffic", "findings", "sitemap", "tool")
+     * @return result indicating CREATED, EXISTS, or FAILED
+     */
     public static IndexResult createIndexFromResource(String baseUrl, String shortName) {
-        String fullIndexName = shortName.equals("tool")
+        final String root = System.getProperty("attackframework.mappings.root", DEFAULT_MAPPINGS_RESOURCE_ROOT);
+        return createIndexFromResource(baseUrl, shortName, root);
+    }
+
+    /**
+     * Creates an index using a mapping file named {@code <shortName>.json} under the provided resource root.
+     * This overload exists primarily for tests and specialized callers that need custom roots.
+     *
+     * @param baseUrl             OpenSearch base URL
+     * @param shortName           logical short name (e.g., "traffic")
+     * @param mappingsResourceRoot classpath root for mapping files (e.g., "/opensearch/mappings/")
+     * @return result indicating CREATED, EXISTS, or FAILED
+     */
+    public static IndexResult createIndexFromResource(String baseUrl, String shortName, String mappingsResourceRoot) {
+        final String resourceRoot = (mappingsResourceRoot == null || mappingsResourceRoot.isBlank())
+                ? DEFAULT_MAPPINGS_RESOURCE_ROOT
+                : mappingsResourceRoot;
+
+        final String fullIndexName = shortName.equals("tool")
                 ? IndexNaming.INDEX_PREFIX
                 : IndexNaming.INDEX_PREFIX + "-" + shortName;
 
-        String mappingFile = MAPPINGS_PATH + shortName + ".json";
+        final String mappingFile = resourceRoot + shortName + ".json";
 
         Logger.logInfo("Attempting to create index: " + fullIndexName);
         Logger.logInfo("Using mapping file: " + mappingFile);
@@ -42,6 +79,7 @@ public class OpenSearchSink {
         String jsonBody = null;
 
         try {
+            // Acquire shared client (do not close here).
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
 
             boolean exists = client.indices().exists(b -> b.index(fullIndexName)).value();
@@ -50,16 +88,20 @@ public class OpenSearchSink {
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.EXISTS);
             }
 
+            // Read the mapping file into memory.
             try (InputStream is = OpenSearchSink.class.getResourceAsStream(mappingFile)) {
                 if (is == null) {
                     Logger.logError("Mapping file not found: " + mappingFile);
                     return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
                 }
-                jsonBody = new Scanner(is, StandardCharsets.UTF_8).useDelimiter("\\A").next();
+                jsonBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             }
 
-            JsonReader reader = Json.createReader(new StringReader(jsonBody));
-            JsonObject root = reader.readObject();
+            // Parse the root JSON once.
+            JsonObject root;
+            try (JsonReader reader = Json.createReader(new StringReader(jsonBody))) {
+                root = reader.readObject();
+            }
 
             JsonObject settingsJson = root.getJsonObject("settings");
             JsonObject mappingsJson = root.getJsonObject("mappings");
@@ -69,14 +111,18 @@ public class OpenSearchSink {
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED);
             }
 
-            Transport transport = client._transport();
-            JsonpMapper mapper = transport.jsonpMapper();
+            // Use a local mapper for deserialization of static JSON content to avoid touching client transport.
+            JsonpMapper mapper = new JacksonJsonpMapper();
 
-            JsonParser settingsParser = Json.createParser(new StringReader(settingsJson.toString()));
-            IndexSettings settings = IndexSettings._DESERIALIZER.deserialize(settingsParser, mapper);
+            IndexSettings settings;
+            try (JsonParser settingsParser = Json.createParser(new StringReader(settingsJson.toString()))) {
+                settings = IndexSettings._DESERIALIZER.deserialize(settingsParser, mapper);
+            }
 
-            JsonParser mappingsParser = Json.createParser(new StringReader(mappingsJson.toString()));
-            TypeMapping mappings = TypeMapping._DESERIALIZER.deserialize(mappingsParser, mapper);
+            TypeMapping mappings;
+            try (JsonParser mappingsParser = Json.createParser(new StringReader(mappingsJson.toString()))) {
+                mappings = TypeMapping._DESERIALIZER.deserialize(mappingsParser, mapper);
+            }
 
             CreateIndexRequest request = new CreateIndexRequest.Builder()
                     .index(fullIndexName)
@@ -87,8 +133,11 @@ public class OpenSearchSink {
             CreateIndexResponse response = client.indices().create(request);
             Logger.logInfo("Index creation acknowledged: " + response.acknowledged());
 
-            return new IndexResult(shortName, fullIndexName,
-                    response.acknowledged() ? IndexResult.Status.CREATED : IndexResult.Status.FAILED);
+            return new IndexResult(
+                    shortName,
+                    fullIndexName,
+                    response.acknowledged() ? IndexResult.Status.CREATED : IndexResult.Status.FAILED
+            );
 
         } catch (Exception e) {
             Logger.logError("Exception while creating index: " + fullIndexName);
@@ -100,10 +149,16 @@ public class OpenSearchSink {
         }
     }
 
+    /**
+     * Creates all indices required by the selected sources. Always includes the "tool" index.
+     *
+     * @param baseUrl         OpenSearch base URL
+     * @param selectedSources list of source keys from which index base names are derived
+     * @return result list in creation order
+     */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
         Logger.logInfo("Entered createSelectedIndexes with sources: " + selectedSources);
 
-        // Derive short names from the shared naming logic and always include "tool".
         List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
         LinkedHashSet<String> shortNames = new LinkedHashSet<>();
         for (String base : baseNames) {
@@ -124,6 +179,13 @@ public class OpenSearchSink {
         return results;
     }
 
+    /**
+     * Result of an index creation attempt.
+     *
+     * @param shortName logical name used to select the mapping file
+     * @param fullName  fully-qualified index name
+     * @param status    CREATED, EXISTS, or FAILED
+     */
     public record IndexResult(String shortName, String fullName, Status status) {
         public enum Status { CREATED, EXISTS, FAILED }
     }
