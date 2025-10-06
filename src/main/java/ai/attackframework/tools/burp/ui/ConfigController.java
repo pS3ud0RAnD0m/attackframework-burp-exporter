@@ -263,15 +263,23 @@ public record ConfigController(Ui ui, FilePorts files, OpenSearchPorts os, Index
         return sb.toString().trim();
     }
 
+    /** Summarizes index results and, on failure, appends a concise reason. */
     private static String summarizeIndexResults(List<IndexResult> results) {
         List<String> created = new ArrayList<>();
         List<String> exists  = new ArrayList<>();
         List<String> failed  = new ArrayList<>();
+        String firstReason = null;
+
         for (IndexResult r : results) {
             switch (r.status()) {
                 case CREATED -> created.add(r.fullName());
                 case EXISTS  -> exists.add(r.fullName());
-                case FAILED  -> failed.add(r.fullName());
+                case FAILED  -> {
+                    failed.add(r.fullName());
+                    if (firstReason == null && r.error() != null && !r.error().isBlank()) {
+                        firstReason = r.error();
+                    }
+                }
             }
         }
 
@@ -287,6 +295,9 @@ public record ConfigController(Ui ui, FilePorts files, OpenSearchPorts os, Index
         if (!failed.isEmpty()) {
             sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ")
                     .append(String.join("\n  ", failed)).append("\n");
+            if (firstReason != null) {
+                sb.append("Reason: ").append(firstReason).append("\n");
+            }
         }
         return sb.toString().trim();
     }
