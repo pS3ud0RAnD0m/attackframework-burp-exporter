@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * - Delegates to SLF4J so levels/appenders are configurable.
@@ -26,13 +27,15 @@ public final class Logger {
             LoggerFactory.getLogger(INTERNAL_LOGGER_NAME);
 
     private static final List<LogListener> LISTENERS = new CopyOnWriteArrayList<>();
-    private static volatile Logging burpLogger;
+
+    /** Burp's Montoya logger; set during extension init. */
+    private static final AtomicReference<Logging> BURP_LOGGER = new AtomicReference<>();
 
     private Logger() {}
 
     /** Wires Burp's Logging sink. Call from extension init. */
     public static void initialize(Logging montoyaLogging) {
-        burpLogger = montoyaLogging;
+        BURP_LOGGER.set(montoyaLogging);
     }
 
     // Listener management
@@ -105,26 +108,22 @@ public final class Logger {
     // Internals
 
     private static void toBurpOut(String m) {
-        Logging l = burpLogger;
+        Logging l = BURP_LOGGER.get();
         if (l != null) {
-            try { l.logToOutput(m); } catch (RuntimeException ignored) { }
-        } else {
-            System.out.println(m);
+            try { l.logToOutput(m); } catch (RuntimeException ex) { LOG.debug("Burp logToOutput failed: {}", ex.toString()); }
         }
     }
 
     private static void toBurpErr(String m) {
-        Logging l = burpLogger;
+        Logging l = BURP_LOGGER.get();
         if (l != null) {
-            try { l.logToError(m); } catch (RuntimeException ignored) { }
-        } else {
-            System.err.println(m);
+            try { l.logToError(m); } catch (RuntimeException ex) { LOG.debug("Burp logToError failed: {}", ex.toString()); }
         }
     }
 
     private static void notifyListeners(String level, String m) {
         for (LogListener l : LISTENERS) {
-            try { l.onLog(level, m); } catch (RuntimeException ignored) { }
+            try { l.onLog(level, m); } catch (RuntimeException ex) { LOG.debug("Listener threw: {}", ex.toString()); }
         }
     }
 
