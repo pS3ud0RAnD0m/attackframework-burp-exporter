@@ -4,6 +4,8 @@ import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.text.TextQuery;
 import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
+import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
+import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.ui.text.HighlighterManager;
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
@@ -20,7 +22,6 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
-import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -48,7 +49,6 @@ import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
 import java.io.Serial;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -99,12 +99,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private final JCheckBox pauseAutoscroll;
 
     // Filter controls
-    private final JTextField filterField;
+    private final AutoSizingTextField filterField;
     private final JCheckBox filterCaseToggle;
     private final JCheckBox filterRegexToggle;
 
     // Search controls
-    private final JTextField searchField;
+    private final AutoSizingTextField searchField;
     private final JCheckBox searchCaseToggle;
     private final JCheckBox searchRegexToggle;
     private final JLabel searchCountLabel;
@@ -193,8 +193,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         pauseAutoscroll.setSelected(PREFS.getBoolean(PREF_PAUSE, false));
 
         // Filter group (restore persisted)
-        filterField = new JTextField(PREFS.get(PREF_FILTER_TEXT, ""));
-        filterField.setColumns(18);
+        filterField = new AutoSizingTextField(PREFS.get(PREF_FILTER_TEXT, ""));
         filterField.setName("log.filter.text");
         filterCaseToggle = new JCheckBox("Aa");
         filterCaseToggle.setToolTipText("Case-sensitive filter");
@@ -204,11 +203,10 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         filterRegexToggle.setToolTipText("Regex filter");
         filterRegexToggle.setName("log.filter.regex");
         final JLabel filterRegexIndicator = new JLabel();
-        filterRegexIndicator.setName("log.filter.regex.indicator"); // added
+        filterRegexIndicator.setName("log.filter.regex.indicator");
 
         // Search group (restore last search text only)
-        searchField = new JTextField(PREFS.get(PREF_LAST_SEARCH, ""));
-        searchField.setColumns(18);
+        searchField = new AutoSizingTextField(PREFS.get(PREF_LAST_SEARCH, ""));
         searchField.setName("log.search.field");
         searchCaseToggle = new JCheckBox("Aa");
         searchCaseToggle.setToolTipText("Case-sensitive search");
@@ -223,7 +221,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         searchCountLabel = new JLabel("0/0");
         searchCountLabel.setName("log.search.count");
         final JLabel searchRegexIndicator = new JLabel();
-        searchRegexIndicator.setName("log.search.regex.indicator"); // added
+        searchRegexIndicator.setName("log.search.regex.indicator");
 
         JButton clearBtn = new JButton("Clear");
         clearBtn.setName("log.clear");
@@ -333,6 +331,10 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         searchIndicatorBinding = RegexIndicatorBinder.bind(
                 searchField, searchRegexToggle, searchCaseToggle, true, searchRegexIndicator
         );
+
+        // Install undo/redo helpers on text fields
+        TextFieldUndo.install(filterField);
+        TextFieldUndo.install(searchField);
 
         Logger.registerListener(this);
 
@@ -656,16 +658,6 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             FileUtil.writeStringCreateDirs(out.toPath(), text);
         } catch (IOException | BadLocationException ex) {
             Logger.logError("Save failed: " + ex.getMessage());
-        }
-    }
-
-    // chooser-free helper for tests
-    void saveVisibleTo(Path out) throws IOException {
-        try {
-            String text = doc.getText(0, doc.getLength());
-            FileUtil.writeStringCreateDirs(out, text);
-        } catch (BadLocationException e) {
-            throw new IOException("Failed reading document", e);
         }
     }
 

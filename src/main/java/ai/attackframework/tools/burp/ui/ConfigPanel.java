@@ -38,43 +38,60 @@ import java.util.List;
 /**
  * Main configuration panel for data sources, scope, sinks, and admin actions.
  *
- * <p><strong>EDT:</strong> All UI construction and updates occur on the EDT.</p>
+ * <p><strong>Responsibilities</strong>: renders controls; composes/reads {@link ConfigState.State};
+ * delegates long-running operations to {@link ConfigController}.</p>
+ *
+ * <p><strong>Threading</strong>: all construction and UI updates occur on the EDT.
+ * Controller callbacks may arrive off-EDT; those are marshaled back to the EDT.</p>
+ *
+ * <p><strong>Tests</strong>: component names are stable and used by headless tests.
+ * Do not change the {@code setName(...)} values without updating tests.</p>
  */
 public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
-    // Layout & status sizing
+    // ----- Layout & status sizing -----
+
+    /** Left indent for scope rows. */
     private static final int INDENT = 30;
+    /** Vertical gap between major rows. */
     private static final int ROW_GAP = 15;
+    /** Minimum columns for status text areas. */
     private static final int STATUS_MIN_COLS = 20;
+    /** Maximum columns for status text areas (prevents runaway growth). */
     private static final int STATUS_MAX_COLS = 200;
+    /** Milliseconds to keep admin status visible before auto-hide. */
     private static final int ADMIN_HIDE_DELAY_MS = 3000;
 
-    // MigLayout snippets
+    // ----- MigLayout snippets (centralized to keep constraints consistent) -----
+
     private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
     private static final String MIG_PREF_COL = "[pref!]";
     private static final String MIG_INSETS0_WRAP1 = "insets 0, wrap 1";
     private static final String MIG_GROWX_WRAP = "growx, wrap";
     private static final String GAPLEFT = "gapleft ";
 
-    // Sources
+    // ----- Sources (checkboxes reflect selected data sources) -----
+
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
     private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
     private final JCheckBox issuesCheckbox   = new JCheckBox("Issues",   true);
     private final JCheckBox trafficCheckbox  = new JCheckBox("Traffic",  true);
 
-    // Scope radios
+    // ----- Scope (All / Burp / Custom) -----
+
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
 
-    // Custom scope grid (single-grid, 4 columns internally)
+    /** Single grid containing all custom rows (radio, field, regex toggle+indicator, add/delete). */
     private final ScopeGridPanel scopeGrid = new ScopeGridPanel(
             List.of(new ScopeGridPanel.ScopeEntryInit("^.*acme\\.com$", true))
     );
 
-    // Sinks
+    // ----- Sinks (Files, OpenSearch) -----
+
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
     private final JButton    createFilesButton = new JButton("Create Files");
@@ -88,7 +105,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JTextArea  openSearchStatus      = new JTextArea();
     private final JPanel     openSearchStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
-    // Admin status
+    // ----- Admin area -----
+
     private final JTextArea adminStatus = new JTextArea();
     private final JPanel    adminStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
     private transient Timer adminStatusHideTimer;
@@ -100,7 +118,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     public ConfigPanel() { this(null); }
 
     /**
-     * Optional DI constructor for tests.
+     * Dependency-injected constructor used by tests.
+     *
      * @param injectedController controller to use; when {@code null}, a default is created
      */
     public ConfigPanel(ConfigController injectedController) {
@@ -108,13 +127,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
+        // Sources
         add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
+        // Scope
         add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
+        // Sinks
         JTextArea importExportStatus = new JTextArea();
         JPanel importExportStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
@@ -137,6 +159,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         wireButtonActions();
         add(panelSeparator(), MIG_GROWX_WRAP);
 
+        // Admin
         add(new ConfigAdminPanel(
                 importExportStatus,
                 importExportStatusWrapper,
@@ -151,12 +174,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ).build(), MIG_GROWX_WRAP);
         add(Box.createVerticalGlue(), "growy, wrap");
 
-        assignComponentNames();
-        wireTextFieldEnhancements();
-        refreshEnabledStates();
+        assignComponentNames();      // stable IDs for headless tests
+        wireTextFieldEnhancements(); // undo/redo + Enter bindings
+        refreshEnabledStates();      // initial enablement
     }
 
-    /** Builds the single-column Scope section: Burp → Custom(+rows) → All. */
+    /**
+     * Builds the single-column Scope section: header → Burp → Custom grid → All.
+     *
+     * <p>The three radios are grouped; Custom’s radio lives inside {@link #scopeGrid} and is
+     * registered here so enable/disable logic is consistent.</p>
+     *
+     * @return a panel that is added into the main layout
+     */
     private JPanel buildScopePanel() {
         JPanel panel = new JPanel(new MigLayout(MIG_INSETS0_WRAP1, "[left]"));
         panel.setAlignmentX(LEFT_ALIGNMENT);
@@ -177,6 +207,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         return panel;
     }
 
+    /** Thin separator component used between sections for readability. */
     private JComponent panelSeparator() { return new ThickSeparator(); }
 
     /** {@inheritDoc} */
@@ -192,8 +223,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * {@inheritDoc}
      *
-     * <p>Off-EDT calls are applied synchronously via {@code invokeAndWait}; the status autohides
-     * after {@value #ADMIN_HIDE_DELAY_MS} ms.</p>
+     * <p>Calls may originate off-EDT; this method marshals to the EDT and auto-hides the
+     * admin status after {@value #ADMIN_HIDE_DELAY_MS} ms.</p>
      */
     @Override public void onAdminStatus(String message) {
         Runnable r = () -> {
@@ -224,7 +255,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * {@inheritDoc}
      *
-     * <p><strong>EDT:</strong> Must be invoked on the EDT.</p>
+     * <p><strong>EDT</strong>: marshaled to the EDT. Order matters: for custom scope we
+     * first build rows, then select the Custom radio so enable/disable runs on the final state.</p>
      */
     @Override public void onImportResult(ConfigState.State state) {
         Runnable r = () -> {
@@ -235,7 +267,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
             switch (state.scopeType()) {
                 case ConfigKeys.SCOPE_CUSTOM -> {
-                    // IMPORTANT: build rows first, then flip the radio so enable/disable runs on final state
+                    // Build rows first; then flip radio for correct enable/disable
                     if (!state.customEntries().isEmpty()) {
                         List<ScopeGridPanel.ScopeEntryInit> init = new ArrayList<>(state.customEntries().size());
                         for (ConfigState.ScopeEntry ce : state.customEntries()) {
@@ -269,7 +301,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         runOnEdt(r);
     }
 
-    /** Hooks enable/disable behaviors and content-change re-layouts. */
+    /**
+     * Wires button actions and lightweight relayout listeners.
+     *
+     * <p>Validation is performed inline (e.g., blank path/URL) and status is updated via
+     * the {@link StatusPanel} helpers; long-running work is delegated to the controller.</p>
+     */
     private void wireButtonActions() {
         fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
@@ -292,6 +329,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             controller.createIndexesAsync(url, getSelectedSources());
         });
 
+        // Relayout on text changes so AutoSizingTextField can update preferred sizes
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
@@ -312,7 +350,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         createIndexesButton.setEnabled(os);
     }
 
-    /** Collects selected source keys for the current panel state. */
+    /**
+     * Collects selected source keys for the current panel state.
+     *
+     * @return ordered list of selected source identifiers (ConfigKeys.SRC_*)
+     */
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add(ConfigKeys.SRC_SETTINGS);
@@ -322,7 +364,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         return selected;
     }
 
-    /** Installs undo/redo and Enter bindings for the two text fields. */
+    /**
+     * Installs undo/redo and Enter bindings for the two text fields.
+     *
+     * <p>Enter triggers the corresponding primary action, matching user expectations.</p>
+     */
     private void wireTextFieldEnhancements() {
         TextFieldUndo.install(filePathField);
         TextFieldUndo.install(openSearchUrlField);
@@ -330,7 +376,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
     }
 
-    /** Composes the typed configuration from the current UI state. */
+    /**
+     * Composes the typed configuration from the current UI state.
+     *
+     * @return immutable state object suitable for serialization/export
+     */
     private ConfigState.State buildCurrentState() {
         List<String> selectedSources = getSelectedSources();
 
@@ -347,7 +397,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             int n = Math.min(vals.size(), kinds.size());
             for (int i = 0; i < n; i++) {
                 String v = vals.get(i);
-                if (v == null || v.trim().isEmpty()) continue;
+                if (v == null || v.trim().isEmpty()) continue; // omit blanks
                 boolean isRegex = Boolean.TRUE.equals(kinds.get(i));
                 custom.add(new ConfigState.ScopeEntry(
                         v.trim(), isRegex ? ConfigState.Kind.REGEX : ConfigState.Kind.STRING));
@@ -369,7 +419,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         );
     }
 
-    /** Exports JSON to a chosen path. */
+    /**
+     * Exports JSON to a chosen path.
+     *
+     * <p>Shows a chooser; on approval delegates writing to {@link ConfigController} to keep I/O off the EDT.</p>
+     */
     private void exportConfig() {
         String json = ConfigJsonMapper.build(buildCurrentState());
         JFileChooser chooser = new JFileChooser();
@@ -383,7 +437,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         controller.exportConfigAsync(out, json);
     }
 
-    /** Imports JSON from a chosen path. */
+    /**
+     * Imports JSON from a chosen path.
+     *
+     * <p>Shows a chooser; on approval hands the path to {@link ConfigController} for parsing off the EDT.</p>
+     */
     private void importConfig() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Import Config");
@@ -393,7 +451,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         controller.importConfigAsync(chooser.getSelectedFile().toPath());
     }
 
-    /** Assigns stable component names used by headless tests. */
+    /**
+     * Assigns stable component names used by headless tests.
+     *
+     * <p>These names are part of the test contract. Keep synchronized with tests if changed.</p>
+     */
     private void assignComponentNames() {
         settingsCheckbox.setName("src.settings");
         sitemapCheckbox.setName("src.sitemap");
@@ -417,14 +479,18 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         adminStatus.setName("admin.status");
     }
 
-    /** Save button action: delegates to the controller. */
+    /** Save button action: delegates to the controller (synchronous logging + UI status). */
     private class AdminSaveButtonListener implements ActionListener {
         @Override public void actionPerformed(ActionEvent e) {
             controller.saveAsync(buildCurrentState());
         }
     }
 
-    /** Runs a task on the EDT (immediately if already on it). */
+    /**
+     * Runs a task on the EDT (immediately if already on it).
+     *
+     * @param r runnable to execute on the EDT
+     */
     private void runOnEdt(Runnable r) {
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else SwingUtilities.invokeLater(r);
@@ -434,6 +500,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * Restores transient collaborators after deserialization.
      *
      * @param in input stream
+     * @throws IOException if deserialization fails
+     * @throws ClassNotFoundException if a class cannot be resolved
      */
     @Serial
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
