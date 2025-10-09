@@ -26,11 +26,8 @@ import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
-import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter.HighlightPainter;
-import javax.swing.text.Style;
-import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
 import javax.swing.AbstractAction;
 import javax.swing.KeyStroke;
@@ -50,8 +47,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Serial;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -61,19 +56,15 @@ import java.util.prefs.Preferences;
  * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex),
  * search (case/regex, highlight all, match count), and duplicate compaction.
  *
- * <p>Theme colors come from UIManager to align with Burp’s LAF. Minimal persistence via Preferences.
- * All UI updates are expected to occur on the EDT.</p>
+ * <p><strong>Design:</strong> coordinates a {@link LogStore} (model) and {@link LogRenderer} (view).
+ * Component names and preferences remain unchanged.</p>
+ *
+ * <p><strong>Threading:</strong> updates on the EDT. Logger callbacks are marshaled via invokeLater.</p>
  */
 public class LogPanel extends JPanel implements Logger.LogListener {
 
     @Serial
     private static final long serialVersionUID = 1L;
-
-    // UIManager keys
-    private static final String UI_TEXT_FOREGROUND = "TextPane.foreground";
-    private static final String UI_TEXT_BACKGROUND = "TextPane.background";
-    private static final String UI_SEL_BG_FIELD    = "TextField.selectionBackground";
-    private static final String UI_SEL_BG_AREA     = "TextArea.selectionBackground";
 
     // MigLayout snippets
     private static final String MIG_TOOLBAR_INSETS = "insets 6 8 6 8, fillx, novisualpadding, gapx 6";
@@ -86,13 +77,15 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
     private static final String DEFAULT_MIN_LEVEL  = "DEBUG";
+    private static final int MAX_MODEL_ENTRIES     = 5000;
 
-    // Editor and styles
+    // Editor and renderer
     private final JTextPane logTextPane;
+    private final transient LogRenderer renderer;
+
+    // Back-compat: some tests reflect on LogPanel#doc
+    @SuppressWarnings("unused")
     private final transient StyledDocument doc;
-    private final transient Style infoStyle;
-    private final transient Style errorStyle;
-    private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // Controls
     private final JComboBox<String> levelCombo;
@@ -109,14 +102,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private final JCheckBox searchRegexToggle;
     private final JLabel searchCountLabel;
 
-    // Model and view state
-    private final List<Entry> entries = new ArrayList<>();
-    private int lastLineStart = 0;
-    private int lastLineLen   = 0;
-
     // Search state and highlighting
     private final transient HighlighterManager highlighterManager;
-    private List<int[]> matches = List.of(); // [start, end] pairs
+    private List<int[]> matches = List.of(); // [start, end]
     private int matchIndex = -1;
 
     // Persistence
@@ -128,54 +116,30 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private static final String PREF_FILTER_CASE   = "filterCase";
     private static final String PREF_FILTER_REGEX  = "filterRegex";
 
-    // Memory cap
-    private static final int MAX_MODEL_ENTRIES = 5000;
-
     // Indicator binding handles (kept as fields so removeNotify() can unbind explicitly)
     private final transient AutoCloseable searchIndicatorBinding;
     private final transient AutoCloseable filterIndicatorBinding;
 
-    // Levels (TRACE < DEBUG < INFO < WARN < ERROR)
-    private enum L { TRACE, DEBUG, INFO, WARN, ERROR }
-    private static L toLevel(String s) {
-        try { return L.valueOf(s == null ? "INFO" : s.trim().toUpperCase(Locale.ROOT)); }
-        catch (IllegalArgumentException ex) { return L.INFO; }
-    }
+    // Model
+    private final transient LogStore store;
 
-    /** Minimal event; repeats tracks consecutive duplicates during ingestion. */
-    private static final class Entry {
-        final LocalDateTime ts;
-        final L level;
-        final String message;
-        int repeats; // >= 1
-        Entry(LocalDateTime ts, L level, String message) {
-            this.ts = ts; this.level = level; this.message = message; this.repeats = 1;
-        }
-    }
-
-    /** Constructs the panel and wires UI controls. Caller must create/use on the EDT. */
+    /** Constructs and wires the UI (EDT). */
     public LogPanel() {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));
 
-        // Editor
+        // Editor + renderer
         logTextPane = new JTextPane();
         logTextPane.setEditable(false);
         logTextPane.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        logTextPane.setBackground(UIManager.getColor(UI_TEXT_BACKGROUND));
-        logTextPane.setForeground(UIManager.getColor(UI_TEXT_FOREGROUND));
-        doc = logTextPane.getStyledDocument();
-
-        infoStyle = doc.addStyle("INFO", null);
-        StyleConstants.setForeground(infoStyle, UIManager.getColor(UI_TEXT_FOREGROUND));
-
-        errorStyle = doc.addStyle("ERROR", null);
-        StyleConstants.setForeground(errorStyle, UIManager.getColor(UI_TEXT_FOREGROUND));
-        StyleConstants.setBold(errorStyle, true);
+        logTextPane.setBackground(UIManager.getColor("TextPane.background"));
+        logTextPane.setForeground(UIManager.getColor("TextPane.foreground"));
+        renderer = new LogRenderer(logTextPane);
+        doc = renderer.document(); // back-compat for tests that reflect 'doc'
 
         // Highlight color from LAF
-        Color sel = UIManager.getColor(UI_SEL_BG_FIELD);
-        if (sel == null) sel = UIManager.getColor(UI_SEL_BG_AREA);
+        Color sel = UIManager.getColor("TextField.selectionBackground");
+        if (sel == null) sel = UIManager.getColor("TextArea.selectionBackground");
         if (sel == null) sel = new Color(180, 200, 255);
         HighlightPainter painter = new DefaultHighlighter.DefaultHighlightPainter(sel);
         highlighterManager = new HighlighterManager(logTextPane, painter);
@@ -269,6 +233,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         );
         add(scrollPane, BorderLayout.CENTER);
 
+        // Model (create before listeners capture it)
+        store = new LogStore(MAX_MODEL_ENTRIES, this::visible);
+
         // Context menu
         JPopupMenu menu = buildContextMenu();
         logTextPane.addMouseListener(new MouseAdapter() {
@@ -287,58 +254,65 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         pauseAutoscroll.addActionListener(e -> {
             PREFS.putBoolean(PREF_PAUSE, pauseAutoscroll.isSelected());
-            if (!pauseAutoscroll.isSelected())
-                logTextPane.setCaretPosition(doc.getLength());
+            if (!pauseAutoscroll.isSelected()) renderer.autoscrollIfNeeded(false);
         });
 
-        DocumentListener filterChange = Doc.onChange(this::saveFilterPrefsAndRebuild);
+        DocumentListener filterChange = Doc.onChange(() -> {
+            PREFS.put(PREF_FILTER_TEXT, filterField.getText());
+            rebuildView();
+        });
         filterField.getDocument().addDocumentListener(filterChange);
-        filterCaseToggle.addActionListener(e -> saveFilterPrefsAndRebuild());
-        filterRegexToggle.addActionListener(e -> saveFilterPrefsAndRebuild());
+        filterCaseToggle.addActionListener(e -> {
+            PREFS.putBoolean(PREF_FILTER_CASE, filterCaseToggle.isSelected());
+            rebuildView();
+        });
+        filterRegexToggle.addActionListener(e -> {
+            PREFS.putBoolean(PREF_FILTER_REGEX, filterRegexToggle.isSelected());
+            rebuildView();
+        });
 
         DocumentListener searchChange = Doc.onChange(() -> {
             PREFS.put(PREF_LAST_SEARCH, searchField.getText());
             computeMatchesAndJumpFirst();
         });
         searchField.getDocument().addDocumentListener(searchChange);
-        searchField.getInputMap(JComponent.WHEN_FOCUSED)
-                .put(KeyStroke.getKeyStroke("ENTER"), ACTION_SEARCH_NEXT);
+        searchField.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke("ENTER"), ACTION_SEARCH_NEXT
+        );
         searchField.getActionMap().put(ACTION_SEARCH_NEXT, new AbstractAction() {
             @Override public void actionPerformed(ActionEvent e) { jumpMatch(+1); }
         });
-        searchCaseToggle.addActionListener(e -> computeMatchesAndJumpFirst());
-        searchRegexToggle.addActionListener(e -> computeMatchesAndJumpFirst());
 
         searchPrevBtn.addActionListener(e -> jumpMatch(-1));
         searchNextBtn.addActionListener(e -> jumpMatch(+1));
 
         clearBtn.addActionListener(e -> {
-            entries.clear();
-            clearDoc();
+            Logger.internalDebug("LogPanel: clear requested");
+            store.clear();
+            renderer.clear();
             clearSearchHighlights();
             matches = List.of();
             matchIndex = -1;
             updateMatchCount();
+            Logger.internalTrace("LogPanel: cleared, matches reset");
         });
 
         copyBtn.addActionListener(e -> copySelectionOrAll());
         saveBtn.addActionListener(e -> saveVisible());
 
-        // Bind regex validity indicators (✓/✖)
-        filterIndicatorBinding = RegexIndicatorBinder.bind(
-                filterField, filterRegexToggle, filterCaseToggle, false, filterRegexIndicator
-        );
+        // Regex indicators (✓/✖)
         searchIndicatorBinding = RegexIndicatorBinder.bind(
                 searchField, searchRegexToggle, searchCaseToggle, true, searchRegexIndicator
         );
+        filterIndicatorBinding = RegexIndicatorBinder.bind(
+                filterField, filterRegexToggle, filterCaseToggle, false, filterRegexIndicator
+        );
 
-        // Install undo/redo helpers on text fields
         TextFieldUndo.install(filterField);
         TextFieldUndo.install(searchField);
 
         Logger.registerListener(this);
 
-        // Initial state after restoring persisted values
         rebuildView();
         computeMatchesAndJumpFirst();
     }
@@ -347,17 +321,10 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     public void removeNotify() {
         super.removeNotify();
         Logger.unregisterListener(this);
-        // Best-effort: unbind indicator listeners if present
-        try {
-            if (filterIndicatorBinding != null) filterIndicatorBinding.close();
-        } catch (Exception ignore) {
-            // Binder close is best-effort during disposal.
-        }
-        try {
-            if (searchIndicatorBinding != null) searchIndicatorBinding.close();
-        } catch (Exception ignore) {
-            // Binder close is best-effort during disposal.
-        }
+        try { if (filterIndicatorBinding != null) filterIndicatorBinding.close(); }
+        catch (Exception ex) { Logger.internalDebug("regex filter binder close skipped: " + ex); }
+        try { if (searchIndicatorBinding != null) searchIndicatorBinding.close(); }
+        catch (Exception ex) { Logger.internalDebug("regex search binder close skipped: " + ex); }
     }
 
     // ---- Logger.LogListener ----
@@ -369,67 +336,63 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     // ---- Ingest and rendering ----
 
-    /**
-     * Ingests a new log entry, compacts consecutive duplicates, and updates the view if visible.
-     */
     private void ingest(String levelStr, String message) {
-        L lvl = toLevel(levelStr);
+        LogStore.Level lvl = LogStore.Level.fromString(levelStr);
+        Logger.internalTrace(
+                "LogPanel ingest -> level=" + lvl +
+                        " msg=" + (message == null ? "" : message)
+        );
         LocalDateTime now = LocalDateTime.now();
 
-        // Compact consecutive duplicates during ingestion
-        if (!entries.isEmpty()) {
-            Entry last = entries.getLast();
-            if (last.level == lvl && Objects.equals(last.message, message)) {
-                last.repeats++;
-                if (visible(last.level, last.message)) {
-                    replaceLastRenderedLine(
-                            formatLine(now, last.level, last.message, last.repeats),
-                            last.level == L.ERROR ? errorStyle : infoStyle
-                    );
-                    autoscrollIfNeeded();
-                    recomputeMatchesAfterDocChange();
-                }
-                trimIfNeeded();
-                return;
+        LogStore.Decision d = store.ingest(lvl, message, now);
+        switch (d.kind()) {
+            case APPEND -> {
+                String line = renderer.formatLine(
+                        d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats
+                );
+                renderer.append(line, d.entry().level);
+                Logger.internalTrace("LogPanel render=APPEND");
+                renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
+                recomputeMatchesAfterDocChange();
             }
+            case REPLACE -> {
+                String line = renderer.formatLine(
+                        d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats
+                );
+                renderer.replaceLast(line, d.entry().level);
+                Logger.internalTrace("LogPanel render=REPLACE");
+                renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
+                recomputeMatchesAfterDocChange();
+            }
+            default -> Logger.internalTrace("LogPanel render=NONE (filtered)");
         }
-
-        Entry e = new Entry(now, lvl, message);
-        entries.add(e);
-        if (visible(e.level, e.message)) {
-            appendLine(
-                    formatLine(e.ts, e.level, e.message, e.repeats),
-                    e.level == L.ERROR ? errorStyle : infoStyle
-            );
-            autoscrollIfNeeded();
-            recomputeMatchesAfterDocChange();
+        if (store.trimIfNeeded()) {
+            Logger.internalDebug("LogPanel cap reached -> rebuild");
+            rebuildView();
         }
-        trimIfNeeded();
     }
 
-    private boolean visible(L lvl, String message) {
+    private boolean visible(LogStore.Level lvl, String message) {
         return passesLevel(lvl) && passesTextFilter(message);
     }
 
-    private boolean passesLevel(L lvl) {
-        L min = toLevel((String) levelCombo.getSelectedItem());
+    private boolean passesLevel(LogStore.Level lvl) {
+        LogStore.Level min = LogStore.Level.fromString((String) levelCombo.getSelectedItem());
         return lvl.ordinal() >= min.ordinal();
     }
 
-    /**
-     * Text filter: regex or substring, case-sensitive toggle.
-     * Invalid regexes are treated as non-match.
-     */
+    /** Text filter (regex or substring). Invalid regex => non-match with WARN. */
     private boolean passesTextFilter(String msg) {
         String f = filterField.getText();
         if (f == null || f.isEmpty()) return true;
-
         try {
             if (filterRegexToggle.isSelected()) {
                 int flags = filterCaseToggle.isSelected()
                         ? 0
                         : (java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
-                return java.util.regex.Pattern.compile(f, flags).matcher(msg == null ? "" : msg).find();
+                return java.util.regex.Pattern.compile(f, flags)
+                        .matcher(msg == null ? "" : msg)
+                        .find();
             } else {
                 String m = msg == null ? "" : msg;
                 return filterCaseToggle.isSelected()
@@ -437,99 +400,29 @@ public class LogPanel extends JPanel implements Logger.LogListener {
                         : m.toLowerCase(Locale.ROOT).contains(f.toLowerCase(Locale.ROOT));
             }
         } catch (RuntimeException ex) {
-            // Invalid regexes => treat as non-match.
+            Logger.internalWarn("LogPanel invalid regex: " + ex.getMessage());
             return false;
         }
     }
 
-    /** Rebuilds the document from model with current level/text filters applied. */
+    /** Full rebuild from the store using the current filter. */
     private void rebuildView() {
-        clearDoc();
-
-        LocalDateTime aggTs = null;
-        L aggLvl = null;
-        String aggMsg = null;
-        int aggCount = 0;
-
-        for (Entry e : entries) {
-            if (!visible(e.level, e.message)) continue;
-
-            boolean same = (aggLvl == e.level && Objects.equals(aggMsg, e.message));
-            if (same) {
-                aggCount += e.repeats;
-                aggTs = e.ts;
-            } else {
-                if (aggLvl != null) appendAggregated(aggTs, aggLvl, aggMsg, aggCount);
-                aggTs = e.ts;
-                aggLvl = e.level;
-                aggMsg = e.message;
-                aggCount = e.repeats;
-            }
+        Logger.internalTrace("LogPanel rebuild start");
+        store.setFilter(this::visible);
+        renderer.clear();
+        int rendered = 0;
+        for (LogStore.Aggregate a : store.buildVisibleAggregated()) {
+            String line = renderer.formatLine(a.ts(), a.level(), a.message(), a.count());
+            renderer.append(line, a.level());
+            rendered++;
         }
-        if (aggLvl != null) appendAggregated(aggTs, aggLvl, aggMsg, aggCount);
-
-        autoscrollIfNeeded();
+        renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
         recomputeMatchesAfterDocChange();
+        Logger.internalTrace("LogPanel rebuild done, lines=" + rendered);
     }
 
-    private void appendAggregated(LocalDateTime ts, L lvl, String msg, int count) {
-        appendLine(formatLine(ts, lvl, msg, count), lvl == L.ERROR ? errorStyle : infoStyle);
-    }
+    // ---- Search / highlight ----
 
-    private void trimIfNeeded() {
-        if (entries.size() > MAX_MODEL_ENTRIES) {
-            int remove = entries.size() - MAX_MODEL_ENTRIES;
-            entries.subList(0, remove).clear();
-            rebuildView();
-        }
-    }
-
-    private String formatLine(LocalDateTime ts, L lvl, String msg, int repeats) {
-        String timestamp = "[" + TIMESTAMP_FORMAT.format(ts == null ? LocalDateTime.now() : ts) + "]";
-        String base = String.format("%s [%s] %s", timestamp, lvl.name(), msg == null ? "" : msg);
-        return repeats > 1 ? base + "  (x" + repeats + ")\n" : base + "\n";
-    }
-
-    private void appendLine(String line, Style style) {
-        try {
-            int start = doc.getLength();
-            doc.insertString(start, line, style);
-            lastLineStart = start;
-            lastLineLen = line.length();
-        } catch (BadLocationException e) {
-            Logger.logError("Append failed: " + e.getMessage());
-        }
-    }
-
-    private void replaceLastRenderedLine(String line, Style style) {
-        try {
-            doc.remove(lastLineStart, lastLineLen);
-            doc.insertString(lastLineStart, line, style);
-            lastLineLen = line.length();
-        } catch (BadLocationException e) {
-            Logger.logError("Replace failed: " + e.getMessage());
-        }
-    }
-
-    private void clearDoc() {
-        try {
-            doc.remove(0, doc.getLength());
-            lastLineStart = 0;
-            lastLineLen = 0;
-        } catch (BadLocationException e) {
-            Logger.logError("Clear failed: " + e.getMessage());
-        }
-    }
-
-    private void autoscrollIfNeeded() {
-        if (!pauseAutoscroll.isSelected()) {
-            logTextPane.setCaretPosition(doc.getLength());
-        }
-    }
-
-    // ---- Search and highlight ----
-
-    /** Recomputes matches for the current query and jumps to the first match, if any. */
     private void computeMatchesAndJumpFirst() {
         recomputeMatchesAfterDocChange();
         if (!matches.isEmpty()) {
@@ -541,9 +434,8 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         updateMatchCount();
     }
 
-    /** Clears existing highlights, finds ranges via engine, and paints them. */
     private void recomputeMatchesAfterDocChange() {
-        highlighterManager.clear();
+        clearSearchHighlights();
 
         final String q = searchField.getText();
         if (q == null || q.isEmpty()) {
@@ -554,18 +446,22 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         try {
             final String hay = doc.getText(0, doc.getLength());
-            final TextQuery tq = new TextQuery(q, searchCaseToggle.isSelected(), searchRegexToggle.isSelected(), true);
+            final TextQuery tq = new TextQuery(
+                    q, searchCaseToggle.isSelected(), searchRegexToggle.isSelected(), true
+            );
             matches = TextSearchEngine.findAll(hay, tq);
             highlighterManager.apply(matches);
-        } catch (BadLocationException | RuntimeException e) {
+            Logger.internalTrace(
+                    "LogPanel highlight recompute, matches=" + (matches == null ? 0 : matches.size())
+            );
+        } catch (Exception ex) {
             matches = List.of();
+            Logger.internalDebug("LogPanel highlight recompute failed: " + ex);
         }
         updateMatchCount();
     }
 
-    private void clearSearchHighlights() {
-        highlighterManager.clear();
-    }
+    private void clearSearchHighlights() { highlighterManager.clear(); }
 
     private void jumpMatch(int delta) {
         if (matches.isEmpty()) return;
@@ -581,20 +477,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         ensureVisible(m[0]);
     }
 
-    /**
-     * Scrolls to the given model offset if the component is realized.
-     * Best-effort: invalid offsets are ignored.
-     */
     private void ensureVisible(int offset) {
         try {
             var r2d = logTextPane.modelToView2D(offset);
-            if (r2d == null) {
-                return; // not displayable yet; skip scrolling
-            }
-            java.awt.Rectangle r = r2d.getBounds();
-            logTextPane.scrollRectToVisible(r);
-        } catch (javax.swing.text.BadLocationException ignore) {
-            // invalid offset — ignore
+            if (r2d != null) logTextPane.scrollRectToVisible(r2d.getBounds());
+        } catch (Exception ex) {
+            Logger.internalDebug("LogPanel ensureVisible failed: " + ex);
         }
     }
 
@@ -604,12 +492,14 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         searchCountLabel.setText(idx1 + "/" + total);
     }
 
-    // ---- Copy/Save helpers ----
+    // ---- Copy/Save ----
 
     private void copySelectionOrAll() {
         String sel = logTextPane.getSelectedText();
         if (sel != null && !sel.isEmpty()) {
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(sel), null);
+            Toolkit.getDefaultToolkit()
+                    .getSystemClipboard()
+                    .setContents(new StringSelection(sel), null);
             return;
         }
         copyAll();
@@ -618,7 +508,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     private void copySelection() {
         String sel = logTextPane.getSelectedText();
         if (sel == null || sel.isEmpty()) return;
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(sel), null);
+        Toolkit.getDefaultToolkit()
+                .getSystemClipboard()
+                .setContents(new StringSelection(sel), null);
     }
 
     private void copyCurrentLine() {
@@ -629,48 +521,42 @@ public class LogPanel extends JPanel implements Logger.LogListener {
             int end = text.indexOf('\n', caret);
             if (end < 0) end = text.length();
             String line = text.substring(start, end);
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(line), null);
-        } catch (BadLocationException ignore) {
-            // best-effort
+            Toolkit.getDefaultToolkit()
+                    .getSystemClipboard()
+                    .setContents(new StringSelection(line), null);
+        } catch (Exception ex) {
+            Logger.internalDebug("LogPanel copy current line failed: " + ex);
         }
     }
 
     private void copyAll() {
         try {
             String all = doc.getText(0, doc.getLength());
-            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(all), null);
-        } catch (BadLocationException ignore) {
-            // best-effort
+            Toolkit.getDefaultToolkit()
+                    .getSystemClipboard()
+                    .setContents(new StringSelection(all), null);
+        } catch (Exception ex) {
+            Logger.internalDebug("LogPanel copy all failed: " + ex);
         }
     }
 
     private void saveVisible() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Save Log");
-        String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
+        String ts = java.time.format.DateTimeFormatter
+                .ofPattern("yyyyMMdd-HHmmss")
+                .format(java.time.LocalDateTime.now());
         chooser.setSelectedFile(new File("attackframework-burp-exporter-" + ts + ".log"));
-        int result = chooser.showSaveDialog(this);
-        if (result != JFileChooser.APPROVE_OPTION) return;
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
         File out = chooser.getSelectedFile();
         try {
             String text = doc.getText(0, doc.getLength());
             FileUtil.writeStringCreateDirs(out.toPath(), text);
-        } catch (IOException | BadLocationException ex) {
+        } catch (IOException | javax.swing.text.BadLocationException ex) {
             Logger.logError("Save failed: " + ex.getMessage());
         }
     }
-
-    // ---- Persistence helpers ----
-
-    private void saveFilterPrefsAndRebuild() {
-        PREFS.put(PREF_FILTER_TEXT, filterField.getText());
-        PREFS.putBoolean(PREF_FILTER_CASE, filterCaseToggle.isSelected());
-        PREFS.putBoolean(PREF_FILTER_REGEX, filterRegexToggle.isSelected());
-        rebuildView();
-    }
-
-    // ---- UI helpers ----
 
     private JPopupMenu buildContextMenu() {
         JPopupMenu menu = new JPopupMenu();
@@ -682,7 +568,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         copyLine.addActionListener(e -> copyCurrentLine());
         copyAll.addActionListener(e -> copyAll());
         menu.add(copySel);
-        menu.add(copyLine);           // fixed line
+        menu.add(copyLine);
         menu.add(copyAll);
         menu.addSeparator();
         menu.add(saveVisible);

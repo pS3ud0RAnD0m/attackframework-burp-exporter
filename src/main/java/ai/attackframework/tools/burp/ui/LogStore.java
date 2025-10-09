@@ -1,0 +1,129 @@
+package ai.attackframework.tools.burp.ui;
+
+import java.io.Serial;
+import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Log model: entries, duplicate compaction, memory cap, and filtered aggregation.
+ *
+ * <p><strong>Threading:</strong> methods are expected to be called on the EDT.</p>
+ */
+public final class LogStore {
+
+    /** Levels (TRACE < DEBUG < INFO < WARN < ERROR). */
+    public enum Level { TRACE, DEBUG, INFO, WARN, ERROR;
+        public static Level fromString(String s) {
+            if (s == null) return INFO;
+            try { return Level.valueOf(s.trim().toUpperCase()); }
+            catch (IllegalArgumentException ex) { return INFO; }
+        }
+    }
+
+    /** Minimal event; repeats track consecutive duplicates. */
+    public static final class Entry implements Serializable {
+        @Serial private static final long serialVersionUID = 1L;
+        public final LocalDateTime ts;
+        public final Level level;
+        public final String message;
+        int repeats; // >= 1
+        public Entry(LocalDateTime ts, Level level, String message) {
+            this.ts = ts; this.level = level; this.message = message; this.repeats = 1;
+        }
+    }
+
+    /** Visibility predicate derived from the UI. */
+    @FunctionalInterface
+    public interface VisibilityFilter { boolean test(Level level, String message); }
+
+    /** Renderer decision for incremental updates. */
+    public record Decision(Kind kind, Entry entry) {
+        public enum Kind { APPEND, REPLACE, NONE }
+        public static Decision none()           { return new Decision(Kind.NONE, null); }
+        public static Decision append(Entry e)  { return new Decision(Kind.APPEND, e); }
+        public static Decision replace(Entry e) { return new Decision(Kind.REPLACE, e); }
+    }
+
+    /** Aggregated line for full rebuilds. */
+    public record Aggregate(LocalDateTime ts, Level level, String message, int count) {}
+
+    private final List<Entry> entries = new ArrayList<>();
+    private final int maxEntries;
+    private VisibilityFilter filter;
+
+    public LogStore(int maxEntries, VisibilityFilter filter) {
+        if (maxEntries <= 0) throw new IllegalArgumentException("maxEntries must be > 0");
+        this.maxEntries = maxEntries;
+        this.filter = Objects.requireNonNull(filter, "filter");
+    }
+
+    public void setFilter(VisibilityFilter filter) { this.filter = Objects.requireNonNull(filter, "filter"); }
+
+    public void clear() { entries.clear(); }
+
+    public int size() { return entries.size(); }
+
+    /**
+     * Ingests an event, compacting duplicates. Returns an incremental render decision.
+     * Stored model is unfiltered; the filter is used for visibility decisions only.
+     */
+    public Decision ingest(Level level, String message, LocalDateTime now) {
+        if (!entries.isEmpty()) {
+            Entry last = entries.getLast();
+            if (last.level == level && Objects.equals(last.message, message)) {
+                last.repeats++;
+                if (filter.test(level, message)) {
+                    Entry snapshot = new Entry(now, level, message);
+                    snapshot.repeats = last.repeats;
+                    return Decision.replace(snapshot);
+                }
+                return Decision.none();
+            }
+        }
+        Entry e = new Entry(now, level, message);
+        entries.add(e);
+        if (filter.test(level, message)) {
+            return Decision.append(new Entry(e.ts, e.level, e.message));
+        }
+        return Decision.none();
+    }
+
+    /** Enforces cap; returns true when a full rebuild is required. */
+    public boolean trimIfNeeded() {
+        if (entries.size() > maxEntries) {
+            int remove = entries.size() - maxEntries;
+            entries.subList(0, remove).clear();
+            return true;
+        }
+        return false;
+    }
+
+    /** Builds filtered, aggregated lines for a full repaint. */
+    public List<Aggregate> buildVisibleAggregated() {
+        List<Aggregate> out = new ArrayList<>();
+        LocalDateTime aggTs = null;
+        Level aggLvl = null;
+        String aggMsg = null;
+        int aggCount = 0;
+
+        for (Entry e : entries) {
+            if (!filter.test(e.level, e.message)) continue;
+            boolean same = (aggLvl == e.level && Objects.equals(aggMsg, e.message));
+            if (same) {
+                aggCount += e.repeats;
+                aggTs = e.ts;
+            } else {
+                if (aggLvl != null) out.add(new Aggregate(aggTs, aggLvl, aggMsg, aggCount));
+                aggTs = e.ts;
+                aggLvl = e.level;
+                aggMsg = e.message;
+                aggCount = e.repeats;
+            }
+        }
+        if (aggLvl != null) out.add(new Aggregate(aggTs, aggLvl, aggMsg, aggCount));
+        return out;
+    }
+}
