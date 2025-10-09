@@ -16,10 +16,11 @@ public final class Regex {
     /**
      * Derive {@link Pattern} flags from UI toggles.
      *
-     * @param caseSensitive whether the match is case-sensitive
+     * @param caseSensitive whether matching is case-sensitive
      * @param multiline     whether {@link Pattern#MULTILINE} should be applied
-     * @return combined flags for {@link Pattern#compile(String, int)}
+     * @return integer bitmask for {@link Pattern#compile(String, int)}
      */
+    // returns only combinations of Pattern flags
     public static int flags(boolean caseSensitive, boolean multiline) {
         int flags = 0;
         if (!caseSensitive) {
@@ -43,5 +44,47 @@ public final class Regex {
     @SuppressWarnings("MagicConstant") // flags(caseSensitive, multiline) intentionally combines valid Pattern flags
     public static Pattern compile(String pattern, boolean caseSensitive, boolean multiline) {
         return Pattern.compile(pattern, flags(caseSensitive, multiline));
+    }
+
+    /**
+     * Returns whether the supplied pattern compiles with the derived flags.
+     *
+     * <p>This is a convenience for UI validation paths that should not rely on
+     * exception-driven control flow while the user is typing.</p>
+     *
+     * @param pattern       the pattern text (may be {@code null})
+     * @param caseSensitive whether the match is case-sensitive
+     * @param multiline     whether {@link Pattern#MULTILINE} should be applied
+     * @return {@code true} if {@link #compile(String, boolean, boolean)} succeeds; {@code false} otherwise
+     */
+    public static boolean isValid(String pattern, boolean caseSensitive, boolean multiline) {
+        if (pattern == null) {
+            return false;
+        }
+        try {
+            compile(pattern, caseSensitive, multiline);
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    /**
+     * Compile a pattern or return {@code null} if invalid.
+     *
+     * @param pattern       the pattern text (may be {@code null})
+     * @param caseSensitive whether the match is case-sensitive
+     * @param multiline     whether {@link Pattern#MULTILINE} should be applied
+     * @return compiled {@link Pattern} or {@code null} if invalid
+     */
+    public static Pattern compileOrNull(String pattern, boolean caseSensitive, boolean multiline) {
+        if (pattern == null) {
+            return null;
+        }
+        try {
+            return compile(pattern, caseSensitive, multiline);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 }
