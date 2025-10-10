@@ -75,6 +75,7 @@ public class ScopeGridPanel implements Serializable {
         }
 
         addButton.setName("scope.custom.add");
+        addButton.setToolTipText("Add new row");
         addButton.addActionListener(e -> {
             if (rows.size() < MAX_ROWS) {
                 rows.add(new Row("", true)); // new rows default regex ON

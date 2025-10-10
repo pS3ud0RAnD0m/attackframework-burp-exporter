@@ -470,11 +470,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         fileSinkCheckbox.setName("files.enable");
         filePathField.setName("files.path");
         createFilesButton.setName("files.create");
+        createFilesButton.setToolTipText("Create OpenSearch index files");
 
         openSearchSinkCheckbox.setName("os.enable");
         openSearchUrlField.setName("os.url");
         testConnectionButton.setName("os.test");
+        testConnectionButton.setToolTipText("Test connection to OpenSearch");
         createIndexesButton.setName("os.createIndexes");
+        createIndexesButton.setToolTipText("Create indexes for OpenSearch. Note: This is not required.");
 
         adminStatusWrapper.setName("admin.statusWrapper");
         adminStatus.setName("admin.status");
