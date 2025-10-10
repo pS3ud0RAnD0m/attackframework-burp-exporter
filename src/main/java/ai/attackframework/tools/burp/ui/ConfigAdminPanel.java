@@ -77,6 +77,7 @@ public record ConfigAdminPanel(
         // Save row
         JPanel saveRow = new JPanel(new MigLayout("insets 0", "[]", ""));
         JButton saveButton = new JButton("Save");
+        saveButton.setToolTipText("Save and apply current config");
         saveButton.addActionListener(saveListener);
         saveRow.add(saveButton);
 

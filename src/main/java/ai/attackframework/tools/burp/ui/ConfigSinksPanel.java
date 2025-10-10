@@ -24,6 +24,7 @@ public record ConfigSinksPanel(
         JCheckBox fileSinkCheckbox,
         JTextField filePathField,
         JButton createFilesButton,
+
         JTextArea fileStatus,
         JPanel fileStatusWrapper,
 

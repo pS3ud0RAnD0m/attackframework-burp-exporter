@@ -35,12 +35,12 @@ import static ai.attackframework.tools.burp.testutils.Reflect.call;
 /**
  * Test-only harness for working with LogPanel in headless mode.
  *
- * Intent:
+ * <p>Intent:</p>
  * - Provide safe helpers for executing actions on the EDT.
  * - Offer resilient component discovery by name, tooltip, or text.
  * - Expose convenient actions and state management primitives for tests.
  *
- * Notes:
+ * <p>Notes:</p>
  * - All Swing mutations run on the EDT via onEdt(Runnable) / onEdt(Callable).
  * - The harness avoids reflection except where the production class deliberately
  *   hides behavior; when needed, reflection goes through the shared test utility.
@@ -48,7 +48,7 @@ import static ai.attackframework.tools.burp.testutils.Reflect.call;
 public class LogPanelTestHarness {
 
     /** Public no-arg constructor so tests can instantiate freely. */
-    public LogPanelTestHarness() {}
+    public LogPanelTestHarness() { /* intentional no-op */ }
 
     // ---------- EDT helpers ----------
 
@@ -197,7 +197,7 @@ public class LogPanelTestHarness {
 
     /** First (and only) text pane inside the panel. */
     public static JTextPane textPane(LogPanel root) {
-        Component c = findBy(root, comp -> comp instanceof JTextPane);
+        Component c = findBy(root, JTextPane.class::isInstance);
         if (c instanceof JTextPane pane) return pane;
         throw new IllegalStateException("No JTextPane found in LogPanel");
     }
@@ -211,8 +211,8 @@ public class LogPanelTestHarness {
 
     /** Clicks a button/checkbox on the EDT. */
     public static void click(AbstractButton b) {
-        // Use a lambda to disambiguate doClick() vs doClick(int)
-        onEdt(() -> b.doClick());
+        final Runnable r = b::doClick;  // explicit target type avoids overload ambiguity
+        onEdt(r);
     }
 
     /**
