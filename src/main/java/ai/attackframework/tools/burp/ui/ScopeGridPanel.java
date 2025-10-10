@@ -220,6 +220,7 @@ public class ScopeGridPanel implements Serializable {
             }
             indicator.setName("scope.custom.regex.indicator." + index1);
             delete.setName("scope.custom.delete." + index1);
+            delete.setToolTipText("Delete this row");
         }
 
         void ensureDeleteHandler(Runnable onDelete) {
