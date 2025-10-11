@@ -87,7 +87,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     /** Single grid containing all custom rows (radio, field, regex toggle+indicator, add/delete). */
     private final ScopeGridPanel scopeGrid = new ScopeGridPanel(
-            List.of(new ScopeGridPanel.ScopeEntryInit("^.*acme\\.com$", true))
+            List.of(new ScopeGridPanel.ScopeEntryInit("^.*acme\\.com$", true)),
+            INDENT
     );
 
     // ----- Sinks (Files, OpenSearch) -----
@@ -202,7 +203,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         scopeGroup.add(allRadio);
 
         panel.add(burpSuiteRadio, GAPLEFT + INDENT);
-        panel.add(scopeGrid.component(), GAPLEFT + INDENT + ", growx");
+        panel.add(scopeGrid.component(), "growx");
         panel.add(allRadio, GAPLEFT + INDENT);
 
         return panel;
@@ -477,7 +478,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         testConnectionButton.setName("os.test");
         testConnectionButton.setToolTipText("Test connection to OpenSearch");
         createIndexesButton.setName("os.createIndexes");
-        createIndexesButton.setToolTipText("Create indexes for OpenSearch. Note: This is not required.");
+        createIndexesButton.setToolTipText("Create indexes for OpenSearch\nNote: This is not required because indexes will auto-create if needed. However, this button is helpful for confirming permissions.");
 
         adminStatusWrapper.setName("admin.statusWrapper");
         adminStatus.setName("admin.status");

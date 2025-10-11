@@ -46,11 +46,14 @@ public class ScopeGridPanel implements Serializable {
     /**
      * Single grid containing all rows (no forced wrap-per-component).
      * cols: [radio/placeholder] [field sg:field grow] [".*"+indicator] [button sg:btn]
+     * <p>
+     * First column width and gaps mirror the Sinks panel:
+     *   [150!,left]20[fill,grow,sg field]20[]20[sg btn,left]
      */
     private final JPanel grid = new JPanel(
             new MigLayout(
-                    "insets 0, gapx 10, gapy 6",
-                    "[]10[fill,grow," + SG_FIELD + "]10[]10[" + SG_BTN + ",left]"
+                    "insets 0, gapx 20, gapy 6",
+                    "[150!,left]20[fill,grow," + SG_FIELD + "]20[]20[" + SG_BTN + ",left]"
             )
     );
 
@@ -58,11 +61,17 @@ public class ScopeGridPanel implements Serializable {
     private final List<Row> rows = new ArrayList<>();
     private final JButton addButton = new JButton("Add");
 
+    /** Optional left gap (in px) applied only to the custom radio cell. */
+    private final int radioGapLeftPx;
+
     /**
-     * Constructs the grid with optional seed entries.
-     * @param initial ordered initial entries; blank row created when {@code null} or empty
+     * Constructs the grid with an explicit left gap for the custom radio.
+     * @param initial ordered initial entries
+     * @param radioGapLeftPx pixel gap applied to the custom radio cell (does not affect field alignment)
      */
-    public ScopeGridPanel(List<ScopeEntryInit> initial) {
+    public ScopeGridPanel(List<ScopeEntryInit> initial, int radioGapLeftPx) {
+        this.radioGapLeftPx = radioGapLeftPx;
+
         customRadio.setName("scope.custom");
         customRadio.addItemListener(e -> updateEnabledState(customRadio.isSelected()));
 
@@ -154,7 +163,8 @@ public class ScopeGridPanel implements Serializable {
 
             if (idx == 1) {
                 // Row 1: Custom radio | field | toggle+indicator | Add
-                grid.add(customRadio);                       // col 1
+                String gap = (radioGapLeftPx > 0) ? ("gapleft " + radioGapLeftPx) : "";
+                grid.add(customRadio, gap);                  // col 1 (radio only; field alignment unaffected)
                 grid.add(r.field, GROWX);                    // col 2 (sg field)
                 ensureToggleTextAndTip(r);
                 grid.add(r.toggle, "split 2");               // col 3 (toggle + indicator)
