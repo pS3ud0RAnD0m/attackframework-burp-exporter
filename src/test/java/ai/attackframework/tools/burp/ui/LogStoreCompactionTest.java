@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.log.LogStore;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;

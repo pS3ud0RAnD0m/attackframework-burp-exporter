@@ -1,4 +1,4 @@
-package ai.attackframework.tools.burp.ui.primitives;
+package ai.attackframework.tools.burp.ui;
 
 import javax.swing.JPanel;
 import javax.swing.JTextArea;

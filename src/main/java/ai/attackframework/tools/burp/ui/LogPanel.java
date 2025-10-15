@@ -1,5 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.log.LogRenderer;
+import ai.attackframework.tools.burp.ui.log.LogStore;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.text.TextQuery;
@@ -348,14 +350,14 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         LogStore.Decision d = store.ingest(lvl, message, now);
         switch (d.kind()) {
             case APPEND -> {
-                String line = renderer.formatLine(d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats);
+                String line = renderer.formatLine(d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats());
                 renderer.append(line, d.entry().level);
                 Logger.internalTrace("LogPanel render=APPEND");
                 renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
                 recomputeMatchesAfterDocChange();
             }
             case REPLACE -> {
-                String line = renderer.formatLine(d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats);
+                String line = renderer.formatLine(d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats());
                 renderer.replaceLast(line, d.entry().level);
                 Logger.internalTrace("LogPanel render=REPLACE");
                 renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());

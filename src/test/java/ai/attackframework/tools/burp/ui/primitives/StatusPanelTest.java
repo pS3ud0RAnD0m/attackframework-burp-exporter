@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui.primitives;
 
+import ai.attackframework.tools.burp.ui.StatusPanel;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JPanel;

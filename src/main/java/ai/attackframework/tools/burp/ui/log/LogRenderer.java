@@ -1,4 +1,4 @@
-package ai.attackframework.tools.burp.ui;
+package ai.attackframework.tools.burp.ui.log;
 
 import ai.attackframework.tools.burp.utils.Logger;
 

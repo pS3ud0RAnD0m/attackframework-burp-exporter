@@ -1,22 +1,17 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.primitives.*;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
-import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
-import ai.attackframework.tools.burp.ui.primitives.StatusPanel;
-import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
-import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.Box;
-import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JTextArea;
@@ -69,9 +64,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
     private static final String MIG_PREF_COL = "[pref!]";
-    private static final String MIG_INSETS0_WRAP1 = "insets 0, wrap 1";
     private static final String MIG_GROWX_WRAP = "growx, wrap";
-    private static final String GAPLEFT = "gapleft ";
 
     // ----- Sources (checkboxes reflect selected data sources) -----
 
@@ -84,11 +77,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
+    private final JRadioButton customRadio    = new JRadioButton("Custom");
 
-    /** Single grid containing all custom rows (radio, field, regex toggle+indicator, add/delete). */
-    private final ScopeGridPanel scopeGrid = new ScopeGridPanel(
-            List.of(new ScopeGridPanel.ScopeEntryInit("^.*acme\\.com$", true)),
-            INDENT
+    /** Pure grid containing custom rows (field, regex toggle+indicator, add/delete). */
+    private final ScopeGrid scopeGrid = new ScopeGrid(
+            List.of(new ScopeGrid.ScopeEntryInit("^.*acme\\.com$", true))
     );
 
     // ----- Sinks (Files, OpenSearch) -----
@@ -135,7 +128,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         add(panelSeparator(), MIG_GROWX_WRAP);
 
         // Scope
-        add(buildScopePanel(), "gaptop 10, gapbottom 5, wrap");
+        add(new ConfigScopePanel(allRadio, burpSuiteRadio, customRadio, scopeGrid, INDENT).build(),
+                "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_GROWX_WRAP);
 
         // Sinks
@@ -179,34 +173,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         assignComponentNames();      // stable IDs for headless tests
         wireTextFieldEnhancements(); // undo/redo + Enter bindings
         refreshEnabledStates();      // initial enablement
-    }
-
-    /**
-     * Builds the single-column Scope section: header → Burp → Custom grid → All.
-     *
-     * <p>The three radios are grouped; Custom’s radio lives inside {@link #scopeGrid} and is
-     * registered here so enable/disable logic is consistent.</p>
-     *
-     * @return a panel that is added into the main layout
-     */
-    private JPanel buildScopePanel() {
-        JPanel panel = new JPanel(new MigLayout(MIG_INSETS0_WRAP1, "[left]"));
-        panel.setAlignmentX(LEFT_ALIGNMENT);
-
-        JLabel header = new JLabel("Scope");
-        header.setFont(header.getFont().deriveFont(java.awt.Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6");
-
-        ButtonGroup scopeGroup = new ButtonGroup();
-        scopeGroup.add(burpSuiteRadio);
-        scopeGroup.add(scopeGrid.customRadio());
-        scopeGroup.add(allRadio);
-
-        panel.add(burpSuiteRadio, GAPLEFT + INDENT);
-        panel.add(scopeGrid.component(), "growx");
-        panel.add(allRadio, GAPLEFT + INDENT);
-
-        return panel;
     }
 
     /** Thin separator component used between sections for readability. */
@@ -271,16 +237,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 case ConfigKeys.SCOPE_CUSTOM -> {
                     // Build rows first; then flip radio for correct enable/disable
                     if (!state.customEntries().isEmpty()) {
-                        List<ScopeGridPanel.ScopeEntryInit> init = new ArrayList<>(state.customEntries().size());
+                        List<ScopeGrid.ScopeEntryInit> init = new ArrayList<>(state.customEntries().size());
                         for (ConfigState.ScopeEntry ce : state.customEntries()) {
                             boolean isRegex = ce.kind() == ConfigState.Kind.REGEX;
-                            init.add(new ScopeGridPanel.ScopeEntryInit(ce.value(), isRegex));
+                            init.add(new ScopeGrid.ScopeEntryInit(ce.value(), isRegex));
                         }
                         scopeGrid.setEntries(init);
                     } else {
-                        scopeGrid.setEntries(List.of(new ScopeGridPanel.ScopeEntryInit("", true)));
+                        scopeGrid.setEntries(List.of(new ScopeGrid.ScopeEntryInit("", true)));
                     }
-                    scopeGrid.customRadio().setSelected(true);
+                    customRadio.setSelected(true);
                 }
                 case ConfigKeys.SCOPE_BURP -> burpSuiteRadio.setSelected(true);
                 default -> allRadio.setSelected(true);
@@ -392,7 +358,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             scopeType = ConfigKeys.SCOPE_ALL;
         } else if (burpSuiteRadio.isSelected()) {
             scopeType = ConfigKeys.SCOPE_BURP;
-        } else if (scopeGrid.customRadio().isSelected()) {
+        } else if (customRadio.isSelected()) {
             scopeType = ConfigKeys.SCOPE_CUSTOM;
             List<String> vals  = scopeGrid.values();
             List<Boolean> kinds = scopeGrid.regexKinds();
@@ -466,7 +432,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         allRadio.setName("scope.all");
         burpSuiteRadio.setName("scope.burp");
-        // Custom radio + fields are named inside ScopeGridPanel
+        customRadio.setName("scope.custom"); // radio now owned here
+        // Custom fields/toggles/indicators/delete are named inside ScopeGrid
 
         fileSinkCheckbox.setName("files.enable");
         filePathField.setName("files.path");

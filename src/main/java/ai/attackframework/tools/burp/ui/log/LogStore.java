@@ -1,4 +1,4 @@
-package ai.attackframework.tools.burp.ui;
+package ai.attackframework.tools.burp.ui.log;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -29,10 +29,17 @@ public final class LogStore {
         public final LocalDateTime ts;
         public final Level level;
         public final String message;
-        int repeats; // >= 1
+        private int repeats; // >= 1
+
         public Entry(LocalDateTime ts, Level level, String message) {
-            this.ts = ts; this.level = level; this.message = message; this.repeats = 1;
+            this.ts = ts;
+            this.level = level;
+            this.message = message;
+            this.repeats = 1;
         }
+
+        /** Number of consecutive duplicates represented by this entry (>= 1). */
+        public int repeats() { return repeats; }
     }
 
     /** Visibility predicate derived from the UI. */

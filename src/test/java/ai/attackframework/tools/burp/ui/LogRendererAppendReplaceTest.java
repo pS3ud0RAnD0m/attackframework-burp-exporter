@@ -1,5 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.log.LogRenderer;
+import ai.attackframework.tools.burp.ui.log.LogStore;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JTextPane;
