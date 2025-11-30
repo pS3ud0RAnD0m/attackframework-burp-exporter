@@ -1,69 +1,79 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies sink enablement now disables the sink's action buttons when unchecked.
+ * Verifies that toggling sink checkboxes enables/disables the corresponding
+ * text fields and action buttons.
  */
 class ConfigPanelSinkEnablementHeadlessTest {
 
-    @Test
-    void deselecting_sinks_disables_textfields_and_action_buttons() throws Exception {
-        ConfigPanel panel = new ConfigPanel();
+    private ConfigPanel panel;
 
-        JCheckBox filesEnable   = get(panel, "fileSinkCheckbox", JCheckBox.class);
-        JTextField filesPath    = get(panel, "filePathField", JTextField.class);
-        JButton createFiles     = get(panel, "createFilesButton", JButton.class);
-
-        JCheckBox osEnable      = get(panel, "openSearchSinkCheckbox", JCheckBox.class);
-        JTextField osUrl        = get(panel, "openSearchUrlField", JTextField.class);
-        JButton osTest          = get(panel, "testConnectionButton", JButton.class);
-        JButton osCreateIndexes = get(panel, "createIndexesButton", JButton.class);
-
-        // Baseline: when enabled, buttons and fields should be enabled
-        assertThat(filesEnable.isSelected()).isTrue();
-        assertThat(filesPath.isEnabled()).isTrue();
-        assertThat(createFiles.isEnabled()).isTrue();
-
-        assertThat(osEnable.isSelected()).isFalse();
-        // OpenSearch initially disabled under current defaults
-        assertThat(osUrl.isEnabled()).isFalse();
-        assertThat(osTest.isEnabled()).isFalse();
-        assertThat(osCreateIndexes.isEnabled()).isFalse();
-
-        // Files: deselect → textfield and button disabled
-        SwingUtilities.invokeAndWait(() -> filesEnable.setSelected(false));
-        assertThat(filesPath.isEnabled()).isFalse();
-        assertThat(createFiles.isEnabled()).isFalse();
-
-        // Files: reselect → both enabled
-        SwingUtilities.invokeAndWait(() -> filesEnable.setSelected(true));
-        assertThat(filesPath.isEnabled()).isTrue();
-        assertThat(createFiles.isEnabled()).isTrue();
-
-        // OpenSearch: enable → url and both buttons enabled
-        SwingUtilities.invokeAndWait(() -> osEnable.setSelected(true));
-        assertThat(osUrl.isEnabled()).isTrue();
-        assertThat(osTest.isEnabled()).isTrue();
-        assertThat(osCreateIndexes.isEnabled()).isTrue();
-
-        // OpenSearch: disable again → url and both buttons disabled
-        SwingUtilities.invokeAndWait(() -> osEnable.setSelected(false));
-        assertThat(osUrl.isEnabled()).isFalse();
-        assertThat(osTest.isEnabled()).isFalse();
-        assertThat(osCreateIndexes.isEnabled()).isFalse();
+    @BeforeEach
+    void setup() throws Exception {
+        AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> {
+            ConfigPanel p = new ConfigPanel(new ConfigController(new NoopUi()));
+            if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+                p.setSize(1000, 700);
+            }
+            p.doLayout();
+            ref.set(p);
+        });
+        panel = ref.get();
     }
 
-    private static <T> T get(Object target, String fieldName, Class<T> type) throws Exception {
-        var f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return type.cast(f.get(target));
+    @Test
+    void deselecting_sinks_disables_textfields_and_action_buttons() {
+        // Files row (access private fields directly via shared Reflect helper).
+        JCheckBox filesEnable = get(panel, "fileSinkCheckbox");
+        JTextField filesPath  = get(panel, "filePathField");
+        JButton filesCreate   = get(panel, "createFilesButton");
+
+        // OpenSearch row
+        JCheckBox osEnable  = get(panel, "openSearchSinkCheckbox");
+        JTextField osUrl    = get(panel, "openSearchUrlField");
+        JButton osTest      = get(panel, "testConnectionButton");
+        JButton osIndexes   = get(panel, "createIndexesButton");
+
+        // Ensure both sinks are enabled
+        if (!filesEnable.isSelected()) filesEnable.doClick();
+        if (!osEnable.isSelected()) osEnable.doClick();
+
+        // Enabled assertions
+        assertThat(filesPath.isEnabled()).isTrue();
+        assertThat(filesCreate.isEnabled()).isTrue();
+        assertThat(osUrl.isEnabled()).isTrue();
+        assertThat(osTest.isEnabled()).isTrue();
+        assertThat(osIndexes.isEnabled()).isTrue();
+
+        // Disable both sinks
+        if (filesEnable.isSelected()) filesEnable.doClick();
+        if (osEnable.isSelected()) osEnable.doClick();
+
+        // Disabled assertions
+        assertThat(filesPath.isEnabled()).isFalse();
+        assertThat(filesCreate.isEnabled()).isFalse();
+        assertThat(osUrl.isEnabled()).isFalse();
+        assertThat(osTest.isEnabled()).isFalse();
+        assertThat(osIndexes.isEnabled()).isFalse();
+    }
+
+    private static final class NoopUi implements ConfigController.Ui {
+        @Override public void onFileStatus(String message) { }
+        @Override public void onOpenSearchStatus(String message) { }
+        @Override public void onAdminStatus(String message) { }
     }
 }

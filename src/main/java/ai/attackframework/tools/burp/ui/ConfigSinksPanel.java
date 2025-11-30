@@ -1,15 +1,14 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 import net.miginfocom.swing.MigLayout;
 
-import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
 import java.util.Objects;
@@ -84,10 +83,7 @@ public record ConfigSinksPanel(
         fileRow.add(createFilesButton, ALIGN_LEFT_TOP);
 
         statusConfigurer.accept(fileStatus);
-        fileStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        fileStatusWrapper.removeAll();
-        fileStatusWrapper.add(fileStatus, "w pref!");
-        fileStatusWrapper.setVisible(false);
+        StatusViews.configureWrapper(fileStatusWrapper, fileStatus);
         fileRow.add(fileStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
         panel.add(fileRow, "growx, wrap");
 
@@ -101,10 +97,7 @@ public record ConfigSinksPanel(
         openSearchRow.add(createIndexesButton,    "gapleft 15, " + ALIGN_LEFT_TOP);
 
         statusConfigurer.accept(openSearchStatus);
-        statusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        statusWrapper.removeAll();
-        statusWrapper.add(openSearchStatus, "w pref!");
-        statusWrapper.setVisible(false);
+        StatusViews.configureWrapper(statusWrapper, openSearchStatus);
         openSearchRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
         panel.add(openSearchRow, "growx, wrap");
 

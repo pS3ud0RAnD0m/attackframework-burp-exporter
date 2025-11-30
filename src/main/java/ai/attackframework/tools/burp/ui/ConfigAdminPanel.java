@@ -4,92 +4,101 @@ import net.miginfocom.swing.MigLayout;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
+import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Component;
-import java.awt.Font;
 import java.awt.event.ActionListener;
 import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Builds the "Admin" section panel used by ConfigPanel.
- * Components are owned by ConfigPanel and injected to keep a single source of state.
+ * Admin section: Import / Export / Save actions and their status rows.
+ *
+ * <p><strong>Responsibilities:</strong> render admin controls and expose the assembled panel.
+ * Callers supply actions and a status configurator for consistent text-area setup.</p>
+ *
+ * <p><strong>Threading:</strong> created/used on the EDT. {@link #build()} mounts status text areas
+ * into their wrapper panels so callers can update them via
+ * {@link ai.attackframework.tools.burp.ui.primitives.StatusViews#setStatus(javax.swing.JTextArea,
+ * javax.swing.JPanel, String, int, int)}.</p>
  */
 public record ConfigAdminPanel(
         JTextArea importExportStatus,
         JPanel importExportStatusWrapper,
         JTextArea adminStatus,
         JPanel adminStatusWrapper,
-        int indentPx,
+        int indent,
         int rowGap,
-        Consumer<JTextArea> statusConfigurer,
-        Runnable importCallback,
-        Runnable exportCallback,
-        ActionListener saveListener
+        Consumer<JTextArea> statusConfigurator,
+        Runnable importAction,
+        Runnable exportAction,
+        ActionListener saveAction
 ) {
-    private static final String GAPLEFT = "gapleft ";
-    private static final String STATUS_WRAP = "hidemode 3, alignx left, w pref!, wrap";
 
+    /** Canonical constructor with null checks. */
     public ConfigAdminPanel {
         Objects.requireNonNull(importExportStatus, "importExportStatus");
         Objects.requireNonNull(importExportStatusWrapper, "importExportStatusWrapper");
         Objects.requireNonNull(adminStatus, "adminStatus");
         Objects.requireNonNull(adminStatusWrapper, "adminStatusWrapper");
-        Objects.requireNonNull(statusConfigurer, "statusConfigurer");
-        Objects.requireNonNull(importCallback, "importCallback");
-        Objects.requireNonNull(exportCallback, "exportCallback");
-        Objects.requireNonNull(saveListener, "saveListener");
+        Objects.requireNonNull(statusConfigurator, "statusConfigurator");
+        Objects.requireNonNull(importAction, "importAction");
+        Objects.requireNonNull(exportAction, "exportAction");
+        Objects.requireNonNull(saveAction, "saveAction");
     }
 
-    /**
-     * Returns a panel containing Import/Export controls, Save, and their status areas.
-     * Layout matches the original implementation for visual and test consistency.
-     */
+    /** Builds and returns the Admin panel. */
     public JPanel build() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", "[]" + rowGap + "[]"));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JPanel root = new JPanel(new BorderLayout());
 
-        JLabel header = new JLabel("Admin");
-        header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        panel.add(header, "gapbottom 6");
+        // Controls row
+        JPanel controls = new JPanel(new MigLayout(
+                "insets 0, gapx 10, gapy " + rowGap,
+                "[left]10[left]10[left]10[left]",
+                "[]"
+        ));
 
-        // Import/Export row
-        JPanel importExportRow = new JPanel(new MigLayout("insets 0", "[]15[]15[left, grow]", ""));
-        JButton importButton = new JButton("Import Config");
-        JButton exportButton = new JButton("Export Config");
-        importButton.addActionListener(e -> importCallback.run());
-        exportButton.addActionListener(e -> exportCallback.run());
-        importExportRow.add(importButton);
-        importExportRow.add(exportButton);
+        JButton importBtn = new JButton("Import Config");
+        JButton exportBtn = new JButton("Export Config");
+        JButton saveBtn   = new JButton("Save");
+        // Stable name for tests/tooling.
+        saveBtn.setName("admin.save");
 
-        statusConfigurer.accept(importExportStatus);
+        importBtn.addActionListener(e -> importAction.run());
+        exportBtn.addActionListener(e -> exportAction.run());
+        saveBtn.addActionListener(saveAction);
+
+        controls.add(importBtn, "gapleft " + indent);
+        controls.add(exportBtn);
+        controls.add(saveBtn);
+
+        // Status rows (mirror ConfigSinksPanel styling: compact, bordered, pref-width areas)
+        statusConfigurator.accept(importExportStatus);
+        statusConfigurator.accept(adminStatus);
+
         importExportStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         importExportStatusWrapper.removeAll();
         importExportStatusWrapper.add(importExportStatus, "w pref!");
         importExportStatusWrapper.setVisible(false);
-        importExportRow.add(importExportStatusWrapper, STATUS_WRAP);
 
-        panel.add(importExportRow, GAPLEFT + indentPx + ", wrap");
-
-        // Save row
-        JPanel saveRow = new JPanel(new MigLayout("insets 0", "[]", ""));
-        JButton saveButton = new JButton("Save");
-        saveButton.setToolTipText("Save and apply current config");
-        saveButton.addActionListener(saveListener);
-        saveRow.add(saveButton);
-
-        statusConfigurer.accept(adminStatus);
         adminStatusWrapper.setBorder(BorderFactory.createLineBorder(Color.GRAY));
         adminStatusWrapper.removeAll();
         adminStatusWrapper.add(adminStatus, "w pref!");
         adminStatusWrapper.setVisible(false);
-        saveRow.add(adminStatusWrapper, STATUS_WRAP);
 
-        panel.add(saveRow, GAPLEFT + indentPx);
+        // Two rows: import/export status (row 1) and admin status (row 2) with a small vertical gap.
+        final int gapPx = 8;
+        JPanel statuses = new JPanel(new MigLayout(
+                "insets " + rowGap + " " + indent + " 0 0, gapy " + gapPx,
+                "[left]",
+                "[] " + gapPx + " []"
+        ));
+        statuses.add(importExportStatusWrapper, "hidemode 3, w pref!, wrap");
+        statuses.add(adminStatusWrapper, "hidemode 3, w pref!");
 
-        return panel;
+        root.add(controls, BorderLayout.NORTH);
+        root.add(statuses, BorderLayout.CENTER);
+        return root;
     }
 }

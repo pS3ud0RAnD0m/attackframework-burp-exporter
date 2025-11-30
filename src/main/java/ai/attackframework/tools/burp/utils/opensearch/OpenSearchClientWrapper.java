@@ -6,22 +6,36 @@ import org.opensearch.client.opensearch.core.InfoResponse;
 import org.opensearch.client.opensearch.core.IndexRequest;
 import org.opensearch.client.opensearch.core.IndexResponse;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.Map;
 
 public class OpenSearchClientWrapper {
 
     public static OpenSearchStatus testConnection(String baseUrl) {
         try {
+            Logger.logInfo("[OpenSearch] Testing connection to: " + baseUrl);
+
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
             InfoResponse info = client.info();
 
             String version = info.version().number();
             String distribution = info.version().distribution();
 
+            Logger.logInfo("[OpenSearch] Connection successful: " + distribution + " " + version);
+
             return new OpenSearchStatus(true, distribution, version, "Connection successful");
 
         } catch (Exception e) {
-            return new OpenSearchStatus(false, "", "", e.getMessage());
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            Logger.logError("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
+
+            // Mirror verbose error detail to the UI (stack trace), similar to OpenSearchSink.
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            Logger.logError(sw.toString().stripTrailing());
+
+            return new OpenSearchStatus(false, "", "", msg);
         }
     }
 
@@ -29,7 +43,14 @@ public class OpenSearchClientWrapper {
         try {
             return testConnection(baseUrl);
         } catch (Exception e) {
-            return new OpenSearchStatus(false, "", "", e.getMessage());
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            Logger.logError("[OpenSearch] safeTestConnection threw for " + baseUrl + ": " + msg);
+
+            StringWriter sw = new StringWriter();
+            e.printStackTrace(new PrintWriter(sw));
+            Logger.logError(sw.toString().stripTrailing());
+
+            return new OpenSearchStatus(false, "", "", msg);
         }
     }
 

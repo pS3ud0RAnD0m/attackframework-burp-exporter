@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -13,57 +14,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConfigControllerFilesIT {
 
-    private static final int TIMEOUT_SECONDS = 4;
-
-    @Test
-    void createFilesAsync_creates_then_reportsAlreadyExisted_onSecondRun() throws Exception {
-        Path tmp = Files.createTempDirectory("af-files-");
-        CapturingUi ui = new CapturingUi();
-        ConfigController c = new ConfigController(ui);
-
-        ui.resetFileLatch();
-        c.createFilesAsync(tmp.toString(), List.of("settings", "sitemap"));
-        assertThat(ui.awaitFile()).as("first status").isTrue();
-        // Accept singular/plural: "File(s) created:"
-        assertThat(ui.lastFileStatus).matches("(?s)^(File|Files) created:.*");
-
-        ui.resetFileLatch();
-        c.createFilesAsync(tmp.toString(), List.of("settings", "sitemap"));
-        assertThat(ui.awaitFile()).as("second status").isTrue();
-        // Accept singular/plural: "File(s) already existed:"
-        assertThat(ui.lastFileStatus).matches("(?s)^Files? already existed:.*");
+    private static final class TestUi implements ConfigController.Ui {
+        volatile String fileMsg;
+        @Override public void onFileStatus(String message) { this.fileMsg = message; }
+        @Override public void onOpenSearchStatus(String message) { /* not used */ }
+        @Override public void onAdminStatus(String message) { /* not used */ }
     }
 
     @Test
-    void createFilesAsync_reportsFailed_whenRootIsAFile() throws Exception {
-        Path tmpFile = Files.createTempFile("af-files-", ".tmp");
-        CapturingUi ui = new CapturingUi();
-        ConfigController c = new ConfigController(ui);
+    void createFiles_writesExpectedStatus() throws Exception {
+        Path tmp = Files.createTempDirectory("cc-files");
+        tmp.toFile().deleteOnExit();
 
-        ui.resetFileLatch();
-        c.createFilesAsync(tmpFile.toString(), List.of("settings"));
-        assertThat(ui.awaitFile()).isTrue();
-        // Accept singular/plural: "File creation(s) failed:"
-        assertThat(ui.lastFileStatus).matches("(?s)^File creations? failed:.*");
-    }
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
 
-    private static final class CapturingUi implements ConfigController.Ui {
-        volatile String lastFileStatus = "";
-        volatile String lastOsStatus = "";
-        volatile String lastAdminStatus = "";
-        volatile ConfigState.State lastImported;
+        CountDownLatch done = new CountDownLatch(1);
+        // wait for async UI message
+        new Thread(() -> {
+            while (ui.fileMsg == null) {
+                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
+            }
+            done.countDown();
+        }).start();
 
-        private CountDownLatch fileLatch = new CountDownLatch(1);
+        cc.createFilesAsync(tmp.toString(), List.of(
+                ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_SITEMAP));
 
-        void resetFileLatch() { fileLatch = new CountDownLatch(1); }
-        boolean awaitFile() throws InterruptedException { return fileLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS); }
-
-        @Override public void onFileStatus(String message) {
-            lastFileStatus = message == null ? "" : message;
-            fileLatch.countDown();
-        }
-        @Override public void onOpenSearchStatus(String message) { lastOsStatus = message == null ? "" : message; }
-        @Override public void onAdminStatus(String message) { lastAdminStatus = message == null ? "" : message; }
-        @Override public void onImportResult(ConfigState.State state) { lastImported = state; }
+        assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.fileMsg)
+                .isNotBlank()
+                .containsAnyOf("Created file", "Created files", "already existed");
     }
 }

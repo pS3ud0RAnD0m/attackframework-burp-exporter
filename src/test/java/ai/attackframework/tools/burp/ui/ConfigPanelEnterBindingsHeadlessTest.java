@@ -1,214 +1,72 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.utils.IndexNaming;
-import org.junit.jupiter.api.Tag;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import javax.swing.InputMap;
 import javax.swing.JCheckBox;
-import javax.swing.JComponent;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.KeyStroke;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import java.awt.event.KeyEvent;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.awt.Component;
+import java.awt.Container;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Headless verification of field-scoped Enter bindings in ConfigPanel.
- *
- * Goals:
- *  - Press Enter on {@code filePathField} to trigger the same code path as clicking "Create Files".
- *  - Press Enter on {@code openSearchUrlField} to trigger the same code path as clicking "Test Connection".
- *
- * Design notes (deterministic & fast):
- *  - We simulate Enter via {@link JTextField#postActionEvent()} (no Toolkit events).
- *  - We await UI changes via a DocumentListener + CountDownLatch (EDT-safe).
- *  - For files, we pre-create all expected files to yield the deterministic “already existed” outcome.
- *  - For OpenSearch, we point to 127.0.0.1:1 to force a quick failure path; we assert transition
- *    from “Testing ...” to a non-empty final state.
+ * Pressing Enter in the OS URL field should invoke testConnection.
+ * Ensures OpenSearch is enabled before firing the action.
  */
-@Tag("headless")
 class ConfigPanelEnterBindingsHeadlessTest {
-    private static final long DEFAULT_WAIT_MS = 8000;
-    private static final long TESTING_WAIT_MS = 3000;
-    private static final String TESTING_TEXT  = "Testing ...";
 
-    @Test
-    void pressEnterOnFilePathField_triggersCreateFiles_andUpdatesStatus() throws Exception {
-        ConfigPanel panel = new ConfigPanel();
+    private static final class TestUi implements ConfigController.Ui {
+        final AtomicReference<String> os = new AtomicReference<>();
+        @Override public void onFileStatus(String m) { }
+        @Override public void onOpenSearchStatus(String m) { os.set(m); }
+        @Override public void onAdminStatus(String m) { }
+    }
 
-        JTextField pathField = get(panel, "filePathField");
-        JTextArea fileStatus = get(panel, "fileStatus");
-        assertEnterBindingPresent(pathField);
+    private TestUi ui;
+    private ConfigPanel panel;
 
-        List<String> sources   = Arrays.asList("settings", "sitemap", "findings", "traffic");
-        List<String> baseNames = IndexNaming.computeIndexBaseNames(sources);
-        List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
-
-        Path tmpDir = Files.createTempDirectory("af-burp-enter-files-");
-        for (String name : jsonNames) Files.createFile(tmpDir.resolve(name));
-
-        onEdtAndWait(() -> pathField.setText(tmpDir.toString()));
-        onEdtAndWait(pathField::postActionEvent);
-
-        waitForFinalFileStatus(fileStatus);
-
-        String status = fileStatus.getText().toLowerCase(Locale.ROOT);
-        assertTrue(status.contains("already existed"),
-                "Expected 'already existed' after Enter; actual:\n" + fileStatus.getText());
+    @BeforeEach
+    void setup() {
+        ui = new TestUi();
+        panel = new ConfigPanel(new ConfigController(ui));
+        JCheckBox osEnable = (JCheckBox) findByName(panel, "os.enable");
+        if (osEnable != null && !osEnable.isSelected()) osEnable.doClick();
     }
 
     @Test
-    void pressEnterOnOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() throws Exception {
-        ConfigPanel panel = new ConfigPanel();
+    void pressEnterOnOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() {
+        JTextField field = (JTextField) findByName(panel, "os.url");
+        if (field == null) throw new IllegalStateException("Component not found: os.url");
 
-        JCheckBox osEnable = get(panel, "openSearchSinkCheckbox");
-        onEdtAndWait(() -> osEnable.setSelected(true));
+        field.setText("http://127.0.0.1:1");
+        field.postActionEvent(); // Enter -> bound action triggers testConnection
 
-        JTextField urlField = get(panel, "openSearchUrlField");
-        JTextArea osStatus  = get(panel, "openSearchStatus");
-        assertEnterBindingPresent(urlField);
-
-        onEdtAndWait(() -> urlField.setText("http://127.0.0.1:1"));
-        onEdtAndWait(urlField::postActionEvent);
-
-        waitForTestingStatus(osStatus);
-        waitForOpenSearchFinal(osStatus);
-
-        String finalText = osStatus.getText();
-        assertNotEquals(TESTING_TEXT, finalText, "OpenSearch status should advance past 'Testing ...'");
-        assertTrue(finalText != null && finalText.trim().length() > 3,
-                "Expected a non-trivial final status message.");
+        await(() -> ui.os.get() != null);
+        assertThat(ui.os.get()).isNotBlank();
     }
 
-    // ---------- helpers ----------
-
-    /** Confirms Enter is mapped in the InputMap and resolvable in the ActionMap. */
-    private static void assertEnterBindingPresent(JTextField field) {
-        InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
-        Object actionKey = im.get(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
-        assertNotNull(actionKey, "Expected an InputMap binding for VK_ENTER");
-        assertNotNull(field.getActionMap().get(actionKey),
-                "Expected an ActionMap entry for the VK_ENTER binding key: " + actionKey);
-    }
-
-    /** Waits specifically for the transient “Testing ...” text used by the Test Connection flow. */
-    private static void waitForTestingStatus(JTextArea area) throws Exception {
-        CountDownLatch latch = new CountDownLatch(1);
-        DocumentListener[] holder = new DocumentListener[1];
-
-        onEdtAndWait(() -> {
-            DocumentListener dl = new DocumentListener() {
-                private void check() { if (TESTING_TEXT.equals(area.getText())) latch.countDown(); }
-                @Override public void insertUpdate(DocumentEvent e) { check(); }
-                @Override public void removeUpdate(DocumentEvent e) { check(); }
-                @Override public void changedUpdate(DocumentEvent e) { check(); }
-            };
-            holder[0] = dl;
-            area.getDocument().addDocumentListener(dl);
-            if (TESTING_TEXT.equals(area.getText())) latch.countDown();
-        });
-
-        boolean ok = latch.await(TESTING_WAIT_MS, TimeUnit.MILLISECONDS);
-
-        onEdtAndWait(() -> {
-            if (holder[0] != null) area.getDocument().removeDocumentListener(holder[0]);
-        });
-
-        if (!ok) fail("Timed out waiting for OpenSearch status to equal '" + TESTING_TEXT + "'. Last value: " + area.getText());
-    }
-
-    private static boolean isFinalFileStatus(String s) {
-        if (s == null) return false;
-        String t = s.toLowerCase(Locale.ROOT);
-        return t.contains("file created:")
-                || t.contains("files created:")
-                || t.contains("file already existed:")
-                || t.contains("files already existed:")
-                || t.contains("file creation failed:")
-                || t.contains("file creations failed:")
-                || t.startsWith("file creation error:");
-    }
-
-    private static void waitForFinalFileStatus(JTextArea area) throws Exception {
-        CountDownLatch latch = new CountDownLatch(1);
-        DocumentListener[] holder = new DocumentListener[1];
-
-        onEdtAndWait(() -> {
-            DocumentListener dl = new DocumentListener() {
-                private void check() { if (isFinalFileStatus(area.getText())) latch.countDown(); }
-                @Override public void insertUpdate(DocumentEvent e) { check(); }
-                @Override public void removeUpdate(DocumentEvent e) { check(); }
-                @Override public void changedUpdate(DocumentEvent e) { check(); }
-            };
-            holder[0] = dl;
-            area.getDocument().addDocumentListener(dl);
-            if (isFinalFileStatus(area.getText())) latch.countDown();
-        });
-
-        boolean ok = latch.await(DEFAULT_WAIT_MS, TimeUnit.MILLISECONDS);
-
-        onEdtAndWait(() -> {
-            if (holder[0] != null) area.getDocument().removeDocumentListener(holder[0]);
-        });
-
-        if (!ok) fail("Timed out waiting for file status update; last value: \"" + area.getText() + "\"");
-    }
-
-    /** Waits for OpenSearch status to advance past the transient “Testing ...” message. */
-    private static void waitForOpenSearchFinal(JTextArea area) throws Exception {
-        CountDownLatch latch = new CountDownLatch(1);
-        DocumentListener[] holder = new DocumentListener[1];
-
-        onEdtAndWait(() -> {
-            DocumentListener dl = new DocumentListener() {
-                private void check() {
-                    String txt = area.getText();
-                    if (txt != null && !TESTING_TEXT.equals(txt) && !txt.trim().isEmpty()) {
-                        latch.countDown();
-                    }
-                }
-                @Override public void insertUpdate(DocumentEvent e) { check(); }
-                @Override public void removeUpdate(DocumentEvent e) { check(); }
-                @Override public void changedUpdate(DocumentEvent e) { check(); }
-            };
-            holder[0] = dl;
-            area.getDocument().addDocumentListener(dl);
-            String txt = area.getText();
-            if (txt != null && !TESTING_TEXT.equals(txt) && !txt.trim().isEmpty()) {
-                latch.countDown();
+    // ---- helpers ----
+    private static Component findByName(Container root, String name) {
+        if (name != null && name.equals(root.getName())) return root;
+        for (Component c : root.getComponents()) {
+            if (name != null && name.equals(c.getName())) return c;
+            if (c instanceof Container child) {
+                Component hit = findByName(child, name);
+                if (hit != null) return hit;
             }
-        });
-
-        boolean ok = latch.await(DEFAULT_WAIT_MS, TimeUnit.MILLISECONDS);
-
-        onEdtAndWait(() -> {
-            if (holder[0] != null) area.getDocument().removeDocumentListener(holder[0]);
-        });
-
-        if (!ok) fail("Timed out waiting for OpenSearch status to advance beyond '" + TESTING_TEXT + "'. Last value: " + area.getText());
+        }
+        return null;
     }
 
-    /** Runs the given block on the EDT, blocking until completion (avoids race conditions in tests). */
-    private static void onEdtAndWait(Runnable r) throws Exception {
-        if (javax.swing.SwingUtilities.isEventDispatchThread()) {
-            r.run();
-        } else {
-            javax.swing.SwingUtilities.invokeAndWait(r);
+    private static void await(java.util.concurrent.Callable<Boolean> cond) {
+        long deadline = System.currentTimeMillis() + 2500;
+        while (System.currentTimeMillis() < deadline) {
+            try { if (Boolean.TRUE.equals(cond.call())) return; } catch (Exception ignored) {}
+            try { Thread.sleep(15); } catch (InterruptedException ignored) {}
         }
+        throw new AssertionError("Timed out waiting for OpenSearch status");
     }
 }

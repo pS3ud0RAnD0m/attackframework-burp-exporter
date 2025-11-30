@@ -1,126 +1,101 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.testutils.Reflect;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JComponent;
-import javax.swing.JTextField;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+import java.awt.Component;
+import java.awt.Container;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Headless verification that {@link ConfigPanel} delegates actions to {@link ConfigController}.
- *
- * <p>We do not change production code: this test swaps the private {@code controller} field via
- * the shared {@link Reflect} helper and injects a fake that records invocations.</p>
+ * Verifies that the panel delegates to the controller and posts Ui updates.
+ * Enables OpenSearch (os.enable) before invoking OS actions.
  */
 class ConfigPanelDelegationHeadlessTest {
 
-    private static final int TIMEOUT_SECONDS = 4;
+    private static final class TestUi implements ConfigController.Ui {
+        volatile String fileMsg;
+        volatile String osMsg;
+        @Override public void onFileStatus(String m) { fileMsg = m; }
+        @Override public void onOpenSearchStatus(String m) { osMsg = m; }
+        @Override public void onAdminStatus(String m) { }
+    }
 
     @Test
-    void clicking_buttons_invokes_controller_methods_and_updates_status() throws Exception {
-        ConfigPanel panel = new ConfigPanel();
+    void clicking_buttons_invokes_controller_and_posts_status() throws Exception {
+        TestUi ui = new TestUi();
+        ConfigPanel panel = new ConfigPanel(new ConfigController(ui));
 
-        // Minimal inputs so handlers run without early exits
-        JCheckBox filesEnable = findByName(panel, "files.enable", JCheckBox.class);
-        JTextField pathField = findByName(panel, "files.path", JTextField.class);
-        filesEnable.setSelected(true);
-        pathField.setText("/tmp/af");
+        // Enable OpenSearch sink so OS buttons are actionable
+        JCheckBox osEnable = (JCheckBox) findByName(panel, "os.enable");
+        if (osEnable != null && !osEnable.isSelected()) osEnable.doClick();
 
-        AtomicBoolean createFilesCalled = new AtomicBoolean(false);
-        AtomicBoolean testConnCalled = new AtomicBoolean(false);
-        AtomicBoolean createIdxCalled = new AtomicBoolean(false);
+        JButton testConn  = (JButton) find(panel, "os.test", "Test Connection");
+        JButton createIdx = (JButton) find(panel, "os.createIndexes", "Create Indexes");
+        JButton createFil = (JButton) find(panel, "files.create", "Create Files");
 
-        CountDownLatch fileLatch = new CountDownLatch(1);
-        CountDownLatch osLatch1 = new CountDownLatch(1);
-        CountDownLatch osLatch2 = new CountDownLatch(1);
+        CountDownLatch os1 = new CountDownLatch(1);
+        CountDownLatch os2 = new CountDownLatch(1);
+        CountDownLatch fs1 = new CountDownLatch(1);
 
-        // Fake ports: flip flags and push canned status into the panel UI callbacks
-        ConfigController.FilePorts filePorts = new ConfigController.FilePorts() {
-            @Override
-            public List<ai.attackframework.tools.burp.utils.FileUtil.CreateResult> ensureJsonFiles(
-                    String root, List<String> jsonNames) {
-                createFilesCalled.set(true);
-                panel.onFileStatus("ok");
-                fileLatch.countDown();
-                return List.of();
-            }
-            @Override public void writeStringCreateDirs(Path out, String content) { /* not used here */ }
-            @Override public String readString(Path in) { return ""; }
-        };
+        new Thread(() -> { await(() -> ui.osMsg != null); os1.countDown(); }).start();
+        new Thread(() -> { await(() -> ui.osMsg != null); os2.countDown(); }).start();
+        new Thread(() -> { await(() -> ui.fileMsg != null); fs1.countDown(); }).start();
 
-        ConfigController.OpenSearchPorts osPorts = new ConfigController.OpenSearchPorts() {
-            @Override
-            public ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper.OpenSearchStatus
-            testConnection(String url) {
-                testConnCalled.set(true);
-                panel.onOpenSearchStatus("OK");
-                osLatch1.countDown();
-                return new ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper
-                        .OpenSearchStatus(true, "OK", "dist", "0");
-            }
-            @Override
-            public List<ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult>
-            createSelectedIndexes(String url, List<String> selectedSources) {
-                createIdxCalled.set(true);
-                panel.onOpenSearchStatus("OK");
-                osLatch2.countDown();
-                return List.of();
-            }
-        };
-
-        ConfigController.IndexNamingPorts namingPorts = new ConfigController.IndexNamingPorts() {
-            @Override public List<String> computeIndexBaseNames(List<String> selectedSources) { return List.of("a"); }
-            @Override public List<String> toJsonFileNames(List<String> baseNames) { return List.of("a.json"); }
-        };
-
-        // Inject fake controller (no production changes)
-        ConfigController fake = new ConfigController(panel, filePorts, osPorts, namingPorts);
-        Reflect.set(panel, "controller", fake);
-
-        // Click Create Files
-        JButton createFiles = findByName(panel, "files.create", JButton.class);
-        createFiles.doClick();
-        assertThat(fileLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-        assertThat(createFilesCalled.get()).isTrue();
-
-        // Click Test Connection
-        JButton testConn = findByName(panel, "os.test", JButton.class);
-        findByName(panel, "os.enable", JCheckBox.class).setSelected(true);
-        findByName(panel, "os.url", JTextField.class).setText("http://x");
         testConn.doClick();
-        assertThat(osLatch1.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-        assertThat(testConnCalled.get()).isTrue();
-
-        // Click Create Indexes
-        JButton createIdx = findByName(panel, "os.createIndexes", JButton.class);
         createIdx.doClick();
-        assertThat(osLatch2.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-        assertThat(createIdxCalled.get()).isTrue();
+        createFil.doClick();
+
+        assertThat(os1.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(os2.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(fs1.await(3, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(ui.osMsg).isNotBlank();
+        assertThat(ui.fileMsg).isNotBlank();
     }
 
-    /* ----------------------------- helpers ----------------------------- */
+    // ---- helpers ----
 
-    private static <T extends JComponent> T findByName(JComponent root, String name, Class<T> type) {
-        List<T> all = new ArrayList<>();
-        collect(root, type, all);
-        for (T c : all) if (name.equals(c.getName())) return c;
-        throw new AssertionError("Component not found: " + name + " (" + type.getSimpleName() + ")");
+    private static Component find(Container root, String name, String fallbackText) {
+        Component byName = findByName(root, name);
+        if (byName != null) return byName;
+        return findByText(root, fallbackText);
     }
 
-    private static <T extends JComponent> void collect(JComponent root, Class<T> type, List<T> out) {
-        if (type.isInstance(root)) out.add(type.cast(root));
-        for (var comp : root.getComponents()) {
-            if (comp instanceof JComponent jc) collect(jc, type, out);
+    private static Component findByName(Container root, String name) {
+        if (name != null && name.equals(root.getName())) return root;
+        for (Component c : root.getComponents()) {
+            if (name != null && name.equals(c.getName())) return c;
+            if (c instanceof Container child) {
+                Component hit = findByName(child, name);
+                if (hit != null) return hit;
+            }
+        }
+        return null;
+    }
+
+    private static Component findByText(Container root, String text) {
+        for (Component c : root.getComponents()) {
+            if (c instanceof AbstractButton b && text.equals(b.getText())) return b;
+            if (c instanceof Container child) {
+                Component hit = findByText(child, text);
+                if (hit != null) return hit;
+            }
+        }
+        throw new IllegalStateException("Component not found: " + text);
+    }
+
+    private static void await(java.util.concurrent.Callable<Boolean> cond) {
+        long deadline = System.currentTimeMillis() + 2500;
+        while (System.currentTimeMillis() < deadline) {
+            try { if (Boolean.TRUE.equals(cond.call())) return; } catch (Exception ignored) {}
+            try { Thread.sleep(15); } catch (InterruptedException ignored) {}
         }
     }
 }

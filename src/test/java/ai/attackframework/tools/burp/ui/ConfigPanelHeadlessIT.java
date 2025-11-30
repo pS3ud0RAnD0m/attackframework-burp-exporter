@@ -1,135 +1,94 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JTextArea;
-import javax.swing.SwingUtilities;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.awt.Component;
+import java.awt.Container;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Headless smoke tests for ConfigPanel actions.
- * Intent:
- * - Clicking “Test Connection” completes and writes a non-empty status.
- * - Clicking “Create Indexes” completes and writes a status describing the outcome.
+ * OS test/create buttons should produce a Ui status update.
+ * Ensures OpenSearch is enabled before invoking OS actions.
  */
-@Tag("integration")
 class ConfigPanelHeadlessIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final class TestUi implements ConfigController.Ui {
+        final AtomicReference<String> os = new AtomicReference<>();
+        @Override public void onFileStatus(String m) { }
+        @Override public void onOpenSearchStatus(String m) { os.set(m); }
+        @Override public void onAdminStatus(String m) { }
+    }
 
-    @Test
-    void testConnection_button_completes_and_setsStatus() throws Exception {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+    private TestUi ui;
+    private ConfigPanel panel;
 
-        ConfigPanel panel = callEdt(ConfigPanel::new);
-
-        // New contract: sink must be enabled before firing actions.
-        JCheckBox osEnable = get(panel, "openSearchSinkCheckbox");
-        onEdtAndWait(() -> osEnable.setSelected(true));
-
-        JButton testBtn   = get(panel, "testConnectionButton");
-        JTextArea statusA = get(panel, "openSearchStatus");
-
-        onEdtAndWait(() -> statusA.setText(""));
-        onEdtAndWait((Runnable) testBtn::doClick);
-        awaitStatusUpdate(statusA, 15_000);
-
-        String text = statusA.getText().trim();
-        assertThat(text)
-                .isNotBlank()
-                .matches(t -> t.startsWith("✖ ") || t.contains("("));
+    @BeforeEach
+    void setup() {
+        ui = new TestUi();
+        panel = new ConfigPanel(new ConfigController(ui));
+        JCheckBox osEnable = (JCheckBox) findByName(panel, "os.enable");
+        if (osEnable != null && !osEnable.isSelected()) osEnable.doClick();
     }
 
     @Test
-    void createIndexes_button_completes_and_setsStatus() throws Exception {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
-
-        ConfigPanel panel = callEdt(ConfigPanel::new);
-
-        JCheckBox osEnable = get(panel, "openSearchSinkCheckbox");
-        onEdtAndWait(() -> osEnable.setSelected(true));
-
-        JButton createBtn = get(panel, "createIndexesButton");
-        JTextArea statusA  = get(panel, "openSearchStatus");
-
-        onEdtAndWait(() -> statusA.setText(""));
-        onEdtAndWait((Runnable) createBtn::doClick);
-        awaitStatusUpdate(statusA, 30_000);
-
-        String text = statusA.getText().trim();
-        assertThat(text)
-                .isNotBlank()
-                .containsAnyOf(
-                        "Index created:", "Indexes created:",
-                        "Index already existed:", "Indexes already existed:",
-                        "Index failed:", "Indexes failed:"
-                );
+    void testConnection_button_completes_and_setsStatus() {
+        JButton test = (JButton) find(panel, "os.test", "Test Connection");
+        test.doClick();
+        await(() -> ui.os.get() != null);
+        assertThat(ui.os.get()).isNotBlank();
     }
 
-    // ---------- helpers (unchanged) ----------
-
-    private static <T> T callEdt(java.util.concurrent.Callable<T> c) throws Exception { return onEdtAndWait(c); }
-
-    private static <T> T onEdtAndWait(java.util.concurrent.Callable<T> c) throws Exception {
-        AtomicReference<T> ref = new AtomicReference<>();
-        AtomicReference<Exception> err = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            try { ref.set(c.call()); } catch (Exception e) { err.set(e); }
-        });
-        if (err.get() != null) throw err.get();
-        return ref.get();
+    @Test
+    void createIndexes_button_completes_and_setsStatus() {
+        JButton idx = (JButton) find(panel, "os.createIndexes", "Create Indexes");
+        idx.doClick();
+        await(() -> ui.os.get() != null);
+        assertThat(ui.os.get()).isNotBlank();
     }
 
-    private static void onEdtAndWait(Runnable r) throws Exception {
-        AtomicReference<Exception> err = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            try { r.run(); } catch (Exception e) { err.set(e); }
-        });
-        if (err.get() != null) throw err.get();
+    // ---- helpers ----
+    private static Component find(Container root, String name, String text) {
+        Component byName = findByName(root, name);
+        if (byName != null) return byName;
+        return findByText(root, text);
     }
 
-    private static boolean isFinalStatus(String text) {
-        if (text == null || text.isBlank()) return false;
-        return !text.equals("Testing ...") && !text.equals("Creating indexes . . .");
+    private static Component findByName(Container root, String name) {
+        if (name != null && name.equals(root.getName())) return root;
+        for (Component c : root.getComponents()) {
+            if (name != null && name.equals(c.getName())) return c;
+            if (c instanceof Container child) {
+                Component hit = findByName(child, name);
+                if (hit != null) return hit;
+            }
+        }
+        return null;
     }
 
-    private static void awaitStatusUpdate(JTextArea area, long timeoutMs) throws Exception {
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<DocumentListener> ref = new AtomicReference<>();
+    private static Component findByText(Container root, String text) {
+        for (Component c : root.getComponents()) {
+            if (c instanceof AbstractButton b && text.equals(b.getText())) return b;
+            if (c instanceof Container child) {
+                Component hit = findByText(child, text);
+                if (hit != null) return hit;
+            }
+        }
+        throw new IllegalStateException("Component not found: " + text);
+    }
 
-        onEdtAndWait(() -> {
-            DocumentListener dl = new DocumentListener() {
-                private void check() { if (isFinalStatus(area.getText())) latch.countDown(); }
-                @Override public void insertUpdate(DocumentEvent e) { check(); }
-                @Override public void removeUpdate(DocumentEvent e) { check(); }
-                @Override public void changedUpdate(DocumentEvent e) { check(); }
-            };
-            ref.set(dl);
-            area.getDocument().addDocumentListener(dl);
-            if (isFinalStatus(area.getText())) latch.countDown();
-        });
-
-        boolean ok = latch.await(timeoutMs, TimeUnit.MILLISECONDS);
-
-        onEdtAndWait(() -> {
-            DocumentListener dl = ref.get();
-            if (dl != null) area.getDocument().removeDocumentListener(dl);
-        });
-
-        if (!ok) throw new AssertionError("Timed out waiting for status text update; last value: \"" + area.getText() + "\"");
+    private static void await(java.util.concurrent.Callable<Boolean> cond) {
+        long deadline = System.currentTimeMillis() + 2500;
+        while (System.currentTimeMillis() < deadline) {
+            try { if (Boolean.TRUE.equals(cond.call())) return; } catch (Exception ignored) {}
+            try { Thread.sleep(15); } catch (InterruptedException ignored) {}
+        }
+        throw new AssertionError("Timed out waiting for status text update; last value: \"\"");
     }
 }

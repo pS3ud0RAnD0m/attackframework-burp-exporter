@@ -122,7 +122,7 @@ public class OpenSearchSink {
             if (jsonBody != null) Logger.logError("Mapping JSON:\n" + jsonBody);
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
-            Logger.logError(sw.toString());
+            Logger.logError(sw.toString().stripTrailing());
 
             String reason = conciseRootCause(e);
             return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);

@@ -1,6 +1,12 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.primitives.*;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
+import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
+import ai.attackframework.tools.burp.ui.primitives.StatusViews;
+import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
+import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
+import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -33,77 +39,61 @@ import java.util.List;
 /**
  * Main configuration panel for data sources, scope, sinks, and admin actions.
  *
- * <p><strong>Responsibilities</strong>: renders controls; composes/reads {@link ConfigState.State};
- * delegates long-running operations to {@link ConfigController}.</p>
+ * <p><strong>Responsibilities:</strong> render the UI, compose/parse {@link ConfigState.State},
+ * and delegate long-running work to {@link ConfigController}.</p>
  *
- * <p><strong>Threading</strong>: all construction and UI updates occur on the EDT.
- * Controller callbacks may arrive off-EDT; those are marshaled back to the EDT.</p>
- *
- * <p><strong>Tests</strong>: component names are stable and used by headless tests.
- * Do not change the {@code setName(...)} values without updating tests.</p>
+ * <p><strong>Threading:</strong> callers construct and interact with this panel on the EDT.</p>
  */
 public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
-    @Serial
-    private static final long serialVersionUID = 1L;
+    @Serial private static final long serialVersionUID = 1L;
 
-    // ----- Layout & status sizing -----
-
-    /** Left indent for scope rows. */
+    // ---- Layout & status sizing
     private static final int INDENT = 30;
-    /** Vertical gap between major rows. */
     private static final int ROW_GAP = 15;
-    /** Minimum columns for status text areas. */
-    private static final int STATUS_MIN_COLS = 20;
-    /** Maximum columns for status text areas (prevents runaway growth). */
-    private static final int STATUS_MAX_COLS = 200;
-    /** Milliseconds to keep admin status visible before auto-hide. */
-    private static final int ADMIN_HIDE_DELAY_MS = 3000;
-
-    // ----- MigLayout snippets (centralized to keep constraints consistent) -----
-
     private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
     private static final String MIG_PREF_COL = "[pref!]";
-    private static final String MIG_GROWX_WRAP = "growx, wrap";
+    private static final String MIG_FILL_WRAP = "growx, wrap";
+    private static final int STATUS_MIN_COLS = 20;
+    private static final int STATUS_MAX_COLS = 200;
+    private static final int ADMIN_HIDE_DELAY_MS = 3000;
 
-    // ----- Sources (checkboxes reflect selected data sources) -----
-
+    // ---- Sources
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
     private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
     private final JCheckBox issuesCheckbox   = new JCheckBox("Issues",   true);
     private final JCheckBox trafficCheckbox  = new JCheckBox("Traffic",  true);
 
-    // ----- Scope (All / Burp / Custom) -----
-
+    // ---- Scope
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
     private final JRadioButton customRadio    = new JRadioButton("Custom");
 
-    /** Pure grid containing custom rows (field, regex toggle+indicator, add/delete). */
+    /** Pure grid of custom rows (field, regex toggle+indicator, add/delete). */
     private final ScopeGrid scopeGrid = new ScopeGrid(
             List.of(new ScopeGrid.ScopeEntryInit("^.*acme\\.com$", true))
     );
 
-    // ----- Sinks (Files, OpenSearch) -----
-
+    // ---- Sinks
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
     private final JButton    createFilesButton = new JButton("Create Files");
-
     private final JTextArea  fileStatus = new JTextArea();
-    private final JPanel     fileStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
+    private final JPanel     fileStatusWrapper
+            = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
-    private final JCheckBox openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
-    private final JTextField openSearchUrlField    = new AutoSizingTextField("http://opensearch.url:9200");
-    private final JButton    testConnectionButton  = new JButton("Test Connection");
-    private final JButton    createIndexesButton   = new JButton("Create Indexes");
-    private final JTextArea  openSearchStatus      = new JTextArea();
-    private final JPanel     openSearchStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
+    private final JCheckBox  openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
+    private final JTextField openSearchUrlField     = new AutoSizingTextField("http://opensearch.url:9200");
+    private final JButton    testConnectionButton   = new JButton("Test Connection");
+    private final JButton    createIndexesButton    = new JButton("Create Indexes");
+    private final JTextArea  openSearchStatus       = new JTextArea();
+    private final JPanel     openSearchStatusWrapper
+            = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
-    // ----- Admin area -----
-
+    // ---- Admin
     private final JTextArea adminStatus = new JTextArea();
-    private final JPanel    adminStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
+    private final JPanel    adminStatusWrapper
+            = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
     private transient Timer adminStatusHideTimer;
 
     /** Action controller (transient; rebuilt on deserialization). */
@@ -112,11 +102,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /** Public no-arg constructor (EDT). */
     public ConfigPanel() { this(null); }
 
-    /**
-     * Dependency-injected constructor used by tests.
-     *
-     * @param injectedController controller to use; when {@code null}, a default is created
-     */
+    /** Dependency-injected constructor (tests). */
     public ConfigPanel(ConfigController injectedController) {
         if (injectedController != null) this.controller = injectedController;
 
@@ -125,17 +111,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         // Sources
         add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
-        add(panelSeparator(), MIG_GROWX_WRAP);
+        add(panelSeparator(), MIG_FILL_WRAP);
 
         // Scope
         add(new ConfigScopePanel(allRadio, burpSuiteRadio, customRadio, scopeGrid, INDENT).build(),
                 "gaptop 10, gapbottom 5, wrap");
-        add(panelSeparator(), MIG_GROWX_WRAP);
+        add(panelSeparator(), MIG_FILL_WRAP);
 
         // Sinks
-        JTextArea importExportStatus = new JTextArea();
-        JPanel importExportStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
-
         add(new ConfigSinksPanel(
                 fileSinkCheckbox,
                 filePathField,
@@ -150,53 +133,52 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 openSearchStatusWrapper,
                 INDENT,
                 ROW_GAP,
-                StatusPanel::configureTextArea
+                StatusViews::configureTextArea
         ).build(), "gaptop 10, gapbottom 5, wrap");
+
         wireButtonActions();
-        add(panelSeparator(), MIG_GROWX_WRAP);
+        add(panelSeparator(), MIG_FILL_WRAP);
 
         // Admin
         add(new ConfigAdminPanel(
-                importExportStatus,
-                importExportStatusWrapper,
+                new JTextArea(),
+                new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL)),
                 adminStatus,
                 adminStatusWrapper,
                 INDENT,
                 ROW_GAP,
-                StatusPanel::configureTextArea,
+                StatusViews::configureTextArea,
                 this::importConfig,
                 this::exportConfig,
                 new AdminSaveButtonListener()
-        ).build(), MIG_GROWX_WRAP);
+        ).build(), MIG_FILL_WRAP);
+
         add(Box.createVerticalGlue(), "growy, wrap");
 
-        assignComponentNames();      // stable IDs for headless tests
-        wireTextFieldEnhancements(); // undo/redo + Enter bindings
-        refreshEnabledStates();      // initial enablement
+        assignComponentNames();
+        wireTextFieldEnhancements();
+        refreshEnabledStates();
     }
 
-    /** Thin separator component used between sections for readability. */
+    /** Single section separator used between major blocks. */
     private JComponent panelSeparator() { return new ThickSeparator(); }
 
-    /** {@inheritDoc} */
+    /* ----------------------- ConfigController.Ui ----------------------- */
+
     @Override public void onFileStatus(String message) {
-        StatusPanel.setStatus(fileStatus, fileStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
+        StatusViews.setStatus(
+                fileStatus, fileStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
     }
 
-    /** {@inheritDoc} */
     @Override public void onOpenSearchStatus(String message) {
-        StatusPanel.setStatus(openSearchStatus, openSearchStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
+        StatusViews.setStatus(
+                openSearchStatus, openSearchStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
     }
 
-    /**
-     * {@inheritDoc}
-     *
-     * <p>Calls may originate off-EDT; this method marshals to the EDT and auto-hides the
-     * admin status after {@value #ADMIN_HIDE_DELAY_MS} ms.</p>
-     */
     @Override public void onAdminStatus(String message) {
         Runnable r = () -> {
-            StatusPanel.setStatus(adminStatus, adminStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
+            StatusViews.setStatus(
+                    adminStatus, adminStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
             if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
             adminStatusHideTimer = new Timer(ADMIN_HIDE_DELAY_MS, evt -> {
                 adminStatusWrapper.setVisible(false);
@@ -206,27 +188,24 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             adminStatusHideTimer.setRepeats(false);
             adminStatusHideTimer.start();
         };
-        if (SwingUtilities.isEventDispatchThread()) {
-            r.run();
-        } else {
-            try {
-                javax.swing.SwingUtilities.invokeAndWait(r);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                javax.swing.SwingUtilities.invokeLater(r);
-            } catch (Exception ex) {
-                javax.swing.SwingUtilities.invokeLater(r);
-            }
+        if (SwingUtilities.isEventDispatchThread()) r.run();
+        else {
+            try { SwingUtilities.invokeAndWait(r); }
+            catch (InterruptedException ie) { Thread.currentThread().interrupt(); SwingUtilities.invokeLater(r); }
+            catch (Exception ex) { SwingUtilities.invokeLater(r); }
         }
     }
 
+    /* ----------------------- Import plumbing (not Ui) ----------------------- */
+
     /**
-     * {@inheritDoc}
+     * Applies an imported state to the UI.
      *
-     * <p><strong>EDT</strong>: marshaled to the EDT. Order matters: for custom scope we
-     * first build rows, then select the Custom radio so enable/disable runs on the final state.</p>
+     * <p>For custom scope, rows are applied first and then the Custom radio is selected to ensure
+     * enablement is updated on the final state.</p>
      */
-    @Override public void onImportResult(ConfigState.State state) {
+    @SuppressWarnings("unused") // intentionally not part of Ui; invoked by tests and controller callback
+    public void onImportResult(ConfigState.State state) {
         Runnable r = () -> {
             settingsCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_SETTINGS));
             sitemapCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_SITEMAP));
@@ -235,49 +214,29 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
             switch (state.scopeType()) {
                 case ConfigKeys.SCOPE_CUSTOM -> {
-                    // Build rows first; then flip radio for correct enable/disable
-                    if (!state.customEntries().isEmpty()) {
-                        List<ScopeGrid.ScopeEntryInit> init = new ArrayList<>(state.customEntries().size());
-                        for (ConfigState.ScopeEntry ce : state.customEntries()) {
-                            boolean isRegex = ce.kind() == ConfigState.Kind.REGEX;
-                            init.add(new ScopeGrid.ScopeEntryInit(ce.value(), isRegex));
-                        }
-                        scopeGrid.setEntries(init);
-                    } else {
-                        scopeGrid.setEntries(List.of(new ScopeGrid.ScopeEntryInit("", true)));
+                    List<ScopeGrid.ScopeEntryInit> init = new ArrayList<>();
+                    for (ConfigState.ScopeEntry ce : state.customEntries()) {
+                        boolean isRegex = ce.kind() == ConfigState.Kind.REGEX;
+                        init.add(new ScopeGrid.ScopeEntryInit(ce.value(), isRegex));
                     }
+                    if (init.isEmpty()) init.add(new ScopeGrid.ScopeEntryInit("", true));
+                    scopeGrid.setEntries(init);
                     customRadio.setSelected(true);
                 }
                 case ConfigKeys.SCOPE_BURP -> burpSuiteRadio.setSelected(true);
                 default -> allRadio.setSelected(true);
             }
 
-            if (state.sinks().filesEnabled() && state.sinks().filesPath() != null) {
-                fileSinkCheckbox.setSelected(true);
-                filePathField.setText(state.sinks().filesPath());
-            } else {
-                fileSinkCheckbox.setSelected(false);
-            }
-            if (state.sinks().osEnabled() && state.sinks().openSearchUrl() != null) {
-                openSearchSinkCheckbox.setSelected(true);
-                openSearchUrlField.setText(state.sinks().openSearchUrl());
-            } else {
-                openSearchSinkCheckbox.setSelected(false);
-            }
             refreshEnabledStates();
         };
         runOnEdt(r);
     }
 
-    /**
-     * Wires button actions and lightweight relayout listeners.
-     *
-     * <p>Validation is performed inline (e.g., blank path/URL) and status is updated via
-     * the {@link StatusPanel} helpers; long-running work is delegated to the controller.</p>
-     */
+    /* ----------------------------- Wiring ----------------------------- */
+
     private void wireButtonActions() {
-        fileSinkCheckbox.addItemListener(e -> refreshEnabledStates());
-        openSearchSinkCheckbox.addItemListener(e -> refreshEnabledStates());
+        fileSinkCheckbox.addActionListener(e -> refreshEnabledStates());
+        openSearchSinkCheckbox.addActionListener(e -> refreshEnabledStates());
 
         createFilesButton.addActionListener(e -> {
             String root = filePathField.getText().trim();
@@ -297,7 +256,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             controller.createIndexesAsync(url, getSelectedSources());
         });
 
-        // Relayout on text changes so AutoSizingTextField can update preferred sizes
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
@@ -306,7 +264,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
-    /** Enables/disables sink text fields and action buttons according to the checkboxes. */
     private void refreshEnabledStates() {
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
@@ -318,11 +275,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         createIndexesButton.setEnabled(os);
     }
 
-    /**
-     * Collects selected source keys for the current panel state.
-     *
-     * @return ordered list of selected source identifiers (ConfigKeys.SRC_*)
-     */
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add(ConfigKeys.SRC_SETTINGS);
@@ -332,11 +284,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         return selected;
     }
 
-    /**
-     * Installs undo/redo and Enter bindings for the two text fields.
-     *
-     * <p>Enter triggers the corresponding primary action, matching user expectations.</p>
-     */
     private void wireTextFieldEnhancements() {
         TextFieldUndo.install(filePathField);
         TextFieldUndo.install(openSearchUrlField);
@@ -344,11 +291,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
     }
 
-    /**
-     * Composes the typed configuration from the current UI state.
-     *
-     * @return immutable state object suitable for serialization/export
-     */
     private ConfigState.State buildCurrentState() {
         List<String> selectedSources = getSelectedSources();
 
@@ -365,7 +307,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             int n = Math.min(vals.size(), kinds.size());
             for (int i = 0; i < n; i++) {
                 String v = vals.get(i);
-                if (v == null || v.trim().isEmpty()) continue; // omit blanks
+                if (v == null || v.trim().isEmpty()) continue;
                 boolean isRegex = Boolean.TRUE.equals(kinds.get(i));
                 custom.add(new ConfigState.ScopeEntry(
                         v.trim(), isRegex ? ConfigState.Kind.REGEX : ConfigState.Kind.STRING));
@@ -387,11 +329,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         );
     }
 
-    /**
-     * Exports JSON to a chosen path.
-     *
-     * <p>Shows a chooser; on approval delegates writing to {@link ConfigController} to keep I/O off the EDT.</p>
-     */
+    /** Export JSON via a chooser; path handling is delegated to FileUtil. */
     private void exportConfig() {
         String json = ConfigJsonMapper.build(buildCurrentState());
         JFileChooser chooser = new JFileChooser();
@@ -400,30 +338,21 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         chooser.setSelectedFile(new File("attackframework-burp-exporter-config.json"));
         int result = chooser.showSaveDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Export cancelled."); return; }
-        Path out = ai.attackframework.tools.burp.utils.FileUtil
-                .ensureJsonExtension(chooser.getSelectedFile()).toPath();
+        Path out = FileUtil.ensureJsonExtension(chooser.getSelectedFile()).toPath();
         controller.exportConfigAsync(out, json);
     }
 
-    /**
-     * Imports JSON from a chosen path.
-     *
-     * <p>Shows a chooser; on approval hands the path to {@link ConfigController} for parsing off the EDT.</p>
-     */
+    /** Import JSON via a chooser; controller parses and applies. */
     private void importConfig() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Import Config");
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
         int result = chooser.showOpenDialog(this);
-        if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Export cancelled."); return; }
+        if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Import cancelled."); return; }
         controller.importConfigAsync(chooser.getSelectedFile().toPath());
     }
 
-    /**
-     * Assigns stable component names used by headless tests.
-     *
-     * <p>These names are part of the test contract. Keep synchronized with tests if changed.</p>
-     */
+    /** Assign stable names used by headless tests. */
     private void assignComponentNames() {
         settingsCheckbox.setName("src.settings");
         sitemapCheckbox.setName("src.sitemap");
@@ -432,49 +361,35 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         allRadio.setName("scope.all");
         burpSuiteRadio.setName("scope.burp");
-        customRadio.setName("scope.custom"); // radio now owned here
-        // Custom fields/toggles/indicators/delete are named inside ScopeGrid
+        customRadio.setName("scope.custom");
 
         fileSinkCheckbox.setName("files.enable");
         filePathField.setName("files.path");
         createFilesButton.setName("files.create");
-        createFilesButton.setToolTipText("Create OpenSearch index files");
 
         openSearchSinkCheckbox.setName("os.enable");
         openSearchUrlField.setName("os.url");
         testConnectionButton.setName("os.test");
-        testConnectionButton.setToolTipText("Test connection to OpenSearch");
         createIndexesButton.setName("os.createIndexes");
-        createIndexesButton.setToolTipText("Create indexes for OpenSearch\nNote: This is not required because indexes will auto-create if needed. However, this button is helpful for confirming permissions.");
 
         adminStatusWrapper.setName("admin.statusWrapper");
         adminStatus.setName("admin.status");
     }
 
-    /** Save button action: delegates to the controller (synchronous logging + UI status). */
+    /** Save button handler; delegates to the controller. */
     private class AdminSaveButtonListener implements ActionListener {
         @Override public void actionPerformed(ActionEvent e) {
             controller.saveAsync(buildCurrentState());
         }
     }
 
-    /**
-     * Runs a task on the EDT (immediately if already on it).
-     *
-     * @param r runnable to execute on the EDT
-     */
+    /** Run on EDT (immediately if already on it). */
     private void runOnEdt(Runnable r) {
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else SwingUtilities.invokeLater(r);
     }
 
-    /**
-     * Restores transient collaborators after deserialization.
-     *
-     * @param in input stream
-     * @throws IOException if deserialization fails
-     * @throws ClassNotFoundException if a class cannot be resolved
-     */
+    /** Rebuild transient collaborators after deserialization. */
     @Serial
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();

@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import org.junit.jupiter.api.Test;
 
@@ -11,42 +12,47 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConfigControllerOpenSearchErrorIT {
 
-    private static final int TIMEOUT_SECONDS = 4;
-
-    @Test
-    void malformedUrl_reportsError_for_testConnection_and_createIndexes() throws Exception {
-        CapturingUi ui = new CapturingUi();
-        ConfigController c = new ConfigController(ui);
-
-        String badUrl = "http://127.0.0.1:1/::::bad";
-
-        // testConnectionAsync: "Testing ..." then final "✖ ..." line
-        ui.resetOsLatchTwo();
-        c.testConnectionAsync(badUrl);
-        assertThat(ui.awaitOs()).isTrue();
-        assertThat(ui.lastOsStatus).matches("(?s)^✖ .*");
-
-        // createIndexesAsync may summarize directly as "Indexes failed: ..." or emit "✖ ..."
-        ui.resetOsLatchTwo();
-        c.createIndexesAsync(badUrl, List.of("settings"));
-        assertThat(ui.awaitOs()).isTrue();
-        assertThat(ui.lastOsStatus).matches("(?s)^✖ .*|.*Indexes failed:.*");
+    private static final class TestUi implements ConfigController.Ui {
+        volatile String osMsg;
+        volatile String admin;
+        @Override public void onFileStatus(String message) { /* not used */ }
+        @Override public void onOpenSearchStatus(String message) { this.osMsg = message; }
+        @Override public void onAdminStatus(String message) { this.admin = message; }
     }
 
-    private static final class CapturingUi implements ConfigController.Ui {
-        volatile String lastFileStatus = "";
-        volatile String lastOsStatus = "";
-        volatile String lastAdminStatus = "";
-        volatile ConfigState.State lastImported;
+    @Test
+    void testConnection_withInvalidUrl_reportsFailure() throws Exception {
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
 
-        private CountDownLatch osLatch = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(1);
+        new Thread(() -> {
+            while (ui.osMsg == null) {
+                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
+            }
+            done.countDown();
+        }).start();
 
-        void resetOsLatchTwo() { osLatch = new CountDownLatch(2); }
-        boolean awaitOs() throws InterruptedException { return osLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS); }
+        cc.testConnectionAsync("http://127.0.0.1:1"); // expected to fail quickly
+        assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.osMsg).startsWith("Test failed").isNotEmpty();
+    }
 
-        @Override public void onFileStatus(String message) { lastFileStatus = message == null ? "" : message; }
-        @Override public void onOpenSearchStatus(String message) { lastOsStatus = message == null ? "" : message; osLatch.countDown(); }
-        @Override public void onAdminStatus(String message) { lastAdminStatus = message == null ? "" : message; }
-        @Override public void onImportResult(ConfigState.State state) { lastImported = state; }
+    @Test
+    void createIndexes_withInvalidUrl_reportsFailure() throws Exception {
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
+
+        CountDownLatch done = new CountDownLatch(1);
+        new Thread(() -> {
+            while (ui.osMsg == null) {
+                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
+            }
+            done.countDown();
+        }).start();
+
+        cc.createIndexesAsync("http://127.0.0.1:1", List.of("settings"));
+        assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.osMsg).isNotBlank();
     }
 }

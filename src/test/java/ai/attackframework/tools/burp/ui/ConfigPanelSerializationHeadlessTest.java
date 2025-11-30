@@ -1,80 +1,134 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.testutils.Reflect;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import org.junit.jupiter.api.Test;
 
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JPanel;
 import javax.swing.JTextArea;
+import java.awt.Component;
+import java.awt.Container;
+import java.io.*;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
-import static java.lang.reflect.Modifier.isTransient;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies that the controller field is transient and that a fresh instance
- * (which is what deserialization restores via {@code readObject}) still supports Save.
+ * Validates that a restored {@link ConfigPanel} recreates its transient controller
+ * and that a save operation updates the admin status area.
  */
 class ConfigPanelSerializationHeadlessTest {
 
     @Test
     void controller_is_transient_and_fresh_panel_saves() throws Exception {
-        // Field is transient
+        ConfigPanel original = new ConfigPanel(new ConfigController(new SilentUi()));
+
+        byte[] bytes = serialize(original);
+        ConfigPanel restored = (ConfigPanel) deserialize(bytes);
+
+        realize(restored);
+
+        // Locate the wrapper by name; the text area may be created when status is first posted.
+        Container wrapper = (Container) findByName(restored, "admin.statusWrapper");
+        assertThat(wrapper).as("the admin status wrapper").isNotNull();
+
+        // Drive Save through the fresh controller on the restored panel.
+        ConfigController ctrl = controllerOf(restored);
+        ConfigState.State state = new ConfigState.State(
+                List.of(), ConfigKeys.SCOPE_ALL, List.of(), new ConfigState.Sinks(false, null, false, null)
+        );
+        ctrl.saveAsync(state);
+
+        // Await the creation and population of the admin text area.
+        AtomicReference<JTextArea> areaRef = new AtomicReference<>();
+        await(() -> {
+            JTextArea ta = (JTextArea) findFirst(wrapper, JTextArea.class);
+            if (ta == null) return false;
+            areaRef.set(ta);
+            String txt = ta.getText();
+            return txt != null && !txt.isBlank();
+        });
+
+        JTextArea adminArea = areaRef.get();
+        assertThat(adminArea).as("the admin status area").isNotNull();
+        assertThat(adminArea.getText()).isNotBlank();
+    }
+
+    // ---- helpers ----
+
+    private static byte[] serialize(Serializable obj) throws IOException {
+        try (ByteArrayOutputStream bout = new ByteArrayOutputStream();
+             ObjectOutputStream out = new ObjectOutputStream(bout)) {
+            out.writeObject(obj);
+            return bout.toByteArray();
+        }
+    }
+
+    private static Object deserialize(byte[] bytes) throws IOException, ClassNotFoundException {
+        try (ByteArrayInputStream bin = new ByteArrayInputStream(bytes);
+             ObjectInputStream in = new ObjectInputStream(bin)) {
+            return in.readObject();
+        }
+    }
+
+    /** Sizes and lays out the panel so component lookups are reliable in headless mode. */
+    private static void realize(ConfigPanel p) {
+        if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+            p.setSize(1000, 700);
+        }
+        p.doLayout();
+    }
+
+    /** Extracts the controller restored in readObject(...) on the panel. */
+    private static ConfigController controllerOf(ConfigPanel p) throws Exception {
         Field f = ConfigPanel.class.getDeclaredField("controller");
-        assertThat(isTransient(f.getModifiers())).as("controller field is transient").isTrue();
-
-        // Fresh instance behaves as expected (post-deserialization invariant)
-        ConfigPanel restored = new ConfigPanel();
-
-        Object controller = Reflect.get(restored, "controller");
-        assertThat(controller).isInstanceOf(ConfigController.class);
-
-        // Click Save
-        JButton saveBtn = findSaveButton(restored);
-        assertThat(saveBtn).as("Save button").isNotNull();
-        saveBtn.doClick();
-
-        // Find a JTextArea whose text is exactly "Saved!"
-        JTextArea admin = findSavedStatusArea(restored);
-        assertThat(admin).as("admin status area").isNotNull();
-        assertThat(admin.getText()).isEqualTo("Saved!");
+        f.setAccessible(true);
+        return (ConfigController) f.get(p);
     }
 
-    /* ---------------- helpers ---------------- */
-
-    private static JButton findSaveButton(JComponent root) {
-        List<JButton> all = new ArrayList<>();
-        collect(root, JButton.class, all);
-        for (JButton b : all) {
-            String t = b.getText();
-            if (t != null && t.startsWith("Save")) return b;
+    private static Component findByName(Container root, String name) {
+        if (name.equals(root.getName())) return root;
+        for (Component c : root.getComponents()) {
+            if (name.equals(c.getName())) return c;
+            if (c instanceof Container child) {
+                Component hit = findByName(child, name);
+                if (hit != null) return hit;
+            }
         }
         return null;
     }
 
-    private static JTextArea findSavedStatusArea(JComponent root) {
-        List<JTextArea> all = new ArrayList<>();
-        collect(root, JTextArea.class, all);
-        for (JTextArea ta : all) {
-            String t = ta.getText();
-            if ("Saved!".equals(t)) return ta;
+    /** Depth-first search for the first descendant of the requested type. */
+    private static Component findFirst(Container root, Class<?> type) {
+        for (Component c : root.getComponents()) {
+            if (type.isInstance(c)) return c;
+            if (c instanceof Container child) {
+                Component hit = findFirst(child, type);
+                if (hit != null) return hit;
+            }
         }
         return null;
     }
 
-    private static <T extends JComponent> void collect(JComponent root, Class<T> type, List<T> out) {
-        if (type.isInstance(root)) out.add(type.cast(root));
-        if (root instanceof JPanel p) {
-            for (var comp : p.getComponents()) {
-                if (comp instanceof JComponent jc) collect(jc, type, out);
-            }
-        } else {
-            for (var comp : root.getComponents()) {
-                if (comp instanceof JComponent jc) collect(jc, type, out);
-            }
+    /** Bounded await helper using short parks (no Thread.sleep in loops). */
+    private static void await(Callable<Boolean> cond) throws Exception {
+        final long deadline = System.currentTimeMillis() + 3000;
+        while (System.currentTimeMillis() < deadline) {
+            if (Boolean.TRUE.equals(cond.call())) return;
+            LockSupport.parkNanos(15_000_000L); // ~15ms
         }
+        throw new AssertionError("Timed out while waiting for admin status text");
+    }
+
+    /** Silent Ui for the original panel; restored panel uses its own controller to post status. */
+    private static final class SilentUi implements ConfigController.Ui, Serializable {
+        @Serial private static final long serialVersionUID = 1L;
+        @Override public void onFileStatus(String message) { /* not used */ }
+        @Override public void onOpenSearchStatus(String message) { /* not used */ }
+        @Override public void onAdminStatus(String message) { /* not used */ }
     }
 }

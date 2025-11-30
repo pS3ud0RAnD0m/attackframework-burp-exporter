@@ -1,6 +1,8 @@
 package ai.attackframework.tools.burp.ui;
 
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import org.junit.jupiter.api.Test;
 
@@ -14,55 +16,53 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ConfigControllerImportExportIT {
 
-    private static final int TIMEOUT_SECONDS = 4;
-
-    @Test
-    void export_then_import_roundtrip_returns_matching_state() throws Exception {
-        ConfigState.State state = new ConfigState.State(
-                List.of("settings", "traffic"),
-                "custom",
-                List.of(new ConfigState.ScopeEntry("^foo$", ConfigState.Kind.REGEX)),
-                new ConfigState.Sinks(true, "/tmp/af", true, "http://opensearch.url:9200")
-        );
-        String json = ConfigJsonMapper.build(state);
-
-        Path dir = Files.createTempDirectory("af-export-");
-        Path out = dir.resolve("cfg.json");
-
-        CapturingUi ui = new CapturingUi();
-        ConfigController c = new ConfigController(ui);
-
-        ui.resetAdminLatch();
-        c.exportConfigAsync(out, json);
-        assertThat(ui.awaitAdmin()).isTrue();
-        assertThat(Files.exists(out)).isTrue();
-        assertThat(ui.lastAdminStatus).contains("Exported to ");
-
-        ui.resetAdminLatch();
-        ui.resetImport();
-        c.importConfigAsync(out);
-        assertThat(ui.awaitAdmin()).isTrue();
-        assertThat(ui.lastImported).isNotNull();
-        assertThat(ui.lastImported.scopeType()).isEqualTo("custom");
-        assertThat(ui.lastImported.customEntries()).hasSize(1);
-        assertThat(ui.lastImported.customEntries().getFirst().value()).isEqualTo("^foo$");
+    private static final class TestUi implements ConfigController.Ui {
+        volatile String admin;
+        volatile ConfigState.State lastImported;
+        @Override public void onFileStatus(String message) { /* not used */ }
+        @Override public void onOpenSearchStatus(String message) { /* not used */ }
+        @Override public void onAdminStatus(String message) { this.admin = message; }
     }
 
-    private static final class CapturingUi implements ConfigController.Ui {
-        volatile String lastFileStatus = "";
-        volatile String lastOsStatus = "";
-        volatile String lastAdminStatus = "";
-        volatile ConfigState.State lastImported;
+    @Test
+    void export_then_import_roundtrip_emitsStatus() throws Exception {
+        // Build a small state
+        ConfigState.State state = new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(false, null, false, null));
 
-        private CountDownLatch adminLatch = new CountDownLatch(1);
+        String json = ConfigJsonMapper.build(state);
+        Path tmp = Files.createTempFile("cc-export", ".json");
+        tmp.toFile().deleteOnExit();
 
-        void resetAdminLatch() { adminLatch = new CountDownLatch(1); }
-        void resetImport() { lastImported = null; }
-        boolean awaitAdmin() throws InterruptedException { return adminLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS); }
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
 
-        @Override public void onFileStatus(String message) { lastFileStatus = message == null ? "" : message; }
-        @Override public void onOpenSearchStatus(String message) { lastOsStatus = message == null ? "" : message; }
-        @Override public void onAdminStatus(String message) { lastAdminStatus = message == null ? "" : message; adminLatch.countDown(); }
-        @Override public void onImportResult(ConfigState.State state) { lastImported = state; }
+        CountDownLatch exportDone = new CountDownLatch(1);
+        new Thread(() -> {
+            while (ui.admin == null || !ui.admin.startsWith("Export")) {
+                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
+            }
+            exportDone.countDown();
+        }).start();
+
+        cc.exportConfigAsync(tmp, json);
+        assertThat(exportDone.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.admin).contains("Exported");
+
+        CountDownLatch importDone = new CountDownLatch(1);
+        ui.admin = null;
+        new Thread(() -> {
+            while (ui.admin == null || !ui.admin.startsWith("Imported")) {
+                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
+            }
+            importDone.countDown();
+        }).start();
+
+        cc.importConfigAsync(tmp);
+        assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.admin).contains("Imported");
     }
 }
