@@ -1,16 +1,15 @@
 package ai.attackframework.tools.burp.ui;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import java.awt.Component;
-import java.awt.Container;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import javax.swing.SwingUtilities;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -27,68 +26,55 @@ class ConfigPanelDelegationHeadlessTest {
         @Override public void onAdminStatus(String m) { }
     }
 
+    private TestUi ui;
+    private ConfigPanel panel;
+
+    @BeforeEach
+    void setup() throws Exception {
+        ui = new TestUi();
+        AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> {
+            ConfigPanel p = new ConfigPanel(new ConfigController(ui));
+            if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+                p.setSize(1000, 700);
+            }
+            p.doLayout();
+
+            // Enable OpenSearch sink so OS buttons are actionable
+            JCheckBox osEnable = get(p, "openSearchSinkCheckbox");
+            if (!osEnable.isSelected()) osEnable.doClick();
+
+            ref.set(p);
+        });
+        panel = ref.get();
+    }
+
     @Test
     void clicking_buttons_invokes_controller_and_posts_status() throws Exception {
-        TestUi ui = new TestUi();
-        ConfigPanel panel = new ConfigPanel(new ConfigController(ui));
+        JButton testConn  = get(panel, "testConnectionButton");
+        JButton createIdx = get(panel, "createIndexesButton");
+        JButton createFil = get(panel, "createFilesButton");
 
-        // Enable OpenSearch sink so OS buttons are actionable
-        JCheckBox osEnable = (JCheckBox) findByName(panel, "os.enable");
-        if (osEnable != null && !osEnable.isSelected()) osEnable.doClick();
+        onEdtAndWait(() -> {
+            testConn.doClick();
+            createIdx.doClick();
+            createFil.doClick();
+        });
 
-        JButton testConn  = (JButton) find(panel, "os.test", "Test Connection");
-        JButton createIdx = (JButton) find(panel, "os.createIndexes", "Create Indexes");
-        JButton createFil = (JButton) find(panel, "files.create", "Create Files");
-
-        CountDownLatch os1 = new CountDownLatch(1);
-        CountDownLatch os2 = new CountDownLatch(1);
-        CountDownLatch fs1 = new CountDownLatch(1);
-
-        new Thread(() -> { await(() -> ui.osMsg != null); os1.countDown(); }).start();
-        new Thread(() -> { await(() -> ui.osMsg != null); os2.countDown(); }).start();
-        new Thread(() -> { await(() -> ui.fileMsg != null); fs1.countDown(); }).start();
-
-        testConn.doClick();
-        createIdx.doClick();
-        createFil.doClick();
-
-        assertThat(os1.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(os2.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(fs1.await(3, TimeUnit.SECONDS)).isTrue();
+        await(() -> ui.osMsg != null);
+        await(() -> ui.fileMsg != null);
 
         assertThat(ui.osMsg).isNotBlank();
         assertThat(ui.fileMsg).isNotBlank();
     }
 
     // ---- helpers ----
-
-    private static Component find(Container root, String name, String fallbackText) {
-        Component byName = findByName(root, name);
-        if (byName != null) return byName;
-        return findByText(root, fallbackText);
-    }
-
-    private static Component findByName(Container root, String name) {
-        if (name != null && name.equals(root.getName())) return root;
-        for (Component c : root.getComponents()) {
-            if (name != null && name.equals(c.getName())) return c;
-            if (c instanceof Container child) {
-                Component hit = findByName(child, name);
-                if (hit != null) return hit;
-            }
+    private static void onEdtAndWait(Runnable r) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            r.run();
+        } else {
+            SwingUtilities.invokeAndWait(r);
         }
-        return null;
-    }
-
-    private static Component findByText(Container root, String text) {
-        for (Component c : root.getComponents()) {
-            if (c instanceof AbstractButton b && text.equals(b.getText())) return b;
-            if (c instanceof Container child) {
-                Component hit = findByText(child, text);
-                if (hit != null) return hit;
-            }
-        }
-        throw new IllegalStateException("Component not found: " + text);
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> cond) {

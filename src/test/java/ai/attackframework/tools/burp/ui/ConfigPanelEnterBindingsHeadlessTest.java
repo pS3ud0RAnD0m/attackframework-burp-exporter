@@ -6,10 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JCheckBox;
 import javax.swing.JTextField;
-import java.awt.Component;
-import java.awt.Container;
+import javax.swing.SwingUtilities;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -29,36 +29,44 @@ class ConfigPanelEnterBindingsHeadlessTest {
     private ConfigPanel panel;
 
     @BeforeEach
-    void setup() {
+    void setup() throws Exception {
         ui = new TestUi();
-        panel = new ConfigPanel(new ConfigController(ui));
-        JCheckBox osEnable = (JCheckBox) findByName(panel, "os.enable");
-        if (osEnable != null && !osEnable.isSelected()) osEnable.doClick();
+        AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+        SwingUtilities.invokeAndWait(() -> {
+            ConfigPanel p = new ConfigPanel(new ConfigController(ui));
+            if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+                p.setSize(1000, 700);
+            }
+            p.doLayout();
+
+            JCheckBox osEnable = get(p, "openSearchSinkCheckbox");
+            if (!osEnable.isSelected()) osEnable.doClick();
+
+            ref.set(p);
+        });
+        panel = ref.get();
     }
 
     @Test
-    void pressEnterOnOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() {
-        JTextField field = (JTextField) findByName(panel, "os.url");
-        if (field == null) throw new IllegalStateException("Component not found: os.url");
+    void pressEnterOnOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() throws Exception {
+        JTextField field = get(panel, "openSearchUrlField");
 
-        field.setText("http://127.0.0.1:1");
-        field.postActionEvent(); // Enter -> bound action triggers testConnection
+        onEdtAndWait(() -> {
+            field.setText("http://127.0.0.1:1");
+            field.postActionEvent(); // Enter -> bound action triggers testConnection
+        });
 
         await(() -> ui.os.get() != null);
         assertThat(ui.os.get()).isNotBlank();
     }
 
     // ---- helpers ----
-    private static Component findByName(Container root, String name) {
-        if (name != null && name.equals(root.getName())) return root;
-        for (Component c : root.getComponents()) {
-            if (name != null && name.equals(c.getName())) return c;
-            if (c instanceof Container child) {
-                Component hit = findByName(child, name);
-                if (hit != null) return hit;
-            }
+    private static void onEdtAndWait(Runnable r) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            r.run();
+        } else {
+            SwingUtilities.invokeAndWait(r);
         }
-        return null;
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> cond) {
