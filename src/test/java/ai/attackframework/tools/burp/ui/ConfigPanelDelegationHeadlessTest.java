@@ -23,7 +23,9 @@ class ConfigPanelDelegationHeadlessTest {
         volatile String osMsg;
         @Override public void onFileStatus(String m) { fileMsg = m; }
         @Override public void onOpenSearchStatus(String m) { osMsg = m; }
-        @Override public void onAdminStatus(String m) { }
+        @Override public void onAdminStatus(String m) {
+            // Admin status is not used in this scenario; required by ConfigController.Ui
+        }
     }
 
     private TestUi ui;

@@ -19,8 +19,12 @@ class ConfigPanelImportExportHeadlessTest {
 
     private static final class TestUi implements ConfigController.Ui {
         final AtomicReference<String> admin = new AtomicReference<>();
-        @Override public void onFileStatus(String message) { }
-        @Override public void onOpenSearchStatus(String message) { }
+        @Override public void onFileStatus(String message) {
+            // File status is not observed in this test; required by ConfigController.Ui
+        }
+        @Override public void onOpenSearchStatus(String message) {
+            // OpenSearch status is not observed in this test; required by ConfigController.Ui
+        }
         @Override public void onAdminStatus(String message) { admin.set(message); }
     }
 
