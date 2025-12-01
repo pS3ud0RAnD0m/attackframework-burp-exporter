@@ -17,6 +17,8 @@ public final class FileUtil {
     public enum Status { CREATED, EXISTS, FAILED }
     public record CreateResult(Path path, Status status, String error) {}
 
+    private static final String JSON_EXTENSION = ".json";
+
     private FileUtil() {}
 
     /**
@@ -84,9 +86,11 @@ public final class FileUtil {
     public static File ensureJsonExtension(File f) {
         if (f == null) return null;
         String nameLower = f.getName().toLowerCase();
-        if (nameLower.endsWith(".json")) return f;
+        if (nameLower.endsWith(JSON_EXTENSION)) return f;
         File parent = f.getParentFile();
-        return (parent == null) ? new File(f.getName() + ".json") : new File(parent, f.getName() + ".json");
+        return (parent == null)
+                ? new File(f.getName() + JSON_EXTENSION)
+                : new File(parent, f.getName() + JSON_EXTENSION);
     }
 
     /** Write UTF-8 text to a file, creating parent directories if necessary. */
