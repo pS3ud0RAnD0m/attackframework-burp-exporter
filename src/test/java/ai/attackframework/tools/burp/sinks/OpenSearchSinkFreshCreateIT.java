@@ -33,12 +33,14 @@ class OpenSearchSinkFreshCreateIT {
         // Delete all first (best effort)
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
         for (String s : SOURCES) {
-            String fullName = s.equals("tool")
+            String fullName = "tool".equals(s)
                     ? IndexNaming.INDEX_PREFIX
                     : IndexNaming.INDEX_PREFIX + "-" + s;
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(fullName).build());
-            } catch (Exception ignored) { }
+            } catch (Exception ignored) {
+                // Index may not exist yet; deletion is best-effort for a clean slate.
+            }
         }
 
         // Re-create each index and assert CREATED
@@ -46,7 +48,7 @@ class OpenSearchSinkFreshCreateIT {
         assertThat(results).isNotEmpty();
 
         for (IndexResult r : results) {
-            String expectedFull = r.shortName().equals("tool")
+            String expectedFull = "tool".equals(r.shortName())
                     ? IndexNaming.INDEX_PREFIX
                     : IndexNaming.INDEX_PREFIX + "-" + r.shortName();
 

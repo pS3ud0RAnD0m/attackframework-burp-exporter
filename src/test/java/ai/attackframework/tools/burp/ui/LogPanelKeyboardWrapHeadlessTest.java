@@ -67,10 +67,9 @@ class LogPanelKeyboardWrapHeadlessTest {
         SwingUtilities.invokeAndWait(() -> { /* drain EDT */ });
     }
 
-    @SuppressWarnings("unchecked")
     private static <T> T get(Object target, String fieldName, Class<T> type) throws Exception {
-        var f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return (T) type.cast(f.get(target));
+        var field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return type.cast(field.get(target));
     }
 }
