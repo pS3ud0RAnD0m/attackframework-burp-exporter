@@ -19,6 +19,9 @@ public final class IndexNaming {
                     case "sitemap"  -> names.add(INDEX_PREFIX + "-sitemap");
                     case "issues", "findings" -> names.add(INDEX_PREFIX + "-findings");
                     case "traffic"  -> names.add(INDEX_PREFIX + "-traffic");
+                    default -> {
+                        // Ignore unsupported source names; no index will be created for them.
+                    }
                 }
             }
         }
