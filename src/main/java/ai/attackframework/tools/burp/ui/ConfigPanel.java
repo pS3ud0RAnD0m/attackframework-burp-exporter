@@ -204,7 +204,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * <p>For custom scope, rows are applied first and then the Custom radio is selected to ensure
      * enablement is updated on the final state.</p>
      */
-    @SuppressWarnings("unused") // intentionally not part of Ui; invoked by tests and controller callback
     public void onImportResult(ConfigState.State state) {
         Runnable r = () -> {
             settingsCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_SETTINGS));
