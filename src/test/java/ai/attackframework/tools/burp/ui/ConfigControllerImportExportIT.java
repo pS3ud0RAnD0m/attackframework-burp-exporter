@@ -19,9 +19,35 @@ class ConfigControllerImportExportIT {
     private static final class TestUi implements ConfigController.Ui {
         volatile String admin;
         volatile ConfigState.State lastImported;
+        private CountDownLatch exportDone;
+        private CountDownLatch importDone;
+
+        void setExportLatch(CountDownLatch latch) {
+            this.exportDone = latch;
+        }
+
+        void setImportLatch(CountDownLatch latch) {
+            this.importDone = latch;
+        }
+
         @Override public void onFileStatus(String message) { /* not used */ }
         @Override public void onOpenSearchStatus(String message) { /* not used */ }
-        @Override public void onAdminStatus(String message) { this.admin = message; }
+        @Override public void onAdminStatus(String message) {
+            this.admin = message;
+            if (message == null) {
+                return;
+            }
+
+            CountDownLatch exp = exportDone;
+            if (exp != null && message.startsWith("Export")) {
+                exp.countDown();
+            }
+
+            CountDownLatch imp = importDone;
+            if (imp != null && message.startsWith("Imported")) {
+                imp.countDown();
+            }
+        }
     }
 
     @Test
@@ -41,12 +67,7 @@ class ConfigControllerImportExportIT {
         ConfigController cc = new ConfigController(ui);
 
         CountDownLatch exportDone = new CountDownLatch(1);
-        new Thread(() -> {
-            while (ui.admin == null || !ui.admin.startsWith("Export")) {
-                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
-            }
-            exportDone.countDown();
-        }).start();
+        ui.setExportLatch(exportDone);
 
         cc.exportConfigAsync(tmp, json);
         assertThat(exportDone.await(3, TimeUnit.SECONDS)).isTrue();
@@ -54,12 +75,7 @@ class ConfigControllerImportExportIT {
 
         CountDownLatch importDone = new CountDownLatch(1);
         ui.admin = null;
-        new Thread(() -> {
-            while (ui.admin == null || !ui.admin.startsWith("Imported")) {
-                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
-            }
-            importDone.countDown();
-        }).start();
+        ui.setImportLatch(importDone);
 
         cc.importConfigAsync(tmp);
         assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();

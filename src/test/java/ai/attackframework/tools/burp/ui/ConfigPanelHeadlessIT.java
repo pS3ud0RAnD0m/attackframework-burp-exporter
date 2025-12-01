@@ -8,6 +8,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.SwingUtilities;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,8 +76,14 @@ class ConfigPanelHeadlessIT {
     private static void await(java.util.concurrent.Callable<Boolean> cond) {
         long deadline = System.currentTimeMillis() + 2500;
         while (System.currentTimeMillis() < deadline) {
-            try { if (Boolean.TRUE.equals(cond.call())) return; } catch (Exception ignored) {}
-            try { Thread.sleep(15); } catch (InterruptedException ignored) {}
+            try {
+                if (Boolean.TRUE.equals(cond.call())) {
+                    return;
+                }
+            } catch (Exception ignored) {
+                // Condition evaluation failed; continue until deadline or success.
+            }
+            LockSupport.parkNanos(15_000_000L); // ~15ms without using Thread.sleep
         }
         throw new AssertionError("Timed out waiting for status text update; last value: \"\"");
     }

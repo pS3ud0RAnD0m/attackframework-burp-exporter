@@ -15,8 +15,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConfigControllerFilesIT {
 
     private static final class TestUi implements ConfigController.Ui {
+        final CountDownLatch done;
         volatile String fileMsg;
-        @Override public void onFileStatus(String message) { this.fileMsg = message; }
+
+        TestUi(CountDownLatch done) {
+            this.done = done;
+        }
+
+        @Override public void onFileStatus(String message) {
+            this.fileMsg = message;
+            done.countDown();
+        }
         @Override public void onOpenSearchStatus(String message) { /* not used */ }
         @Override public void onAdminStatus(String message) { /* not used */ }
     }
@@ -26,17 +35,9 @@ class ConfigControllerFilesIT {
         Path tmp = Files.createTempDirectory("cc-files");
         tmp.toFile().deleteOnExit();
 
-        TestUi ui = new TestUi();
-        ConfigController cc = new ConfigController(ui);
-
         CountDownLatch done = new CountDownLatch(1);
-        // wait for async UI message
-        new Thread(() -> {
-            while (ui.fileMsg == null) {
-                try { Thread.sleep(10); } catch (InterruptedException ignored) { }
-            }
-            done.countDown();
-        }).start();
+        TestUi ui = new TestUi(done);
+        ConfigController cc = new ConfigController(ui);
 
         cc.createFilesAsync(tmp.toString(), List.of(
                 ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_SITEMAP));
