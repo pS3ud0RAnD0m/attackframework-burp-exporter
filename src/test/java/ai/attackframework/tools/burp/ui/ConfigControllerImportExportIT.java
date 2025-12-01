@@ -18,7 +18,6 @@ class ConfigControllerImportExportIT {
 
     private static final class TestUi implements ConfigController.Ui {
         volatile String admin;
-        volatile ConfigState.State lastImported;
         private CountDownLatch exportDone;
         private CountDownLatch importDone;
 
