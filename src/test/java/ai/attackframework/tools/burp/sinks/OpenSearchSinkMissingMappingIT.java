@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import org.junit.jupiter.api.Assumptions;
@@ -34,8 +35,12 @@ class OpenSearchSinkMissingMappingIT {
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
 
         // Ensure the index is absent before the test (best-effort cleanup).
-        try { client.indices().delete(new DeleteIndexRequest.Builder().index(expectedFull).build()); }
-        catch (Exception ignored) { }
+        try {
+            client.indices().delete(new DeleteIndexRequest.Builder().index(expectedFull).build());
+        } catch (Exception e) {
+            // Best-effort cleanup: index may already be missing or the dev cluster may have been reset.
+            Logger.logError("[OpenSearchSinkMissingMappingIT] Failed to delete index during pre-test cleanup: " + expectedFull, e);
+        }
 
         // Attempt creation; sink should fail due to missing resource.
         IndexResult result = OpenSearchSink.createIndexFromResource(BASE_URL, shortName);

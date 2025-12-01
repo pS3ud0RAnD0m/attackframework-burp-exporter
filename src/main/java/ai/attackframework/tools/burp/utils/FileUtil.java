@@ -47,37 +47,37 @@ public final class FileUtil {
 
         for (String name : fileNames) {
             Path p = rootDir.resolve(name);
-            try {
-                if (java.nio.file.Files.exists(p)) {
-                    out.add(new CreateResult(p, Status.EXISTS, null));
-                    continue;
-                }
-
-                Path parent = p.getParent();
-                if (parent != null) {
-                    java.nio.file.Files.createDirectories(parent);
-                }
-
-                try {
-                    java.nio.file.Files.createFile(p);
-                } catch (FileAlreadyExistsException ignored) {
-                    out.add(new CreateResult(p, Status.EXISTS, null));
-                    continue;
-                }
-
-                java.nio.file.Files.writeString(p, "{}\n", StandardCharsets.UTF_8);
-                out.add(new CreateResult(p, Status.CREATED, null));
-
-            } catch (DirectoryNotEmptyException e) {
-                out.add(new CreateResult(p, Status.FAILED, "Directory not empty: " + e.getMessage()));
-            } catch (IOException e) {
-                out.add(new CreateResult(p, Status.FAILED, e.getMessage()));
-            } catch (RuntimeException e) {
-                out.add(new CreateResult(p, Status.FAILED, e.toString()));
-            }
+            out.add(ensureSingleJsonFile(p));
         }
 
         return out;
+    }
+
+    private static CreateResult ensureSingleJsonFile(Path p) {
+        try {
+            if (java.nio.file.Files.exists(p)) {
+                return new CreateResult(p, Status.EXISTS, null);
+            }
+
+            Path parent = p.getParent();
+            if (parent != null) {
+                java.nio.file.Files.createDirectories(parent);
+            }
+
+            java.nio.file.Files.createFile(p);
+            java.nio.file.Files.writeString(p, "{}\n", StandardCharsets.UTF_8);
+            return new CreateResult(p, Status.CREATED, null);
+
+        } catch (FileAlreadyExistsException e) {
+            // File was created between the existence check and createFile call; treat as EXISTS.
+            return new CreateResult(p, Status.EXISTS, null);
+        } catch (DirectoryNotEmptyException e) {
+            return new CreateResult(p, Status.FAILED, "Directory not empty: " + e.getMessage());
+        } catch (IOException e) {
+            return new CreateResult(p, Status.FAILED, e.getMessage());
+        } catch (RuntimeException e) {
+            return new CreateResult(p, Status.FAILED, e.toString());
+        }
     }
 
     // ---------- Generic helpers used by ConfigPanel import/export ----------
