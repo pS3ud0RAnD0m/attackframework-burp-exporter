@@ -23,7 +23,8 @@ class LogPanelMemoryCapHeadlessTest {
         waitFor(() -> allText(p).contains("line-" + (total - 1)), 5000);
 
         String text = allText(p);
-        assertThat(text).doesNotContain("line-0");
-        assertThat(text).contains("line-5099");
+        assertThat(text)
+                .doesNotContain("line-0")
+                .contains("line-5099");
     }
 }

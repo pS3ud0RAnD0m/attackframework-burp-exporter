@@ -36,16 +36,18 @@ class LogPanelFilterRegexHeadlessTest {
             filterField.setText("abc"); // DocumentListener triggers rebuild
         });
         String text1 = docText(doc);
-        assertThat(text1).contains("Hello ABC");
-        assertThat(text1).contains("hello abc");
+        assertThat(text1)
+                .contains("Hello ABC")
+                .contains("hello abc");
 
         // Case-sensitive: turn toggle ON via doClick (rebuild happens in ActionListener)
         SwingUtilities.invokeAndWait(() -> {
             if (!filterCaseToggle.isSelected()) filterCaseToggle.doClick();
         });
         String text2 = docText(doc);
-        assertThat(text2).doesNotContain("Hello ABC");
-        assertThat(text2).contains("hello abc");
+        assertThat(text2)
+                .doesNotContain("Hello ABC")
+                .contains("hello abc");
     }
 
     private static String docText(StyledDocument doc) throws BadLocationException {

@@ -33,10 +33,11 @@ class OpenSearchSinkSubsetIT {
 
         // Pass 1: create or report existing
         List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, sources);
-        assertThat(first).isNotEmpty();
 
         EnumSet<IndexResult.Status> allowed = EnumSet.of(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
-        assertThat(first).allSatisfy(r -> assertThat(allowed).contains(r.status()));
+        assertThat(first)
+                .isNotEmpty()
+                .allSatisfy(r -> assertThat(r.status()).isIn(allowed));
 
         // Validate full index naming
         for (IndexResult r : first) {
@@ -58,7 +59,8 @@ class OpenSearchSinkSubsetIT {
 
         // Pass 2: re-create and verify CREATED status
         List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, sources);
-        assertThat(second).isNotEmpty();
-        assertThat(second).allSatisfy(r -> assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED));
+        assertThat(second)
+                .isNotEmpty()
+                .allSatisfy(r -> assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED));
     }
 }

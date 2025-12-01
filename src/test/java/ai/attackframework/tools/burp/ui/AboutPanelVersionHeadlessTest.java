@@ -33,8 +33,9 @@ class AboutPanelVersionHeadlessTest {
         String txt = area.getText();
 
         // Ensure both the heading and the version marker are present.
-        assertThat(txt).contains("Attack Framework: Burp Exporter");
-        assertThat(txt).contains("v1.2.3-test");
+        assertThat(txt)
+                .contains("Attack Framework: Burp Exporter")
+                .contains("v1.2.3-test");
     }
 
     private static JTextArea findTextArea(Container root) {

@@ -12,8 +12,7 @@ class IndexNamingTest {
         List<String> bases = IndexNaming.computeIndexBaseNames(List.of("traffic"));
 
         String p = IndexNaming.INDEX_PREFIX;
-        assertThat(bases).contains(p);
-        assertThat(bases).contains(p + "-traffic");
+        assertThat(bases).contains(p, p + "-traffic");
     }
 
     @Test

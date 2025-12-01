@@ -23,7 +23,8 @@ class LogPanelFilterHeadlessTest {
         p.onLog("INFO", "other text");
 
         String text = allText(p);
-        assertThat(text).contains("Traffic captured");
-        assertThat(text).doesNotContain("Findings loaded");
+        assertThat(text)
+                .contains("Traffic captured")
+                .doesNotContain("Findings loaded");
     }
 }

@@ -19,8 +19,9 @@ class LogPanelTrimHeadlessTest {
         p.onLog("INFO", "same");
 
         String text = allText(p);
-        assertThat(text).contains("(x3)");
-        assertThat(text).containsSubsequence("same");
+        assertThat(text)
+                .contains("(x3)")
+                .containsSubsequence("same");
         assertThat(text.indexOf("same")).isEqualTo(text.lastIndexOf("same"));
     }
 }
