@@ -43,19 +43,17 @@ class OpenSearchSinkMappingsIT {
             // Response must contain an entry for the requested index
             assertThat(resp).isNotNull();
             assertThat(resp.result()).isNotNull();
-            assertThat(resp.result().containsKey(r.fullName()))
+            assertThat(resp.result())
                     .as("mapping entry exists for index: " + r.fullName())
-                    .isTrue();
+                    .containsKey(r.fullName());
 
             var indexMapping = resp.result().get(r.fullName());
             assertThat(indexMapping).isNotNull();
             assertThat(indexMapping.mappings()).isNotNull();
             assertThat(indexMapping.mappings().properties())
                     .as("properties present for index: " + r.fullName())
-                    .isNotNull();
-            assertThat(indexMapping.mappings().properties().size())
-                    .as("properties not empty for index: " + r.fullName())
-                    .isGreaterThan(0);
+                    .isNotNull()
+                    .hasSizeGreaterThan(0);
         }
     }
 }

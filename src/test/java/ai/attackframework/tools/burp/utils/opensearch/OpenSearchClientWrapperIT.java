@@ -99,8 +99,11 @@ class OpenSearchClientWrapperIT {
                 mapClass
         );
         assertThat(getResp.found()).isTrue();
-        assertThat(getResp.source()).isNotNull();
-        assertThat(getResp.source().get("field")).isEqualTo("value");
+
+        Map<String, Object> source = getResp.source();
+        assertThat(source)
+                .isNotNull()
+                .containsEntry("field", "value");
 
         client.indices().delete(new DeleteIndexRequest.Builder().index(indexName).build());
     }
