@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import org.junit.jupiter.api.Assumptions;
@@ -57,13 +58,17 @@ class OpenSearchSinkIT {
             assertThat(r.fullName()).isEqualTo(expectedFull);
         }
 
-        // Delete reported indices
+        // Delete reported indices (best-effort cleanup of dev cluster)
         List<String> fullNames = first.stream().map(IndexResult::fullName).toList();
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
         for (String index : fullNames) {
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(index).build());
-            } catch (Exception ignored) { }
+            } catch (Exception e) {
+                // Best-effort cleanup: index may already be missing or the dev cluster may have been reset.
+                // Log instead of failing the lifecycle assertions above.
+                Logger.logError("[OpenSearchSinkIT] Failed to delete index during test cleanup: " + index, e);
+            }
         }
 
         // Verify deletion
@@ -102,12 +107,14 @@ class OpenSearchSinkIT {
             assertThat(r.fullName()).isEqualTo(expectedFull);
         }
 
-        // Delete both indices reported
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        // Delete both indices reported (best-effort cleanup of dev cluster)
+        OpenSearchClient client2 = OpenSearchConnector.getClient(BASE_URL);
         for (IndexResult r : first) {
             try {
-                client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-            } catch (Exception ignored) { }
+                client2.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
+            } catch (Exception e) {
+                Logger.logError("[OpenSearchSinkIT] Failed to delete index during single-source test cleanup: " + r.fullName(), e);
+            }
         }
 
         // Re-create and verify CREATED status

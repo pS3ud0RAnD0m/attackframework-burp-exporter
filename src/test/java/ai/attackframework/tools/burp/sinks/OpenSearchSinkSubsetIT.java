@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import org.junit.jupiter.api.Assumptions;
@@ -45,12 +46,14 @@ class OpenSearchSinkSubsetIT {
             assertThat(r.fullName()).isEqualTo(expectedFull);
         }
 
-        // Delete reported indices
+        // Delete reported indices (best-effort cleanup of dev cluster)
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
         for (IndexResult r : first) {
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-            } catch (Exception ignored) { }
+            } catch (Exception e) {
+                Logger.logError("[OpenSearchSinkSubsetIT] Failed to delete index during subset test cleanup: " + r.fullName(), e);
+            }
         }
 
         // Pass 2: re-create and verify CREATED status

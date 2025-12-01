@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import org.junit.jupiter.api.Assumptions;
@@ -54,7 +55,9 @@ class OpenSearchSinkUnsupportedSourceIT {
             for (IndexResult r : results) {
                 try {
                     client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-                } catch (Exception ignored) { }
+                } catch (Exception e) {
+                    Logger.logError("[OpenSearchSinkUnsupportedSourceIT] Failed to delete index during unsupported-source test cleanup: " + r.fullName(), e);
+                }
             }
         }
     }

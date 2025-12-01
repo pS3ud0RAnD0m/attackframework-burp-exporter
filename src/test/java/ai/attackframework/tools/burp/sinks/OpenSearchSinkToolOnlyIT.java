@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import org.junit.jupiter.api.Assumptions;
@@ -40,12 +41,14 @@ class OpenSearchSinkToolOnlyIT {
             assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
         }
 
-        // Delete reported index
+        // Delete reported index (best-effort cleanup of dev cluster)
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
         for (IndexResult r : first) {
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-            } catch (Exception ignored) { }
+            } catch (Exception e) {
+                Logger.logError("[OpenSearchSinkToolOnlyIT] Failed to delete index during tool-only test cleanup: " + r.fullName(), e);
+            }
         }
 
         // Re-create and verify CREATED status
