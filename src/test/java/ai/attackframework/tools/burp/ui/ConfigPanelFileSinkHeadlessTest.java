@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * - Run UI mutations on the EDT via onEdtAndWait.
  */
 @Tag("headless")
-public class ConfigPanelFileSinkHeadlessTest {
+class ConfigPanelFileSinkHeadlessTest {
 
     private static final long DEFAULT_WAIT_MS = 8000;
 
