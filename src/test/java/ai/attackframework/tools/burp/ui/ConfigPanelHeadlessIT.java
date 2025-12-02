@@ -21,9 +21,13 @@ class ConfigPanelHeadlessIT {
 
     private static final class TestUi implements ConfigController.Ui {
         final AtomicReference<String> os = new AtomicReference<>();
-        @Override public void onFileStatus(String m) { }
+        @Override public void onFileStatus(String m) {
+            // File status is not observed in this test; required by ConfigController.Ui
+        }
         @Override public void onOpenSearchStatus(String m) { os.set(m); }
-        @Override public void onAdminStatus(String m) { }
+        @Override public void onAdminStatus(String m) {
+            // Admin status is not observed in this test; required by ConfigController.Ui
+        }
     }
 
     private TestUi ui;

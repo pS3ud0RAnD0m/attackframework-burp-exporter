@@ -27,12 +27,13 @@ class ConfigPanelModelIntegrationHeadlessTest {
         ConfigPanel panel = new ConfigPanel(new ConfigController(ui));
 
         // Prefer text; if unsupported, pick the last button in the Admin block
-        JButton save = (JButton) findByTextOrLastButton(panel, "Save");
+        JButton save = (JButton) findByTextOrLastButton(panel);
         save.doClick();
 
         await(() -> ui.adminStatus != null);
-        assertThat(ui.adminStatus).isNotBlank();
-        assertThat(ui.adminStatus).containsAnyOf("Saved", "Exported", "Imported");
+        assertThat(ui.adminStatus)
+                .isNotBlank()
+                .containsAnyOf("Saved", "Exported", "Imported");
     }
 
     // ---- Mini harness ----
@@ -48,8 +49,8 @@ class ConfigPanelModelIntegrationHeadlessTest {
         @Override public void onAdminStatus(String message) { adminStatus = message; }
     }
 
-    private static Component findByTextOrLastButton(Container root, String text) {
-        Component byText = findByText(root, text);
+    private static Component findByTextOrLastButton(Container root) {
+        Component byText = findByText(root, "Save");
         if (byText != null) return byText;
         Component last = findLastButton(root);
         if (last != null) return last;

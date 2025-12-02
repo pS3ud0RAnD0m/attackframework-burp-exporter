@@ -53,11 +53,10 @@ class OpenSearchSinkToolOnlyIT {
 
         // Re-create and verify CREATED status
         List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("tool"));
-        assertThat(second).isNotEmpty();
-        assertThat(second).allSatisfy(r -> {
-            assertThat(r.shortName()).isEqualTo("tool");
-            assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
-            assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED);
-        });
+        assertThat(second)
+                .isNotEmpty()
+                .allSatisfy(r -> assertThat(r)
+                        .extracting(IndexResult::shortName, IndexResult::fullName, IndexResult::status)
+                        .containsExactly("tool", IndexNaming.INDEX_PREFIX, IndexResult.Status.CREATED));
     }
 }

@@ -1,7 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

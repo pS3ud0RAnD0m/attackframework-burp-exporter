@@ -26,6 +26,7 @@ public final class Reflect {
      * @param <T>       expected type
      * @return field value cast to T
      */
+    @SuppressWarnings("unchecked") // Caller is responsible for requesting the correct field type.
     public static <T> T get(Object target, String fieldName) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(fieldName, "fieldName");
@@ -82,11 +83,6 @@ public final class Reflect {
             throw new RuntimeException(
                     "call(method=" + methodName + ", args=" + Arrays.toString(args) + ")", e);
         }
-    }
-
-    /** Convenience for void-returning calls. */
-    public static void callVoid(Object target, String methodName, Object... args) {
-        call(target, methodName, args);
     }
 
     // ---------- internals ----------
