@@ -1,14 +1,14 @@
 [versions]
-montoya = "2025.6"
-logback = "1.5.18"
+montoya = "2025.11"
+logback = "1.5.21"
 junit = "5.10.0"
-mockito = "5.12.0"
+mockito = "5.20.0"
 assertj = "3.26.3"
-jackson = "2.15.2"
-miglayout = "11.0"
-jakartaJsonApi = "2.1.1"
+jackson = "2.20.1"
+miglayout = "11.4.2"
+jakartaJsonApi = "2.1.3"
 glassfishJson = "2.0.1"
-opensearchJava = "3.1.0"
+opensearchJava = "3.3.0"
 slf4j = "2.0.17"
 
 [libraries]

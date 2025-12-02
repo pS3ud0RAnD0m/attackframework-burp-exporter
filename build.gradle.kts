@@ -8,6 +8,7 @@ import org.gradle.external.javadoc.StandardJavadocDocletOptions
 plugins {
     id("java")
     id("jacoco")
+    id("com.github.ben-manes.versions") version "0.53.0"
 }
 
 group = project.property("group").toString()
