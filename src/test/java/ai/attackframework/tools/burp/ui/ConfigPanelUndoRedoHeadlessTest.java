@@ -15,18 +15,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Headless verification of Undo/Redo bindings and behavior in text fields.
- *
+ * <p>
  * Goals:
  *  - Confirm Ctrl/Meta variants (incl. Shift+Z redo) are bound in InputMap.
  *  - Exercise "undo"/"redo" actions directly and assert they mutate text as expected.
- *
+ * <p>
  * Notes:
  *  - We call field actions (not physical key events) to stay headless-safe.
  *  - We use replaceSelection(...) to create a single UndoableEdit,
  *    so one undo returns to the original text and one redo reapplies the change.
  */
 @Tag("headless")
-public class ConfigPanelUndoRedoHeadlessTest {
+class ConfigPanelUndoRedoHeadlessTest {
 
     @Test
     void filePathField_undoRedo_bindings_and_actions() throws Exception {
