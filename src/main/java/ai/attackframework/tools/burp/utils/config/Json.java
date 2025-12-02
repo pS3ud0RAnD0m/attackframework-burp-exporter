@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * JSON marshaling for config import/export.
@@ -188,13 +187,12 @@ public final class Json {
     private static ScopeParts parseCustomObject(JsonNode custom) {
         List<String> vals = new ArrayList<>();
         List<String> kindsList = new ArrayList<>();
-        for (Iterator<Map.Entry<String, JsonNode>> it = custom.fields(); it.hasNext();) {
-            Map.Entry<String, JsonNode> e = it.next();
-            JsonNode v = e.getValue();
+        for (Iterator<String> it = custom.fieldNames(); it.hasNext(); ) {
+            String key = it.next();
+            JsonNode v = custom.get(key);
             if (!v.isTextual()) {
                 continue;
             }
-            String key = e.getKey();
             // stringX => string, everything else => regex
             String kind = key.startsWith(LIT_STRING) ? LIT_STRING : LIT_REGEX;
             kindsList.add(kind);

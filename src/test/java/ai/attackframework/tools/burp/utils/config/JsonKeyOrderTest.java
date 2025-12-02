@@ -30,7 +30,7 @@ class JsonKeyOrderTest {
 
         JsonNode root = M.readTree(json);
         List<String> keys = new ArrayList<>();
-        root.fields().forEachRemaining(e -> keys.add(e.getKey()));
+        root.fieldNames().forEachRemaining(keys::add);
 
         assertThat(keys).containsExactly("version", "dataSources", "scope", "sinks");
     }
@@ -52,7 +52,7 @@ class JsonKeyOrderTest {
 
         JsonNode custom = M.readTree(json).path("scope").path("custom");
         List<String> keys = new ArrayList<>();
-        custom.fields().forEachRemaining(e -> keys.add(e.getKey()));
+        custom.fieldNames().forEachRemaining(keys::add);
 
         // Keys reflect insertion order with counters applied at build time.
         assertThat(keys).containsExactly("regex1", "string1", "regex2");
