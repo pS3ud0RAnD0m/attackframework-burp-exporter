@@ -8,6 +8,7 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -18,6 +19,7 @@ import java.time.format.DateTimeFormatter;
  */
 public final class LogRenderer {
 
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "LogRenderer intentionally holds the provided JTextPane as a UI peer; it is never re-exposed.")
     private final JTextPane textPane;
     private final StyledDocument doc;
     private final Style infoStyle;
@@ -39,8 +41,6 @@ public final class LogRenderer {
         StyleConstants.setForeground(errorStyle, UIManager.getColor("TextPane.foreground"));
         StyleConstants.setBold(errorStyle, true);
     }
-
-    public StyledDocument document() { return doc; }
 
     public void clear() {
         try {

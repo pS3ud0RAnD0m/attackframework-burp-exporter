@@ -31,19 +31,19 @@ public class AboutPanel extends JPanel {
 
     /** Builds the static about text area. */
     private static JTextArea buildAboutText(String version) {
-        JTextArea area = new JTextArea(
-                """
-                
-                Attack Framework: Burp Exporter v%s
-                
+        String text = """
+
+                Attack Framework: Burp Exporter v""" + version + """
+
                 This extension exports Burp Suite data into formats usable by data lakes and vector DBs
                 as part of the Attack Framework initiative.
 
                 GitHub:
                 https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter
                 https://github.com/attackframework
-                """.formatted(version)
-        );
+                """;
+
+        JTextArea area = new JTextArea(text);
         area.setEditable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);

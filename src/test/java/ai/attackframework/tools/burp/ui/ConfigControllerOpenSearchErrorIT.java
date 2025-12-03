@@ -14,7 +14,6 @@ class ConfigControllerOpenSearchErrorIT {
     private static final class TestUi implements ConfigController.Ui {
         final CountDownLatch done;
         volatile String osMsg;
-        volatile String admin;
 
         TestUi(CountDownLatch done) {
             this.done = done;
@@ -25,7 +24,7 @@ class ConfigControllerOpenSearchErrorIT {
             this.osMsg = message;
             done.countDown();
         }
-        @Override public void onAdminStatus(String message) { this.admin = message; }
+        @Override public void onAdminStatus(String message) { /* not used in this IT */ }
     }
 
     @Test

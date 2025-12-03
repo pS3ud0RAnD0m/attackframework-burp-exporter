@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui.primitives;
 
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
+import ai.attackframework.tools.burp.utils.Logger;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JButton;
@@ -8,6 +9,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -76,7 +78,14 @@ public class ScopeGrid implements Serializable {
         rebuild();
     }
 
-    /** Returns the grid component to be added by higher-level panels. */
+    /**
+     * Returns the internal grid component to be added by higher-level panels.
+     *
+     * <p>This is an intentional exposure of a UI primitive so callers can
+     * place the grid into their layouts; the panel is not shared across
+     * independent owners.</p>
+     */
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "ScopeGrid is a UI primitive; callers must embed the internal JPanel in their layouts.")
     public JPanel component() { return grid; }
 
     /** Current text values across rows (in order). */
@@ -204,7 +213,11 @@ public class ScopeGrid implements Serializable {
             if (deleteBound) return;
             deleteBound = true;
             delete.addActionListener(e -> {
-                try { if (binding != null) binding.close(); } catch (Exception ignored) { /* no-op */ }
+                try {
+                    if (binding != null) binding.close();
+                } catch (Exception ex) {
+                    Logger.internalDebug("ScopeGrid.Row: error closing binding: " + ex);
+                }
                 onDelete.run();
             });
         }

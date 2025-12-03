@@ -23,29 +23,42 @@ import java.util.function.Consumer;
  * {@link ai.attackframework.tools.burp.ui.primitives.StatusViews#setStatus(javax.swing.JTextArea,
  * javax.swing.JPanel, String, int, int)}.</p>
  */
-public record ConfigAdminPanel(
-        JTextArea importExportStatus,
-        JPanel importExportStatusWrapper,
-        JTextArea adminStatus,
-        JPanel adminStatusWrapper,
-        int indent,
-        int rowGap,
-        Consumer<JTextArea> statusConfigurator,
-        Runnable importAction,
-        Runnable exportAction,
-        ActionListener saveAction
-) {
+public final class ConfigAdminPanel {
+
+    private final JTextArea importExportStatus;
+    private final JPanel importExportStatusWrapper;
+    private final JTextArea adminStatus;
+    private final JPanel adminStatusWrapper;
+    private final int indent;
+    private final int rowGap;
+    private final Consumer<JTextArea> statusConfigurator;
+    private final Runnable importAction;
+    private final Runnable exportAction;
+    private final ActionListener saveAction;
 
     /** Canonical constructor with null checks. */
-    public ConfigAdminPanel {
-        Objects.requireNonNull(importExportStatus, "importExportStatus");
-        Objects.requireNonNull(importExportStatusWrapper, "importExportStatusWrapper");
-        Objects.requireNonNull(adminStatus, "adminStatus");
-        Objects.requireNonNull(adminStatusWrapper, "adminStatusWrapper");
-        Objects.requireNonNull(statusConfigurator, "statusConfigurator");
-        Objects.requireNonNull(importAction, "importAction");
-        Objects.requireNonNull(exportAction, "exportAction");
-        Objects.requireNonNull(saveAction, "saveAction");
+    public ConfigAdminPanel(
+            JTextArea importExportStatus,
+            JPanel importExportStatusWrapper,
+            JTextArea adminStatus,
+            JPanel adminStatusWrapper,
+            int indent,
+            int rowGap,
+            Consumer<JTextArea> statusConfigurator,
+            Runnable importAction,
+            Runnable exportAction,
+            ActionListener saveAction
+    ) {
+        this.importExportStatus = Objects.requireNonNull(importExportStatus, "importExportStatus");
+        this.importExportStatusWrapper = Objects.requireNonNull(importExportStatusWrapper, "importExportStatusWrapper");
+        this.adminStatus = Objects.requireNonNull(adminStatus, "adminStatus");
+        this.adminStatusWrapper = Objects.requireNonNull(adminStatusWrapper, "adminStatusWrapper");
+        this.indent = indent;
+        this.rowGap = rowGap;
+        this.statusConfigurator = Objects.requireNonNull(statusConfigurator, "statusConfigurator");
+        this.importAction = Objects.requireNonNull(importAction, "importAction");
+        this.exportAction = Objects.requireNonNull(exportAction, "exportAction");
+        this.saveAction = Objects.requireNonNull(saveAction, "saveAction");
     }
 
     /** Builds and returns the Admin panel. */

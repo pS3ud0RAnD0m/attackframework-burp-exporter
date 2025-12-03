@@ -14,20 +14,25 @@ import java.util.Objects;
  * State (checkbox instances and component names) is owned by ConfigPanel
  * and injected here to keep a single source of truth.
  */
-public record ConfigSourcesPanel(
-        JCheckBox settingsCheckbox,
-        JCheckBox sitemapCheckbox,
-        JCheckBox issuesCheckbox,
-        JCheckBox trafficCheckbox,
-        int indentPx
-) {
+public final class ConfigSourcesPanel {
+
+    private final JCheckBox settingsCheckbox;
+    private final JCheckBox sitemapCheckbox;
+    private final JCheckBox issuesCheckbox;
+    private final JCheckBox trafficCheckbox;
+    private final int indentPx;
     private static final String GAPLEFT = "gapleft ";
 
-    public ConfigSourcesPanel {
-        Objects.requireNonNull(settingsCheckbox, "settingsCheckbox");
-        Objects.requireNonNull(sitemapCheckbox,  "sitemapCheckbox");
-        Objects.requireNonNull(issuesCheckbox,   "issuesCheckbox");
-        Objects.requireNonNull(trafficCheckbox,  "trafficCheckbox");
+    public ConfigSourcesPanel(JCheckBox settingsCheckbox,
+                              JCheckBox sitemapCheckbox,
+                              JCheckBox issuesCheckbox,
+                              JCheckBox trafficCheckbox,
+                              int indentPx) {
+        this.settingsCheckbox = Objects.requireNonNull(settingsCheckbox, "settingsCheckbox");
+        this.sitemapCheckbox = Objects.requireNonNull(sitemapCheckbox, "sitemapCheckbox");
+        this.issuesCheckbox = Objects.requireNonNull(issuesCheckbox, "issuesCheckbox");
+        this.trafficCheckbox = Objects.requireNonNull(trafficCheckbox, "trafficCheckbox");
+        this.indentPx = indentPx;
     }
 
     /**

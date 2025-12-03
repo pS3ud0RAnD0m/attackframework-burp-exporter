@@ -18,48 +18,65 @@ import java.util.function.Consumer;
  * Builds the "Data Sinks" section panel used by ConfigPanel.
  * Components are owned by ConfigPanel and injected to keep a single source of state.
  */
-public record ConfigSinksPanel(
-        // Files sink
-        JCheckBox fileSinkCheckbox,
-        JTextField filePathField,
-        JButton createFilesButton,
+public final class ConfigSinksPanel {
 
-        JTextArea fileStatus,
-        JPanel fileStatusWrapper,
+    // Files sink
+    private final JCheckBox fileSinkCheckbox;
+    private final JTextField filePathField;
+    private final JButton createFilesButton;
+    private final JTextArea fileStatus;
+    private final JPanel fileStatusWrapper;
 
-        // OpenSearch sink
-        JCheckBox openSearchSinkCheckbox,
-        JTextField openSearchUrlField,
-        JButton testConnectionButton,
-        JButton createIndexesButton,
-        JTextArea openSearchStatus,
-        JPanel statusWrapper,
+    // OpenSearch sink
+    private final JCheckBox openSearchSinkCheckbox;
+    private final JTextField openSearchUrlField;
+    private final JButton testConnectionButton;
+    private final JButton createIndexesButton;
+    private final JTextArea openSearchStatus;
+    private final JPanel statusWrapper;
 
-        // Layout
-        int indentPx,
-        int rowGap,
+    // Layout
+    private final int indentPx;
+    private final int rowGap;
 
-        // Delegate from ConfigPanel for consistent status styling
-        Consumer<JTextArea> statusConfigurer
-) {
+    // Delegate from ConfigPanel for consistent status styling
+    private final Consumer<JTextArea> statusConfigurer;
+
     private static final String GAPLEFT = "gapleft ";
     private static final String ALIGN_LEFT_TOP = "alignx left, top";
 
-    public ConfigSinksPanel {
-        Objects.requireNonNull(fileSinkCheckbox, "fileSinkCheckbox");
-        Objects.requireNonNull(filePathField, "filePathField");
-        Objects.requireNonNull(createFilesButton, "createFilesButton");
-        Objects.requireNonNull(fileStatus, "fileStatus");
-        Objects.requireNonNull(fileStatusWrapper, "fileStatusWrapper");
+    public ConfigSinksPanel(
+            JCheckBox fileSinkCheckbox,
+            JTextField filePathField,
+            JButton createFilesButton,
+            JTextArea fileStatus,
+            JPanel fileStatusWrapper,
+            JCheckBox openSearchSinkCheckbox,
+            JTextField openSearchUrlField,
+            JButton testConnectionButton,
+            JButton createIndexesButton,
+            JTextArea openSearchStatus,
+            JPanel statusWrapper,
+            int indentPx,
+            int rowGap,
+            Consumer<JTextArea> statusConfigurer
+    ) {
+        this.fileSinkCheckbox = Objects.requireNonNull(fileSinkCheckbox, "fileSinkCheckbox");
+        this.filePathField = Objects.requireNonNull(filePathField, "filePathField");
+        this.createFilesButton = Objects.requireNonNull(createFilesButton, "createFilesButton");
+        this.fileStatus = Objects.requireNonNull(fileStatus, "fileStatus");
+        this.fileStatusWrapper = Objects.requireNonNull(fileStatusWrapper, "fileStatusWrapper");
 
-        Objects.requireNonNull(openSearchSinkCheckbox, "openSearchSinkCheckbox");
-        Objects.requireNonNull(openSearchUrlField, "openSearchUrlField");
-        Objects.requireNonNull(testConnectionButton, "testConnectionButton");
-        Objects.requireNonNull(createIndexesButton, "createIndexesButton");
-        Objects.requireNonNull(openSearchStatus, "openSearchStatus");
-        Objects.requireNonNull(statusWrapper, "statusWrapper");
+        this.openSearchSinkCheckbox = Objects.requireNonNull(openSearchSinkCheckbox, "openSearchSinkCheckbox");
+        this.openSearchUrlField = Objects.requireNonNull(openSearchUrlField, "openSearchUrlField");
+        this.testConnectionButton = Objects.requireNonNull(testConnectionButton, "testConnectionButton");
+        this.createIndexesButton = Objects.requireNonNull(createIndexesButton, "createIndexesButton");
+        this.openSearchStatus = Objects.requireNonNull(openSearchStatus, "openSearchStatus");
+        this.statusWrapper = Objects.requireNonNull(statusWrapper, "statusWrapper");
 
-        Objects.requireNonNull(statusConfigurer, "statusConfigurer");
+        this.indentPx = indentPx;
+        this.rowGap = rowGap;
+        this.statusConfigurer = Objects.requireNonNull(statusConfigurer, "statusConfigurer");
     }
 
     /**

@@ -28,6 +28,7 @@ dependencies {
     // --- compileOnly ---
     compileOnly(libs.montoya)
     compileOnly(libs.logbackClassic)
+    compileOnly(libs.spotbugsAnnotations)
 
     // --- implementation ---
     implementation(libs.jacksonCore)

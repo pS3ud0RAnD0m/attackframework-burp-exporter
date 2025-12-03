@@ -10,6 +10,7 @@ jakartaJsonApi = "2.1.3"
 glassfishJson = "2.0.1"
 opensearchJava = "3.3.0"
 slf4j = "2.0.17"
+spotbugs = "4.8.6"
 
 [libraries]
 montoya = { group = "net.portswigger.burp.extensions", name = "montoya-api", version.ref = "montoya" }
@@ -36,3 +37,4 @@ glassfishJson = { group = "org.glassfish", name = "jakarta.json", version.ref = 
 opensearchJava = { group = "org.opensearch.client", name = "opensearch-java", version.ref = "opensearchJava" }
 
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+spotbugsAnnotations = { group = "com.github.spotbugs", name = "spotbugs-annotations", version.ref = "spotbugs" }

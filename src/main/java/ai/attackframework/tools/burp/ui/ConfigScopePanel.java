@@ -15,22 +15,29 @@ import java.util.Objects;
  * Builds the "Scope" section panel used by ConfigPanel.
  * Components are owned by ConfigPanel and injected to keep a single source of state.
  */
-public record ConfigScopePanel(
-        JRadioButton allRadio,
-        JRadioButton burpRadio,
-        JRadioButton customRadio,
-        ScopeGrid grid,
-        int indentPx
-) {
+public final class ConfigScopePanel {
+
+    private final JRadioButton allRadio;
+    private final JRadioButton burpRadio;
+    private final JRadioButton customRadio;
+    private final ScopeGrid grid;
+    private final int indentPx;
 
     private static final String GAPLEFT = "gapleft ";
     private static final String ALIGN_LEFT_TOP = "alignx left, top";
 
-    public ConfigScopePanel {
-        Objects.requireNonNull(allRadio, "allRadio");
-        Objects.requireNonNull(burpRadio, "burpRadio");
-        Objects.requireNonNull(customRadio, "customRadio");
-        Objects.requireNonNull(grid, "grid");
+    public ConfigScopePanel(
+            JRadioButton allRadio,
+            JRadioButton burpRadio,
+            JRadioButton customRadio,
+            ScopeGrid grid,
+            int indentPx
+    ) {
+        this.allRadio = Objects.requireNonNull(allRadio, "allRadio");
+        this.burpRadio = Objects.requireNonNull(burpRadio, "burpRadio");
+        this.customRadio = Objects.requireNonNull(customRadio, "customRadio");
+        this.grid = Objects.requireNonNull(grid, "grid");
+        this.indentPx = indentPx;
     }
 
     /**

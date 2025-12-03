@@ -138,7 +138,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         logTextPane.setBackground(UIManager.getColor("TextPane.background"));
         logTextPane.setForeground(UIManager.getColor("TextPane.foreground"));
         renderer = new LogRenderer(logTextPane);
-        doc = renderer.document();
+        doc = logTextPane.getStyledDocument();
 
         // Highlight painter uses LAF color to integrate visually with theme.
         Color sel = UIManager.getColor("TextField.selectionBackground");

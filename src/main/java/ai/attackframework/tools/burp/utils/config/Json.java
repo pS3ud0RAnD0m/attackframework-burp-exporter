@@ -39,22 +39,59 @@ public final class Json {
 
     /**
      * Parsed config projection used by the UI and tests.
-     * Null/empty defaulting behavior is handled via canonical constructor.
+     * Null/empty defaulting behavior is handled via the constructor.
      */
-    public record ImportedConfig(
-            List<String> dataSources,
-            String scopeType,
-            List<String> scopeRegexes,
-            List<String> scopeKinds,
-            String filesPath,
-            String openSearchUrl
-    ) {
-        public ImportedConfig {
-            dataSources   = dataSources   == null ? List.of() : List.copyOf(dataSources);
-            scopeType     = scopeType     == null ? "all"     : scopeType;
-            scopeRegexes  = scopeRegexes  == null ? List.of() : List.copyOf(scopeRegexes);
-            // scopeKinds may remain null
+    @SuppressWarnings("java:S6206") // Sonar: this could be a record; keep as class for explicit defensive copying and SpotBugs-friendly structure
+    public static final class ImportedConfig {
+
+        private final List<String> dataSources;
+        private final String scopeType;
+        private final List<String> scopeRegexes;
+        private final List<String> scopeKinds;
+        private final String filesPath;
+        private final String openSearchUrl;
+
+        public ImportedConfig(
+                List<String> dataSources,
+                String scopeType,
+                List<String> scopeRegexes,
+                List<String> scopeKinds,
+                String filesPath,
+                String openSearchUrl
+        ) {
+            this.dataSources = dataSources == null ? List.of() : List.copyOf(dataSources);
+            this.scopeType = scopeType == null ? "all" : scopeType;
+            this.scopeRegexes = scopeRegexes == null ? List.of() : List.copyOf(scopeRegexes);
+            // scopeKinds: preserve null when absent for backwards compatibility,
+            // otherwise take an unmodifiable defensive copy.
+            this.scopeKinds = scopeKinds == null ? null : List.copyOf(scopeKinds);
             // filesPath and openSearchUrl may remain null
+            this.filesPath = filesPath;
+            this.openSearchUrl = openSearchUrl;
+        }
+
+        public List<String> dataSources() {
+            return dataSources;
+        }
+
+        public String scopeType() {
+            return scopeType;
+        }
+
+        public List<String> scopeRegexes() {
+            return scopeRegexes;
+        }
+
+        public List<String> scopeKinds() {
+            return scopeKinds;
+        }
+
+        public String filesPath() {
+            return filesPath;
+        }
+
+        public String openSearchUrl() {
+            return openSearchUrl;
         }
     }
 
