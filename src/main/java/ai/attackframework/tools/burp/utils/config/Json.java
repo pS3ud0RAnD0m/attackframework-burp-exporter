@@ -26,6 +26,7 @@ public final class Json {
     private static final String VERSION = Version.get();
 
     // Common literals
+    private static final String LIT_SCOPE  = "scope";
     private static final String LIT_CUSTOM = "custom";
     private static final String LIT_REGEX  = "regex";
     private static final String LIT_STRING = "string";
@@ -121,17 +122,20 @@ public final class Json {
     }
 
     private static void buildScope(ObjectNode root, ConfigState.State state) {
-        ObjectNode scope = root.putObject("scope");
         String scopeType = state.scopeType();
-        if ("all".equals(scopeType)) {
-            scope.put("all", true);
+
+        // Simple radio scopes ("all", "burp") are represented as an array of strings, e.g.:
+        //   "scope": ["all"]
+        //   "scope": ["burp"]
+        if ("all".equals(scopeType) || "burp".equals(scopeType)) {
+            ArrayNode scopeArr = root.putArray(LIT_SCOPE);
+            scopeArr.add(scopeType);
             return;
         }
-        if ("burp".equals(scopeType)) {
-            scope.put("burp", true);
-            return;
-        }
-        // custom
+
+        // Custom scope keeps object form for its entries, e.g.:
+        //   "scope": { "custom": { "regex1": "^example$", "string1": "foo" } }
+        ObjectNode scope = root.putObject(LIT_SCOPE);
         ObjectNode custom = scope.putObject(LIT_CUSTOM);
         int regexCount = 0;
         int stringCount = 0;
@@ -202,8 +206,21 @@ public final class Json {
     }
 
     private static ScopeParts parseScope(JsonNode root) {
-        JsonNode scope = root.path("scope");
+        JsonNode scope = root.path(LIT_SCOPE);
 
+        // New representation: simple scopes as array of strings, e.g. ["all"] or ["burp"].
+        if (scope.isArray() && !scope.isEmpty()) {
+            JsonNode first = scope.get(0);
+            if (first.isTextual()) {
+                String v = first.asText();
+                if ("all".equals(v) || "burp".equals(v)) {
+                    return new ScopeParts(v, List.of(), null);
+                }
+            }
+            // Empty / unrecognized array: fall through to legacy/custom handling below.
+        }
+
+        // Legacy representation: object with boolean flags ("all": true / "burp": true).
         if (scope.path("all").asBoolean(false)) {
             return new ScopeParts("all", List.of(), null);
         }
@@ -211,6 +228,7 @@ public final class Json {
             return new ScopeParts("burp", List.of(), null);
         }
 
+        // Custom scope: either object or array (plus optional customTypes), as before.
         JsonNode custom = scope.path(LIT_CUSTOM);
         if (custom.isObject()) {
             return parseCustomObject(custom);
