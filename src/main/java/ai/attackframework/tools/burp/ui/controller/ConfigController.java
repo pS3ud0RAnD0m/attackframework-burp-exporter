@@ -42,7 +42,8 @@ public final class ConfigController {
     /* ---------------- Export / Import / Save ---------------- */
 
     public void exportConfigAsync(Path out, String json) {
-        Logger.logDebug("[ConfigPanel] exportConfigAsync invoked; out=" + out);
+        Logger.logInfo ("[ConfigPanel] exportConfigAsync invoked; out=" + out);
+        Logger.logInfo ("[ConfigPanel] exportConfigAsync payload=" + json);
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
@@ -66,10 +67,11 @@ public final class ConfigController {
     }
 
     public void importConfigAsync(Path in) {
-        Logger.logDebug("[ConfigPanel] importConfigAsync invoked; in=" + in);
+        Logger.logInfo ("[ConfigPanel] importConfigAsync invoked; in=" + in);
         new SwingWorker<ConfigState.State, Void>() {
             @Override protected ConfigState.State doInBackground() throws Exception {
                 String json = FileUtil.readString(in);
+                Logger.logInfo ("[ConfigPanel] importConfigAsync payload=" + json);
                 return ConfigJsonMapper.parse(json);
             }
             @Override protected void done() {
@@ -92,12 +94,12 @@ public final class ConfigController {
     }
 
     public void saveAsync(ConfigState.State state) {
-        Logger.logDebug("[ConfigPanel] saveAsync invoked");
+        Logger.logInfo ("[ConfigPanel] saveAsync invoked");
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
                     String json = ConfigJsonMapper.build(state);
-                    Logger.internalDebug("ConfigPanel: save -> " + json);
+                    Logger.logInfo ("[ConfigPanel] saveAsync payload=" + json);
                     return "Saved.";
                 } catch (Exception ex) {
                     Logger.logError("[ConfigPanel] Save failed: " + rootMessage(ex));
@@ -120,14 +122,14 @@ public final class ConfigController {
     /* ---------------- Files sink ---------------- */
 
     public void createFilesAsync(String rootDir, List<String> selectedSources) {
-        Logger.logDebug("[ConfigPanel] createFilesAsync invoked; rootDir=" + rootDir
+        Logger.logInfo("[ConfigPanel] createFilesAsync invoked; rootDir=" + rootDir
                 + ", selectedSources=" + selectedSources);
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
                     List<String> bases     = IndexNaming.computeIndexBaseNames(selectedSources);
                     List<String> jsonNames = IndexNaming.toJsonFileNames(bases);
-                    Logger.logTrace("[ConfigPanel] createFilesAsync JSON names=" + jsonNames);
+                    Logger.logInfo("[ConfigPanel] createFilesAsync JSON names=" + jsonNames);
                     List<CreateResult> results = FileUtil.ensureJsonFiles(rootDir, jsonNames);
                     return formatCreateFilesResult(results);
                 } catch (Exception ex) {
@@ -151,12 +153,12 @@ public final class ConfigController {
     /* ---------------- OpenSearch: test + create indexes ---------------- */
 
     public void testConnectionAsync(String url) {
-        Logger.logDebug("[ConfigPanel] testConnectionAsync invoked; url=" + url);
+        Logger.logInfo("[ConfigPanel] testConnectionAsync invoked; url=" + url);
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
                     var s = OpenSearchClientWrapper.safeTestConnection(url);
-                    Logger.logDebug("[ConfigPanel] testConnection result: success=" + s.success()
+                    Logger.logInfo("[ConfigPanel] testConnection result: success=" + s.success()
                             + ", message=" + s.message());
                     if (s.success()) {
                         return "Connected to OpenSearch: " + s.distribution() + " " + s.version();
@@ -182,13 +184,13 @@ public final class ConfigController {
     }
 
     public void createIndexesAsync(String url, List<String> selectedSources) {
-        Logger.logDebug("[ConfigPanel] createIndexesAsync invoked; url=" + url
+        Logger.logInfo("[ConfigPanel] createIndexesAsync invoked; url=" + url
                 + ", selectedSources=" + selectedSources);
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
                     List<IndexResult> results = OpenSearchSink.createSelectedIndexes(url, selectedSources);
-                    Logger.logDebug("[ConfigPanel] createIndexesAsync results=" + results);
+                    Logger.logInfo("[ConfigPanel] createIndexesAsync results=" + results);
                     return formatCreateIndexesResult(results);
                 } catch (Exception ex) {
                     Logger.logError("[ConfigPanel] Create indexes failed: " + rootMessage(ex));
