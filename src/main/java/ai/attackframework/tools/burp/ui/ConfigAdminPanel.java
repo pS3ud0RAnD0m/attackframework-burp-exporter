@@ -78,6 +78,8 @@ public final class ConfigAdminPanel {
         // Stable name for tests/tooling.
         saveBtn.setName("admin.save");
 
+        assignToolTips(importBtn, exportBtn, saveBtn);
+
         importBtn.addActionListener(e -> importAction.run());
         exportBtn.addActionListener(e -> exportAction.run());
         saveBtn.addActionListener(saveAction);
@@ -113,5 +115,11 @@ public final class ConfigAdminPanel {
         root.add(controls, BorderLayout.NORTH);
         root.add(statuses, BorderLayout.CENTER);
         return root;
+    }
+
+    private static void assignToolTips(JButton importBtn, JButton exportBtn, JButton saveBtn) {
+        importBtn.setToolTipText("Import configuration from file");
+        exportBtn.setToolTipText("Export configuration to file");
+        saveBtn.setToolTipText("Save current configuration");
     }
 }

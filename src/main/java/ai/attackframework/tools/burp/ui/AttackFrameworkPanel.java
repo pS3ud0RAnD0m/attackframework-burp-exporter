@@ -5,6 +5,7 @@ import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.ScrollPaneConstants;
+import javax.swing.ToolTipManager;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.io.Serial;
@@ -21,6 +22,8 @@ public class AttackFrameworkPanel extends JPanel {
 
     public AttackFrameworkPanel() {
         setLayout(new BorderLayout());
+
+        ToolTipManager.sharedInstance().setDismissDelay(10_000);
 
         JTabbedPane tabbedPane = new JTabbedPane();
 

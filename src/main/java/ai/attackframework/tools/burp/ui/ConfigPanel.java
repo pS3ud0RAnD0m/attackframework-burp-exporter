@@ -108,6 +108,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
+        assignToolTips();
+
         // Sources
         add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
@@ -373,6 +375,26 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         adminStatusWrapper.setName("admin.statusWrapper");
         adminStatus.setName("admin.status");
+    }
+
+    private void assignToolTips() {
+        settingsCheckbox.setToolTipText("Include settings exports");
+        sitemapCheckbox.setToolTipText("Include sitemap exports");
+        issuesCheckbox.setToolTipText("Include findings exports");
+        trafficCheckbox.setToolTipText("Include traffic exports");
+
+        allRadio.setToolTipText("Export all observed");
+        burpSuiteRadio.setToolTipText("Use Burp Suite's project scope");
+        customRadio.setToolTipText("Use custom scope");
+
+        fileSinkCheckbox.setToolTipText("Enable file-based export");
+        filePathField.setToolTipText("Root directory for generated files");
+        createFilesButton.setToolTipText("Test file creation. Not required.");
+
+        openSearchSinkCheckbox.setToolTipText("Enable OpenSearch export");
+        openSearchUrlField.setToolTipText("Base URL of the OpenSearch cluster");
+        testConnectionButton.setToolTipText("Test connectivity to OpenSearch");
+        createIndexesButton.setToolTipText("Test index creation. Not required.");
     }
 
     /** Save button handler; delegates to the controller. */

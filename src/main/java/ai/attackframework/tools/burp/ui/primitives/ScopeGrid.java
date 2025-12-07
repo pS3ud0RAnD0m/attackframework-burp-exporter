@@ -31,6 +31,11 @@ public class ScopeGrid implements Serializable {
     /** Max number of rows permitted. The Add button disables at this limit. */
     private static final int MAX_ROWS = 100;
 
+    private static final String TIP_ADD_ROW     = "Add new row";
+    private static final String TIP_SCOPE_ENTRY = "Scope entry (string or regex)";
+    private static final String TIP_REGEX_TOGGLE = "Interpret value as a regular expression.";
+    private static final String TIP_DELETE_ROW  = "Delete this row";
+
     /** Initial row seed for a custom entry. */
     public record ScopeEntryInit(String value, boolean regex) implements Serializable {
         @Serial private static final long serialVersionUID = 1L;
@@ -66,7 +71,7 @@ public class ScopeGrid implements Serializable {
         }
 
         addButton.setName("scope.custom.add");
-        addButton.setToolTipText("Add new row");
+        addButton.setToolTipText(TIP_ADD_ROW);
         addButton.addActionListener(e -> {
             if (rows.size() < MAX_ROWS) {
                 rows.add(new Row("", true)); // new rows default to regex ON
@@ -137,9 +142,10 @@ public class ScopeGrid implements Serializable {
             Row r = rows.get(i);
             r.assignNamesForIndex(i + 1);
 
+            assignRowToolTips(r);
+
             // Common part: field + toggle + indicator
             grid.add(r.field, "sg tf, growx"); // col 1
-            ensureToggleTextAndTip(r);
             grid.add(r.toggle, "split 2");     // col 2
             grid.add(r.indicator);
 
@@ -163,6 +169,12 @@ public class ScopeGrid implements Serializable {
         grid.repaint();
     }
 
+    private static void assignRowToolTips(Row r) {
+        r.field.setToolTipText(TIP_SCOPE_ENTRY);
+        ensureToggleTextAndTip(r);
+        r.delete.setToolTipText(TIP_DELETE_ROW);
+    }
+
     private void applyEnablement() {
         boolean canAdd = enabled && rows.size() < MAX_ROWS;
         addButton.setEnabled(canAdd);
@@ -176,7 +188,7 @@ public class ScopeGrid implements Serializable {
 
     private static void ensureToggleTextAndTip(Row r) {
         if (!".*".equals(r.toggle.getText())) r.toggle.setText(".*");
-        r.toggle.setToolTipText("Interpret value as a regular expression.");
+        r.toggle.setToolTipText(TIP_REGEX_TOGGLE);
     }
 
     /** Row model: text field, toggle, indicator, and (rows &gt; 1) a Delete button. */
@@ -194,7 +206,6 @@ public class ScopeGrid implements Serializable {
             field.setText(value);
             toggle.setSelected(isRegex);
             binding = RegexIndicatorBinder.bind(field, toggle, null, false, indicator);
-            delete.setToolTipText("Delete this row");
         }
 
         void assignNamesForIndex(int index1) {

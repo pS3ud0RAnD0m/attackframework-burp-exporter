@@ -163,11 +163,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         filterField = new AutoSizingTextField(PREFS.get(PREF_FILTER_TEXT, ""));
         filterField.setName("log.filter.text");
         filterCaseToggle = new JCheckBox("Aa");
-        filterCaseToggle.setToolTipText("Case-sensitive filter");
         filterCaseToggle.setName("log.filter.case");
         filterCaseToggle.setSelected(PREFS.getBoolean(PREF_FILTER_CASE, false));
         filterRegexToggle = new JCheckBox(".*");
-        filterRegexToggle.setToolTipText("Regex filter");
         filterRegexToggle.setName("log.filter.regex");
         final JLabel filterRegexIndicator = new JLabel();
         filterRegexIndicator.setName("log.filter.regex.indicator");
@@ -176,10 +174,8 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         searchField = new AutoSizingTextField(PREFS.get(PREF_LAST_SEARCH, ""));
         searchField.setName("log.search.field");
         searchCaseToggle = new JCheckBox("Aa");
-        searchCaseToggle.setToolTipText("Case-sensitive search");
         searchCaseToggle.setName("log.search.case");
         searchRegexToggle = new JCheckBox(".*");
-        searchRegexToggle.setToolTipText("Regex search");
         searchRegexToggle.setName("log.search.regex");
         JButton searchPrevBtn = new JButton("Prev");
         searchPrevBtn.setName("log.search.prev");
@@ -192,13 +188,18 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         JButton clearBtn = new JButton("Clear");
         clearBtn.setName("log.clear");
-        clearBtn.setToolTipText("Clear log pane");
         JButton copyBtn = new JButton("Copy");
         copyBtn.setName("log.copy");
-        copyBtn.setToolTipText("Copy log to clipboard");
         JButton saveBtn = new JButton("Save…");
         saveBtn.setName("log.save");
-        saveBtn.setToolTipText("Save log to file");
+
+        assignToolTips(
+                searchPrevBtn,
+                searchNextBtn,
+                clearBtn,
+                copyBtn,
+                saveBtn
+        );
 
         // Build toolbar
         toolbar.add(new JLabel("Min level:"));
@@ -321,6 +322,33 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         rebuildView();
         computeMatchesAndJumpFirst();
+    }
+
+    /** Assigns tooltips for all toolbar controls in one place. */
+    private void assignToolTips(
+            JButton searchPrevBtn,
+            JButton searchNextBtn,
+            JButton clearBtn,
+            JButton copyBtn,
+            JButton saveBtn
+    ) {
+        levelCombo.setToolTipText("Minimum level to display");
+        pauseAutoscroll.setToolTipText("Stop auto-scrolling when new entries arrive");
+
+        filterField.setToolTipText("Filter by string or regex");
+        filterCaseToggle.setToolTipText("Case-sensitive filter");
+        filterRegexToggle.setToolTipText("Regex filter");
+
+        searchField.setToolTipText("Find string or regex");
+        searchCaseToggle.setToolTipText("Case-sensitive search");
+        searchRegexToggle.setToolTipText("Regex search");
+
+        searchPrevBtn.setToolTipText("Jump to previous match");
+        searchNextBtn.setToolTipText("Jump to next match");
+
+        clearBtn.setToolTipText("Clear log pane");
+        copyBtn.setToolTipText("Copy log to clipboard");
+        saveBtn.setToolTipText("Save log to file");
     }
 
     @Override
