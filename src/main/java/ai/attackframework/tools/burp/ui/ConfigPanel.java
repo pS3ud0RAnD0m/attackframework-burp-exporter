@@ -162,21 +162,43 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         refreshEnabledStates();
     }
 
-    /** Single section separator used between major blocks. */
+    /**
+     * Creates a separator used between major configuration blocks.
+     *
+     * @return new separator component
+     */
     private JComponent panelSeparator() { return new ThickSeparator(); }
 
     /* ----------------------- ConfigController.Ui ----------------------- */
 
+    /**
+     * Updates the Files status area on the EDT with the provided message.
+     *
+     * <p>
+     * @param message status text to display (nullable)
+     */
     @Override public void onFileStatus(String message) {
         StatusViews.setStatus(
                 fileStatus, fileStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
     }
 
+    /**
+     * Updates the OpenSearch status area on the EDT with the provided message.
+     *
+     * <p>
+     * @param message status text to display (nullable)
+     */
     @Override public void onOpenSearchStatus(String message) {
         StatusViews.setStatus(
                 openSearchStatus, openSearchStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
     }
 
+    /**
+     * Updates the Admin status area on the EDT and auto-hides after a delay.
+     *
+     * <p>
+     * @param message status text to display (nullable)
+     */
     @Override public void onAdminStatus(String message) {
         Runnable r = () -> {
             StatusViews.setStatus(
@@ -235,6 +257,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     /* ----------------------------- Wiring ----------------------------- */
 
+    /**
+     * Wires button and checkbox actions for sinks and layout relayout hooks.
+     *
+     * <p>Caller must invoke on the EDT. Validates required fields before delegating to
+     * {@link ConfigController} and keeps text fields revalidated as their contents change.</p>
+     */
     private void wireButtonActions() {
         fileSinkCheckbox.addActionListener(e -> refreshEnabledStates());
         openSearchSinkCheckbox.addActionListener(e -> refreshEnabledStates());
@@ -265,6 +293,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
     }
 
+    /**
+     * Enables/disables sink controls based on checkbox selections.
+     *
+     * <p>EDT only. Keeps paired text fields and buttons in sync with their enable toggles.</p>
+     */
     private void refreshEnabledStates() {
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
@@ -276,6 +309,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         createIndexesButton.setEnabled(os);
     }
 
+    /**
+     * Collects the currently selected data sources.
+     *
+     * <p>
+     * @return ordered list of source keys suitable for {@link ConfigKeys}
+     */
     private List<String> getSelectedSources() {
         List<String> selected = new ArrayList<>();
         if (settingsCheckbox.isSelected()) selected.add(ConfigKeys.SRC_SETTINGS);
@@ -285,6 +324,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         return selected;
     }
 
+    /**
+     * Installs undo/redo bindings and enter-key shortcuts on text fields.
+     *
+     * <p>EDT only. Enter triggers the most relevant action for each field.</p>
+     */
     private void wireTextFieldEnhancements() {
         TextFieldUndo.install(filePathField);
         TextFieldUndo.install(openSearchUrlField);
@@ -292,6 +336,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
     }
 
+    /**
+     * Builds the current UI state into a serializable config object.
+     *
+     * <p>
+     * @return assembled {@link ConfigState.State} reflecting user selections
+     */
     private ConfigState.State buildCurrentState() {
         List<String> selectedSources = getSelectedSources();
 
@@ -330,7 +380,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         );
     }
 
-    /** Export JSON via a chooser; path handling is delegated to FileUtil. */
+    /**
+     * Prompts for a save location and exports the current config to JSON asynchronously.
+     *
+     * <p>EDT only. Uses {@link FileUtil#ensureJsonExtension(java.io.File)} to normalize the file
+     * name before delegating to {@link ConfigController#exportConfigAsync(java.nio.file.Path, String)}.</p>
+     */
     private void exportConfig() {
         String json = ConfigJsonMapper.build(buildCurrentState());
         JFileChooser chooser = new JFileChooser();
@@ -343,7 +398,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         controller.exportConfigAsync(out, json);
     }
 
-    /** Import JSON via a chooser; controller parses and applies. */
+    /**
+     * Prompts for a config file and imports it asynchronously via the controller.
+     *
+     * <p>EDT only. Delegates parsing and UI application to
+     * {@link ConfigController#importConfigAsync(java.nio.file.Path)}.</p>
+     */
     private void importConfig() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Import Config");
@@ -377,6 +437,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         adminStatus.setName("admin.status");
     }
 
+    /**
+     * Assigns tooltips for all ConfigPanel controls.
+     *
+     * <p>EDT only. Consolidated here to keep tooltip text consistent and discoverable.</p>
+     */
     private void assignToolTips() {
         settingsCheckbox.setToolTipText("Include settings exports");
         sitemapCheckbox.setToolTipText("Include sitemap exports");
@@ -397,14 +462,27 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         createIndexesButton.setToolTipText("Test index creation. Not required.");
     }
 
-    /** Save button handler; delegates to the controller. */
+    /**
+     * Save button handler; delegates to the controller.
+     */
     private class AdminSaveButtonListener implements ActionListener {
+        /**
+         * Serializes and reports the current configuration asynchronously.
+         *
+         * <p>
+         * @param e action event (unused)
+         */
         @Override public void actionPerformed(ActionEvent e) {
             controller.saveAsync(buildCurrentState());
         }
     }
 
-    /** Run on EDT (immediately if already on it). */
+    /**
+     * Runs a task on the EDT, executing immediately when already on the EDT.
+     *
+     * <p>
+     * @param r task to run
+     */
     private void runOnEdt(Runnable r) {
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else SwingUtilities.invokeLater(r);

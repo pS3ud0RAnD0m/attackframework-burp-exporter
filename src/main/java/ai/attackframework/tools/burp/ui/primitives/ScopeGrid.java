@@ -28,7 +28,9 @@ public class ScopeGrid implements Serializable {
 
     @Serial private static final long serialVersionUID = 1L;
 
-    /** Max number of rows permitted. The Add button disables at this limit. */
+    /**
+     * Max number of rows permitted. The Add button disables at this limit.
+     */
     private static final int MAX_ROWS = 100;
 
     private static final String TIP_ADD_ROW     = "Add new row";
@@ -36,7 +38,9 @@ public class ScopeGrid implements Serializable {
     private static final String TIP_REGEX_TOGGLE = "Interpret value as a regular expression.";
     private static final String TIP_DELETE_ROW  = "Delete this row";
 
-    /** Initial row seed for a custom entry. */
+    /**
+     * Initial row seed for a custom entry.
+     */
     public record ScopeEntryInit(String value, boolean regex) implements Serializable {
         @Serial private static final long serialVersionUID = 1L;
     }
@@ -54,11 +58,14 @@ public class ScopeGrid implements Serializable {
     private final List<Row> rows = new ArrayList<>();
     private final JButton addButton = new JButton("Add");
 
-    /** Tracks external enable/disable state to combine with the MAX_ROWS rule. */
+    /**
+     * Tracks external enable/disable state to combine with the MAX_ROWS rule.
+     */
     private boolean enabled = true;
 
     /**
      * Constructs the grid with optional seed entries.
+     * <p>
      * @param initial ordered initial entries; blank row created when {@code null} or empty
      */
     public ScopeGrid(List<ScopeEntryInit> initial) {
@@ -89,18 +96,28 @@ public class ScopeGrid implements Serializable {
      * <p>This is an intentional exposure of a UI primitive so callers can
      * place the grid into their layouts; the panel is not shared across
      * independent owners.</p>
+     * <p>
+     * @return grid component to embed in layouts
      */
     @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "ScopeGrid is a UI primitive; callers must embed the internal JPanel in their layouts.")
     public JPanel component() { return grid; }
 
-    /** Current text values across rows (in order). */
+    /**
+     * Current text values across rows (in order).
+     * <p>
+     * @return list of row values
+     */
     public List<String> values() {
         List<String> out = new ArrayList<>(rows.size());
         for (Row r : rows) out.add(r.field.getText());
         return out;
     }
 
-    /** Current kinds across rows (in order). {@code true} means regex. */
+    /**
+     * Current kinds across rows (in order).
+     * <p>
+     * @return list of regex flags ({@code true} means regex)
+     */
     public List<Boolean> regexKinds() {
         List<Boolean> out = new ArrayList<>(rows.size());
         for (Row r : rows) out.add(r.toggle.isSelected());
@@ -110,6 +127,8 @@ public class ScopeGrid implements Serializable {
     /**
      * Replaces all rows with the provided entries.
      * A single blank row is created when {@code null} or empty.
+     * <p>
+     * @param entries new entries to apply
      */
     public void setEntries(List<ScopeEntryInit> entries) {
         rows.clear();
@@ -126,6 +145,8 @@ public class ScopeGrid implements Serializable {
     /**
      * Enables/disables the entire grid (fields, toggles, Add/Delete).
      * The Add button is also constrained by the MAX_ROWS rule.
+     * <p>
+     * @param enabled whether controls should be enabled
      */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
@@ -134,7 +155,11 @@ public class ScopeGrid implements Serializable {
 
     /* ---------------- internal ---------------- */
 
-    /** Rebuilds the visual rows; caller must invoke on the EDT. */
+    /**
+     * Rebuilds the visual rows.
+     * <p>
+     * Caller must invoke on the EDT.
+     */
     private void rebuild() {
         grid.removeAll();
 
@@ -169,12 +194,20 @@ public class ScopeGrid implements Serializable {
         grid.repaint();
     }
 
+    /**
+     * Ensures row-level tooltips are applied consistently.
+     * <p>
+     * @param r row to update
+     */
     private static void assignRowToolTips(Row r) {
         r.field.setToolTipText(TIP_SCOPE_ENTRY);
         ensureToggleTextAndTip(r);
         r.delete.setToolTipText(TIP_DELETE_ROW);
     }
 
+    /**
+     * Applies enablement state to all row components.
+     */
     private void applyEnablement() {
         boolean canAdd = enabled && rows.size() < MAX_ROWS;
         addButton.setEnabled(canAdd);
@@ -186,6 +219,11 @@ public class ScopeGrid implements Serializable {
         }
     }
 
+    /**
+     * Standardizes toggle text and tooltip.
+     * <p>
+     * @param r row to adjust
+     */
     private static void ensureToggleTextAndTip(Row r) {
         if (!".*".equals(r.toggle.getText())) r.toggle.setText(".*");
         r.toggle.setToolTipText(TIP_REGEX_TOGGLE);
@@ -202,12 +240,23 @@ public class ScopeGrid implements Serializable {
         private final transient AutoCloseable binding;
         private boolean deleteBound;
 
+        /**
+         * Creates a row with provided value and regex flag.
+         * <p>
+         * @param value    initial field text
+         * @param isRegex  whether regex toggle is selected
+         */
         Row(String value, boolean isRegex) {
             field.setText(value);
             toggle.setSelected(isRegex);
             binding = RegexIndicatorBinder.bind(field, toggle, null, false, indicator);
         }
 
+        /**
+         * Assigns deterministic component names for headless tests.
+         * <p>
+         * @param index1 1-based row index
+         */
         void assignNamesForIndex(int index1) {
             if (index1 == 1) {
                 field.setName("scope.custom.regex");
@@ -220,6 +269,11 @@ public class ScopeGrid implements Serializable {
             delete.setName("scope.custom.delete." + index1);
         }
 
+        /**
+         * Binds the delete handler once, closing regex binding before removal.
+         * <p>
+         * @param onDelete callback invoked after cleanup
+         */
         void ensureDeleteHandler(Runnable onDelete) {
             if (deleteBound) return;
             deleteBound = true;

@@ -36,8 +36,11 @@ public final class ConfigSourcesPanel {
     }
 
     /**
-     * Returns a panel containing the header and four data-source checkboxes.
-     * Layout matches the original implementation for visual consistency.
+     * Builds the Data Sources section with the four source checkboxes.
+     *
+     * <p>Caller must invoke on the EDT. Layout matches the original for visual consistency.</p>
+     *
+     * @return assembled panel containing header and source checkboxes
      */
     public JPanel build() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));

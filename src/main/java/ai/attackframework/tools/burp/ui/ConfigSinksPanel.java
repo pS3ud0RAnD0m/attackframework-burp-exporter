@@ -80,8 +80,12 @@ public final class ConfigSinksPanel {
     }
 
     /**
-     * Returns a panel that contains the header and the Files/OpenSearch rows.
-     * Layout mirrors the original implementation for visual/test consistency.
+     * Builds the Data Sinks section containing Files and OpenSearch controls.
+     * <p>
+     * Caller must invoke on the EDT. Layout mirrors the original for test/visual consistency
+     * and applies common status configuration to both sink wrappers.</p>
+     * <p>
+     * @return assembled panel with sink controls and status areas
      */
     public JPanel build() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"));

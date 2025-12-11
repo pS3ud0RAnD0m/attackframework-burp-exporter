@@ -5,9 +5,10 @@ import javax.swing.event.DocumentListener;
 
 /**
  * Small adapter to reduce boilerplate when wiring document change events to a {@link Runnable}.
- *
- * <p>All callbacks are forwarded as the same action; this is appropriate for UI cases where
- * insert/remove/changed should share identical behavior.</p>
+ * <p>
+ * All callbacks are forwarded as the same action; this is appropriate for UI cases where
+ * insert/remove/changed should share identical behavior. Caller should ensure the listener runs on
+ * the EDT when used with Swing components.
  */
 public final class Doc {
 

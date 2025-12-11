@@ -117,6 +117,13 @@ public final class ConfigAdminPanel {
         return root;
     }
 
+    /**
+     * Assigns tooltips for admin buttons in a single place.
+     *
+     * @param importBtn import action button
+     * @param exportBtn export action button
+     * @param saveBtn   save action button
+     */
     private static void assignToolTips(JButton importBtn, JButton exportBtn, JButton saveBtn) {
         importBtn.setToolTipText("Import configuration from file");
         exportBtn.setToolTipText("Export configuration to file");

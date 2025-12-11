@@ -14,7 +14,9 @@ import java.util.Objects;
  */
 public final class LogStore {
 
-    /** Levels (TRACE < DEBUG < INFO < WARN < ERROR). */
+    /**
+     * Levels (TRACE < DEBUG < INFO < WARN < ERROR).
+     */
     public enum Level { TRACE, DEBUG, INFO, WARN, ERROR;
         public static Level fromString(String s) {
             if (s == null) return INFO;
@@ -31,6 +33,14 @@ public final class LogStore {
         public final String message;
         private int repeats; // >= 1
 
+        /**
+         * Creates a log entry with an initial repeat count of 1.
+         *
+         * <p>
+         * @param ts      timestamp of the event (required)
+         * @param level   log level (required)
+         * @param message log message (nullable)
+         */
         public Entry(LocalDateTime ts, Level level, String message) {
             this.ts = ts;
             this.level = level;
@@ -61,16 +71,38 @@ public final class LogStore {
     private final int maxEntries;
     private VisibilityFilter filter;
 
+    /**
+     * Constructs a bounded log model with a visibility filter.
+     *
+     * <p>
+     * @param maxEntries maximum entries to retain before trimming (> 0)
+     * @param filter     predicate used for visibility decisions during renders
+     */
     public LogStore(int maxEntries, VisibilityFilter filter) {
         if (maxEntries <= 0) throw new IllegalArgumentException("maxEntries must be > 0");
         this.maxEntries = maxEntries;
         this.filter = Objects.requireNonNull(filter, "filter");
     }
 
+    /**
+     * Updates the visibility predicate used during render decisions.
+     *
+     * <p>
+     * @param filter new predicate (required)
+     */
     public void setFilter(VisibilityFilter filter) { this.filter = Objects.requireNonNull(filter, "filter"); }
 
+    /**
+     * Clears all stored entries.
+     */
     public void clear() { entries.clear(); }
 
+    /**
+     * Returns the number of stored (unfiltered) entries.
+     *
+     * <p>
+     * @return entry count
+     */
     public int size() { return entries.size(); }
 
     /**

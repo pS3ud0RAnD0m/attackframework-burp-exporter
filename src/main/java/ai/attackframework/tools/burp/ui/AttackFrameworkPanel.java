@@ -20,6 +20,12 @@ public class AttackFrameworkPanel extends JPanel {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Constructs the top-level tab container for the extension.
+     *
+     * <p>Caller must invoke on the EDT. Configures tooltip dismiss delay and mounts all major
+     * panels inside a {@link JTabbedPane} wrapped with scroll panes.</p>
+     */
     public AttackFrameworkPanel() {
         setLayout(new BorderLayout());
 
@@ -35,6 +41,12 @@ public class AttackFrameworkPanel extends JPanel {
         add(tabbedPane, BorderLayout.CENTER);
     }
 
+    /**
+     * Wraps a component in a scroll pane with consistent scrollbar policy and speed.
+     *
+     * @param view child component to wrap
+     * @return configured scroll pane
+     */
     private static JScrollPane makeScrollPane(Component view) {
         JScrollPane sp = new JScrollPane(
                 view,
@@ -45,7 +57,12 @@ public class AttackFrameworkPanel extends JPanel {
         return sp;
     }
 
-    /** Standardized, comfortable scrolling across all tabs. */
+    /**
+     * Standardizes scroll speed for both axes to improve usability across tabs.
+     *
+     * <p>
+     * @param sp target scroll pane
+     */
     private static void configureScrollSpeed(JScrollPane sp) {
         JScrollBar v = sp.getVerticalScrollBar();
         if (v != null) {

@@ -11,7 +11,9 @@ import java.awt.Font;
 public class StatsPanel extends JPanel {
 
     /**
-     * Creates a new StatsPanel.
+     * Creates the Stats panel placeholder.
+     *
+     * <p>Caller must invoke on the EDT. Content is placeholder text until stats are implemented.</p>
      */
     public StatsPanel() {
         setLayout(new BorderLayout());

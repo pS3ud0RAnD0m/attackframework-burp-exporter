@@ -324,7 +324,15 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         computeMatchesAndJumpFirst();
     }
 
-    /** Assigns tooltips for all toolbar controls in one place. */
+    /**
+     * Assigns tooltips for all toolbar controls in one place.
+     * <p>
+     * @param searchPrevBtn jump-to-previous button
+     * @param searchNextBtn jump-to-next button
+     * @param clearBtn      clear action button
+     * @param copyBtn       copy action button
+     * @param saveBtn       save action button
+     */
     private void assignToolTips(
             JButton searchPrevBtn,
             JButton searchNextBtn,
@@ -351,6 +359,11 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         saveBtn.setToolTipText("Save log to file");
     }
 
+    /**
+     * Lifecycle hook: unregisters listeners and closes regex bindings when removed.
+     * <p>
+     * EDT only.
+     */
     @Override
     public void removeNotify() {
         super.removeNotify();
@@ -363,6 +376,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     // ---- Logger.LogListener ----
 
+    /**
+     * Logger callback: marshals incoming events onto the EDT for ingestion.
+     * <p>
+     * @param level   level string from Logger
+     * @param message log message (nullable)
+     */
     @Override
     public void onLog(String level, String message) {
         SwingUtilities.invokeLater(() -> ingest(level, message));
@@ -370,6 +389,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     // ---- Ingest and rendering ----
 
+    /**
+     * Ingests a log event, rendering incrementally when visible.
+     * <p>
+     * @param levelStr level string (parsed via {@link LogStore.Level#fromString(String)})
+     * @param message  log message (nullable)
+     */
     private void ingest(String levelStr, String message) {
         LogStore.Level lvl = LogStore.Level.fromString(levelStr);
         Logger.internalTrace("LogPanel ingest -> level=" + lvl + " msg=" + (message == null ? "" : message));
@@ -399,10 +424,23 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
     }
 
+    /**
+     * Applies current filters to determine whether a log should render.
+     * <p>
+     * @param lvl     level to evaluate
+     * @param message log message
+     * @return {@code true} when the entry passes level and text filters
+     */
     private boolean visible(LogStore.Level lvl, String message) {
         return passesLevel(lvl) && passesTextFilter(message);
     }
 
+    /**
+     * Checks whether a level meets or exceeds the selected minimum.
+     * <p>
+     * @param lvl level to evaluate
+     * @return {@code true} when the level is visible
+     */
     private boolean passesLevel(LogStore.Level lvl) {
         LogStore.Level min = LogStore.Level.fromString((String) levelCombo.getSelectedItem());
         return lvl.ordinal() >= min.ordinal();
@@ -410,8 +448,12 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     /**
      * Text filter (regex or substring). Invalid regex results in WARN and non-match.
-     * <p>Regex flag rules (case/UNICODE) are centralized; substring matching lowers both
-     * sides when case-insensitive to avoid locale pitfalls.</p>
+     * <p>
+     * Regex flag rules (case/UNICODE) are centralized; substring matching lowers both
+     * sides when case-insensitive to avoid locale pitfalls.
+     * <p>
+     * @param msg message to test
+     * @return {@code true} when the message passes the text filter
      */
     private boolean passesTextFilter(String msg) {
         String f = filterField.getText();
@@ -436,7 +478,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
     }
 
-    /** Full rebuild from the store using the current filter. */
+    /**
+     * Full rebuild from the store using the current filter.
+     */
     private void rebuildView() {
         Logger.internalTrace("LogPanel rebuild start");
         store.setFilter(this::visible);
@@ -454,6 +498,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     // ---- Search / highlight ----
 
+    /**
+     * Recomputes search matches and jumps to the first result when present.
+     */
     private void computeMatchesAndJumpFirst() {
         recomputeMatchesAfterDocChange();
         if (!matches.isEmpty()) {
@@ -465,6 +512,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         updateMatchCount();
     }
 
+    /**
+     * Recomputes search highlights after the document changes.
+     */
     private void recomputeMatchesAfterDocChange() {
         clearSearchHighlights();
 
@@ -492,8 +542,16 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         updateMatchCount();
     }
 
+    /**
+     * Clears all applied search highlights.
+     */
     private void clearSearchHighlights() { highlighterManager.clear(); }
 
+    /**
+     * Moves the current match index by the provided delta, wrapping around.
+     * <p>
+     * @param delta offset to apply (positive for next, negative for previous)
+     */
     private void jumpMatch(int delta) {
         if (matches.isEmpty()) return;
         matchIndex = (matchIndex + delta) % matches.size();
@@ -502,12 +560,22 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         updateMatchCount();
     }
 
+    /**
+     * Ensures the indexed match is visible in the viewport.
+     * <p>
+     * @param i match index to reveal
+     */
     private void revealMatch(int i) {
         if (i < 0 || i >= matches.size()) return;
         int[] m = matches.get(i);
         ensureVisible(m[0]);
     }
 
+    /**
+     * Scrolls the viewport to the given document offset.
+     * <p>
+     * @param offset document offset to reveal
+     */
     private void ensureVisible(int offset) {
         try {
             var r2d = logTextPane.modelToView2D(offset);
@@ -517,6 +585,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
     }
 
+    /**
+     * Updates the match count label based on current search state.
+     */
     private void updateMatchCount() {
         int total = matches == null ? 0 : matches.size();
         int idx1 = (matchIndex >= 0 && total > 0) ? (matchIndex + 1) : 0;
@@ -525,6 +596,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
     // ---- Copy/Save ----
 
+    /**
+     * Copies the current selection when present; otherwise copies the entire log.
+     */
     private void copySelectionOrAll() {
         String sel = logTextPane.getSelectedText();
         if (sel != null && !sel.isEmpty()) {
@@ -536,6 +610,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         copyAll();
     }
 
+    /**
+     * Copies only the current selection to the system clipboard.
+     */
     private void copySelection() {
         String sel = logTextPane.getSelectedText();
         if (sel == null || sel.isEmpty()) return;
@@ -544,6 +621,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
                 .setContents(new StringSelection(sel), null);
     }
 
+    /**
+     * Copies the line at the caret position to the system clipboard.
+     */
     private void copyCurrentLine() {
         try {
             int caret = logTextPane.getCaretPosition();
@@ -560,6 +640,9 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
     }
 
+    /**
+     * Copies the entire log contents to the system clipboard.
+     */
     private void copyAll() {
         try {
             String all = doc.getText(0, doc.getLength());
@@ -571,6 +654,11 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         }
     }
 
+    /**
+     * Saves the currently visible log to a user-selected file.
+     * <p>
+     * EDT only.
+     */
     private void saveVisible() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Save Log");

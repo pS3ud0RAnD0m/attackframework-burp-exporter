@@ -8,6 +8,14 @@ import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
 
 public class Exporter implements BurpExtension {
+    /**
+     * Registers the extension with Burp, wiring logging and UI composition.
+     *
+     * <p>Caller must invoke on Burp's initialization thread. UI components are created on the EDT
+     * when {@link ai.attackframework.tools.burp.ui.AttackFrameworkPanel} is instantiated.</p>
+     *
+     * @param api Montoya API handle provided by Burp
+     */
     @Override
     public void initialize(MontoyaApi api) {
         final String extensionName = "Attack Framework: Burp Exporter";

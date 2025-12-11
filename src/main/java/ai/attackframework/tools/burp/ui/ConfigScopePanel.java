@@ -41,9 +41,12 @@ public final class ConfigScopePanel {
     }
 
     /**
-     * Returns a panel containing Scope header, radios, and the custom grid row.
-     * Layout mirrors other sections (Sources/Sinks/Admin) and aligns the grid's field
-     * column with Sinks (first column 150!, gap 20).
+     * Builds the Scope section UI containing header, radios, and the custom grid row.
+     *
+     * <p>Caller must invoke on the EDT. Layout mirrors other sections (Sources/Sinks/Admin) and
+     * aligns the grid's field column with Sinks (first column 150!, gap 20).</p>
+     *
+     * @return assembled panel with scope controls and custom grid
      */
     public JPanel build() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", ""));

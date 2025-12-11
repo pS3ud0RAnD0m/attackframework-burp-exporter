@@ -14,9 +14,14 @@ import java.util.Objects;
  */
 public final class StatusViews {
 
+    /**
+     * Utility holder; not instantiable.
+     */
     private StatusViews() {}
 
-    /** Configures a status {@link JTextArea} for compact, monospaced, non-editable output. */
+    /**
+     * Configures a status {@link JTextArea} for compact, monospaced, non-editable output.
+     */
     public static void configureTextArea(JTextArea area) {
         area.setEditable(false);
         area.setLineWrap(false);
@@ -31,7 +36,7 @@ public final class StatusViews {
      * Configures a wrapper panel around a status area for compact bordered output.
      *
      * <p>EDT: caller must invoke on the EDT.</p>
-     *
+     * <p>
      * @param wrapper container that hosts the status area
      * @param area    configured status text area
      */
@@ -47,6 +52,7 @@ public final class StatusViews {
     /**
      * Updates text and sizes the status area & wrapper to the message content.
      *
+     * <p>
      * @param area   the status text area
      * @param wrapper parent wrapper (visibility toggled on update)
      * @param message status message (can be multi-line)
@@ -65,6 +71,13 @@ public final class StatusViews {
         wrapper.repaint();
     }
 
+    /**
+     * Returns the maximum line length from the provided array.
+     *
+     * <p>
+     * @param lines lines to measure (nullable entries allowed)
+     * @return maximum length observed, at least 1
+     */
     private static int maxLineLength(String[] lines) {
         int max = 1;
         for (String s : lines) if (s != null && s.length() > max) max = s.length();

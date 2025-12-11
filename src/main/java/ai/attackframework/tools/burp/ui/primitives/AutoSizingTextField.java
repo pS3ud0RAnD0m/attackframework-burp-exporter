@@ -15,10 +15,21 @@ public final class AutoSizingTextField extends JTextField {
     private static final int MAX_W = 900;
     private static final int PADDING = 20;
 
+    /**
+     * Creates an auto-sizing text field seeded with the given text.
+     *
+     * @param text initial content (nullable)
+     */
     public AutoSizingTextField(String text) {
         super(text);
     }
 
+    /**
+     * Computes preferred size based on content width, clamped between {@value MIN_W} and
+     * {@value MAX_W} with padding.
+     *
+     * @return preferred dimension reflecting current text width
+     */
     @Override
     public Dimension getPreferredSize() {
         FontMetrics fm = getFontMetrics(getFont());

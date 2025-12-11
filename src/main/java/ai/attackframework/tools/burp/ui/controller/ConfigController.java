@@ -20,7 +20,10 @@ import java.util.Objects;
 
 /**
  * Coordinates long-running operations for the Config UI: export/import, file creation,
- * and OpenSearch connectivity/index management. UI updates are posted to the EDT.
+ * and OpenSearch connectivity/index management.
+ * <p>
+ * Each async method runs work on a {@link SwingWorker} background thread and marshals UI updates to
+ * the EDT via the {@link Ui} callbacks. Callers may invoke methods from any thread.
  */
 public final class ConfigController {
 
@@ -41,6 +44,15 @@ public final class ConfigController {
 
     /* ---------------- Export / Import / Save ---------------- */
 
+    /**
+     * Writes the provided config JSON to disk asynchronously.
+     * <p>
+     * Work is performed on a background thread; status is published to {@link Ui#onAdminStatus}
+     * on the EDT.
+     *
+     * @param out  destination path (will be created with parent directories)
+     * @param json serialized configuration payload
+     */
     public void exportConfigAsync(Path out, String json) {
         Logger.logInfo ("[ConfigPanel] exportConfigAsync invoked; out=" + out);
         Logger.logInfo ("[ConfigPanel] exportConfigAsync payload=" + json);
@@ -66,6 +78,14 @@ public final class ConfigController {
         }.execute();
     }
 
+    /**
+     * Reads and parses a configuration file asynchronously.
+     * <p>
+     * On success, forwards the parsed state to the UI on the EDT and reports status through
+     * {@link Ui#onAdminStatus}. Errors are surfaced as status strings.
+     *
+     * @param in config file to load
+     */
     public void importConfigAsync(Path in) {
         Logger.logInfo ("[ConfigPanel] importConfigAsync invoked; in=" + in);
         new SwingWorker<ConfigState.State, Void>() {
@@ -93,6 +113,14 @@ public final class ConfigController {
         }.execute();
     }
 
+    /**
+     * Serializes the current configuration to JSON asynchronously (no I/O).
+     * <p>
+     * Status is delivered to {@link Ui#onAdminStatus} on the EDT. This is a lightweight operation
+     * but remains async for consistency with other actions.
+     *
+     * @param state configuration to serialize
+     */
     public void saveAsync(ConfigState.State state) {
         Logger.logInfo ("[ConfigPanel] saveAsync invoked");
         new SwingWorker<String, Void>() {
@@ -121,6 +149,15 @@ public final class ConfigController {
 
     /* ---------------- Files sink ---------------- */
 
+    /**
+     * Ensures JSON export files exist for the selected sources under the given root directory.
+     * <p>
+     * Work executes on a background thread; completion status is posted to
+     * {@link Ui#onFileStatus} on the EDT.
+     *
+     * @param rootDir root directory for generated files
+     * @param selectedSources data sources to include
+     */
     public void createFilesAsync(String rootDir, List<String> selectedSources) {
         Logger.logInfo("[ConfigPanel] createFilesAsync invoked; rootDir=" + rootDir
                 + ", selectedSources=" + selectedSources);
@@ -152,6 +189,13 @@ public final class ConfigController {
 
     /* ---------------- OpenSearch: test + create indexes ---------------- */
 
+    /**
+     * Tests connectivity to an OpenSearch cluster asynchronously.
+     * <p>
+     * The result message is sent to {@link Ui#onOpenSearchStatus} on the EDT.
+     *
+     * @param url base URL of the OpenSearch cluster
+     */
     public void testConnectionAsync(String url) {
         Logger.logInfo("[ConfigPanel] testConnectionAsync invoked; url=" + url);
         new SwingWorker<String, Void>() {
@@ -183,6 +227,14 @@ public final class ConfigController {
         }.execute();
     }
 
+    /**
+     * Attempts to create OpenSearch indexes for the selected sources asynchronously.
+     * <p>
+     * Completion status is sent to {@link Ui#onOpenSearchStatus} on the EDT.
+     *
+     * @param url base URL of the OpenSearch cluster
+     * @param selectedSources data sources to index
+     */
     public void createIndexesAsync(String url, List<String> selectedSources) {
         Logger.logInfo("[ConfigPanel] createIndexesAsync invoked; url=" + url
                 + ", selectedSources=" + selectedSources);

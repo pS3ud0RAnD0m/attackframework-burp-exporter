@@ -30,6 +30,15 @@ public final class LogRenderer {
     private int lastLineStart = 0;
     private int lastLineLen   = 0;
 
+    /**
+     * Creates a renderer bound to the provided text pane.
+     *
+     * <p>Caller must construct on the EDT. The pane is held as a UI peer; styles are initialized
+     * with the current Look and Feel.</p>
+     *
+     * <p>
+     * @param textPane target pane to render into
+     */
     public LogRenderer(JTextPane textPane) {
         this.textPane = textPane;
         this.doc = textPane.getStyledDocument();
@@ -42,6 +51,11 @@ public final class LogRenderer {
         StyleConstants.setBold(errorStyle, true);
     }
 
+    /**
+     * Clears all rendered content and resets internal cursor state.
+     *
+     * <p>EDT only.</p>
+     */
     public void clear() {
         try {
             doc.remove(0, doc.getLength());
@@ -52,6 +66,13 @@ public final class LogRenderer {
         }
     }
 
+    /**
+     * Appends a formatted line to the document with styling derived from the level.
+     *
+     * <p>
+     * @param line  text to append (should include trailing newline)
+     * @param level log level determining style
+     */
     public void append(String line, LogStore.Level level) {
         try {
             int start = doc.getLength();
@@ -63,6 +84,13 @@ public final class LogRenderer {
         }
     }
 
+    /**
+     * Replaces the most recently written line, preserving cursor bookkeeping.
+     *
+     * <p>
+     * @param line  replacement text (should include trailing newline)
+     * @param level log level determining style
+     */
     public void replaceLast(String line, LogStore.Level level) {
         try {
             doc.remove(lastLineStart, lastLineLen);
@@ -73,16 +101,39 @@ public final class LogRenderer {
         }
     }
 
+    /**
+     * Scrolls to the bottom unless paused.
+     *
+     * <p>
+     * @param paused when true, leaves caret position unchanged
+     */
     public void autoscrollIfNeeded(boolean paused) {
         if (!paused) textPane.setCaretPosition(doc.getLength());
     }
 
+    /**
+     * Formats a log entry into a single rendered line.
+     *
+     * <p>
+     * @param ts      timestamp (fallbacks to now when null)
+     * @param lvl     log level
+     * @param msg     log message (nullable)
+     * @param repeats duplicate count; {@code >1} renders as {@code (xN)}
+     * @return formatted line including trailing newline
+     */
     public String formatLine(LocalDateTime ts, LogStore.Level lvl, String msg, int repeats) {
         String timestamp = "[" + TS.format(ts == null ? LocalDateTime.now() : ts) + "]";
         String base = String.format("%s [%s] %s", timestamp, lvl.name(), msg == null ? "" : msg);
         return repeats > 1 ? base + "  (x" + repeats + ")\n" : base + "\n";
     }
 
+    /**
+     * Resolves the text style for a log level.
+     *
+     * <p>
+     * @param level log level
+     * @return Swing style to apply
+     */
     private Style styleFor(LogStore.Level level) {
         return (level == LogStore.Level.ERROR) ? errorStyle : infoStyle;
     }
