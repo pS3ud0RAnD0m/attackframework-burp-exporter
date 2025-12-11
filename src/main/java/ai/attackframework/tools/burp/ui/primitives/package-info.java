@@ -8,6 +8,7 @@
  *   <li>{@code StatusViews}: helpers for status areas and message updates</li>
  * </ul>
  *
- * <p>These utilities contain no business logic and are safe to reuse from any panel.</p>
+ * <p>These utilities contain no business logic and are safe to reuse from any panel. All Swing
+ * mutations must occur on the EDT.</p>
  */
 package ai.attackframework.tools.burp.ui.primitives;

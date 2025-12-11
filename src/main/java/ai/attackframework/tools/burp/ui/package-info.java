@@ -14,7 +14,7 @@
  * The controller never touches Swing components directly; it communicates via status strings
  * and typed state objects.</p>
  *
- * <p>This separation keeps the UI responsive, centralises configuration state, and simplifies
- * testing of both the panels and the controller.</p>
+ * <p>All UI construction and mutation occur on the EDT; background work is delegated to
+ * controllers or utilities to keep panels responsive.</p>
  */
 package ai.attackframework.tools.burp.ui;
