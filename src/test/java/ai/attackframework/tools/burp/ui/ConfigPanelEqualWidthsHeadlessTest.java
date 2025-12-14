@@ -1,16 +1,17 @@
 package ai.attackframework.tools.burp.ui;
 
-import org.junit.jupiter.api.Test;
+import java.awt.Rectangle;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import java.awt.Rectangle;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

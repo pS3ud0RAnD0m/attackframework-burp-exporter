@@ -1,41 +1,5 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.log.LogRenderer;
-import ai.attackframework.tools.burp.ui.log.LogStore;
-import ai.attackframework.tools.burp.utils.FileUtil;
-import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.text.TextQuery;
-import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
-import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
-import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
-import ai.attackframework.tools.burp.ui.text.Doc;
-import ai.attackframework.tools.burp.ui.text.HighlighterManager;
-import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
-import net.miginfocom.swing.MigLayout;
-
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
-import javax.swing.JFileChooser;
-import javax.swing.JLabel;
-import javax.swing.JMenuItem;
-import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
-import javax.swing.JScrollPane;
-import javax.swing.JSeparator;
-import javax.swing.JTextPane;
-import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
-import javax.swing.event.DocumentListener;
-import javax.swing.text.DefaultHighlighter;
-import javax.swing.text.Highlighter.HighlightPainter;
-import javax.swing.text.StyledDocument;
-import javax.swing.AbstractAction;
-import javax.swing.KeyStroke;
-import javax.swing.JComponent;
-import javax.swing.ScrollPaneConstants;
-import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -53,6 +17,43 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.prefs.Preferences;
+
+import javax.swing.AbstractAction;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JFileChooser;
+import javax.swing.JLabel;
+import javax.swing.JMenuItem;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JSeparator;
+import javax.swing.JTextPane;
+import javax.swing.KeyStroke;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.DefaultHighlighter;
+import javax.swing.text.Highlighter.HighlightPainter;
+import javax.swing.text.StyledDocument;
+
+import net.miginfocom.swing.MigLayout;
+
+import ai.attackframework.tools.burp.ui.log.LogRenderer;
+import ai.attackframework.tools.burp.ui.log.LogStore;
+import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
+import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
+import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
+import ai.attackframework.tools.burp.ui.text.Doc;
+import ai.attackframework.tools.burp.ui.text.HighlighterManager;
+import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
+import ai.attackframework.tools.burp.utils.FileUtil;
+import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.text.TextQuery;
+import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
 
 /**
  * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex),
@@ -233,12 +234,7 @@ public class LogPanel extends JPanel implements Logger.LogListener {
 
         add(toolbar, BorderLayout.NORTH);
 
-        JScrollPane scrollPane = new JScrollPane(
-                logTextPane,
-                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        );
-        add(scrollPane, BorderLayout.CENTER);
+        add(ScrollPanes.wrap(logTextPane), BorderLayout.CENTER);
 
         // Model created before listeners capture it; filter supplied via visible().
         store = new LogStore(MAX_MODEL_ENTRIES, this::visible);

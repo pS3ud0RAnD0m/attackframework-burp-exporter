@@ -1,10 +1,11 @@
 package ai.attackframework.tools.burp.sinks;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 
 /**
  * Negative-path validation: missing mapping resource should yield FAILED status.

@@ -1,15 +1,17 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
-import net.miginfocom.swing.MigLayout;
+import java.awt.Component;
+import java.awt.Font;
+import java.util.Objects;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
-import java.awt.Component;
-import java.awt.Font;
-import java.util.Objects;
+
+import net.miginfocom.swing.MigLayout;
+
+import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
 
 /**
  * Builds the "Scope" section panel used by ConfigPanel.

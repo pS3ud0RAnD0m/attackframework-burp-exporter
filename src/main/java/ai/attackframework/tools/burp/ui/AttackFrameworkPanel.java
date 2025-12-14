@@ -1,19 +1,18 @@
 package ai.attackframework.tools.burp.ui;
 
-import javax.swing.JPanel;
-import javax.swing.JScrollBar;
-import javax.swing.JScrollPane;
-import javax.swing.JTabbedPane;
-import javax.swing.ScrollPaneConstants;
-import javax.swing.ToolTipManager;
 import java.awt.BorderLayout;
-import java.awt.Component;
 import java.io.Serial;
+
+import javax.swing.JPanel;
+import javax.swing.JTabbedPane;
+import javax.swing.ToolTipManager;
+
+import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 
 /**
  * Top-level tabbed UI for the Attack Framework extension.
- *
- * <p>Hosts the Config, Log, Stats, and About panels in a single {@link JTabbedPane}.</p>
+ * <p>
+ * Hosts the Config, Log, Stats, and About panels in a single {@link JTabbedPane}.</p>
  */
 public class AttackFrameworkPanel extends JPanel {
 
@@ -22,8 +21,8 @@ public class AttackFrameworkPanel extends JPanel {
 
     /**
      * Constructs the top-level tab container for the extension.
-     *
-     * <p>Caller must invoke on the EDT. Configures tooltip dismiss delay and mounts all major
+     * <p>
+     * Caller must invoke on the EDT. Configures tooltip dismiss delay and mounts all major
      * panels inside a {@link JTabbedPane} wrapped with scroll panes.</p>
      */
     public AttackFrameworkPanel() {
@@ -33,46 +32,12 @@ public class AttackFrameworkPanel extends JPanel {
 
         JTabbedPane tabbedPane = new JTabbedPane();
 
-        tabbedPane.addTab("Config", makeScrollPane(new ConfigPanel()));
-        tabbedPane.addTab("Log",    makeScrollPane(new LogPanel()));
-        tabbedPane.addTab("Stats",  makeScrollPane(new StatsPanel()));
-        tabbedPane.addTab("About",  makeScrollPane(new AboutPanel()));
+        tabbedPane.addTab("Config", ScrollPanes.wrap(new ConfigPanel()));
+        tabbedPane.addTab("Log",    ScrollPanes.wrap(new LogPanel()));
+        tabbedPane.addTab("Stats",  ScrollPanes.wrap(new StatsPanel()));
+        tabbedPane.addTab("About",  ScrollPanes.wrap(new AboutPanel()));
 
         add(tabbedPane, BorderLayout.CENTER);
     }
 
-    /**
-     * Wraps a component in a scroll pane with consistent scrollbar policy and speed.
-     *
-     * @param view child component to wrap
-     * @return configured scroll pane
-     */
-    private static JScrollPane makeScrollPane(Component view) {
-        JScrollPane sp = new JScrollPane(
-                view,
-                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        );
-        configureScrollSpeed(sp);
-        return sp;
-    }
-
-    /**
-     * Standardizes scroll speed for both axes to improve usability across tabs.
-     *
-     * <p>
-     * @param sp target scroll pane
-     */
-    private static void configureScrollSpeed(JScrollPane sp) {
-        JScrollBar v = sp.getVerticalScrollBar();
-        if (v != null) {
-            v.setUnitIncrement(24);
-            v.setBlockIncrement(240);
-        }
-        JScrollBar h = sp.getHorizontalScrollBar();
-        if (h != null) {
-            h.setUnitIncrement(24);
-            h.setBlockIncrement(240);
-        }
-    }
 }

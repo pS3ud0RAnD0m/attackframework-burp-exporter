@@ -1,13 +1,13 @@
 package ai.attackframework.tools.burp.utils.text;
 
-import ai.attackframework.tools.burp.utils.Regex;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import ai.attackframework.tools.burp.utils.Regex;
 
 /**
  * Stateless search utility that returns all match ranges for either a regex query

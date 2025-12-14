@@ -1,23 +1,24 @@
 package ai.attackframework.tools.burp.sinks;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.opensearch.client.opensearch.OpenSearchClient;
-import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
-
 import java.io.IOException;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
+
 import static org.assertj.core.api.Assertions.assertThat;
+
+import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Integration tests for index lifecycle using OpenSearchSink against a live test cluster.

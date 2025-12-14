@@ -1,16 +1,17 @@
 package ai.attackframework.tools.burp.ui;
 
-import net.miginfocom.swing.MigLayout;
-
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JPanel;
-import javax.swing.JTextArea;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.event.ActionListener;
 import java.util.Objects;
 import java.util.function.Consumer;
+
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
+
+import net.miginfocom.swing.MigLayout;
 
 /**
  * Admin section: Import / Export / Save actions and their status rows.

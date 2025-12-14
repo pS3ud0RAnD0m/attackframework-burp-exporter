@@ -1,14 +1,15 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
-import ai.attackframework.tools.burp.utils.Logger;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.Map;
+
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.InfoResponse;
 import org.opensearch.client.opensearch.core.IndexRequest;
 import org.opensearch.client.opensearch.core.IndexResponse;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.Map;
+import ai.attackframework.tools.burp.utils.Logger;
 
 public class OpenSearchClientWrapper {
 

@@ -1,20 +1,22 @@
 package ai.attackframework.tools.burp.ui.primitives;
 
-import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
-import ai.attackframework.tools.burp.utils.Logger;
-import net.miginfocom.swing.MigLayout;
+import java.io.Serial;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.io.Serial;
-import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import net.miginfocom.swing.MigLayout;
+
+import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
+import ai.attackframework.tools.burp.utils.Logger;
 
 /**
  * Custom scope entries grid:

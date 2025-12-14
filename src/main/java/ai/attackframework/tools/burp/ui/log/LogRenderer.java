@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui.log;
 
-import ai.attackframework.tools.burp.utils.Logger;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 import javax.swing.JTextPane;
 import javax.swing.UIManager;
@@ -8,9 +9,10 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Style;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
+
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+
+import ai.attackframework.tools.burp.utils.Logger;
 
 /**
  * Renderer: writes/replaces lines in the document, formats output, and autoscrolls.

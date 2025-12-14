@@ -1,12 +1,13 @@
 package ai.attackframework.tools.burp.ui;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
+import java.awt.Component;
+import java.awt.Container;
 
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-import java.awt.Component;
-import java.awt.Container;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

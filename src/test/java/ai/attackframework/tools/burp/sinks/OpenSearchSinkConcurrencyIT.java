@@ -1,11 +1,5 @@
 package ai.attackframework.tools.burp.sinks;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -14,7 +8,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.assertThat;
+
+import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
  * Concurrency smoke test: creating multiple indices in parallel should not deadlock or throw.

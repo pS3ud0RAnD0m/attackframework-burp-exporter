@@ -1,15 +1,5 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.utils.IndexNaming;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-
-import javax.swing.JButton;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -19,8 +9,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import javax.swing.JButton;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import ai.attackframework.tools.burp.utils.IndexNaming;
 
 /**
  * Headless verification of the File sink flow in ConfigPanel.

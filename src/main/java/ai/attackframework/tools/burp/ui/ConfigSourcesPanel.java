@@ -1,13 +1,14 @@
 package ai.attackframework.tools.burp.ui;
 
-import net.miginfocom.swing.MigLayout;
+import java.awt.Component;
+import java.awt.Font;
+import java.util.Objects;
 
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import java.awt.Component;
-import java.awt.Font;
-import java.util.Objects;
+
+import net.miginfocom.swing.MigLayout;
 
 /**
  * Builds the "Data Sources" section panel used by ConfigPanel.

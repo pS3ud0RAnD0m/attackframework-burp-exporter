@@ -1,7 +1,9 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.primitives.StatusViews;
-import net.miginfocom.swing.MigLayout;
+import java.awt.Component;
+import java.awt.Font;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -9,10 +11,10 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import java.awt.Component;
-import java.awt.Font;
-import java.util.Objects;
-import java.util.function.Consumer;
+
+import net.miginfocom.swing.MigLayout;
+
+import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 
 /**
  * Builds the "Data Sinks" section panel used by ConfigPanel.

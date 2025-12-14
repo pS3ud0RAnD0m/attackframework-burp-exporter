@@ -1,8 +1,8 @@
 package ai.attackframework.tools.burp.sinks;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
+import java.io.IOException;
+import java.util.List;
+
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -10,10 +10,11 @@ import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.GetMappingRequest;
 import org.opensearch.client.opensearch.indices.GetMappingResponse;
 
-import java.io.IOException;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
+
+import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Validates that indices created via the sink expose a non-empty mapping on the server.

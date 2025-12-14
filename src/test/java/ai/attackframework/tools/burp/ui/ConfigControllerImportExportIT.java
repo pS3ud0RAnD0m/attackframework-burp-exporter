@@ -1,18 +1,19 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
-import ai.attackframework.tools.burp.utils.config.ConfigKeys;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
-import org.junit.jupiter.api.Test;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.assertThat;
+
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 
 class ConfigControllerImportExportIT {
 

@@ -1,13 +1,5 @@
 package ai.attackframework.tools.burp.ui.text;
 
-import ai.attackframework.tools.burp.utils.Regex;
-
-import javax.swing.JCheckBox;
-import javax.swing.JLabel;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import java.awt.Color;
 import java.awt.Container;
 import java.awt.Dimension;
@@ -17,6 +9,15 @@ import java.awt.event.ActionListener;
 import java.awt.event.ItemListener;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.swing.JCheckBox;
+import javax.swing.JLabel;
+import javax.swing.JTextField;
+import javax.swing.SwingConstants;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+
+import ai.attackframework.tools.burp.utils.Regex;
 
 /**
  * Binds a text field and toggle(s) to a small indicator label that shows a

@@ -1,17 +1,18 @@
 package ai.attackframework.tools.burp.sinks;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Negative-path validation: creating an index for which no mapping resource exists

@@ -1,14 +1,14 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import java.net.URI;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.apache.hc.core5.http.HttpHost;
 import org.opensearch.client.json.JsonpMapper;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.transport.OpenSearchTransport;
 import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder;
-
-import java.net.URI;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Factory/cache for OpenSearch clients.

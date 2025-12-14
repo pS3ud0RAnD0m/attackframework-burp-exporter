@@ -1,12 +1,13 @@
 package ai.attackframework.tools.burp.ui;
 
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.ScrollPaneConstants;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
+
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
+
+import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 
 public class StatsPanel extends JPanel {
 
@@ -25,12 +26,6 @@ public class StatsPanel extends JPanel {
         statsArea.setWrapStyleWord(true);
         statsArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
 
-        JScrollPane scrollPane = new JScrollPane(
-                statsArea,
-                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        );
-
-        add(scrollPane, BorderLayout.CENTER);
+        add(ScrollPanes.wrap(statsArea), BorderLayout.CENTER);
     }
 }

@@ -1,14 +1,14 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.utils.Version;
-
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.ScrollPaneConstants;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
+
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
+
+import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
+import ai.attackframework.tools.burp.utils.Version;
 
 public class AboutPanel extends JPanel {
 
@@ -20,13 +20,7 @@ public class AboutPanel extends JPanel {
         String version = Version.get();
         JTextArea aboutText = buildAboutText(version);
 
-        JScrollPane scrollPane = new JScrollPane(
-                aboutText,
-                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
-        );
-
-        add(scrollPane, BorderLayout.CENTER);
+        add(ScrollPanes.wrap(aboutText), BorderLayout.CENTER);
     }
 
     /** Builds the static about text area. */

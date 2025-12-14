@@ -6,6 +6,7 @@
  *   <li>{@code TextFieldUndo}: installs undo/redo key bindings</li>
  *   <li>{@code ThickSeparator}: compact 2px separator</li>
  *   <li>{@code StatusViews}: helpers for status areas and message updates</li>
+ *   <li>{@code ScrollPanes}: consistent scroll pane creation and scroll speed configuration</li>
  * </ul>
  *
  * <p>These utilities contain no business logic and are safe to reuse from any panel. All Swing

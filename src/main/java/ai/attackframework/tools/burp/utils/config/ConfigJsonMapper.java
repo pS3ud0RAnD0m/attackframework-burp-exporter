@@ -1,12 +1,12 @@
 package ai.attackframework.tools.burp.utils.config;
 
-import ai.attackframework.tools.burp.utils.config.ConfigState.ScopeEntry;
-import ai.attackframework.tools.burp.utils.config.ConfigState.Sinks;
-import ai.attackframework.tools.burp.utils.config.ConfigState.State;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+import ai.attackframework.tools.burp.utils.config.ConfigState.ScopeEntry;
+import ai.attackframework.tools.burp.utils.config.ConfigState.Sinks;
+import ai.attackframework.tools.burp.utils.config.ConfigState.State;
 
 /**
  * Mapper between the typed {@link ConfigState.State} and the JSON produced/parsed

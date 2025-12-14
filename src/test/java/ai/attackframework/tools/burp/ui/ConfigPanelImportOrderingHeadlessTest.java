@@ -1,17 +1,19 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.utils.config.ConfigState;
-import org.junit.jupiter.api.Test;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 import javax.swing.JComponent;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 
 /**
  * Verifies Custom import ordering: rows are applied before the Custom radio flips,

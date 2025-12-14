@@ -1,16 +1,18 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import org.junit.jupiter.api.Test;
-
-import javax.swing.AbstractButton;
-import javax.swing.JButton;
 import java.awt.Component;
 import java.awt.Container;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
+import javax.swing.AbstractButton;
+import javax.swing.JButton;
+
+import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.assertThat;
+
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
  * Verifies that Save delegates to the controller and posts an admin status.

@@ -1,17 +1,14 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
-import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
-import ai.attackframework.tools.burp.ui.primitives.StatusViews;
-import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
-import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
-import ai.attackframework.tools.burp.utils.FileUtil;
-import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
-import ai.attackframework.tools.burp.utils.config.ConfigKeys;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
-import ai.attackframework.tools.burp.ui.text.Doc;
-import net.miginfocom.swing.MigLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.File;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serial;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -26,15 +23,20 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.File;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.Serial;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+
+import net.miginfocom.swing.MigLayout;
+
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
+import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
+import ai.attackframework.tools.burp.ui.primitives.StatusViews;
+import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
+import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
+import ai.attackframework.tools.burp.ui.text.Doc;
+import ai.attackframework.tools.burp.utils.FileUtil;
+import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 
 /**
  * Main configuration panel for data sources, scope, sinks, and admin actions.
