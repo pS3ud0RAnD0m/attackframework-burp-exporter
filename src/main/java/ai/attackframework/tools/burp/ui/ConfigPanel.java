@@ -451,8 +451,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         trafficCheckbox.setToolTipText("Include traffic exports");
 
         allRadio.setToolTipText("Export all observed");
-        burpSuiteRadio.setToolTipText("Use Burp Suite's project scope");
-        customRadio.setToolTipText("Use custom scope");
+        burpSuiteRadio.setToolTipText("Export Burp Suite's project scope");
+        customRadio.setToolTipText("Export custom scope");
 
         fileSinkCheckbox.setToolTipText("Enable file-based export");
         filePathField.setToolTipText("Root directory for generated files");
