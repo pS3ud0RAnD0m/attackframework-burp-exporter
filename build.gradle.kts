@@ -25,12 +25,12 @@ repositories {
 }
 
 dependencies {
-    // --- compileOnly ---
+    // compileOnly
     compileOnly(libs.montoya)
     compileOnly(libs.logbackClassic)
     compileOnly(libs.spotbugsAnnotations)
 
-    // --- implementation ---
+    // implementation
     implementation(libs.jacksonCore)
     implementation(libs.jacksonDatabind)
     implementation(libs.miglayoutSwing)
@@ -39,18 +39,18 @@ dependencies {
     implementation(libs.opensearchJava)
     implementation(libs.slf4jApi)
 
-    // --- testImplementation ---
+    // testImplementation
     testImplementation(platform(libs.junitBom))
     testImplementation(libs.junitJupiter)
     testImplementation(libs.mockitoCore)
     testImplementation(libs.mockitoJunitJupiter)
     testImplementation(libs.assertjCore)
 
-    // --- testRuntimeOnly ---
+    // testRuntimeOnly
     testRuntimeOnly(libs.junitJupiterEngine)
     testRuntimeOnly(libs.junitPlatformLauncher)
 
-    // --- runtimeOnly ---
+    // runtimeOnly
     runtimeOnly(libs.logbackClassic)
 }
 
