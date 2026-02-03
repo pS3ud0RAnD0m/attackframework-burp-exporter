@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp;
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
 
+import ai.attackframework.tools.burp.sinks.OpenSearchTrafficHandler;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
@@ -28,6 +29,7 @@ public class Exporter implements BurpExtension {
             Logger.initialize(api.logging());
 
             api.userInterface().registerSuiteTab(tabTitle, new AttackFrameworkPanel());
+            api.http().registerHttpHandler(new OpenSearchTrafficHandler());
 
             Logger.logInfo("Burp Exporter v" + version + " initialized successfully.");
         } catch (Exception e) {

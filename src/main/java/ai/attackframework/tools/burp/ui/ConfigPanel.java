@@ -37,6 +37,7 @@ import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Main configuration panel for data sources, scope, sinks, and admin actions.
@@ -253,8 +254,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
 
             refreshEnabledStates();
+            updateRuntimeConfig();
         };
         runOnEdt(r);
+    }
+
+    private void updateRuntimeConfig() {
+        RuntimeConfig.updateState(buildCurrentState());
     }
 
     /* ----------------------------- Wiring ----------------------------- */
@@ -266,22 +272,40 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * {@link ConfigController} and keeps text fields revalidated as their contents change.</p>
      */
     private void wireButtonActions() {
-        fileSinkCheckbox.addActionListener(e -> refreshEnabledStates());
-        openSearchSinkCheckbox.addActionListener(e -> refreshEnabledStates());
+        ActionListener runtimeUpdater = e -> updateRuntimeConfig();
+        ActionListener sinkUpdater = e -> {
+            refreshEnabledStates();
+            updateRuntimeConfig();
+        };
+
+        settingsCheckbox.addActionListener(runtimeUpdater);
+        sitemapCheckbox.addActionListener(runtimeUpdater);
+        issuesCheckbox.addActionListener(runtimeUpdater);
+        trafficCheckbox.addActionListener(runtimeUpdater);
+
+        allRadio.addActionListener(runtimeUpdater);
+        burpSuiteRadio.addActionListener(runtimeUpdater);
+        customRadio.addActionListener(runtimeUpdater);
+
+        fileSinkCheckbox.addActionListener(sinkUpdater);
+        openSearchSinkCheckbox.addActionListener(sinkUpdater);
 
         createFilesButton.addActionListener(e -> {
+            updateRuntimeConfig();
             String root = filePathField.getText().trim();
             if (root.isEmpty()) { onFileStatus("✖ Path required"); return; }
             controller.createFilesAsync(root, getSelectedSources());
         });
 
         testConnectionButton.addActionListener(e -> {
+            updateRuntimeConfig();
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) { onOpenSearchStatus("✖ URL required"); return; }
             controller.testConnectionAsync(url);
         });
 
         createIndexesButton.addActionListener(e -> {
+            updateRuntimeConfig();
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) { onOpenSearchStatus("✖ URL required"); return; }
             controller.createIndexesAsync(url, getSelectedSources());
@@ -290,6 +314,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
+            updateRuntimeConfig();
         });
         filePathField.getDocument().addDocumentListener(relayout);
         openSearchUrlField.getDocument().addDocumentListener(relayout);
