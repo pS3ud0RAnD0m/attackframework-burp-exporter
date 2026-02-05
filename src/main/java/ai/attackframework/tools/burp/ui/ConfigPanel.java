@@ -24,8 +24,6 @@ import javax.swing.Timer;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-import net.miginfocom.swing.MigLayout;
-
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
 import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
@@ -34,10 +32,12 @@ import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.utils.FileUtil;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import net.miginfocom.swing.MigLayout;
 
 /**
  * Main configuration panel for data sources, scope, sinks, and admin actions.
@@ -155,13 +155,22 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 StatusViews::configureTextArea,
                 this::importConfig,
                 this::exportConfig,
-                new AdminSaveButtonListener()
+                new AdminSaveButtonListener(),
+                () -> {
+                    RuntimeConfig.setExportRunning(true);
+                    Logger.logInfo("Export started.");
+                },
+                () -> {
+                    RuntimeConfig.setExportRunning(false);
+                    Logger.logInfo("Export stopped.");
+                }
         ).build(), MIG_FILL_WRAP);
 
         add(Box.createVerticalGlue(), "growy, wrap");
 
         assignComponentNames();
         wireTextFieldEnhancements();
+        scopeGrid.setOnContentChange(this::updateRuntimeConfig);
         refreshEnabledStates();
     }
 
@@ -500,6 +509,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
          * @param e action event (unused)
          */
         @Override public void actionPerformed(ActionEvent e) {
+            updateRuntimeConfig();
             controller.saveAsync(buildCurrentState());
         }
     }

@@ -11,12 +11,13 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import net.miginfocom.swing.MigLayout;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
 import ai.attackframework.tools.burp.utils.Logger;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import net.miginfocom.swing.MigLayout;
 
 /**
  * Custom scope entries grid:
@@ -64,6 +65,12 @@ public class ScopeGrid implements Serializable {
      * Tracks external enable/disable state to combine with the MAX_ROWS rule.
      */
     private boolean enabled = true;
+
+    /**
+     * Optional callback when any scope entry field or regex toggle changes.
+     * Not serialized; set after construction by the owning panel.
+     */
+    private transient Runnable onContentChange;
 
     /**
      * Constructs the grid with optional seed entries.
@@ -155,6 +162,24 @@ public class ScopeGrid implements Serializable {
         applyEnablement();
     }
 
+    /**
+     * Sets a callback invoked when any scope entry field or regex toggle changes.
+     * Used so the config panel can push custom scope changes to {@link
+     * ai.attackframework.tools.burp.utils.config.RuntimeConfig} without requiring a separate
+     * button click.
+     *
+     * @param runnable callback to run on content change; {@code null} to clear
+     */
+    public void setOnContentChange(Runnable runnable) {
+        this.onContentChange = runnable;
+    }
+
+    private void fireContentChange() {
+        if (onContentChange != null) {
+            onContentChange.run();
+        }
+    }
+
     /* ---------------- internal ---------------- */
 
     /**
@@ -168,6 +193,7 @@ public class ScopeGrid implements Serializable {
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
             r.assignNamesForIndex(i + 1);
+            r.attachContentChangeListener(this::fireContentChange);
 
             assignRowToolTips(r);
 
@@ -241,6 +267,7 @@ public class ScopeGrid implements Serializable {
         private final JButton    delete = new JButton("Delete");
         private final transient AutoCloseable binding;
         private boolean deleteBound;
+        private boolean contentChangeListenerAttached;
 
         /**
          * Creates a row with provided value and regex flag.
@@ -252,6 +279,26 @@ public class ScopeGrid implements Serializable {
             field.setText(value);
             toggle.setSelected(isRegex);
             binding = RegexIndicatorBinder.bind(field, toggle, null, false, indicator);
+        }
+
+        /**
+         * Attaches a listener so that any change to the field or toggle invokes the runnable.
+         * Idempotent: only attaches once per row.
+         */
+        void attachContentChangeListener(Runnable onContentChange) {
+            if (contentChangeListenerAttached || onContentChange == null) {
+                return;
+            }
+            contentChangeListenerAttached = true;
+            field.getDocument().addDocumentListener(new DocumentListener() {
+                @Override
+                public void insertUpdate(DocumentEvent e) { onContentChange.run(); }
+                @Override
+                public void removeUpdate(DocumentEvent e) { onContentChange.run(); }
+                @Override
+                public void changedUpdate(DocumentEvent e) { onContentChange.run(); }
+            });
+            toggle.addItemListener(e -> onContentChange.run());
         }
 
         /**

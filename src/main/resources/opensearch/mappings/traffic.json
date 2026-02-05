@@ -12,15 +12,27 @@
       "in_scope":     { "type": "boolean" },
       "request": {
         "properties": {
-          "method":       { "type": "keyword" },
-          "path":         { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-          "headers":      { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+          "method":  { "type": "keyword" },
+          "path":    { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+          "headers": {
+            "type": "nested",
+            "properties": {
+              "name":  { "type": "keyword" },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+            }
+          }
         }
       },
       "response": {
         "properties": {
-          "status":       { "type": "integer" },
-          "headers":      { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+          "status":  { "type": "integer" },
+          "headers": {
+            "type": "nested",
+            "properties": {
+              "name":  { "type": "keyword" },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+            }
+          }
         }
       },
       "document_meta": {

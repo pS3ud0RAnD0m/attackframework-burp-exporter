@@ -5,16 +5,41 @@ import java.util.List;
 /**
  * Holds the current runtime configuration for export pipelines.
  *
- * <p>UI actions update this state, and runtime exporters read from it.</p>
+ * <p>UI actions update this state, and runtime exporters read from it. The export-running
+ * flag gates whether traffic (and future sources) are actually sent to sinks; Start/Stop
+ * in the UI toggle this without changing saved config.</p>
  */
 public final class RuntimeConfig {
     private static volatile ConfigState.State state = defaultState();
+    private static volatile boolean exportRunning = false;
 
     private RuntimeConfig() { }
 
     /** Returns the current runtime config state. */
     public static ConfigState.State getState() {
         return state;
+    }
+
+    /**
+     * Returns whether export is currently running (Start pressed).
+     *
+     * <p>When {@code false}, traffic and other exporters do not send data to sinks.</p>
+     *
+     * @return {@code true} if export has been started and not stopped
+     */
+    public static boolean isExportRunning() {
+        return exportRunning;
+    }
+
+    /**
+     * Sets the export-running flag.
+     *
+     * <p>Start button sets {@code true}; Stop button sets {@code false}.</p>
+     *
+     * @param running new running state
+     */
+    public static void setExportRunning(boolean running) {
+        exportRunning = running;
     }
 
     /** Updates the runtime config state with a normalized, non-null value. */
@@ -58,15 +83,30 @@ public final class RuntimeConfig {
                         safe(sinks.openSearchUrl())
                 );
 
-        String scopeType = incoming.scopeType() == null
-                ? ConfigKeys.SCOPE_ALL
-                : incoming.scopeType();
+        String scopeType = normalizeScopeType(incoming.scopeType());
 
         return new ConfigState.State(sources, scopeType, custom, normalizedSinks);
     }
 
     private static String safe(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * Normalizes scope type to lowercase and trims; unknown values default to {@link ConfigKeys#SCOPE_ALL}.
+     *
+     * @param raw scope type from config; may be {@code null}
+     * @return one of {@code "all"}, {@code "burp"}, {@code "custom"}
+     */
+    private static String normalizeScopeType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return ConfigKeys.SCOPE_ALL;
+        }
+        String normalized = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        if (ConfigKeys.SCOPE_BURP.equals(normalized) || ConfigKeys.SCOPE_CUSTOM.equals(normalized)) {
+            return normalized;
+        }
+        return ConfigKeys.SCOPE_ALL;
     }
 
     private static ConfigState.State defaultState() {
