@@ -6,9 +6,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
@@ -28,7 +27,7 @@ class ConfigControllerFilesIT {
             done.countDown();
         }
         @Override public void onOpenSearchStatus(String message) { /* not used */ }
-        @Override public void onAdminStatus(String message) { /* not used */ }
+        @Override public void onControlStatus(String message) { /* not used */ }
     }
 
     @Test

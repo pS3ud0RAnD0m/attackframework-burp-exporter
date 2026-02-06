@@ -4,9 +4,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
@@ -25,7 +24,7 @@ class ConfigControllerOpenSearchErrorIT {
             this.osMsg = message;
             done.countDown();
         }
-        @Override public void onAdminStatus(String message) { /* not used in this IT */ }
+        @Override public void onControlStatus(String message) { /* not used in this IT */ }
     }
 
     @Test

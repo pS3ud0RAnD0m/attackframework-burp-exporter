@@ -40,7 +40,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Main configuration panel for data sources, scope, sinks, and admin actions.
+ * Main configuration panel for data sources, scope, sinks, and control actions.
  *
  * <p><strong>Responsibilities:</strong> render the UI, compose/parse {@link ConfigState.State},
  * and delegate long-running work to {@link ConfigController}.</p>
@@ -59,7 +59,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final String MIG_FILL_WRAP = "growx, wrap";
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
-    private static final int ADMIN_HIDE_DELAY_MS = 3000;
+    private static final int CONTROL_HIDE_DELAY_MS = 3000;
 
     // ---- Sources
     private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
@@ -93,11 +93,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JPanel     openSearchStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
-    // ---- Admin
-    private final JTextArea adminStatus = new JTextArea();
-    private final JPanel    adminStatusWrapper
+    // ---- Control
+    private final JTextArea controlStatus = new JTextArea();
+    private final JPanel    controlStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
-    private transient Timer adminStatusHideTimer;
+    private transient Timer controlStatusHideTimer;
 
     /** Action controller (transient; rebuilt on deserialization). */
     private transient ConfigController controller = new ConfigController(this);
@@ -144,18 +144,18 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         wireButtonActions();
         add(panelSeparator(), MIG_FILL_WRAP);
 
-        // Admin
-        add(new ConfigAdminPanel(
+        // Control
+        add(new ConfigControlPanel(
                 new JTextArea(),
                 new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL)),
-                adminStatus,
-                adminStatusWrapper,
+                controlStatus,
+                controlStatusWrapper,
                 INDENT,
                 ROW_GAP,
                 StatusViews::configureTextArea,
                 this::importConfig,
                 this::exportConfig,
-                new AdminSaveButtonListener(),
+                new ControlSaveButtonListener(),
                 () -> {
                     RuntimeConfig.setExportRunning(true);
                     Logger.logInfo("Export started.");
@@ -206,23 +206,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Updates the Admin status area on the EDT and auto-hides after a delay.
+     * Updates the Control status area on the EDT and auto-hides after a delay.
      *
      * <p>
      * @param message status text to display (nullable)
      */
-    @Override public void onAdminStatus(String message) {
+    @Override public void onControlStatus(String message) {
         Runnable r = () -> {
             StatusViews.setStatus(
-                    adminStatus, adminStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
-            if (adminStatusHideTimer != null && adminStatusHideTimer.isRunning()) adminStatusHideTimer.stop();
-            adminStatusHideTimer = new Timer(ADMIN_HIDE_DELAY_MS, evt -> {
-                adminStatusWrapper.setVisible(false);
-                adminStatusWrapper.revalidate();
-                adminStatusWrapper.repaint();
+                    controlStatus, controlStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
+            if (controlStatusHideTimer != null && controlStatusHideTimer.isRunning()) controlStatusHideTimer.stop();
+            controlStatusHideTimer = new Timer(CONTROL_HIDE_DELAY_MS, evt -> {
+                controlStatusWrapper.setVisible(false);
+                controlStatusWrapper.revalidate();
+                controlStatusWrapper.repaint();
             });
-            adminStatusHideTimer.setRepeats(false);
-            adminStatusHideTimer.start();
+            controlStatusHideTimer.setRepeats(false);
+            controlStatusHideTimer.start();
         };
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else {
@@ -429,7 +429,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
         chooser.setSelectedFile(new File("attackframework-burp-exporter-config.json"));
         int result = chooser.showSaveDialog(this);
-        if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Export cancelled."); return; }
+        if (result != JFileChooser.APPROVE_OPTION) { onControlStatus("Export cancelled."); return; }
         Path out = FileUtil.ensureJsonExtension(chooser.getSelectedFile()).toPath();
         controller.exportConfigAsync(out, json);
     }
@@ -445,7 +445,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         chooser.setDialogTitle("Import Config");
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
         int result = chooser.showOpenDialog(this);
-        if (result != JFileChooser.APPROVE_OPTION) { onAdminStatus("Import cancelled."); return; }
+        if (result != JFileChooser.APPROVE_OPTION) { onControlStatus("Import cancelled."); return; }
         controller.importConfigAsync(chooser.getSelectedFile().toPath());
     }
 
@@ -469,8 +469,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         testConnectionButton.setName("os.test");
         createIndexesButton.setName("os.createIndexes");
 
-        adminStatusWrapper.setName("admin.statusWrapper");
-        adminStatus.setName("admin.status");
+        controlStatusWrapper.setName("control.statusWrapper");
+        controlStatus.setName("control.status");
     }
 
     /**
@@ -501,7 +501,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Save button handler; delegates to the controller.
      */
-    private class AdminSaveButtonListener implements ActionListener {
+    private class ControlSaveButtonListener implements ActionListener {
         /**
          * Serializes and reports the current configuration asynchronously.
          *

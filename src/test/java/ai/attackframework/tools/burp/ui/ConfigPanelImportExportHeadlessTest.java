@@ -8,27 +8,26 @@ import java.util.concurrent.locks.LockSupport;
 import javax.swing.AbstractButton;
 import javax.swing.JButton;
 
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
- * Verifies that Save delegates to the controller and posts an admin status.
+ * Verifies that Save delegates to the controller and posts a control status.
  * Uses type-based lookup to avoid depending on button text.
  */
 class ConfigPanelImportExportHeadlessTest {
 
     private static final class TestUi implements ConfigController.Ui {
-        final AtomicReference<String> admin = new AtomicReference<>();
+        final AtomicReference<String> control = new AtomicReference<>();
         @Override public void onFileStatus(String message) {
             // File status is not observed in this test; required by ConfigController.Ui
         }
         @Override public void onOpenSearchStatus(String message) {
             // OpenSearch status is not observed in this test; required by ConfigController.Ui
         }
-        @Override public void onAdminStatus(String message) { admin.set(message); }
+        @Override public void onControlStatus(String message) { control.set(message); }
     }
 
     @Test
@@ -36,12 +35,12 @@ class ConfigPanelImportExportHeadlessTest {
         TestUi ui = new TestUi();
         ConfigPanel panel = new ConfigPanel(new ConfigController(ui));
 
-        // Find a JButton labeled "Save" if present; otherwise pick the last button in Admin block.
+        // Find a JButton labeled "Save" if present; otherwise pick the last button in Control block.
         JButton save = (JButton) findByTextOrLastButton(panel, "Save");
         save.doClick();
 
-        await(() -> ui.admin.get() != null);
-        assertThat(ui.admin.get()).isNotBlank();
+        await(() -> ui.control.get() != null);
+        assertThat(ui.control.get()).isNotBlank();
     }
 
     // ---- helpers ----

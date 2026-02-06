@@ -1,17 +1,18 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static org.assertj.core.api.Assertions.assertThat;
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
  * Verifies that toggling sink checkboxes enables/disables the corresponding
@@ -78,8 +79,8 @@ class ConfigPanelSinkEnablementHeadlessTest {
         @Override public void onOpenSearchStatus(String message) {
             // OpenSearch status is not observed in this test; required by ConfigController.Ui
         }
-        @Override public void onAdminStatus(String message) {
-            // Admin status is not observed in this test; required by ConfigController.Ui
+        @Override public void onControlStatus(String message) {
+            // Control status is not observed in this test; required by ConfigController.Ui
         }
     }
 }

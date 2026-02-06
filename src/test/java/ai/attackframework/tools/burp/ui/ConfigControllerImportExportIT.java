@@ -6,9 +6,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
@@ -18,7 +17,7 @@ import ai.attackframework.tools.burp.utils.config.ConfigState;
 class ConfigControllerImportExportIT {
 
     private static final class TestUi implements ConfigController.Ui {
-        volatile String admin;
+        volatile String control;
         private CountDownLatch exportDone;
         private CountDownLatch importDone;
 
@@ -32,8 +31,8 @@ class ConfigControllerImportExportIT {
 
         @Override public void onFileStatus(String message) { /* not used */ }
         @Override public void onOpenSearchStatus(String message) { /* not used */ }
-        @Override public void onAdminStatus(String message) {
-            this.admin = message;
+        @Override public void onControlStatus(String message) {
+            this.control = message;
             if (message == null) {
                 return;
             }
@@ -71,14 +70,14 @@ class ConfigControllerImportExportIT {
 
         cc.exportConfigAsync(tmp, json);
         assertThat(exportDone.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(ui.admin).contains("Exported");
+        assertThat(ui.control).contains("Exported");
 
         CountDownLatch importDone = new CountDownLatch(1);
-        ui.admin = null;
+        ui.control = null;
         ui.setImportLatch(importDone);
 
         cc.importConfigAsync(tmp);
         assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(ui.admin).contains("Imported");
+        assertThat(ui.control).contains("Imported");
     }
 }

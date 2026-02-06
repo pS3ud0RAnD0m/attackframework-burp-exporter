@@ -34,7 +34,7 @@ public final class ConfigController {
     public interface Ui {
         void onFileStatus(String message);
         void onOpenSearchStatus(String message);
-        void onAdminStatus(String message);
+        void onControlStatus(String message);
     }
 
     private final Ui ui;
@@ -48,7 +48,7 @@ public final class ConfigController {
     /**
      * Writes the provided config JSON to disk asynchronously.
      * <p>
-     * Work is performed on a background thread; status is published to {@link Ui#onAdminStatus}
+     * Work is performed on a background thread; status is published to {@link Ui#onControlStatus}
      * on the EDT.
      *
      * @param out  destination path (will be created with parent directories)
@@ -68,12 +68,12 @@ public final class ConfigController {
             }
             @Override protected void done() {
                 try {
-                    ui.onAdminStatus(get());
+                    ui.onControlStatus(get());
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    ui.onAdminStatus("Export interrupted.");
+                    ui.onControlStatus("Export interrupted.");
                 } catch (Exception ex) {
-                    ui.onAdminStatus("Export failed: " + rootMessage(ex));
+                    ui.onControlStatus("Export failed: " + rootMessage(ex));
                 }
             }
         }.execute();
@@ -83,7 +83,7 @@ public final class ConfigController {
      * Reads and parses a configuration file asynchronously.
      * <p>
      * On success, forwards the parsed state to the UI on the EDT and reports status through
-     * {@link Ui#onAdminStatus}. Errors are surfaced as status strings.
+     * {@link Ui#onControlStatus}. Errors are surfaced as status strings.
      *
      * @param in config file to load
      */
@@ -98,7 +98,7 @@ public final class ConfigController {
             @Override protected void done() {
                 try {
                     ConfigState.State state = get();
-                    ui.onAdminStatus("Imported configuration from: " + in);
+                    ui.onControlStatus("Imported configuration from: " + in);
                     SwingUtilities.invokeLater(() -> {
                         if (ui instanceof ai.attackframework.tools.burp.ui.ConfigPanel p) {
                             p.onImportResult(state);
@@ -106,9 +106,9 @@ public final class ConfigController {
                     });
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    ui.onAdminStatus("Import interrupted.");
+                    ui.onControlStatus("Import interrupted.");
                 } catch (Exception ex) {
-                    ui.onAdminStatus("Import failed: " + rootMessage(ex));
+                    ui.onControlStatus("Import failed: " + rootMessage(ex));
                 }
             }
         }.execute();
@@ -117,7 +117,7 @@ public final class ConfigController {
     /**
      * Serializes the current configuration to JSON asynchronously (no I/O).
      * <p>
-     * Status is delivered to {@link Ui#onAdminStatus} on the EDT. This is a lightweight operation
+     * Status is delivered to {@link Ui#onControlStatus} on the EDT. This is a lightweight operation
      * but remains async for consistency with other actions.
      *
      * @param state configuration to serialize
@@ -137,12 +137,12 @@ public final class ConfigController {
             }
             @Override protected void done() {
                 try {
-                    ui.onAdminStatus(get());
+                    ui.onControlStatus(get());
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    ui.onAdminStatus("Save interrupted.");
+                    ui.onControlStatus("Save interrupted.");
                 } catch (Exception ex) {
-                    ui.onAdminStatus("Save failed: " + rootMessage(ex));
+                    ui.onControlStatus("Save failed: " + rootMessage(ex));
                 }
             }
         }.execute();

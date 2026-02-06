@@ -1,25 +1,32 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import ai.attackframework.tools.burp.utils.config.ConfigKeys;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
-import org.junit.jupiter.api.Test;
-
-import javax.swing.JTextArea;
 import java.awt.Component;
 import java.awt.Container;
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serial;
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
+import javax.swing.JTextArea;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 
 /**
  * Validates that a restored {@link ConfigPanel} recreates its transient controller
- * and that a save operation updates the admin status area.
+ * and that a save operation updates the control status area.
  */
 class ConfigPanelSerializationHeadlessTest {
 
@@ -33,8 +40,8 @@ class ConfigPanelSerializationHeadlessTest {
         realize(restored);
 
         // Locate the wrapper by name; the text area may be created when status is first posted.
-        Container wrapper = (Container) findByName(restored, "admin.statusWrapper");
-        assertThat(wrapper).as("the admin status wrapper").isNotNull();
+        Container wrapper = (Container) findByName(restored, "control.statusWrapper");
+        assertThat(wrapper).as("the control status wrapper").isNotNull();
 
         // Drive Save through the fresh controller on the restored panel.
         ConfigController ctrl = controllerOf(restored);
@@ -43,7 +50,7 @@ class ConfigPanelSerializationHeadlessTest {
         );
         ctrl.saveAsync(state);
 
-        // Await the creation and population of the admin text area.
+        // Await the creation and population of the control text area.
         AtomicReference<JTextArea> areaRef = new AtomicReference<>();
         await(() -> {
             JTextArea ta = (JTextArea) findFirst(wrapper, JTextArea.class);
@@ -53,9 +60,9 @@ class ConfigPanelSerializationHeadlessTest {
             return txt != null && !txt.isBlank();
         });
 
-        JTextArea adminArea = areaRef.get();
-        assertThat(adminArea).as("the admin status area").isNotNull();
-        assertThat(adminArea.getText()).isNotBlank();
+        JTextArea controlArea = areaRef.get();
+        assertThat(controlArea).as("the control status area").isNotNull();
+        assertThat(controlArea.getText()).isNotBlank();
     }
 
     // ---- helpers ----
@@ -121,7 +128,7 @@ class ConfigPanelSerializationHeadlessTest {
             if (Boolean.TRUE.equals(cond.call())) return;
             LockSupport.parkNanos(15_000_000L); // ~15ms
         }
-        throw new AssertionError("Timed out while waiting for admin status text");
+        throw new AssertionError("Timed out while waiting for control status text");
     }
 
     /** Silent Ui for the original panel; restored panel uses its own controller to post status. */
@@ -129,6 +136,6 @@ class ConfigPanelSerializationHeadlessTest {
         @Serial private static final long serialVersionUID = 1L;
         @Override public void onFileStatus(String message) { /* not used */ }
         @Override public void onOpenSearchStatus(String message) { /* not used */ }
-        @Override public void onAdminStatus(String message) { /* not used */ }
+        @Override public void onControlStatus(String message) { /* not used */ }
     }
 }

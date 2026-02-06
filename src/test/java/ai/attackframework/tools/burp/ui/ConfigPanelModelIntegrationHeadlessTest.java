@@ -1,23 +1,24 @@
 package ai.attackframework.tools.burp.ui;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import org.junit.jupiter.api.Test;
-
-import javax.swing.AbstractButton;
-import javax.swing.JButton;
 import java.awt.Component;
 import java.awt.Container;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
+import javax.swing.AbstractButton;
+import javax.swing.JButton;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+
+import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
  * Integration-style headless test validating that the panel can:
  *  1) Build a model from the UI
  *  2) Save via the controller
- *  3) Report a user-facing admin status message
+ *  3) Report a user-facing control status message
  */
 class ConfigPanelModelIntegrationHeadlessTest {
 
@@ -26,12 +27,12 @@ class ConfigPanelModelIntegrationHeadlessTest {
         TestUi ui = new TestUi();
         ConfigPanel panel = new ConfigPanel(new ConfigController(ui));
 
-        // Prefer text; if unsupported, pick the last button in the Admin block
+        // Prefer text; if unsupported, pick the last button in the Control block
         JButton save = (JButton) findByTextOrLastButton(panel);
         save.doClick();
 
-        await(() -> ui.adminStatus != null);
-        assertThat(ui.adminStatus)
+        await(() -> ui.controlStatus != null);
+        assertThat(ui.controlStatus)
                 .isNotBlank()
                 .containsAnyOf("Saved", "Exported", "Imported");
     }
@@ -39,14 +40,14 @@ class ConfigPanelModelIntegrationHeadlessTest {
     // ---- Mini harness ----
 
     private static final class TestUi implements ConfigController.Ui {
-        volatile String adminStatus;
+        volatile String controlStatus;
         @Override public void onFileStatus(String message) {
             // File status is not observed in this test; required by ConfigController.Ui
         }
         @Override public void onOpenSearchStatus(String message) {
             // OpenSearch status is not observed in this test; required by ConfigController.Ui
         }
-        @Override public void onAdminStatus(String message) { adminStatus = message; }
+        @Override public void onControlStatus(String message) { controlStatus = message; }
     }
 
     private static Component findByTextOrLastButton(Container root) {

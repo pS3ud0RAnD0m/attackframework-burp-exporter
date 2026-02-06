@@ -7,12 +7,11 @@ import javax.swing.JCheckBox;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static org.assertj.core.api.Assertions.assertThat;
-
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
@@ -27,8 +26,8 @@ class ConfigPanelEnterBindingsHeadlessTest {
             // File status is not observed in this test; required by ConfigController.Ui
         }
         @Override public void onOpenSearchStatus(String m) { os.set(m); }
-        @Override public void onAdminStatus(String m) {
-            // Admin status is not observed in this test; required by ConfigController.Ui
+        @Override public void onControlStatus(String m) {
+            // Control status is not observed in this test; required by ConfigController.Ui
         }
     }
 

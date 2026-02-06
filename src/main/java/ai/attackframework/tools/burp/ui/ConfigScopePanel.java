@@ -9,9 +9,8 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
-import net.miginfocom.swing.MigLayout;
-
 import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
+import net.miginfocom.swing.MigLayout;
 
 /**
  * Builds the "Scope" section panel used by ConfigPanel.
@@ -45,7 +44,7 @@ public final class ConfigScopePanel {
     /**
      * Builds the Scope section UI containing header, radios, and the custom grid row.
      *
-     * <p>Caller must invoke on the EDT. Layout mirrors other sections (Sources/Sinks/Admin) and
+     * <p>Caller must invoke on the EDT. Layout mirrors other sections (Sources/Sinks/Control) and
      * aligns the grid's field column with Sinks (first column 150!, gap 20).</p>
      *
      * @return assembled panel with scope controls and custom grid
