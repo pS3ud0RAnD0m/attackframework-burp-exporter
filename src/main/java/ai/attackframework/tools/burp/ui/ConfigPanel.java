@@ -78,14 +78,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     );
 
     // ---- Sinks
-    private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", true);
+    private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", false);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
     private final JButton    createFilesButton = new JButton("Create Files");
     private final JTextArea  fileStatus = new JTextArea();
     private final JPanel     fileStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
-    private final JCheckBox  openSearchSinkCheckbox = new JCheckBox("OpenSearch", false);
+    private final JCheckBox  openSearchSinkCheckbox = new JCheckBox("OpenSearch", true);
     private final JTextField openSearchUrlField     = new AutoSizingTextField("http://opensearch.url:9200");
     private final JButton    testConnectionButton   = new JButton("Test Connection");
     private final JButton    createIndexesButton    = new JButton("Create Indexes");

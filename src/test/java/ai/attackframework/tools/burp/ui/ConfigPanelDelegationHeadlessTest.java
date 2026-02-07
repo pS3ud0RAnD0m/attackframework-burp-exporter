@@ -16,7 +16,7 @@ import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
  * Verifies that the panel delegates to the controller and posts Ui updates.
- * Enables OpenSearch (os.enable) before invoking OS actions.
+ * Enables OpenSearch and Files sinks before invoking OS and Files actions.
  */
 class ConfigPanelDelegationHeadlessTest {
 
@@ -44,9 +44,11 @@ class ConfigPanelDelegationHeadlessTest {
             }
             p.doLayout();
 
-            // Enable OpenSearch sink so OS buttons are actionable
+            // Enable OpenSearch and Files sinks so OS and Files buttons are actionable
             JCheckBox osEnable = get(p, "openSearchSinkCheckbox");
             if (!osEnable.isSelected()) osEnable.doClick();
+            JCheckBox filesEnable = get(p, "fileSinkCheckbox");
+            if (!filesEnable.isSelected()) filesEnable.doClick();
 
             ref.set(p);
         });

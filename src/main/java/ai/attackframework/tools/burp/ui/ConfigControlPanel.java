@@ -16,6 +16,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
@@ -53,6 +54,7 @@ public final class ConfigControlPanel {
 
         void setRunning(boolean running) {
             if (this.running != running) {
+                Logger.logTrace("[Control] indicator running=" + running);
                 this.running = running;
                 repaint();
             }
@@ -140,6 +142,7 @@ public final class ConfigControlPanel {
         saveBtn.addActionListener(saveAction);
         startStopBtn.addActionListener(e -> {
             boolean wasRunning = RuntimeConfig.isExportRunning();
+            Logger.logDebug("[Control] " + (wasRunning ? "Stop" : "Start") + " clicked; running=" + wasRunning + " -> " + !wasRunning);
             if (wasRunning) {
                 stopAction.run();
                 updateStartStopButton(startStopBtn, false);

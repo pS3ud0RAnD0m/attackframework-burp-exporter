@@ -10,18 +10,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import ai.attackframework.tools.burp.utils.IndexNaming;
 
 /**
@@ -46,6 +46,10 @@ class ConfigPanelFileSinkHeadlessTest {
     void createFilesButton_createsExpectedJsonFiles_andUpdatesStatus() throws Exception {
         // Arrange
         ConfigPanel panel = new ConfigPanel();
+        onEdtAndWait(() -> {
+            JCheckBox filesEnable = get(panel, "fileSinkCheckbox");
+            if (!filesEnable.isSelected()) filesEnable.doClick();
+        });
 
         // Build the list of expected JSON filenames and pre-create them so the final
         // status must include “already existed”.
