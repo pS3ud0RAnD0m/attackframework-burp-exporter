@@ -1,9 +1,11 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -11,6 +13,9 @@ import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import burp.api.montoya.core.Annotations;
+import burp.api.montoya.core.HighlightColor;
+import burp.api.montoya.core.Marker;
 import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
@@ -19,8 +24,15 @@ import burp.api.montoya.http.handler.HttpRequestToBeSent;
 import burp.api.montoya.http.handler.HttpResponseReceived;
 import burp.api.montoya.http.handler.RequestToBeSentAction;
 import burp.api.montoya.http.handler.ResponseReceivedAction;
+import burp.api.montoya.http.message.Cookie;
 import burp.api.montoya.http.message.HttpHeader;
+import burp.api.montoya.http.message.MimeType;
+import burp.api.montoya.http.message.StatusCodeClass;
 import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.http.message.responses.analysis.Attribute;
+import burp.api.montoya.http.message.responses.analysis.AttributeType;
+import burp.api.montoya.http.message.params.HttpParameterType;
+import burp.api.montoya.http.message.params.ParsedHttpParameter;
 
 /**
  * Burp HTTP handler that indexes request/response traffic into the OpenSearch traffic index.
@@ -33,6 +45,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
 
     private static final String INDEX_NAME = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
+    private static final int BODY_PREVIEW_MAX_CHARS = 4096;
 
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent request) {
@@ -86,28 +99,39 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         return s.substring(0, maxLen) + "...";
     }
 
-    private Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean inScope) {
+    /**
+     * Builds the traffic document for OpenSearch. Caller must hold Burp HTTP thread.
+     *
+     * @param response the received response (with initiating request)
+     * @param request  the initiating request
+     * @param inScope  whether the request passed scope filter
+     * @return map matching traffic index mapping (never null)
+     */
+    Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean inScope) {
         HttpService service = request.httpService();
+        String scheme = service == null ? null : (service.secure() ? "https" : "http");
+        ToolSource toolSource = response.toolSource();
+        ToolType toolType = toolSource == null ? null : toolSource.toolType();
 
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("url", request.url());
         document.put("host", service == null ? null : service.host());
-        document.put("http_version", request.httpVersion());
         document.put("port", service == null ? null : service.port());
-        document.put("scheme", service == null ? null : (service.secure() ? "https" : "http"));
-        document.put("tool", toolName(response.toolSource()));
+        document.put("scheme", scheme);
+        document.put("http_version", request.httpVersion());
+        document.put("tool", toolType == null ? null : toolType.toolName());
+        document.put("tool_type", toolType == null ? null : toolType.name());
         document.put("in_scope", inScope);
+        document.put("message_id", response.messageId());
+        putAnnotations(document, response.annotations());
+        document.put("path", request.path());
+        document.put("method", request.method());
+        document.put("status", (int) response.statusCode());
+        MimeType responseMime = response.mimeType();
+        document.put("mime_type", responseMime == null ? null : responseMime.name());
 
-        Map<String, Object> requestDoc = new LinkedHashMap<>();
-        requestDoc.put("method", request.method());
-        requestDoc.put("path", request.path());
-        requestDoc.put("headers", headersToList(request.headers()));
-        document.put("request", requestDoc);
-
-        Map<String, Object> responseDoc = new LinkedHashMap<>();
-        responseDoc.put("status", (int) response.statusCode());
-        responseDoc.put("headers", headersToList(response.headers()));
-        document.put("response", responseDoc);
+        document.put("request", buildRequestDoc(request));
+        document.put("response", buildResponseDoc(response));
 
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
@@ -115,6 +139,230 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("document_meta", meta);
 
         return document;
+    }
+
+    private static void putAnnotations(Map<String, Object> document, Annotations annotations) {
+        if (annotations == null) {
+            return;
+        }
+        if (annotations.hasNotes()) {
+            document.put("comment", annotations.notes());
+        }
+        if (annotations.hasHighlightColor()) {
+            HighlightColor color = annotations.highlightColor();
+            document.put("highlight", color == null ? null : color.name());
+        }
+    }
+
+    private Map<String, Object> buildRequestDoc(HttpRequest request) {
+        Map<String, Object> req = new LinkedHashMap<>();
+        req.put("method", request.method());
+        req.put("path", request.path());
+        req.put("path_without_query", nullToEmpty(request.pathWithoutQuery()));
+        req.put("query", nullToEmpty(request.query()));
+        req.put("file_extension", nullToEmpty(request.fileExtension()));
+        req.put("http_version", request.httpVersion());
+
+        burp.api.montoya.http.message.ContentType contentType = request.contentType();
+        req.put("content_type", contentType == null ? null : contentType.toString());
+        req.put("content_type_enum", contentType == null ? null : contentType.name());
+
+        req.put("headers", headersToList(request.headers()));
+        req.put("parameters", parametersToList(request.parameters()));
+
+        byte[] bodyBytes = request.body() == null ? null : request.body().getBytes();
+        int bodyLen = bodyBytes == null ? 0 : bodyBytes.length;
+        req.put("body_length", bodyLen);
+        req.put("body_offset", request.bodyOffset());
+        req.put("body_preview", bodyPreview(bodyBytes));
+        req.put("body_content", bodyContentString(bodyBytes));
+
+        req.put("markers", markersToList(request.markers()));
+        return req;
+    }
+
+    private Map<String, Object> buildResponseDoc(HttpResponseReceived response) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("status", (int) response.statusCode());
+        resp.put("status_code_class", statusCodeClassName(response.statusCode()));
+        resp.put("reason_phrase", response.reasonPhrase());
+        resp.put("http_version", response.httpVersion());
+        resp.put("headers", headersToList(response.headers()));
+        resp.put("cookies", cookiesToList(response.cookies()));
+
+        MimeType mime = response.mimeType();
+        MimeType stated = response.statedMimeType();
+        MimeType inferred = response.inferredMimeType();
+        resp.put("mime_type", mime == null ? null : mime.name());
+        resp.put("stated_mime_type", stated == null ? null : stated.name());
+        resp.put("inferred_mime_type", inferred == null ? null : inferred.name());
+
+        byte[] bodyBytes = response.body() == null ? null : response.body().getBytes();
+        int bodyLen = bodyBytes == null ? 0 : bodyBytes.length;
+        resp.put("body_length", bodyLen);
+        resp.put("body_offset", response.bodyOffset());
+        resp.put("body_preview", bodyPreview(bodyBytes));
+        resp.put("body_content", bodyBytes == null ? null : response.bodyToString());
+
+        resp.put("markers", markersToList(response.markers()));
+
+        putResponseAttributes(resp, response);
+        return resp;
+    }
+
+    private static String statusCodeClassName(short statusCode) {
+        for (StatusCodeClass c : StatusCodeClass.values()) {
+            if (c.contains(statusCode)) {
+                return c.name();
+            }
+        }
+        return null;
+    }
+
+    private static List<Map<String, Object>> parametersToList(List<ParsedHttpParameter> parameters) {
+        if (parameters == null || parameters.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(parameters.size());
+        for (ParsedHttpParameter p : parameters) {
+            Map<String, Object> entry = new LinkedHashMap<>(3);
+            entry.put("name", p.name());
+            entry.put("value", p.value());
+            HttpParameterType type = p.type();
+            entry.put("type", type == null ? null : type.name());
+            out.add(entry);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> cookiesToList(List<Cookie> cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(cookies.size());
+        for (Cookie c : cookies) {
+            Map<String, Object> entry = new LinkedHashMap<>(5);
+            entry.put("name", c.name());
+            entry.put("value", c.value());
+            entry.put("domain", c.domain());
+            entry.put("path", c.path());
+            Optional<java.time.ZonedDateTime> exp = c.expiration();
+            entry.put("expiration", exp == null || exp.isEmpty() ? null : exp.get().toString());
+            out.add(entry);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> markersToList(List<Marker> markers) {
+        if (markers == null || markers.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(markers.size());
+        for (Marker m : markers) {
+            if (m == null || m.range() == null) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>(2);
+            entry.put("start_index_inclusive", m.range().startIndexInclusive());
+            entry.put("end_index_exclusive", m.range().endIndexExclusive());
+            out.add(entry);
+        }
+        return out;
+    }
+
+    private static void putResponseAttributes(Map<String, Object> responseDoc, HttpResponseReceived response) {
+        AttributeType[] types = new AttributeType[] {
+            AttributeType.PAGE_TITLE,
+            AttributeType.LOCATION,
+            AttributeType.CONTENT_LENGTH,
+            AttributeType.VISIBLE_TEXT,
+            AttributeType.WORD_COUNT,
+            AttributeType.VISIBLE_WORD_COUNT,
+            AttributeType.LINE_COUNT,
+            AttributeType.COOKIE_NAMES,
+            AttributeType.CANONICAL_LINK,
+            AttributeType.LIMITED_BODY_CONTENT,
+            AttributeType.COMMENTS,
+            AttributeType.NON_HIDDEN_FORM_INPUT_TYPES,
+            AttributeType.ANCHOR_LABELS,
+            AttributeType.TAG_NAMES,
+            AttributeType.DIV_IDS,
+            AttributeType.CSS_CLASSES,
+            AttributeType.INPUT_SUBMIT_LABELS,
+            AttributeType.BUTTON_SUBMIT_LABELS,
+            AttributeType.INPUT_IMAGE_LABELS,
+            AttributeType.ETAG_HEADER,
+            AttributeType.LAST_MODIFIED_HEADER,
+            AttributeType.CONTENT_LOCATION,
+            AttributeType.OUTBOUND_EDGE_COUNT,
+            AttributeType.OUTBOUND_EDGE_TAG_NAMES,
+            AttributeType.BODY_CONTENT
+        };
+        try {
+            List<Attribute> attrs = response.attributes(types);
+            if (attrs == null) {
+                return;
+            }
+            for (Attribute attr : attrs) {
+                if (attr == null) {
+                    continue;
+                }
+                String fieldName = attributeTypeToFieldName(attr.type());
+                if (fieldName == null) {
+                    continue;
+                }
+                Object value = attributeValue(attr);
+                if (value != null) {
+                    responseDoc.put(fieldName, value);
+                }
+            }
+        } catch (Exception e) {
+            Logger.logDebug("[Traffic] response.attributes() failed: " + e.getMessage());
+        }
+    }
+
+    private static String attributeTypeToFieldName(AttributeType type) {
+        if (type == null) {
+            return null;
+        }
+        return type.name().toLowerCase();
+    }
+
+    private static Object attributeValue(Attribute attr) {
+        if (attr == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(attr.value());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String bodyPreview(byte[] body) {
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        String s = bodyContentString(body);
+        if (s == null || s.length() <= BODY_PREVIEW_MAX_CHARS) {
+            return s;
+        }
+        return s.substring(0, BODY_PREVIEW_MAX_CHARS);
+    }
+
+    private static String bodyContentString(byte[] body) {
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        try {
+            return new String(body, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     private String toolName(ToolSource toolSource) {

@@ -45,6 +45,7 @@ dependencies {
     testImplementation(libs.mockitoCore)
     testImplementation(libs.mockitoJunitJupiter)
     testImplementation(libs.assertjCore)
+    testImplementation(libs.montoya)
 
     // testRuntimeOnly
     testRuntimeOnly(libs.junitJupiterEngine)

@@ -3,409 +3,149 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "url": {
-        "type": "text",
-        "fields": {
-          "raw": {
-            "type": "keyword"
-          }
-        }
-      },
-      "host": {
-        "type": "keyword"
-      },
-      "port": {
-        "type": "integer"
-      },
-      "scheme": {
-        "type": "keyword"
-      },
-      "ip_address": {
-        "type": "keyword"
-      },
-      "protocol_transport": {
-        "type": "keyword"
-      },
-      "protocol_application": {
-        "type": "keyword"
-      },
-      "protocol_sub": {
-        "type": "keyword"
-      },
-      "http_version": {
-        "type": "keyword"
-      },
-      "tool": {
-        "type": "keyword"
-      },
-      "tool_type": {
-        "type": "keyword"
-      },
-      "in_scope": {
-        "type": "boolean"
-      },
-      "message_id": {
-        "type": "integer"
-      },
-      "time_start": {
-        "type": "date"
-      },
-      "time_end": {
-        "type": "date"
-      },
-      "duration_ms": {
-        "type": "integer"
-      },
-      "comment": {
-        "type": "text"
-      },
-      "highlight": {
-        "type": "keyword"
-      },
-      "edited": {
-        "type": "boolean"
-      },
-      "path": {
-        "type": "text",
-        "fields": {
-          "raw": {
-            "type": "keyword"
-          }
-        }
-      },
-      "method": {
-        "type": "keyword"
-      },
-      "status": {
-        "type": "integer"
-      },
-      "mime_type": {
-        "type": "keyword"
-      },
+      "url": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "host": { "type": "keyword" },
+      "port": { "type": "integer" },
+      "scheme": { "type": "keyword" },
+      "ip_address": { "type": "keyword" },
+      "protocol_transport": { "type": "keyword" },
+      "protocol_application": { "type": "keyword" },
+      "protocol_sub": { "type": "keyword" },
+      "http_version": { "type": "keyword" },
+      "tool": { "type": "keyword" },
+      "tool_type": { "type": "keyword" },
+      "in_scope": { "type": "boolean" },
+      "message_id": { "type": "integer" },
+      "time_start": { "type": "date" },
+      "time_end": { "type": "date" },
+      "duration_ms": { "type": "integer" },
+      "comment": { "type": "text" },
+      "highlight": { "type": "keyword" },
+      "edited": { "type": "boolean" },
+      "path": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "method": { "type": "keyword" },
+      "status": { "type": "integer" },
+      "mime_type": { "type": "keyword" },
       "request": {
         "properties": {
-          "method": {
-            "type": "keyword"
-          },
-          "path": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword"
-              }
-            }
-          },
-          "path_without_query": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword"
-              }
-            }
-          },
-          "query": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword"
-              }
-            }
-          },
-          "file_extension": {
-            "type": "keyword"
-          },
-          "content_type": {
-            "type": "keyword"
-          },
-          "http_version": {
-            "type": "keyword"
-          },
+          "method": { "type": "keyword" },
+          "path": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+          "path_without_query": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+          "query": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+          "file_extension": { "type": "keyword" },
+          "content_type": { "type": "keyword" },
+          "http_version": { "type": "keyword" },
           "headers": {
             "type": "nested",
             "properties": {
-              "name": {
-                "type": "keyword"
-              },
-              "value": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword"
-                  }
-                }
-              }
+              "name": { "type": "keyword" },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
             }
           },
           "parameters": {
             "type": "nested",
             "properties": {
-              "name": {
-                "type": "keyword"
-              },
-              "value": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword"
-                  }
-                }
-              },
-              "type": {
-                "type": "keyword"
-              }
+              "name": { "type": "keyword" },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "type": { "type": "keyword" }
             }
           },
-          "body": {
-            "type": "binary",
-            "doc_values": false
-          },
-          "body_preview": {
-            "type": "text"
-          },
-          "body_length": {
-            "type": "integer"
-          },
-          "body_offset": {
-            "type": "integer"
-          },
-          "content_type_enum": {
-            "type": "keyword"
-          },
+          "body": { "type": "binary", "doc_values": false },
+          "body_preview": { "type": "text" },
+          "body_length": { "type": "integer" },
+          "body_offset": { "type": "integer" },
+          "content_type_enum": { "type": "keyword" },
           "markers": {
             "type": "nested",
             "properties": {
-              "start_index_inclusive": {
-                "type": "integer"
-              },
-              "end_index_exclusive": {
-                "type": "integer"
-              }
+              "start_index_inclusive": { "type": "integer" },
+              "end_index_exclusive": { "type": "integer" }
             }
           },
-          "body_content": {
-            "type": "text"
-          }
+          "body_content": { "type": "text" }
         }
       },
       "response": {
         "properties": {
-          "status": {
-            "type": "integer"
-          },
-          "reason_phrase": {
-            "type": "keyword"
-          },
-          "http_version": {
-            "type": "keyword"
-          },
+          "status": { "type": "integer" },
+          "reason_phrase": { "type": "keyword" },
+          "http_version": { "type": "keyword" },
           "headers": {
             "type": "nested",
             "properties": {
-              "name": {
-                "type": "keyword"
-              },
-              "value": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword"
-                  }
-                }
-              }
+              "name": { "type": "keyword" },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
             }
           },
           "cookies": {
             "type": "nested",
             "properties": {
-              "name": {
-                "type": "keyword"
-              },
-              "value": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword"
-                  }
-                }
-              },
-              "domain": {
-                "type": "keyword"
-              },
-              "path": {
-                "type": "keyword"
-              },
-              "expiration": {
-                "type": "date"
-              }
+              "name": { "type": "keyword" },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "domain": { "type": "keyword" },
+              "path": { "type": "keyword" },
+              "expiration": { "type": "date" }
             }
           },
-          "mime_type": {
-            "type": "keyword"
-          },
-          "stated_mime_type": {
-            "type": "keyword"
-          },
-          "inferred_mime_type": {
-            "type": "keyword"
-          },
-          "body": {
-            "type": "binary",
-            "doc_values": false
-          },
-          "body_preview": {
-            "type": "text"
-          },
-          "body_length": {
-            "type": "integer"
-          },
-          "body_offset": {
-            "type": "integer"
-          },
-          "status_code_class": {
-            "type": "keyword"
-          },
+          "mime_type": { "type": "keyword" },
+          "stated_mime_type": { "type": "keyword" },
+          "inferred_mime_type": { "type": "keyword" },
+          "body": { "type": "binary", "doc_values": false },
+          "body_preview": { "type": "text" },
+          "body_length": { "type": "integer" },
+          "body_offset": { "type": "integer" },
+          "status_code_class": { "type": "keyword" },
           "markers": {
             "type": "nested",
             "properties": {
-              "start_index_inclusive": {
-                "type": "integer"
-              },
-              "end_index_exclusive": {
-                "type": "integer"
-              }
+              "start_index_inclusive": { "type": "integer" },
+              "end_index_exclusive": { "type": "integer" }
             }
           },
-          "page_title": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword"
-              }
-            }
-          },
-          "location": {
-            "type": "keyword"
-          },
-          "content_length": {
-            "type": "integer"
-          },
-          "visible_text": {
-            "type": "text"
-          },
-          "word_count": {
-            "type": "integer"
-          },
-          "visible_word_count": {
-            "type": "integer"
-          },
-          "line_count": {
-            "type": "integer"
-          },
-          "cookie_names": {
-            "type": "keyword"
-          },
-          "canonical_link": {
-            "type": "keyword"
-          },
-          "limited_body_content": {
-            "type": "text"
-          },
-          "header_names": {
-            "type": "keyword"
-          },
-          "body_content": {
-            "type": "text"
-          },
-          "comments": {
-            "type": "text"
-          },
-          "non_hidden_form_input_types": {
-            "type": "keyword"
-          },
-          "anchor_labels": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword"
-              }
-            }
-          },
-          "tag_names": {
-            "type": "keyword"
-          },
-          "div_ids": {
-            "type": "keyword"
-          },
-          "css_classes": {
-            "type": "keyword"
-          },
-          "input_submit_labels": {
-            "type": "keyword"
-          },
-          "button_submit_labels": {
-            "type": "keyword"
-          },
-          "input_image_labels": {
-            "type": "keyword"
-          },
-          "etag_header": {
-            "type": "keyword"
-          },
-          "last_modified_header": {
-            "type": "keyword"
-          },
-          "content_location": {
-            "type": "keyword"
-          },
-          "outbound_edge_count": {
-            "type": "integer"
-          },
-          "outbound_edge_tag_names": {
-            "type": "keyword"
-          }
+          "page_title": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+          "location": { "type": "keyword" },
+          "content_length": { "type": "integer" },
+          "visible_text": { "type": "text" },
+          "word_count": { "type": "integer" },
+          "visible_word_count": { "type": "integer" },
+          "line_count": { "type": "integer" },
+          "cookie_names": { "type": "keyword" },
+          "canonical_link": { "type": "keyword" },
+          "limited_body_content": { "type": "text" },
+          "header_names": { "type": "keyword" },
+          "body_content": { "type": "text" },
+          "comments": { "type": "text" },
+          "non_hidden_form_input_types": { "type": "keyword" },
+          "anchor_labels": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+          "tag_names": { "type": "keyword" },
+          "div_ids": { "type": "keyword" },
+          "css_classes": { "type": "keyword" },
+          "input_submit_labels": { "type": "keyword" },
+          "button_submit_labels": { "type": "keyword" },
+          "input_image_labels": { "type": "keyword" },
+          "etag_header": { "type": "keyword" },
+          "last_modified_header": { "type": "keyword" },
+          "content_location": { "type": "keyword" },
+          "outbound_edge_count": { "type": "integer" },
+          "outbound_edge_tag_names": { "type": "keyword" }
         }
       },
-      "websocket_id": {
-        "type": "integer"
-      },
-      "ws_direction": {
-        "type": "keyword"
-      },
-      "ws_message_type": {
-        "type": "keyword"
-      },
-      "ws_payload": {
-        "type": "binary",
-        "doc_values": false
-      },
+      "websocket_id": { "type": "integer" },
+      "ws_direction": { "type": "keyword" },
+      "ws_message_type": { "type": "keyword" },
+      "ws_payload": { "type": "binary", "doc_values": false },
       "document_meta": {
         "properties": {
-          "schema_version": {
-            "type": "keyword"
-          },
-          "extension_version": {
-            "type": "keyword"
-          }
+          "schema_version": { "type": "keyword" },
+          "extension_version": { "type": "keyword" }
         }
       },
-      "summary": {
-        "type": "text"
-      },
-      "cluster_id": {
-        "type": "keyword"
-      },
-      "proxy_history_id": {
-        "type": "integer"
-      },
-      "listener_port": {
-        "type": "integer"
-      },
-      "time_request_sent": {
-        "type": "date"
-      },
-      "response_start_latency_ms": {
-        "type": "integer"
-      }
+      "summary": { "type": "text" },
+      "cluster_id": { "type": "keyword" },
+      "proxy_history_id": { "type": "integer" },
+      "listener_port": { "type": "integer" },
+      "time_request_sent": { "type": "date" },
+      "response_start_latency_ms": { "type": "integer" }
     }
   }
 }
