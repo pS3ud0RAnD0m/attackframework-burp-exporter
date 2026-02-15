@@ -10,6 +10,7 @@ import java.util.Optional;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
+import ai.attackframework.tools.burp.utils.TrafficExportStats;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -85,9 +86,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         Map<String, Object> document = buildDocument(response, request, inScope);
         boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, document);
         if (success) {
+            TrafficExportStats.incrementSuccess();
             Logger.logDebug("[Traffic] indexed url=" + truncateForLog(request.url(), 80));
         } else {
-            Logger.logError("[OpenSearch] Failed to index traffic document to " + INDEX_NAME);
+            TrafficExportStats.incrementFailure();
+            String errMsg = "Failed to index traffic document to " + INDEX_NAME;
+            TrafficExportStats.setLastError(errMsg);
+            Logger.logError("[OpenSearch] " + errMsg);
         }
 
         return ResponseReceivedAction.continueWith(response);
