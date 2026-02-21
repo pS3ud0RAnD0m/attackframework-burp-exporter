@@ -13,6 +13,7 @@ public final class TrafficExportStats {
 
     private static final AtomicLong SUCCESS_COUNT = new AtomicLong(0);
     private static final AtomicLong FAILURE_COUNT = new AtomicLong(0);
+    private static final AtomicLong LAST_PUSH_DURATION_MS = new AtomicLong(-1);
     private static final AtomicReference<String> LAST_ERROR = new AtomicReference<>(null);
     private static final int LAST_ERROR_MAX_LEN = 200;
 
@@ -26,6 +27,20 @@ public final class TrafficExportStats {
     /** Increments the number of failed traffic document pushes. */
     public static void incrementFailure() {
         FAILURE_COUNT.incrementAndGet();
+    }
+
+    /**
+     * Records the duration in milliseconds of the last push (success or failure).
+     *
+     * @param durationMs duration in ms; negative if unknown
+     */
+    public static void setLastPushDurationMs(long durationMs) {
+        LAST_PUSH_DURATION_MS.set(durationMs);
+    }
+
+    /** Returns the last push duration in ms, or -1 if not set. */
+    public static long getLastPushDurationMs() {
+        return LAST_PUSH_DURATION_MS.get();
     }
 
     /**

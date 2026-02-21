@@ -79,15 +79,19 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         boolean inScope = ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), request.url(), request.isInScope());
         if (!inScope) {
-            Logger.logTrace("[Traffic] skip: out of scope url=" + truncateForLog(request.url(), 80));
+            Logger.logTrace("[Traffic] skip: out of scope");
             return ResponseReceivedAction.continueWith(response);
         }
 
         Map<String, Object> document = buildDocument(response, request, inScope);
+        long startNs = System.nanoTime();
         boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, document);
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+        TrafficExportStats.setLastPushDurationMs(durationMs);
+
         if (success) {
             TrafficExportStats.incrementSuccess();
-            Logger.logDebug("[Traffic] indexed url=" + truncateForLog(request.url(), 80));
+            // Do not log URL or body/headers; log only result (Phase 1 efficiency).
         } else {
             TrafficExportStats.incrementFailure();
             String errMsg = "Failed to index traffic document to " + INDEX_NAME;
@@ -96,12 +100,6 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         }
 
         return ResponseReceivedAction.continueWith(response);
-    }
-
-    private static String truncateForLog(String s, int maxLen) {
-        if (s == null) return "null";
-        if (s.length() <= maxLen) return s;
-        return s.substring(0, maxLen) + "...";
     }
 
     /**

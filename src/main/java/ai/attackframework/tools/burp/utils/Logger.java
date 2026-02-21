@@ -1,9 +1,16 @@
 package ai.attackframework.tools.burp.utils;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+
+import javax.swing.SwingUtilities;
 
 import burp.api.montoya.logging.Logging;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -15,6 +22,8 @@ import org.slf4j.LoggerFactory;
  * - Delegates to SLF4J so levels/appenders are configurable.
  * - Mirrors to Burp's Logging when available.
  * - Exposes a listener bus consumed by LogPanel and tests.
+ * - Keeps a bounded replay buffer so newly registered listeners (e.g. after tab switch)
+ *   receive recent messages and the Log panel shows full history.
  * - Contains a Logback appender (nested class) that forwards non-internal SLF4J events to the listener bus.
  */
 public final class Logger {
@@ -25,12 +34,20 @@ public final class Logger {
     public interface LogListener { void onLog(String level, String message); }
 
     private static final String INTERNAL_LOGGER_NAME = "ai.attackframework.tools.burp";
+    private static final int REPLAY_BUFFER_SIZE = 500;
 
     private static final org.slf4j.Logger LOG =
             LoggerFactory.getLogger(INTERNAL_LOGGER_NAME);
 
     private static final List<LogListener> LISTENERS = new CopyOnWriteArrayList<>();
     private static final AtomicReference<Logging> BURP_LOGGER = new AtomicReference<>();
+
+    /** Bounded replay buffer for new listeners. Guarded by REPLAY_BUFFER_LOCK. */
+    private static final Object REPLAY_BUFFER_LOCK = new Object();
+    private static final List<ReplayEvent> REPLAY_BUFFER = new ArrayList<>(REPLAY_BUFFER_SIZE);
+    private static final AtomicLong REPLAY_SEQ = new AtomicLong(0);
+    private static final Map<LogListener, Long> LAST_SEEN =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     /**
      * Utility holder; not instantiable.
@@ -45,15 +62,30 @@ public final class Logger {
     public static void initialize(Logging montoyaLogging) { BURP_LOGGER.set(montoyaLogging); }
 
     /**
-     * Registers a UI/log listener.
-     * <p>
+     * Registers a UI/log listener. If the listener is a {@link ReplayableLogListener},
+     * recent buffered messages are replayed so the panel shows full history (e.g. after
+     * switching back to the extension tab when Burp had removed the panel).
+     *
      * @param listener listener to add (nullable ignored)
      */
-    public static void registerListener(LogListener listener) { if (listener != null) LISTENERS.add(listener); }
+    public static void registerListener(LogListener listener) {
+        if (listener == null) return;
+        if (LISTENERS.contains(listener)) return;
+        LISTENERS.add(listener);
+        if (listener instanceof ReplayableLogListener) {
+            replayTo(listener);
+        }
+    }
+
+    /**
+     * Marker for listeners that should receive a replay of recent messages when registered
+     * (e.g. LogPanel so the tab shows full history after a tab switch).
+     */
+    public interface ReplayableLogListener extends LogListener {}
 
     /**
      * Unregisters a UI/log listener.
-     * <p>
+     *
      * @param listener listener to remove (nullable ignored)
      */
     public static void unregisterListener(LogListener listener) { LISTENERS.remove(listener); }
@@ -191,18 +223,87 @@ public final class Logger {
 
     /**
      * Dispatches a message to registered UI listeners.
-     * <p>
+     * Always runs listener callbacks on the EDT so the Log panel (and any Swing
+     * listener) updates correctly when log calls come from worker threads.
+     *
      * @param level level string
      * @param m     message text
      */
     private static void notifyListeners(String level, String m) {
+        long seq = appendToReplayBuffer(level, m);
+        if (LISTENERS.isEmpty()) {
+            return;
+        }
+        if (SwingUtilities.isEventDispatchThread()) {
+            doNotifyListeners(seq, level, m);
+        } else {
+            SwingUtilities.invokeLater(() -> doNotifyListeners(seq, level, m));
+        }
+    }
+
+    private static long appendToReplayBuffer(String level, String m) {
+        long seq = REPLAY_SEQ.incrementAndGet();
+        synchronized (REPLAY_BUFFER_LOCK) {
+            REPLAY_BUFFER.add(new ReplayEvent(seq, level, m));
+            while (REPLAY_BUFFER.size() > REPLAY_BUFFER_SIZE) {
+                REPLAY_BUFFER.remove(0);
+            }
+        }
+        return seq;
+    }
+
+    /**
+     * Replays buffered messages to a single listener on the EDT so the panel shows full history.
+     */
+    private static void replayTo(LogListener listener) {
+        long lastSeen = LAST_SEEN.getOrDefault(listener, 0L);
+        List<ReplayEvent> snapshot;
+        synchronized (REPLAY_BUFFER_LOCK) {
+            snapshot = new ArrayList<>(REPLAY_BUFFER);
+        }
+        if (snapshot.isEmpty()) return;
+        List<ReplayEvent> toReplay = new ArrayList<>();
+        for (ReplayEvent ev : snapshot) {
+            if (ev.seq() > lastSeen) {
+                toReplay.add(ev);
+            }
+        }
+        if (toReplay.isEmpty()) return;
+        Runnable replay = () -> {
+            long latest = lastSeen;
+            for (ReplayEvent entry : toReplay) {
+                try {
+                    listener.onLog(entry.level(), entry.message());
+                    latest = entry.seq();
+                } catch (RuntimeException ex) {
+                    if (LOG.isDebugEnabled()) LOG.debug("replay listener threw: {}", ex.toString());
+                }
+            }
+            if (latest > lastSeen) {
+                LAST_SEEN.put(listener, latest);
+            }
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            replay.run();
+        } else {
+            SwingUtilities.invokeLater(replay);
+        }
+    }
+
+    private static void doNotifyListeners(long seq, String level, String m) {
         for (LogListener l : LISTENERS) {
-            try { l.onLog(level, m); }
-            catch (RuntimeException ex) {
+            try {
+                l.onLog(level, m);
+                if (l instanceof ReplayableLogListener) {
+                    LAST_SEEN.put(l, seq);
+                }
+            } catch (RuntimeException ex) {
                 if (LOG.isDebugEnabled()) LOG.debug("listener threw: {}", ex.toString());
             }
         }
     }
+
+    private record ReplayEvent(long seq, String level, String message) {}
 
     /**
      * Null-safe string conversion.

@@ -4,6 +4,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+import javax.swing.SwingUtilities;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,7 +38,7 @@ class LoggerPipelineIT {
         Logger.registerListener(listener);
 
         String msg = "pipeline: internal debug";
-        Logger.logDebug(msg);
+        SwingUtilities.invokeAndWait(() -> Logger.logDebug(msg));
 
         await();
         long count = events.stream()
@@ -52,7 +54,7 @@ class LoggerPipelineIT {
         Logger.registerListener(listener);
 
         String msg = "pipeline: internal error";
-        Logger.logError(msg, new IllegalStateException("boom"));
+        SwingUtilities.invokeAndWait(() -> Logger.logError(msg, new IllegalStateException("boom")));
 
         await();
         assertThat(events)
@@ -69,7 +71,7 @@ class LoggerPipelineIT {
 
         org.slf4j.Logger thirdParty = LoggerFactory.getLogger("third.party.demo");
         String msg = "pipeline: external info";
-        thirdParty.info(msg);
+        SwingUtilities.invokeAndWait(() -> thirdParty.info(msg));
 
         await();
         assertThat(events)

@@ -65,7 +65,7 @@ import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
  * <p><strong>Threading:</strong> All UI mutations occur on the EDT. Logger callbacks are marshaled with
  * {@code invokeLater} to preserve ordering and avoid contention with highlight recomputation.</p>
  */
-public class LogPanel extends JPanel implements Logger.LogListener {
+public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -314,10 +314,21 @@ public class LogPanel extends JPanel implements Logger.LogListener {
         TextFieldUndo.install(filterField);
         TextFieldUndo.install(searchField);
 
-        Logger.registerListener(this);
-
         rebuildView();
         computeMatchesAndJumpFirst();
+    }
+
+    /**
+     * Registers with Logger when this panel is added to the display hierarchy.
+     * Burp may remove our tab content when another top-level tab is selected and re-add when
+     * the user switches back; we only receive log messages while registered, so we register
+     * here and unregister in removeNotify. Logger replays recent messages to newly registered
+     * listeners so the Log tab shows full history after a tab switch.
+     */
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        Logger.registerListener(this);
     }
 
     /**
@@ -356,9 +367,8 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     }
 
     /**
-     * Lifecycle hook: unregisters listeners and closes regex bindings when removed.
-     * <p>
-     * EDT only.
+     * Lifecycle hook: unregisters from Logger (so we stop receiving while not in the hierarchy)
+     * and closes regex bindings when removed. Re-registration happens in addNotify when shown again.
      */
     @Override
     public void removeNotify() {
@@ -373,14 +383,14 @@ public class LogPanel extends JPanel implements Logger.LogListener {
     // ---- Logger.LogListener ----
 
     /**
-     * Logger callback: marshals incoming events onto the EDT for ingestion.
-     * <p>
+     * Logger callback; invoked on the EDT by Logger so ingestion runs on the UI thread.
+     *
      * @param level   level string from Logger
      * @param message log message (nullable)
      */
     @Override
     public void onLog(String level, String message) {
-        SwingUtilities.invokeLater(() -> ingest(level, message));
+        ingest(level, message);
     }
 
     // ---- Ingest and rendering ----

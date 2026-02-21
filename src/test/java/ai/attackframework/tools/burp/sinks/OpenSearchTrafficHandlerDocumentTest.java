@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.sinks;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.list;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -93,7 +94,7 @@ class OpenSearchTrafficHandlerDocumentTest {
                 "body_length", "body_offset", "markers");
         assertThat(req.get("method")).isEqualTo("GET");
         assertThat(req.get("path")).isEqualTo("/path?q=1");
-        assertThat(req.get("headers")).asList().isEmpty();
+        assertThat(req.get("headers")).asInstanceOf(list(Object.class)).isEmpty();
     }
 
     @Test

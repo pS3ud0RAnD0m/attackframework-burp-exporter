@@ -55,8 +55,8 @@ public final class ConfigController {
      * @param json serialized configuration payload
      */
     public void exportConfigAsync(Path out, String json) {
-        Logger.logInfo ("[ConfigPanel] exportConfigAsync invoked; out=" + out);
-        Logger.logInfo ("[ConfigPanel] exportConfigAsync payload=" + json);
+        Logger.logInfo("[ConfigPanel] exportConfigAsync invoked; out=" + out);
+        Logger.logInfo("[ConfigPanel] exportConfigAsync payload=" + json);
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
@@ -88,11 +88,11 @@ public final class ConfigController {
      * @param in config file to load
      */
     public void importConfigAsync(Path in) {
-        Logger.logInfo ("[ConfigPanel] importConfigAsync invoked; in=" + in);
+        Logger.logInfo("[ConfigPanel] importConfigAsync invoked; in=" + in);
         new SwingWorker<ConfigState.State, Void>() {
             @Override protected ConfigState.State doInBackground() throws Exception {
                 String json = FileUtil.readString(in);
-                Logger.logInfo ("[ConfigPanel] importConfigAsync payload=" + json);
+                Logger.logInfo("[ConfigPanel] importConfigAsync payload=" + json);
                 return ConfigJsonMapper.parse(json);
             }
             @Override protected void done() {
@@ -123,12 +123,12 @@ public final class ConfigController {
      * @param state configuration to serialize
      */
     public void saveAsync(ConfigState.State state) {
-        Logger.logInfo ("[ConfigPanel] saveAsync invoked");
+        Logger.logInfo("[ConfigPanel] saveAsync invoked");
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
                     String json = ConfigJsonMapper.build(state);
-                    Logger.logInfo ("[ConfigPanel] saveAsync payload=" + json);
+                    Logger.logInfo("[ConfigPanel] saveAsync payload=" + json);
                     return "Saved.";
                 } catch (Exception ex) {
                     Logger.logError("[ConfigPanel] Save failed: " + rootMessage(ex));

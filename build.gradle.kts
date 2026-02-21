@@ -59,6 +59,10 @@ dependencies {
 val verboseTests: Boolean =
     (project.findProperty("verboseTests")?.toString()?.toBooleanStrictOrNull()) ?: false
 
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("-Xlint:deprecation")
+}
+
 tasks.test {
     useJUnitPlatform {
         if (project.hasProperty("excludeIntegration")) {
@@ -127,6 +131,7 @@ tasks.register<Jar>("fatJar") {
 
     archiveBaseName.set(project.property("archivesBaseName").toString())
     archiveVersion.set(project.property("version").toString())
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     manifest {

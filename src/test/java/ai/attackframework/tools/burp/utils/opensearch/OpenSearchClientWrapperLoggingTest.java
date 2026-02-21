@@ -4,6 +4,8 @@ import ai.attackframework.tools.burp.utils.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.SwingUtilities;
+
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -37,11 +39,9 @@ class OpenSearchClientWrapperLoggingTest {
     void testConnection_withInvalidUrl_emitsLogEvent() throws Exception {
         Logger.registerListener(listener);
 
-        // Intentionally invalid URL; connection is expected to fail quickly.
-        OpenSearchClientWrapper.testConnection("http://127.0.0.1:1");
-
-        boolean ok = latch.await(2, TimeUnit.SECONDS);
-        assertThat(ok).as("Timed out waiting for OpenSearchClientWrapper log event").isTrue();
+        // Run on EDT so Logger listener is invoked synchronously (Logger dispatches to EDT when off it).
+        SwingUtilities.invokeAndWait(() ->
+                OpenSearchClientWrapper.testConnection("http://127.0.0.1:1"));
 
         assertThat(events)
                 .anySatisfy(e -> {

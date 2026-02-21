@@ -124,7 +124,6 @@ public class OpenSearchSink {
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             Logger.logError(sw.toString().stripTrailing());
-
             String reason = conciseRootCause(e);
             return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
         }
