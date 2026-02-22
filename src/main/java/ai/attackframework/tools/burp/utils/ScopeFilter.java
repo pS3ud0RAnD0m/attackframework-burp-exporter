@@ -37,7 +37,6 @@ public final class ScopeFilter {
      */
     public static boolean shouldExport(ConfigState.State state, String url, boolean burpInScope) {
         if (state == null) {
-            Logger.logTrace("[ScopeFilter] state is null -> shouldExport=false");
             return false;
         }
         String raw = state.scopeType();
@@ -45,32 +44,14 @@ public final class ScopeFilter {
                 ? ConfigKeys.SCOPE_ALL
                 : raw.trim().toLowerCase(Locale.ROOT);
 
-        boolean result;
         switch (scopeType) {
             case ConfigKeys.SCOPE_BURP:
-                result = burpInScope;
-                Logger.logTrace("[ScopeFilter] scope=burp burpInScope=" + burpInScope + " -> shouldExport=" + result);
-                break;
+                return burpInScope;
             case ConfigKeys.SCOPE_CUSTOM:
-                List<ConfigState.ScopeEntry> entries = state.customEntries();
-                result = url != null && matchesCustom(url, entries);
-                Logger.logDebug("[ScopeFilter] scope=custom url=" + truncateForLog(url, 80)
-                        + " customEntries=" + (entries != null ? entries.size() : 0)
-                        + " -> shouldExport=" + result);
-                break;
+                return url != null && matchesCustom(url, state.customEntries());
             default:
-                Logger.logTrace("[ScopeFilter] scope=\"" + scopeType + "\" (treated as all) -> shouldExport=true");
-                result = true;
-                break;
+                return true;
         }
-        return result;
-    }
-
-    /** Truncates string for log output to avoid huge URLs in logs. */
-    private static String truncateForLog(String s, int maxLen) {
-        if (s == null) return "null";
-        if (s.length() <= maxLen) return s;
-        return s.substring(0, maxLen) + "...";
     }
 
     /**
@@ -88,7 +69,6 @@ public final class ScopeFilter {
      */
     private static boolean matchesCustom(String url, List<ConfigState.ScopeEntry> entries) {
         if (entries == null || entries.isEmpty()) {
-            Logger.logTrace("[ScopeFilter] custom entries null or empty -> no match");
             return false;
         }
         String target = hostFromUrl(url);
@@ -97,27 +77,18 @@ public final class ScopeFilter {
         for (ConfigState.ScopeEntry e : entries) {
             String value = e.value();
             if (value == null || value.isBlank()) {
-                Logger.logTrace("[ScopeFilter] skipping blank entry");
                 continue;
             }
-            boolean matched;
             if (e.kind() == ConfigState.Kind.STRING) {
-                matched = target.contains(value);
-                Logger.logTrace("[ScopeFilter] STRING entry \"" + truncateForLog(value, 40)
-                        + "\" against host \"" + truncateForLog(target, 60) + "\" contains? " + matched);
-                if (matched) return true;
+                if (target.contains(value)) return true;
             } else {
                 try {
-                    matched = Pattern.compile(value).matcher(target).find();
-                    Logger.logTrace("[ScopeFilter] REGEX entry \"" + truncateForLog(value, 40)
-                            + "\" against host \"" + truncateForLog(target, 60) + "\" find? " + matched);
-                    if (matched) return true;
-                } catch (Exception ex) {
-                    Logger.logTrace("[ScopeFilter] REGEX entry invalid, skipping: " + ex.getMessage());
+                    if (Pattern.compile(value).matcher(target).find()) return true;
+                } catch (Exception ignored) {
+                    // invalid regex, skip entry
                 }
             }
         }
-        Logger.logTrace("[ScopeFilter] no custom entry matched");
         return false;
     }
 

@@ -52,8 +52,8 @@ public class OpenSearchSink {
 
         final String mappingFile = resourceRoot + shortName + ".json";
 
-        Logger.logInfo("Attempting to create index: " + fullIndexName);
-        Logger.logInfo("Using mapping file: " + mappingFile);
+        Logger.logDebug("Attempting to create index: " + fullIndexName);
+        Logger.logDebug("Using mapping file: " + mappingFile);
 
         String jsonBody = null;
 
@@ -62,7 +62,7 @@ public class OpenSearchSink {
 
             boolean exists = client.indices().exists(b -> b.index(fullIndexName)).value();
             if (exists) {
-                Logger.logInfo("Index already exists: " + fullIndexName);
+                Logger.logDebug("Index already exists: " + fullIndexName);
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.EXISTS, null);
             }
 
@@ -108,8 +108,16 @@ public class OpenSearchSink {
                     .mappings(mappings)
                     .build();
 
+            // Full HTTP logging (Create indexes only; not used on traffic export path).
+            Logger.logDebug("[OpenSearch] --- Create index HTTP ---");
+            Logger.logDebug("[OpenSearch] Request: PUT " + baseUrl + "/" + fullIndexName);
+            Logger.logDebug("[OpenSearch] Request body:\n" + jsonBody);
+
             CreateIndexResponse response = client.indices().create(request);
-            Logger.logInfo("Index creation acknowledged: " + response.acknowledged());
+
+            Logger.logDebug("[OpenSearch] Response: 200 OK");
+            String createResponseBody = buildCreateIndexResponseBody(response, fullIndexName);
+            Logger.logDebug("[OpenSearch] Response body:\n" + createResponseBody);
 
             return new IndexResult(
                     shortName,
@@ -131,7 +139,7 @@ public class OpenSearchSink {
 
     /** Creates all indices required by the selected sources; always includes "tool". */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
-        Logger.logInfo("Entered createSelectedIndexes with sources: " + selectedSources);
+        Logger.logDebug("Entered createSelectedIndexes with sources: " + selectedSources);
 
         List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
         LinkedHashSet<String> shortNames = new LinkedHashSet<>();
@@ -145,12 +153,34 @@ public class OpenSearchSink {
 
         List<IndexResult> results = new ArrayList<>();
         for (String shortName : shortNames) {
-            Logger.logInfo("Creating index for: " + shortName);
+            Logger.logDebug("Creating index for: " + shortName);
             IndexResult result = createIndexFromResource(baseUrl, shortName);
-            Logger.logInfo("Result for " + shortName + ": " + result.status());
+            Logger.logDebug("Result for " + shortName + ": " + result.status());
             results.add(result);
         }
         return results;
+    }
+
+    /** Builds response body JSON for full HTTP logging (Create index). */
+    private static String buildCreateIndexResponseBody(CreateIndexResponse response, String fullIndexName) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"acknowledged\":").append(response.acknowledged());
+        try {
+            if (response.index() != null && !response.index().isBlank()) {
+                sb.append(",\"index\":\"").append(escapeJson(response.index())).append("\"");
+            } else {
+                sb.append(",\"index\":\"").append(escapeJson(fullIndexName)).append("\"");
+            }
+        } catch (Exception ignored) {
+            sb.append(",\"index\":\"").append(escapeJson(fullIndexName)).append("\"");
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
     /** Compact root-cause message, capped for UI status. */

@@ -46,7 +46,7 @@ class OpenSearchClientWrapperLoggingTest {
         assertThat(events)
                 .anySatisfy(e -> {
                     assertThat(e.level()).isNotEmpty();
-                    assertThat(e.message()).contains("[OpenSearch] Testing connection to:");
+                    assertThat(e.message()).contains("[OpenSearch]").contains("Request: GET");
                 });
     }
 

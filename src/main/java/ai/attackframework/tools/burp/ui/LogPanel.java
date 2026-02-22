@@ -425,7 +425,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             default -> Logger.internalTrace("LogPanel render=NONE (filtered)");
         }
         if (store.trimIfNeeded()) {
-            Logger.internalDebug("LogPanel cap reached -> rebuild");
+            Logger.internalTrace("LogPanel cap reached -> rebuild");
             rebuildView();
         }
     }
@@ -488,7 +488,6 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      * Full rebuild from the store using the current filter.
      */
     private void rebuildView() {
-        Logger.internalTrace("LogPanel rebuild start");
         store.setFilter(this::visible);
         renderer.clear();
         int rendered = 0;

@@ -36,6 +36,7 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
@@ -158,11 +159,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 new ControlSaveButtonListener(),
                 () -> {
                     RuntimeConfig.setExportRunning(true);
-                    Logger.logInfo("Export started.");
+                    ToolIndexStatsReporter.start();
+                    Logger.logDebug("Export started.");
                 },
                 () -> {
                     RuntimeConfig.setExportRunning(false);
-                    Logger.logInfo("Export stopped.");
+                    Logger.logDebug("Export stopped.");
                 }
         ).build(), MIG_FILL_WRAP);
 

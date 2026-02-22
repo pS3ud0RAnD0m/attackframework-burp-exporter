@@ -5,7 +5,7 @@ import java.lang.reflect.InvocationTargetException;
 import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchTrafficHandler;
-import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
+import ai.attackframework.tools.burp.sinks.ToolIndexLogForwarder;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
@@ -34,6 +34,7 @@ public class Exporter implements BurpExtension {
             api.extension().setName(extensionName);
 
             Logger.initialize(api.logging());
+            Logger.registerListener(new ToolIndexLogForwarder());
 
             if (SwingUtilities.isEventDispatchThread()) {
                 registerUi(api, tabTitle);
@@ -52,7 +53,6 @@ public class Exporter implements BurpExtension {
             }
 
             api.http().registerHttpHandler(new OpenSearchTrafficHandler());
-            ToolIndexStatsReporter.start();
 
             Logger.logInfo("Burp Exporter v" + version + " initialized successfully.");
         } catch (Exception e) {

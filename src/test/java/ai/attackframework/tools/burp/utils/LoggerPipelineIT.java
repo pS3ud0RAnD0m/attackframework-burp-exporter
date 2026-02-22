@@ -69,9 +69,10 @@ class LoggerPipelineIT {
     void externalSlf4j_logger_routesThroughUiAppender_toListenerBus() throws Exception {
         Logger.registerListener(listener);
 
-        org.slf4j.Logger thirdParty = LoggerFactory.getLogger("third.party.demo");
+        // UiAppender only forwards our package (ai.attackframework.*); third-party loggers are not forwarded to avoid UI flood.
+        org.slf4j.Logger externalInOurPackage = LoggerFactory.getLogger("ai.attackframework.tools.burp.utils.ExternalLog");
         String msg = "pipeline: external info";
-        SwingUtilities.invokeAndWait(() -> thirdParty.info(msg));
+        SwingUtilities.invokeAndWait(() -> externalInOurPackage.info(msg));
 
         await();
         assertThat(events)

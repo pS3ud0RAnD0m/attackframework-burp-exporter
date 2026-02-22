@@ -29,8 +29,7 @@ public class AboutPanel extends JPanel {
 
                 Attack Framework: Burp Exporter v""" + version + """
 
-                This extension exports Burp Suite data into formats usable by data lakes and vector DBs
-                as part of the Attack Framework initiative.
+                This Burp Suite extension continuously exports settings, sitemap, issues, and traffic into OpenSearch for embedding into vector databases to support agentic penetration testing.
 
                 GitHub:
                 https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter

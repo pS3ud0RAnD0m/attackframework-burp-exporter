@@ -31,8 +31,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  */
 public final class ToolIndexStatsReporter {
 
-    /** When false, no scheduler is started and no documents are pushed. Set to true to re-enable. */
-    public static final boolean ENABLED = false;
+    /** When false, no scheduler is started and no documents are pushed. */
+    public static final boolean ENABLED = true;
 
     private static final int INTERVAL_SECONDS = 30;
     private static final String EVENT_TYPE = "stats_snapshot";
@@ -71,6 +71,9 @@ public final class ToolIndexStatsReporter {
 
     private static void pushSnapshot() {
         try {
+            if (!RuntimeConfig.isExportRunning()) {
+                return;
+            }
             String baseUrl = RuntimeConfig.openSearchUrl();
             if (baseUrl == null || baseUrl.isBlank()) {
                 return;
@@ -78,7 +81,7 @@ public final class ToolIndexStatsReporter {
             Map<String, Object> doc = buildSnapshotDoc();
             OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
         } catch (Exception ignored) {
-            // Fire-and-forget; do not log to avoid feedback loop with tool index
+            // Fire-and-forget; avoid feedback loop with tool index
         }
     }
 

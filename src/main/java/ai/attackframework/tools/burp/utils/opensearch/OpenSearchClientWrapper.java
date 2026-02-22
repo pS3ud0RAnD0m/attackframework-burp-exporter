@@ -15,7 +15,10 @@ public class OpenSearchClientWrapper {
 
     public static OpenSearchStatus testConnection(String baseUrl) {
         try {
-            Logger.logInfo("[OpenSearch] Testing connection to: " + baseUrl);
+            // Full HTTP logging (Test connection only; not used on traffic export path).
+            Logger.logDebug("[OpenSearch] --- Test connection HTTP ---");
+            Logger.logDebug("[OpenSearch] Request: GET " + baseUrl + "/");
+            Logger.logDebug("[OpenSearch] Request body: (none)");
 
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
             InfoResponse info = client.info();
@@ -23,11 +26,14 @@ public class OpenSearchClientWrapper {
             String version = info.version().number();
             String distribution = info.version().distribution();
 
-            Logger.logInfo("[OpenSearch] Connection successful: " + distribution + " " + version);
+            Logger.logDebug("[OpenSearch] Response: 200 OK");
+            String responseBody = buildTestConnectionResponseBody(distribution, version);
+            Logger.logDebug("[OpenSearch] Response body:\n" + responseBody);
 
             return new OpenSearchStatus(true, distribution, version, "Connection successful");
 
         } catch (Exception e) {
+            Logger.logDebug("[OpenSearch] Response: (failed before or during request)");
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             Logger.logError("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
             StringWriter sw = new StringWriter();
@@ -35,6 +41,16 @@ public class OpenSearchClientWrapper {
             Logger.logError(sw.toString().stripTrailing());
             return new OpenSearchStatus(false, "", "", msg);
         }
+    }
+
+    /** Builds a JSON-like response body for full HTTP logging (GET / cluster info). */
+    private static String buildTestConnectionResponseBody(String distribution, String version) {
+        return "{\"version\":{\"distribution\":\"" + escapeJson(distribution) + "\",\"number\":\"" + escapeJson(version) + "\"}}";
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
     public static OpenSearchStatus safeTestConnection(String baseUrl) {
@@ -60,8 +76,8 @@ public class OpenSearchClientWrapper {
                     .build();
 
             IndexResponse response = client.index(request);
-            return response.result().jsonValue().equalsIgnoreCase("created")
-                    || response.result().jsonValue().equalsIgnoreCase("updated");
+            String result = response.result().jsonValue();
+            return result != null && (result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated"));
 
         } catch (Exception e) {
             Logger.logError("Failed to index document to " + indexName + ": " + e.getMessage());

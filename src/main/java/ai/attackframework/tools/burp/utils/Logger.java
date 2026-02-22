@@ -333,6 +333,9 @@ public final class Logger {
             // Skip messages from our internal logger; those already notify the UI directly.
             if (INTERNAL_LOGGER_NAME.equals(event.getLoggerName())) return;
 
+            // Only forward our package to the UI. Third-party (e.g. org.apache.hc) would flood the panel and cause cap-rebuild loops.
+            if (!event.getLoggerName().startsWith("ai.attackframework")) return;
+
             String level = (event.getLevel() != null) ? event.getLevel().toString() : "INFO";
             String message = event.getFormattedMessage();
             if (message == null) message = "";
