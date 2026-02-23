@@ -1,6 +1,6 @@
 # Attack Framework: Burp Exporter
 
-> ⚠️ **Development Status**: This extension is in early development. Expect breaking changes and partial functionality.
+> ⚠️ This extension is in early development. Expect breaking changes and partial functionality.
 
 This Burp Suite extension continuously exports settings, sitemap, issues, and traffic into OpenSearch for embedding into vector databases to support agentic penetration testing.
 
