@@ -117,26 +117,24 @@ public final class Logger {
     }
 
     /**
-     * Logs at DEBUG (when enabled) and mirrors to Burp and UI listeners.
+     * Logs at DEBUG (when enabled) and mirrors to UI listeners only (not Burp console).
      * <p>
      * @param msg message to log
      */
     public static void logDebug(String msg) {
         final String m = safe(msg);
         if (LOG.isDebugEnabled()) LOG.debug(m);
-        toBurpOut(m);
         notifyListeners("DEBUG", m);
     }
 
     /**
-     * Logs at TRACE (when enabled) and mirrors to Burp and UI listeners.
+     * Logs at TRACE (when enabled) and mirrors to UI listeners only (not Burp console).
      * <p>
      * @param msg message to log
      */
     public static void logTrace(String msg) {
         final String m = safe(msg);
         if (LOG.isTraceEnabled()) LOG.trace(m);
-        toBurpOut(m);
         notifyListeners("TRACE", m);
     }
 
