@@ -38,6 +38,7 @@
           "body":    { "type": "binary", "doc_values": false }
         }
       },
+      "request_responses_missing": { "type": "boolean" },
       "document_meta": {
         "properties": {
           "schema_version":    { "type": "keyword" },

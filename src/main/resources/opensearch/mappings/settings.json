@@ -5,21 +5,16 @@
     "properties": {
       "timestamp":        { "type": "date" },
       "project_id":       { "type": "keyword" },
-      "user_id":          { "type": "keyword" },
-      "extension_name":   { "type": "keyword" },
       "settings_user":    { "type": "object", "enabled": true },
       "settings_project": { "type": "object", "enabled": true },
-      "settings_hash":    { "type": "keyword" },
-      "settings_version": { "type": "keyword" },
-      "source":           { "type": "keyword" },
       "document_meta": {
         "properties": {
           "schema_version":    { "type": "keyword" },
           "extension_version": { "type": "keyword" }
         }
       },
-      "summary":       { "type": "text" },
-      "cluster_id":    { "type": "keyword" }
+      "summary":    { "type": "text" },
+      "cluster_id": { "type": "keyword" }
     }
   }
 }

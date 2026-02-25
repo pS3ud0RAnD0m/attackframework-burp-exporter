@@ -8,6 +8,7 @@ import ai.attackframework.tools.burp.sinks.OpenSearchTrafficHandler;
 import ai.attackframework.tools.burp.sinks.ToolIndexLogForwarder;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
@@ -33,6 +34,7 @@ public class Exporter implements BurpExtension {
         try {
             api.extension().setName(extensionName);
 
+            MontoyaApiProvider.set(api);
             Logger.initialize(api.logging());
             Logger.registerListener(new ToolIndexLogForwarder());
 
