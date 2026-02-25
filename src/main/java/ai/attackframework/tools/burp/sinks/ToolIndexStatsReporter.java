@@ -42,6 +42,17 @@ public final class ToolIndexStatsReporter {
     private ToolIndexStatsReporter() {}
 
     /**
+     * Pushes one stats snapshot immediately (e.g. after Save so the tool index
+     * reflects the new config without waiting for the next interval).
+     *
+     * <p>Safe to call from any thread. No-op if export is not running or URL is blank.</p>
+     */
+    public static void pushSnapshotNow() {
+        if (!ENABLED) return;
+        pushSnapshot();
+    }
+
+    /**
      * Starts the periodic stats reporter if not already running.
      *
      * <p>Safe to call from any thread. Uses a single daemon scheduler.

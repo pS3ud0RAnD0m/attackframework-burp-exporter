@@ -36,6 +36,7 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.sinks.ToolIndexConfigReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
@@ -158,7 +159,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::exportConfig,
                 new ControlSaveButtonListener(),
                 () -> {
+                    updateRuntimeConfig();
                     RuntimeConfig.setExportRunning(true);
+                    ToolIndexConfigReporter.pushConfigSnapshot();
                     ToolIndexStatsReporter.start();
                     Logger.logDebug("Export started.");
                 },
@@ -501,17 +504,18 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Save button handler; delegates to the controller.
+     * Save button handler: applies current UI state to runtime immediately so
+     * traffic and tool index use the new config (e.g. scope) without restarting
+     * export; persists via controller; triggers one tool index stats push when
+     * export is running so the next snapshot reflects the saved config.
      */
     private class ControlSaveButtonListener implements ActionListener {
-        /**
-         * Serializes and reports the current configuration asynchronously.
-         *
-         * <p>
-         * @param e action event (unused)
-         */
         @Override public void actionPerformed(ActionEvent e) {
             updateRuntimeConfig();
+            if (RuntimeConfig.isExportRunning()) {
+                ToolIndexConfigReporter.pushConfigSnapshot();
+                ToolIndexStatsReporter.pushSnapshotNow();
+            }
             controller.saveAsync(buildCurrentState());
         }
     }
