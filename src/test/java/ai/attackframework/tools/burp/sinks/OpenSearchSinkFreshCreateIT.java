@@ -3,7 +3,6 @@ package ai.attackframework.tools.burp.sinks;
 import java.util.List;
 
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
@@ -18,8 +17,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 /**
  * Integration test: force fresh creation of all standard indices.
  * Deletes each index first, then recreates and asserts CREATED status.
+ * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
-@Tag("integration")
 class OpenSearchSinkFreshCreateIT {
 
     private static final String BASE_URL = "http://opensearch.url:9200";

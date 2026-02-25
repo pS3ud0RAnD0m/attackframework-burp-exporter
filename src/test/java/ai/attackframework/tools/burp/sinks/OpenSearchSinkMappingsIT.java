@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.util.List;
 
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.GetMappingRequest;
@@ -18,8 +17,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Validates that indices created via the sink expose a non-empty mapping on the server.
+ * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
-@Tag("integration")
 class OpenSearchSinkMappingsIT {
 
     /** Base URL for the OpenSearch development instance. */

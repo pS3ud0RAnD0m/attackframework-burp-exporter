@@ -4,7 +4,6 @@ import java.util.EnumSet;
 import java.util.List;
 
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
@@ -19,8 +18,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Integration test: tool-only index creation lifecycle.
+ * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
-@Tag("integration")
 class OpenSearchSinkToolOnlyIT {
 
     private static final String BASE_URL = "http://opensearch.url:9200";

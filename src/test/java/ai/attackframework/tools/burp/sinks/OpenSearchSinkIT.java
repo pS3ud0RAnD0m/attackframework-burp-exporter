@@ -7,7 +7,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
@@ -23,8 +22,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 /**
  * Integration tests for index lifecycle using OpenSearchSink against a live test cluster.
  * Tests create, existence reporting, deletion, and re-creation of the standard indices.
+ * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
-@Tag("integration")
 class OpenSearchSinkIT {
 
     /** Base URL for the OpenSearch development instance. */

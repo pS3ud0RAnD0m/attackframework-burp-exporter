@@ -50,6 +50,8 @@ dependencies {
     // testRuntimeOnly
     testRuntimeOnly(libs.junitJupiterEngine)
     testRuntimeOnly(libs.junitPlatformLauncher)
+    testImplementation(libs.junitPlatformSuite)
+    testRuntimeOnly(libs.junitPlatformSuiteEngine)
 
     // runtimeOnly
     runtimeOnly(libs.logbackClassic)

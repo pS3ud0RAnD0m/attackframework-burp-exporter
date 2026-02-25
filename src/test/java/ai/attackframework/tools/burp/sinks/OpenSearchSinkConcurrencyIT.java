@@ -9,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,8 +18,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
  * Concurrency smoke test: creating multiple indices in parallel should not deadlock or throw.
+ * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
-@Tag("integration")
 class OpenSearchSinkConcurrencyIT {
 
     private static final String BASE_URL = "http://opensearch.url:9200";
