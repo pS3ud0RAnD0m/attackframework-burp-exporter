@@ -36,11 +36,16 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexConfigReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import net.miginfocom.swing.MigLayout;
+
+import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.BurpSuiteEdition;
 
 /**
  * Main configuration panel for data sources, scope, sinks, and control actions.
@@ -166,6 +171,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     ToolIndexStatsReporter.start();
                     SettingsIndexReporter.pushSnapshotNow();
                     SettingsIndexReporter.start();
+                    FindingsIndexReporter.start();
+                    FindingsIndexReporter.pushSnapshotNow();
                     Logger.logDebug("Export started.");
                 },
                 () -> {
@@ -180,6 +187,22 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         wireTextFieldEnhancements();
         scopeGrid.setOnContentChange(this::updateRuntimeConfig);
         refreshEnabledStates();
+        applyEditionRestrictions();
+    }
+
+    /**
+     * Disables the Issues checkbox when Burp is Community edition (Scanner/issues
+     * not populated). Call after panel is built; no-op if API is not yet available.
+     */
+    private void applyEditionRestrictions() {
+        MontoyaApi api = MontoyaApiProvider.get();
+        if (api == null) {
+            return;
+        }
+        if (api.burpSuite().version().edition() == BurpSuiteEdition.COMMUNITY_EDITION) {
+            issuesCheckbox.setEnabled(false);
+            issuesCheckbox.setToolTipText("Not available with Community license");
+        }
     }
 
     /**

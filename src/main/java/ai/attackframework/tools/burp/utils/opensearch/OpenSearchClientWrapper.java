@@ -2,9 +2,12 @@ package ai.attackframework.tools.burp.utils.opensearch;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.List;
 import java.util.Map;
 
 import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.core.BulkRequest;
+import org.opensearch.client.opensearch.core.BulkResponse;
 import org.opensearch.client.opensearch.core.InfoResponse;
 import org.opensearch.client.opensearch.core.IndexRequest;
 import org.opensearch.client.opensearch.core.IndexResponse;
@@ -82,6 +85,43 @@ public class OpenSearchClientWrapper {
         } catch (Exception e) {
             Logger.logError("Failed to index document to " + indexName + ": " + e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Index multiple documents in one bulk request. Uses auto-generated IDs.
+     *
+     * @param baseUrl    OpenSearch base URL
+     * @param indexName  target index
+     * @param documents  documents to index (not null; empty list is a no-op)
+     * @return number of documents successfully indexed, or 0 on failure or if documents is empty
+     */
+    public static int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return 0;
+        }
+        try {
+            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
+            BulkRequest.Builder builder = new BulkRequest.Builder();
+            for (Map<String, Object> doc : documents) {
+                builder.operations(o -> o.index(i -> i.index(indexName).document(doc)));
+            }
+            BulkResponse response = client.bulk(builder.build());
+            if (response.errors()) {
+                int ok = 0;
+                for (var item : response.items()) {
+                    if (item.error() == null) {
+                        ok++;
+                    } else {
+                        Logger.logDebug("Bulk item error: " + item.error().reason());
+                    }
+                }
+                return ok;
+            }
+            return documents.size();
+        } catch (Exception e) {
+            Logger.logError("Bulk index failed for " + indexName + ": " + e.getMessage());
+            return 0;
         }
     }
 
