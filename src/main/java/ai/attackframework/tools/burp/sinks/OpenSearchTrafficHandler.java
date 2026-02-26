@@ -74,6 +74,14 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
                 TimeUnit.SECONDS);
     }
 
+    /**
+     * Whether traffic from this tool source should be exported to the traffic index.
+     * Only Proxy and Repeater are allowed; all other tools (Scanner, Extensions, etc.) are omitted.
+     */
+    private static boolean shouldExportTrafficByToolSource(ToolType toolType) {
+        return toolType == ToolType.PROXY || toolType == ToolType.REPEATER;
+    }
+
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent request) {
         if (!RuntimeConfig.isExportRunning()
@@ -83,6 +91,11 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         }
         if (!ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), request.url(), request.isInScope())) {
+            return RequestToBeSentAction.continueWith(request);
+        }
+        ToolSource toolSource = request.toolSource();
+        ToolType toolType = toolSource == null ? null : toolSource.toolType();
+        if (!shouldExportTrafficByToolSource(toolType)) {
             return RequestToBeSentAction.continueWith(request);
         }
         Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request);
@@ -114,6 +127,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         boolean inScope = ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), request.url(), request.isInScope());
         if (!inScope) {
+            return ResponseReceivedAction.continueWith(response);
+        }
+
+        ToolSource respToolSource = response.toolSource();
+        ToolType respToolType = respToolSource == null ? null : respToolSource.toolType();
+        if (!shouldExportTrafficByToolSource(respToolType)) {
+            pendingOrphans.remove(response.messageId());
             return ResponseReceivedAction.continueWith(response);
         }
 
