@@ -351,6 +351,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             updateRuntimeConfig();
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) { onOpenSearchStatus("✖ URL required"); return; }
+            onOpenSearchStatus("Creating ...");
             controller.createIndexesAsync(url, getSelectedSources());
         });
 

@@ -167,8 +167,7 @@ public final class ConfigControlPanel {
         row2.add(startStopBtn, "aligny center");
         row2.add(indicator, "aligny center");
 
-        final int buttonRowGap = 10;
-        JPanel buttons = new JPanel(new MigLayout("insets 0, gapy " + buttonRowGap, "[left]", "[]" + buttonRowGap + " []"));
+        JPanel buttons = new JPanel(new MigLayout("insets 0, gapy " + rowGap, "[left]", "[]" + rowGap + " []"));
         buttons.setAlignmentX(Component.LEFT_ALIGNMENT);
         buttons.add(row1, "wrap");
         buttons.add(row2);
