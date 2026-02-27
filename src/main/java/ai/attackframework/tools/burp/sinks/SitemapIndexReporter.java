@@ -40,6 +40,8 @@ public final class SitemapIndexReporter {
 
     private static final int INTERVAL_SECONDS = 30;
     private static final int BULK_BATCH_SIZE = 100;
+    /** Flush when batch exceeds this approximate payload size (bytes) so large bodies don't produce huge bulk requests. */
+    private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String SITEMAP_INDEX = IndexNaming.INDEX_PREFIX + "-sitemap";
     private static final String SCHEMA_VERSION = "1";
     private static final String SOURCE_VALUE = "burp-exporter";
@@ -146,6 +148,7 @@ public final class SitemapIndexReporter {
             var state = RuntimeConfig.getState();
             List<String> batchKeys = new ArrayList<>(BULK_BATCH_SIZE);
             List<Map<String, Object>> batchDocs = new ArrayList<>(BULK_BATCH_SIZE);
+            long runningBatchBytes = 0;
 
             for (HttpRequestResponse item : items) {
                 HttpRequest request = item.request();
@@ -171,11 +174,13 @@ public final class SitemapIndexReporter {
                 }
                 batchKeys.add(key);
                 batchDocs.add(doc);
+                runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
 
-                if (batchDocs.size() >= BULK_BATCH_SIZE) {
+                if (batchDocs.size() >= BULK_BATCH_SIZE || runningBatchBytes >= BULK_MAX_BYTES) {
                     flushBatch(baseUrl, batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();
+                    runningBatchBytes = 0;
                 }
             }
             if (!batchDocs.isEmpty()) {
@@ -254,6 +259,17 @@ public final class SitemapIndexReporter {
         doc.put("source", SOURCE_VALUE);
         doc.put("tech_stack", null);
         doc.put("tags", null);
+
+        if (request != null) {
+            doc.put("request", RequestResponseDocBuilder.buildRequestDoc(request));
+        } else {
+            doc.put("request", null);
+        }
+        if (response != null) {
+            doc.put("response", RequestResponseDocBuilder.buildResponseDoc(response));
+        } else {
+            doc.put("response", null);
+        }
 
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);

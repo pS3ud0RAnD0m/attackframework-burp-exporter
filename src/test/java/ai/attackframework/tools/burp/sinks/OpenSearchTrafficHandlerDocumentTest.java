@@ -91,7 +91,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         Map<String, Object> req = (Map<String, Object>) doc.get("request");
         assertThat(req).isNotNull();
         assertThat(req).containsKeys("method", "path", "path_without_query", "query", "headers", "parameters",
-                "body_length", "body_offset", "markers");
+                "body_length", "body_offset", "body", "body_content", "markers");
         assertThat(req.get("method")).isEqualTo("GET");
         assertThat(req.get("path")).isEqualTo("/path?q=1");
         assertThat(req.get("headers")).asInstanceOf(list(Object.class)).isEmpty();
@@ -105,7 +105,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         Map<String, Object> resp = (Map<String, Object>) doc.get("response");
         assertThat(resp).isNotNull();
         assertThat(resp).containsKeys("status", "status_code_class", "reason_phrase", "http_version", "headers",
-                "cookies", "mime_type", "body_length", "body_offset", "markers");
+                "cookies", "mime_type", "body_length", "body_offset", "body", "body_content", "markers");
         assertThat(resp.get("status")).isEqualTo(200);
         assertThat(resp.get("status_code_class")).isEqualTo("CLASS_2XX_SUCCESS");
         assertThat(resp.get("reason_phrase")).isEqualTo("OK");

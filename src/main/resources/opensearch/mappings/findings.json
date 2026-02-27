@@ -3,51 +3,81 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "name":                { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-      "severity":            { "type": "keyword" },
-      "confidence":          { "type": "keyword" },
-      "host":                { "type": "keyword" },
-      "port":                { "type": "integer" },
-      "protocol_transport":   { "type": "keyword" },
+      "name": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "severity": { "type": "keyword" },
+      "confidence": { "type": "keyword" },
+      "host": { "type": "keyword" },
+      "port": { "type": "integer" },
+      "protocol_transport": { "type": "keyword" },
       "protocol_application": { "type": "keyword" },
-      "protocol_sub":         { "type": "keyword" },
-      "url":                 { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-      "param":               { "type": "keyword" },
-      "issue_type_id":       { "type": "integer" },
-      "typical_severity":    { "type": "keyword" },
-      "description":         { "type": "text" },
-      "background":          { "type": "text" },
+      "protocol_sub": { "type": "keyword" },
+      "url": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+      "param": { "type": "keyword" },
+      "issue_type_id": { "type": "integer" },
+      "typical_severity": { "type": "keyword" },
+      "description": { "type": "text" },
+      "background": { "type": "text" },
       "remediation_background": { "type": "text" },
-      "remediation_detail":  { "type": "text" },
-      "references":          { "type": "text" },
+      "remediation_detail": { "type": "text" },
+      "references": { "type": "text" },
       "classifications": {
         "properties": {
-          "cwe":   { "type": "integer" },
+          "cwe": { "type": "integer" },
           "capec": { "type": "integer" }
         }
       },
-      "request": {
+      "request_responses": {
+        "type": "nested",
         "properties": {
-          "headers": { "type": "text" },
-          "body":    { "type": "binary", "doc_values": false }
-        }
-      },
-      "response": {
-        "properties": {
-          "headers": { "type": "text" },
-          "body":    { "type": "binary", "doc_values": false }
+          "request": {
+            "properties": {
+              "method": { "type": "keyword" },
+              "path": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "path_without_query": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "query": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "file_extension": { "type": "keyword" },
+              "content_type": { "type": "keyword" },
+              "http_version": { "type": "keyword" },
+              "headers": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } } } },
+              "parameters": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }, "type": { "type": "keyword" } } },
+              "body": { "type": "binary", "doc_values": false },
+              "body_length": { "type": "integer" },
+              "body_offset": { "type": "integer" },
+              "content_type_enum": { "type": "keyword" },
+              "markers": { "type": "nested", "properties": { "start_index_inclusive": { "type": "integer" }, "end_index_exclusive": { "type": "integer" } } },
+              "body_content": { "type": "text" }
+            }
+          },
+          "response": {
+            "properties": {
+              "status": { "type": "integer" },
+              "reason_phrase": { "type": "keyword" },
+              "http_version": { "type": "keyword" },
+              "headers": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } } } },
+              "cookies": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }, "domain": { "type": "keyword" }, "path": { "type": "keyword" }, "expiration": { "type": "date" } } },
+              "mime_type": { "type": "keyword" },
+              "stated_mime_type": { "type": "keyword" },
+              "inferred_mime_type": { "type": "keyword" },
+              "body": { "type": "binary", "doc_values": false },
+              "body_length": { "type": "integer" },
+              "body_offset": { "type": "integer" },
+              "status_code_class": { "type": "keyword" },
+              "markers": { "type": "nested", "properties": { "start_index_inclusive": { "type": "integer" }, "end_index_exclusive": { "type": "integer" } } },
+              "body_content": { "type": "text" }
+            }
+          }
         }
       },
       "request_responses_missing": { "type": "boolean" },
       "indexed_at": { "type": "date" },
       "document_meta": {
         "properties": {
-          "schema_version":    { "type": "keyword" },
+          "schema_version": { "type": "keyword" },
           "extension_version": { "type": "keyword" }
         }
       },
-      "summary":       { "type": "text" },
-      "cluster_id":    { "type": "keyword" }
+      "summary": { "type": "text" },
+      "cluster_id": { "type": "keyword" }
     }
   }
 }

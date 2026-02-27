@@ -51,7 +51,6 @@
             }
           },
           "body": { "type": "binary", "doc_values": false },
-          "body_preview": { "type": "text" },
           "body_length": { "type": "integer" },
           "body_offset": { "type": "integer" },
           "content_type_enum": { "type": "keyword" },
@@ -91,7 +90,6 @@
           "stated_mime_type": { "type": "keyword" },
           "inferred_mime_type": { "type": "keyword" },
           "body": { "type": "binary", "doc_values": false },
-          "body_preview": { "type": "text" },
           "body_length": { "type": "integer" },
           "body_offset": { "type": "integer" },
           "status_code_class": { "type": "keyword" },

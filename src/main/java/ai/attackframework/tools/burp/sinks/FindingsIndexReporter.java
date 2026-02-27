@@ -25,12 +25,12 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.scanner.audit.issues.AuditIssue;
 import burp.api.montoya.scanner.audit.issues.AuditIssueConfidence;
 import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity;
-import burp.api.montoya.http.message.HttpRequestResponse;
 
 /**
  * Pushes Burp audit issues (findings) to the findings index when export is
@@ -42,6 +42,8 @@ public final class FindingsIndexReporter {
 
     private static final int INTERVAL_SECONDS = 30;
     private static final int BULK_BATCH_SIZE = 100;
+    /** Flush when batch exceeds this approximate payload size (bytes) so large request/response bodies don't produce huge bulk requests. */
+    private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
     private static final String SCHEMA_VERSION = "1";
     private static final int BODY_BASE64_MAX_BYTES = 32_768;
@@ -147,6 +149,7 @@ public final class FindingsIndexReporter {
             var state = RuntimeConfig.getState();
             List<String> batchKeys = new ArrayList<>(BULK_BATCH_SIZE);
             List<Map<String, Object>> batchDocs = new ArrayList<>(BULK_BATCH_SIZE);
+            long runningBatchBytes = 0;
 
             for (AuditIssue issue : issues) {
                 String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
@@ -164,11 +167,13 @@ public final class FindingsIndexReporter {
                 }
                 batchKeys.add(key);
                 batchDocs.add(doc);
+                runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
 
-                if (batchDocs.size() >= BULK_BATCH_SIZE) {
+                if (batchDocs.size() >= BULK_BATCH_SIZE || runningBatchBytes >= BULK_MAX_BYTES) {
                     flushBatch(baseUrl, batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();
+                    runningBatchBytes = 0;
                 }
             }
             if (!batchDocs.isEmpty()) {
@@ -252,14 +257,25 @@ public final class FindingsIndexReporter {
         List<HttpRequestResponse> reqResList = issue.requestResponses();
         boolean missingReqRes = reqResList == null || reqResList.isEmpty();
         doc.put("request_responses_missing", missingReqRes);
-        if (!missingReqRes) {
-            HttpRequestResponse first = reqResList.get(0);
-            doc.put("request", requestResponseToMap(first.request(), true));
-            doc.put("response", first.response() != null ? requestResponseToMap(first.response(), false) : emptyRequestResponse());
-        } else {
-            doc.put("request", emptyRequestResponse());
-            doc.put("response", emptyRequestResponse());
+        List<Map<String, Object>> requestResponsesList = new ArrayList<>();
+        if (!missingReqRes && reqResList != null) {
+            for (HttpRequestResponse rr : reqResList) {
+                HttpRequest req = rr.request();
+                if (req == null) {
+                    continue;
+                }
+                HttpResponse resp = rr.hasResponse() ? rr.response() : null;
+                Map<String, Object> reqDoc = RequestResponseDocBuilder.buildRequestDoc(req);
+                Map<String, Object> respDoc = resp != null ? RequestResponseDocBuilder.buildResponseDoc(resp) : emptyResponseDoc();
+                applyBodyCap(reqDoc);
+                applyBodyCap(respDoc);
+                Map<String, Object> pair = new LinkedHashMap<>();
+                pair.put("request", reqDoc);
+                pair.put("response", respDoc);
+                requestResponsesList.add(pair);
+            }
         }
+        doc.put("request_responses", requestResponsesList);
 
         doc.put("indexed_at", Instant.now().toString());
 
@@ -270,31 +286,33 @@ public final class FindingsIndexReporter {
         return doc;
     }
 
-    private static Map<String, Object> requestResponseToMap(Object requestOrResponse, boolean isRequest) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        String headersStr = "";
-        byte[] bodyBytes = null;
-        if (requestOrResponse instanceof HttpRequest req) {
-            headersStr = req.headers().stream()
-                    .map(h -> h.name() + ": " + h.value())
-                    .reduce((a, b) -> a + "\r\n" + b).orElse("");
-            bodyBytes = req.body() != null ? req.body().getBytes() : null;
-        } else if (requestOrResponse instanceof HttpResponse resp) {
-            headersStr = resp.headers().stream()
-                    .map(h -> h.name() + ": " + h.value())
-                    .reduce((a, b) -> a + "\r\n" + b).orElse("");
-            bodyBytes = resp.body() != null ? resp.body().getBytes() : null;
+    private static void applyBodyCap(Map<String, Object> reqOrResp) {
+        Object bodyObj = reqOrResp.get("body");
+        if (bodyObj instanceof String base64) {
+            int decodedLen = Base64.getDecoder().decode(base64).length;
+            if (decodedLen > BODY_BASE64_MAX_BYTES) {
+                reqOrResp.put("body", null);
+                reqOrResp.put("body_content", null);
+            }
         }
-        out.put("headers", headersStr);
-        if (bodyBytes != null && bodyBytes.length <= BODY_BASE64_MAX_BYTES) {
-            out.put("body", Base64.getEncoder().encodeToString(bodyBytes));
-        }
-        return out;
     }
 
-    private static Map<String, Object> emptyRequestResponse() {
+    private static Map<String, Object> emptyResponseDoc() {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("headers", "");
+        m.put("status", 0);
+        m.put("status_code_class", null);
+        m.put("reason_phrase", null);
+        m.put("http_version", null);
+        m.put("headers", List.of());
+        m.put("cookies", List.of());
+        m.put("mime_type", null);
+        m.put("stated_mime_type", null);
+        m.put("inferred_mime_type", null);
+        m.put("body", null);
+        m.put("body_length", 0);
+        m.put("body_content", null);
+        m.put("body_offset", 0);
+        m.put("markers", List.of());
         return m;
     }
 
