@@ -5,7 +5,13 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
+import java.awt.BasicStroke;
+import java.awt.geom.Ellipse2D;
+import java.awt.MultipleGradientPaint.CycleMethod;
+import java.awt.RadialGradientPaint;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -38,8 +44,11 @@ public final class ConfigControlPanel {
 
     private static final Color INDICATOR_GREEN = new Color(0x00_88_00);
     private static final Color INDICATOR_RED   = new Color(0xCC_00_00);
+    private static final Color INDICATOR_BORDER = Color.BLACK;
+    /** Inset so the border is not clipped by the component bounds. */
+    private static final int INDICATOR_INSET   = 2;
 
-    /** Paints a circle at exact pixel size so it matches button height and aligns. */
+    /** Paints a 3D-style circle: red/green fill with top-left gloss and a thin black border; transparent background. */
     private static final class IndicatorDot extends JComponent {
         private final int size;
         private boolean running;
@@ -50,6 +59,7 @@ public final class ConfigControlPanel {
             setMinimumSize(new Dimension(sizePx, sizePx));
             setMaximumSize(new Dimension(sizePx, sizePx));
             setName("control.exportIndicator");
+            setOpaque(false);
         }
 
         void setRunning(boolean running) {
@@ -64,10 +74,30 @@ public final class ConfigControlPanel {
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
-            int pad = Math.max(1, size / 8);
-            int d = size - 2 * pad;
-            g.setColor(running ? INDICATOR_GREEN : INDICATOR_RED);
-            g.fillOval(pad, pad, d, d);
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int inset = INDICATOR_INSET;
+            double d = size - 2.0 * inset;
+            Ellipse2D.Double circle = new Ellipse2D.Double(inset, inset, d, d);
+
+            Color base = running ? INDICATOR_GREEN : INDICATOR_RED;
+            g2.setColor(base);
+            g2.fill(circle);
+
+            double cx = inset + d * 0.28;
+            double cy = inset + d * 0.28;
+            float radius = (float) (d * 0.65);
+            float[] fractions = { 0f, 1f };
+            Color[] colors = { new Color(255, 255, 255, 180), new Color(255, 255, 255, 0) };
+            RadialGradientPaint gloss = new RadialGradientPaint(
+                    (float) cx, (float) cy, radius, fractions, colors, CycleMethod.NO_CYCLE);
+            g2.setPaint(gloss);
+            g2.fill(circle);
+
+            g2.setPaint(INDICATOR_BORDER);
+            g2.setStroke(new BasicStroke(1f));
+            g2.draw(circle);
+            g2.dispose();
         }
     }
 

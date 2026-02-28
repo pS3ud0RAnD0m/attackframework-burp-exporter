@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -23,9 +24,12 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 class OpenSearchSinkSubsetIT {
 
     private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final int WAIT_AFTER_DELETE_MS = 500;
+    private static final int POLL_EXISTS_MAX_MS = 5_000;
+    private static final int POLL_INTERVAL_MS = 100;
 
     @Test
-    void create_delete_recreate_subset_settings_and_traffic() {
+    void create_delete_recreate_subset_settings_and_traffic() throws InterruptedException, IOException {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
@@ -54,6 +58,15 @@ class OpenSearchSinkSubsetIT {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
             } catch (Exception e) {
                 Logger.logError("[OpenSearchSinkSubsetIT] Failed to delete index during subset test cleanup: " + r.fullName(), e);
+            }
+        }
+
+        // Wait for deletes to be visible before re-create
+        Thread.sleep(WAIT_AFTER_DELETE_MS);
+        for (IndexResult r : first) {
+            long deadline = System.currentTimeMillis() + POLL_EXISTS_MAX_MS;
+            while (client.indices().exists(b -> b.index(r.fullName())).value() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(POLL_INTERVAL_MS);
             }
         }
 

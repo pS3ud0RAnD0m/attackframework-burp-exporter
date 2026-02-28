@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
 import java.util.List;
 
 import org.junit.jupiter.api.Assumptions;
@@ -25,13 +26,18 @@ class OpenSearchSinkFreshCreateIT {
 
     private static final List<String> SOURCES = List.of("tool", "settings", "sitemap", "findings", "traffic");
 
+    private static final int WAIT_AFTER_DELETE_MS = 500;
+    private static final int POLL_EXISTS_MAX_MS = 5_000;
+    private static final int POLL_INTERVAL_MS = 100;
+
     @Test
-    void deleteThenCreate_allStandardIndices_reportsCreated() {
+    void deleteThenCreate_allStandardIndices_reportsCreated() throws InterruptedException, IOException {
         var status = OpenSearchClientWrapper.testConnection(BASE_URL);
         Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
 
-        // Delete all first (best effort)
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+
+        // Delete all first (best effort)
         for (String s : SOURCES) {
             String fullName = "tool".equals(s)
                     ? IndexNaming.INDEX_PREFIX
@@ -40,6 +46,18 @@ class OpenSearchSinkFreshCreateIT {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(fullName).build());
             } catch (Exception ignored) {
                 // Index may not exist yet; deletion is best-effort for a clean slate.
+            }
+        }
+
+        // Wait for deletes to be visible so create sees indices as missing
+        Thread.sleep(WAIT_AFTER_DELETE_MS);
+        for (String s : SOURCES) {
+            String fullName = "tool".equals(s)
+                    ? IndexNaming.INDEX_PREFIX
+                    : IndexNaming.INDEX_PREFIX + "-" + s;
+            long deadline = System.currentTimeMillis() + POLL_EXISTS_MAX_MS;
+            while (client.indices().exists(b -> b.index(fullName)).value() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(POLL_INTERVAL_MS);
             }
         }
 

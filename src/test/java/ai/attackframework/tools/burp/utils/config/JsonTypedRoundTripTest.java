@@ -82,6 +82,20 @@ class JsonTypedRoundTripTest {
     }
 
     @Test
+    void build_and_parse_preserves_PROXY_HISTORY_in_traffic_tool_types() throws IOException {
+        var state = new ConfigState.State(
+                List.of("traffic"), "all", List.of(),
+                new ConfigState.Sinks(false, null, false, null),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("PROXY", "PROXY_HISTORY", "REPEATER"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES
+        );
+        String json = ConfigJsonMapper.build(state);
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        assertThat(parsed.trafficToolTypes()).containsExactlyInAnyOrder("PROXY", "PROXY_HISTORY", "REPEATER");
+    }
+
+    @Test
     void parse_legacy_json_without_dataSourceOptions_uses_legacy_traffic_default() throws IOException {
         String legacy = """
             {"version":"1.0","dataSources":["traffic"],"scope":["burp"],"sinks":{}}
