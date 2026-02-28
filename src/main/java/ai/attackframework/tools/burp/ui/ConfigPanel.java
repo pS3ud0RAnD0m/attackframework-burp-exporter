@@ -761,23 +761,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * <p>EDT only. Consolidated here to keep tooltip text consistent and discoverable.</p>
      */
     private void assignToolTips() {
-        settingsCheckbox.setToolTipText("Include settings exports");
-        sitemapCheckbox.setToolTipText("Include sitemap exports");
-        issuesCheckbox.setToolTipText("Include findings exports");
-        trafficCheckbox.setToolTipText("Include traffic exports");
-        settingsExpandButton.setToolTipText("Expand or collapse Settings sub-options");
-        issuesExpandButton.setToolTipText("Expand or collapse Issues severity filters");
-        trafficExpandButton.setToolTipText("Expand or collapse Traffic source filters");
-        settingsProjectCheckbox.setToolTipText("Include project-level settings in settings export");
-        settingsUserCheckbox.setToolTipText("Include user-level settings in settings export");
-        trafficBurpAiCheckbox.setToolTipText("Export traffic sent from Burp AI");
-        trafficExtensionsCheckbox.setToolTipText("Export traffic sent from all other extensions");
-        trafficIntruderCheckbox.setToolTipText("Export traffic sent from Intruder");
-        trafficProxyCheckbox.setToolTipText("Export traffic sent from Proxy");
-        trafficProxyHistoryCheckbox.setToolTipText("One-time export of Proxy History upon start. For ongoing traffic, select Proxy.");
-        trafficRepeaterCheckbox.setToolTipText("Export traffic sent from Repeater");
-        trafficScannerCheckbox.setToolTipText("Export traffic sent from Scanner");
-        trafficSequencerCheckbox.setToolTipText("Export traffic sent from Sequencer");
+        settingsCheckbox.setToolTipText("All in-scope settings");
+        sitemapCheckbox.setToolTipText("All in-scope sitemaps");
+        issuesCheckbox.setToolTipText("All in-scope findings");
+        trafficCheckbox.setToolTipText("All in-scope traffic");
+        settingsExpandButton.setToolTipText("Settings sub-options");
+        issuesExpandButton.setToolTipText("Issues sub-options");
+        trafficExpandButton.setToolTipText("Traffic sub-options");
+        settingsProjectCheckbox.setToolTipText("Project settings");
+        settingsUserCheckbox.setToolTipText("User settings");
+        trafficBurpAiCheckbox.setToolTipText("All in-scope traffic sent from Burp AI");
+        trafficExtensionsCheckbox.setToolTipText("All in-scope traffic sent from all other extensions");
+        trafficIntruderCheckbox.setToolTipText("All in-scope traffic sent from Intruder");
+        trafficProxyCheckbox.setToolTipText("All in-scope traffic sent from Proxy");
+        trafficProxyHistoryCheckbox.setToolTipText("All in-scope traffic from Proxy History. This exports smart batches when Start is clicked. For ongoing/future traffic, select Proxy.");
+        trafficRepeaterCheckbox.setToolTipText("All in-scope traffic sent from Repeater");
+        trafficScannerCheckbox.setToolTipText("All in-scope traffic sent from Scanner");
+        trafficSequencerCheckbox.setToolTipText("All in-scope traffic sent from Sequencer");
 
         allRadio.setToolTipText("Export all observed");
         burpSuiteRadio.setToolTipText("Export Burp Suite's project scope");
