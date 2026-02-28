@@ -242,11 +242,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     SitemapIndexReporter.start();
                     SitemapIndexReporter.pushSnapshotNow();
                     ProxyHistoryIndexReporter.pushSnapshotNow();
-                    Logger.logDebug("Export started.");
+                    Logger.logInfoPanelOnly("Export started.");
                 },
                 () -> {
                     RuntimeConfig.setExportRunning(false);
-                    Logger.logDebug("Export stopped.");
+                    Logger.logInfoPanelOnly("Export stopped.");
                 }
         ).build(), MIG_FILL_WRAP);
 

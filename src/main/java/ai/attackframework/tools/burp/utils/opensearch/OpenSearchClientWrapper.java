@@ -21,10 +21,8 @@ public class OpenSearchClientWrapper {
 
     public static OpenSearchStatus testConnection(String baseUrl) {
         try {
-            // Full HTTP logging (Test connection only; not used on traffic export path).
-            Logger.logDebug("[OpenSearch] --- Test connection HTTP ---");
-            Logger.logDebug("[OpenSearch] Request: GET " + baseUrl + "/");
-            Logger.logDebug("[OpenSearch] Request body: (none)");
+            String rawRequest = OpenSearchLogFormat.buildRawRequest(baseUrl, "GET", "/", "");
+            Logger.logDebug("[OpenSearch] Request:\n" + OpenSearchLogFormat.indentRaw(rawRequest));
 
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
             InfoResponse info = client.info();
@@ -32,14 +30,13 @@ public class OpenSearchClientWrapper {
             String version = info.version().number();
             String distribution = info.version().distribution();
 
-            Logger.logDebug("[OpenSearch] Response: 200 OK");
             String responseBody = buildTestConnectionResponseBody(distribution, version);
-            Logger.logDebug("[OpenSearch] Response body:\n" + responseBody);
+            Logger.logDebug("[OpenSearch] Response:\n" + OpenSearchLogFormat.indentRaw(
+                    OpenSearchLogFormat.buildRawResponse(responseBody)));
 
             return new OpenSearchStatus(true, distribution, version, "Connection successful");
 
         } catch (Exception e) {
-            Logger.logDebug("[OpenSearch] Response: (failed before or during request)");
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             Logger.logError("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
             StringWriter sw = new StringWriter();

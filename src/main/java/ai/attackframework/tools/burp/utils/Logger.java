@@ -105,6 +105,19 @@ public final class Logger {
     }
 
     /**
+     * Logs at INFO to SLF4J and UI listeners only; does not send to Burp extension Output.
+     * Use for high-signal messages that should appear in the extension's Log tab but not in
+     * Burp's Extensions → Output console (e.g. "Creating index for: X", "Result for X: CREATED").
+     *
+     * @param msg message to log
+     */
+    public static void logInfoPanelOnly(String msg) {
+        final String m = safe(msg);
+        LOG.info(m);
+        notifyListeners("INFO", m);
+    }
+
+    /**
      * Logs at WARN and mirrors to Burp and UI listeners.
      * <p>
      * @param msg message to log

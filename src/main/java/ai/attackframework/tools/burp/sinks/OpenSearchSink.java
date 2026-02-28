@@ -10,8 +10,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 import jakarta.json.Json;
-import jakarta.json.JsonObject;
 import jakarta.json.JsonReader;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonWriter;
 import jakarta.json.stream.JsonParser;
 import org.opensearch.client.json.JsonpMapper;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
@@ -24,6 +25,7 @@ import org.opensearch.client.opensearch.indices.IndexSettings;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchLogFormat;
 
 /**
  * Creates OpenSearch indices from bundled JSON mapping files.
@@ -108,16 +110,15 @@ public class OpenSearchSink {
                     .mappings(mappings)
                     .build();
 
-            // Full HTTP logging (Create indexes only; not used on traffic export path).
-            Logger.logDebug("[OpenSearch] --- Create index HTTP ---");
-            Logger.logDebug("[OpenSearch] Request: PUT " + baseUrl + "/" + fullIndexName);
-            Logger.logDebug("[OpenSearch] Request body:\n" + jsonBody);
+            String compactBody = compactJson(jsonBody);
+            Logger.logDebug("[OpenSearch] Request:\n" + OpenSearchLogFormat.indentRaw(
+                    OpenSearchLogFormat.buildRawRequest(baseUrl, "PUT", "/" + fullIndexName, compactBody)));
 
             CreateIndexResponse response = client.indices().create(request);
 
-            Logger.logDebug("[OpenSearch] Response: 200 OK");
             String createResponseBody = buildCreateIndexResponseBody(response, fullIndexName);
-            Logger.logDebug("[OpenSearch] Response body:\n" + createResponseBody);
+            Logger.logDebug("[OpenSearch] Response:\n" + OpenSearchLogFormat.indentRaw(
+                    OpenSearchLogFormat.buildRawResponse(createResponseBody)));
 
             return new IndexResult(
                     shortName,
@@ -128,7 +129,7 @@ public class OpenSearchSink {
 
         } catch (Exception e) {
             Logger.logError("Exception while creating index: " + fullIndexName);
-            if (jsonBody != null) Logger.logError("Mapping JSON:\n" + jsonBody);
+            if (jsonBody != null) Logger.logError("Mapping JSON: " + compactJson(jsonBody));
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             Logger.logError(sw.toString().stripTrailing());
@@ -153,9 +154,9 @@ public class OpenSearchSink {
 
         List<IndexResult> results = new ArrayList<>();
         for (String shortName : shortNames) {
-            Logger.logDebug("Creating index for: " + shortName);
+            Logger.logInfoPanelOnly("Creating index for: " + shortName);
             IndexResult result = createIndexFromResource(baseUrl, shortName);
-            Logger.logDebug("Result for " + shortName + ": " + result.status());
+            Logger.logInfoPanelOnly("Result for " + shortName + ": " + result.status());
             results.add(result);
         }
         return results;
@@ -176,6 +177,19 @@ public class OpenSearchSink {
         }
         sb.append("}");
         return sb.toString();
+    }
+
+    /** Serializes mapping JSON to a single line so create-index request bodies do not clutter logs. */
+    private static String compactJson(String json) {
+        if (json == null || json.isBlank()) return json;
+        try (JsonReader reader = Json.createReader(new StringReader(json));
+             StringWriter sw = new StringWriter();
+             JsonWriter writer = Json.createWriter(sw)) {
+            writer.write(reader.read());
+            return sw.toString();
+        } catch (Exception e) {
+            return json;
+        }
     }
 
     private static String escapeJson(String s) {
