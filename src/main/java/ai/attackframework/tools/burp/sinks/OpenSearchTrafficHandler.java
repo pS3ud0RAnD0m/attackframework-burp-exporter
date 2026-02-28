@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -73,6 +74,31 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         return types != null && types.contains(toolType.name());
     }
 
+    /**
+     * True if the request is to the configured OpenSearch base URL (same host and port).
+     * Used when tool type is EXTENSIONS to exclude this extension's own export traffic.
+     */
+    private static boolean isRequestToConfiguredOpenSearch(String requestHost, int requestPort) {
+        String baseUrl = RuntimeConfig.openSearchUrl();
+        if (baseUrl == null || baseUrl.isBlank() || requestHost == null || requestHost.isEmpty()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(baseUrl.trim());
+            String configHost = uri.getHost();
+            if (configHost == null) {
+                return false;
+            }
+            int configPort = uri.getPort();
+            if (configPort < 0) {
+                configPort = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+            }
+            return configHost.equalsIgnoreCase(requestHost) && configPort == requestPort;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent request) {
         if (!RuntimeConfig.isExportRunning()
@@ -88,6 +114,12 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         ToolType toolType = toolSource == null ? null : toolSource.toolType();
         if (!shouldExportTrafficByToolSource(toolType)) {
             return RequestToBeSentAction.continueWith(request);
+        }
+        if (toolType == ToolType.EXTENSIONS) {
+            HttpService svc = request.httpService();
+            if (svc != null && isRequestToConfiguredOpenSearch(svc.host(), svc.port())) {
+                return RequestToBeSentAction.continueWith(request);
+            }
         }
         Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request);
         if (skeleton != null) {
@@ -126,6 +158,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         if (!shouldExportTrafficByToolSource(respToolType)) {
             pendingOrphans.remove(response.messageId());
             return ResponseReceivedAction.continueWith(response);
+        }
+        if (respToolType == ToolType.EXTENSIONS) {
+            HttpService svc = request.httpService();
+            if (svc != null && isRequestToConfiguredOpenSearch(svc.host(), svc.port())) {
+                pendingOrphans.remove(response.messageId());
+                return ResponseReceivedAction.continueWith(response);
+            }
         }
 
         Map<String, Object> document = buildDocument(response, request, inScope);
