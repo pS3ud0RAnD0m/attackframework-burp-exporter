@@ -774,8 +774,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         trafficExtensionsCheckbox.setToolTipText("Export traffic sent from all other extensions");
         trafficIntruderCheckbox.setToolTipText("Export traffic sent from Intruder");
         trafficProxyCheckbox.setToolTipText("Export traffic sent from Proxy");
-        trafficProxyHistoryCheckbox.setToolTipText("One-time export of all Proxy History items when Start is clicked. For ongoing traffic, select Proxy.");
-        trafficRepeaterCheckbox.setToolTipText("Export traffic sentfrom Repeater");
+        trafficProxyHistoryCheckbox.setToolTipText("One-time export of Proxy History upon start. For ongoing traffic, select Proxy.");
+        trafficRepeaterCheckbox.setToolTipText("Export traffic sent from Repeater");
         trafficScannerCheckbox.setToolTipText("Export traffic sent from Scanner");
         trafficSequencerCheckbox.setToolTipText("Export traffic sent from Sequencer");
 
