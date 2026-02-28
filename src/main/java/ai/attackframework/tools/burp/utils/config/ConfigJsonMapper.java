@@ -31,7 +31,8 @@ public final class ConfigJsonMapper {
                 cfg.openSearchUrl() != null && !cfg.openSearchUrl().isBlank(), cfg.openSearchUrl()
         );
 
-        return new State(cfg.dataSources(), cfg.scopeType(), entries, sinks);
+        return new State(cfg.dataSources(), cfg.scopeType(), entries, sinks,
+                cfg.settingsSub(), cfg.trafficToolTypes(), cfg.findingsSeverities());
     }
 
     /** Extract ordered custom entries from the parsed config. */

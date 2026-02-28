@@ -18,4 +18,8 @@ public final class ConfigKeys {
     public static final String SCOPE_ALL    = "all";
     public static final String SCOPE_BURP   = "burp";
     public static final String SCOPE_CUSTOM = "custom";
+
+    // Settings sub-options
+    public static final String SRC_SETTINGS_PROJECT = "project";
+    public static final String SRC_SETTINGS_USER    = "user";
 }

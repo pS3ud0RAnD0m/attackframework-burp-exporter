@@ -152,7 +152,16 @@ public final class FindingsIndexReporter {
             List<Map<String, Object>> batchDocs = new ArrayList<>(BULK_BATCH_SIZE);
             long runningBatchBytes = 0;
 
+            var severities = state.findingsSeverities();
+            boolean filterBySeverity = severities != null && !severities.isEmpty();
+
             for (AuditIssue issue : issues) {
+                if (filterBySeverity) {
+                    AuditIssueSeverity sev = issue.severity();
+                    if (sev == null || !severities.contains(sev.name())) {
+                        continue;
+                    }
+                }
                 String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
                 boolean burpInScope = api.scope().isInScope(issueUrl);
                 if (!ScopeFilter.shouldExport(state, issueUrl, burpInScope)) {

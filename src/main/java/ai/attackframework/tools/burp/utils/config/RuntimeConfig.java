@@ -47,12 +47,14 @@ public final class RuntimeConfig {
         state = normalize(newState);
     }
 
-    /** True when OpenSearch export is enabled for the traffic source. */
+    /** True when OpenSearch export is enabled for the traffic source and at least one tool type is selected. */
     public static boolean isOpenSearchTrafficEnabled() {
         ConfigState.State current = state;
         return current != null
                 && current.sinks().osEnabled()
-                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC);
+                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
+                && current.trafficToolTypes() != null
+                && !current.trafficToolTypes().isEmpty();
     }
 
     /** Current OpenSearch URL for runtime exports. */
@@ -85,7 +87,18 @@ public final class RuntimeConfig {
 
         String scopeType = normalizeScopeType(incoming.scopeType());
 
-        return new ConfigState.State(sources, scopeType, custom, normalizedSinks);
+        List<String> settingsSub = incoming.settingsSub() != null && !incoming.settingsSub().isEmpty()
+                ? List.copyOf(incoming.settingsSub())
+                : ConfigState.DEFAULT_SETTINGS_SUB;
+        List<String> trafficToolTypes = incoming.trafficToolTypes() != null
+                ? List.copyOf(incoming.trafficToolTypes())
+                : ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES;
+        List<String> findingsSeverities = incoming.findingsSeverities() != null && !incoming.findingsSeverities().isEmpty()
+                ? List.copyOf(incoming.findingsSeverities())
+                : ConfigState.DEFAULT_FINDINGS_SEVERITIES;
+
+        return new ConfigState.State(sources, scopeType, custom, normalizedSinks,
+                settingsSub, trafficToolTypes, findingsSeverities);
     }
 
     private static String safe(String value) {
@@ -114,7 +127,10 @@ public final class RuntimeConfig {
                 List.of(),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
-                new ConfigState.Sinks(false, "", false, "")
+                new ConfigState.Sinks(false, "", false, ""),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES
         );
     }
 }

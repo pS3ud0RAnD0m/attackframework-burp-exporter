@@ -54,6 +54,11 @@ public final class ToolIndexConfigReporter {
     private static Map<String, Object> buildConfigDoc(ConfigState.State state) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("data_sources", state.dataSources() != null ? new ArrayList<>(state.dataSources()) : List.of());
+        Map<String, Object> opts = new LinkedHashMap<>();
+        opts.put("settings", state.settingsSub() != null ? new ArrayList<>(state.settingsSub()) : List.of());
+        opts.put("traffic", state.trafficToolTypes() != null ? new ArrayList<>(state.trafficToolTypes()) : List.of());
+        opts.put("findings", state.findingsSeverities() != null ? new ArrayList<>(state.findingsSeverities()) : List.of());
+        message.put("data_source_options", opts);
         message.put("scope_type", state.scopeType());
         List<Map<String, Object>> custom = new ArrayList<>();
         if (state.customEntries() != null) {

@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
@@ -30,6 +31,7 @@ import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
 import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
+import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -71,10 +73,46 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final int CONTROL_HIDE_DELAY_MS = 3000;
 
     // ---- Sources
-    private final JCheckBox settingsCheckbox = new JCheckBox("Settings", true);
+    private final TriStateCheckBox settingsCheckbox = new TriStateCheckBox("Settings", TriStateCheckBox.State.SELECTED);
     private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
-    private final JCheckBox issuesCheckbox   = new JCheckBox("Issues",   true);
-    private final JCheckBox trafficCheckbox  = new JCheckBox("Traffic",  true);
+    private final TriStateCheckBox issuesCheckbox   = new TriStateCheckBox("Issues",   TriStateCheckBox.State.SELECTED);
+    private final TriStateCheckBox trafficCheckbox  = new TriStateCheckBox("Traffic",  TriStateCheckBox.State.DESELECTED);
+
+    // Settings sub (default both checked)
+    private final JCheckBox settingsProjectCheckbox = new JCheckBox("Project", true);
+    private final JCheckBox settingsUserCheckbox    = new JCheckBox("User", true);
+
+    // Traffic sub (default none; user opts in)
+    private final JCheckBox trafficProxyCheckbox     = new JCheckBox("Proxy", false);
+    private final JCheckBox trafficRepeaterCheckbox  = new JCheckBox("Repeater", false);
+    private final JCheckBox trafficScannerCheckbox   = new JCheckBox("Scanner", false);
+    private final JCheckBox trafficIntruderCheckbox  = new JCheckBox("Intruder", false);
+    private final JCheckBox trafficExtensionsCheckbox = new JCheckBox("Extensions", false);
+    private final JCheckBox trafficBurpAiCheckbox    = new JCheckBox("Burp AI", false);
+    private final JCheckBox trafficSequencerCheckbox = new JCheckBox("Sequencer", false);
+
+    // Issues sub (default all severities checked)
+    private final JCheckBox issuesCriticalCheckbox      = new JCheckBox("Critical", true);
+    private final JCheckBox issuesHighCheckbox          = new JCheckBox("High", true);
+    private final JCheckBox issuesMediumCheckbox        = new JCheckBox("Medium", true);
+    private final JCheckBox issuesLowCheckbox           = new JCheckBox("Low", true);
+    private final JCheckBox issuesInformationalCheckbox = new JCheckBox("Informational", true);
+
+    private static final String EXPAND_COLLAPSED = "+";
+    private static final String EXPAND_EXPANDED = "−";
+    private final JButton settingsExpandButton = new JButton(EXPAND_COLLAPSED);
+    private final JButton issuesExpandButton   = new JButton(EXPAND_COLLAPSED);
+    private final JButton trafficExpandButton  = new JButton(EXPAND_COLLAPSED);
+
+    private void configureExpandButton(JButton b) {
+        b.setBorderPainted(false);
+        b.setContentAreaFilled(false);
+        b.setFocusPainted(false);
+        b.setOpaque(false);
+        b.setMargin(new java.awt.Insets(0, 0, 0, 0));
+        b.setFocusable(false);
+        b.setFont(b.getFont().deriveFont(Font.PLAIN, 22f));
+    }
 
     // ---- Scope
     private final JRadioButton allRadio       = new JRadioButton("All");
@@ -122,8 +160,34 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         assignToolTips();
 
-        // Sources
-        add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, INDENT).build(),
+        // Sources: build sub-panels and wire expand/collapse (default collapsed)
+        configureExpandButton(settingsExpandButton);
+        configureExpandButton(issuesExpandButton);
+        configureExpandButton(trafficExpandButton);
+
+        JPanel settingsSubPanel = buildSettingsSubPanel();
+        JPanel issuesSubPanel = buildIssuesSubPanel();
+        JPanel trafficSubPanel = buildTrafficSubPanel();
+        settingsSubPanel.setOpaque(false);
+        issuesSubPanel.setOpaque(false);
+        trafficSubPanel.setOpaque(false);
+        settingsSubPanel.setVisible(false);
+        issuesSubPanel.setVisible(false);
+        trafficSubPanel.setVisible(false);
+        wireSourcesExpandCollapse(settingsExpandButton, settingsSubPanel);
+        wireSourcesExpandCollapse(issuesExpandButton, issuesSubPanel);
+        wireSourcesExpandCollapse(trafficExpandButton, trafficSubPanel);
+
+        wireTriStateParentChild(settingsCheckbox, java.util.List.of(settingsProjectCheckbox, settingsUserCheckbox));
+        wireTriStateParentChild(issuesCheckbox, java.util.List.of(
+                issuesCriticalCheckbox, issuesHighCheckbox, issuesMediumCheckbox, issuesLowCheckbox, issuesInformationalCheckbox));
+        wireTriStateParentChild(trafficCheckbox, java.util.List.of(
+                trafficProxyCheckbox, trafficRepeaterCheckbox, trafficScannerCheckbox, trafficIntruderCheckbox,
+                trafficExtensionsCheckbox, trafficBurpAiCheckbox, trafficSequencerCheckbox));
+
+        add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox,
+                settingsExpandButton, settingsSubPanel, issuesExpandButton, issuesSubPanel,
+                trafficExpandButton, trafficSubPanel, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_FILL_WRAP);
 
@@ -281,6 +345,26 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             issuesCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_FINDINGS));
             trafficCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_TRAFFIC));
 
+            List<String> settingsSub = state.settingsSub() != null ? state.settingsSub() : List.of();
+            settingsProjectCheckbox.setSelected(settingsSub.contains(ConfigKeys.SRC_SETTINGS_PROJECT));
+            settingsUserCheckbox.setSelected(settingsSub.contains(ConfigKeys.SRC_SETTINGS_USER));
+
+            List<String> trafficTools = state.trafficToolTypes() != null ? state.trafficToolTypes() : List.of();
+            trafficProxyCheckbox.setSelected(trafficTools.contains("PROXY"));
+            trafficRepeaterCheckbox.setSelected(trafficTools.contains("REPEATER"));
+            trafficScannerCheckbox.setSelected(trafficTools.contains("SCANNER"));
+            trafficIntruderCheckbox.setSelected(trafficTools.contains("INTRUDER"));
+            trafficExtensionsCheckbox.setSelected(trafficTools.contains("EXTENSIONS"));
+            trafficBurpAiCheckbox.setSelected(trafficTools.contains("BURP_AI"));
+            trafficSequencerCheckbox.setSelected(trafficTools.contains("SEQUENCER"));
+
+            List<String> severities = state.findingsSeverities() != null ? state.findingsSeverities() : List.of();
+            issuesCriticalCheckbox.setSelected(severities.contains("CRITICAL"));
+            issuesHighCheckbox.setSelected(severities.contains("HIGH"));
+            issuesMediumCheckbox.setSelected(severities.contains("MEDIUM"));
+            issuesLowCheckbox.setSelected(severities.contains("LOW"));
+            issuesInformationalCheckbox.setSelected(severities.contains("INFORMATIONAL"));
+
             switch (state.scopeType()) {
                 case ConfigKeys.SCOPE_CUSTOM -> {
                     List<ScopeGrid.ScopeEntryInit> init = new ArrayList<>();
@@ -325,6 +409,20 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.addActionListener(runtimeUpdater);
         issuesCheckbox.addActionListener(runtimeUpdater);
         trafficCheckbox.addActionListener(runtimeUpdater);
+        settingsProjectCheckbox.addActionListener(runtimeUpdater);
+        settingsUserCheckbox.addActionListener(runtimeUpdater);
+        trafficProxyCheckbox.addActionListener(runtimeUpdater);
+        trafficRepeaterCheckbox.addActionListener(runtimeUpdater);
+        trafficScannerCheckbox.addActionListener(runtimeUpdater);
+        trafficIntruderCheckbox.addActionListener(runtimeUpdater);
+        trafficExtensionsCheckbox.addActionListener(runtimeUpdater);
+        trafficBurpAiCheckbox.addActionListener(runtimeUpdater);
+        trafficSequencerCheckbox.addActionListener(runtimeUpdater);
+        issuesCriticalCheckbox.addActionListener(runtimeUpdater);
+        issuesHighCheckbox.addActionListener(runtimeUpdater);
+        issuesMediumCheckbox.addActionListener(runtimeUpdater);
+        issuesLowCheckbox.addActionListener(runtimeUpdater);
+        issuesInformationalCheckbox.addActionListener(runtimeUpdater);
 
         allRadio.addActionListener(runtimeUpdater);
         burpSuiteRadio.addActionListener(runtimeUpdater);
@@ -362,6 +460,108 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         });
         filePathField.getDocument().addDocumentListener(relayout);
         openSearchUrlField.getDocument().addDocumentListener(relayout);
+    }
+
+    private JPanel buildSettingsSubPanel() {
+        JPanel p = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        p.add(settingsProjectCheckbox);
+        p.add(settingsUserCheckbox);
+        return p;
+    }
+
+    private JPanel buildIssuesSubPanel() {
+        JPanel p = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        p.add(issuesCriticalCheckbox);
+        p.add(issuesHighCheckbox);
+        p.add(issuesMediumCheckbox);
+        p.add(issuesLowCheckbox);
+        p.add(issuesInformationalCheckbox);
+        return p;
+    }
+
+    private JPanel buildTrafficSubPanel() {
+        JPanel p = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        p.add(trafficProxyCheckbox);
+        p.add(trafficRepeaterCheckbox);
+        p.add(trafficScannerCheckbox);
+        p.add(trafficIntruderCheckbox);
+        p.add(trafficExtensionsCheckbox);
+        p.add(trafficBurpAiCheckbox);
+        p.add(trafficSequencerCheckbox);
+        return p;
+    }
+
+    private void wireSourcesExpandCollapse(JButton expandButton, JPanel subPanel) {
+        expandButton.addActionListener(e -> {
+            boolean show = !subPanel.isVisible();
+            subPanel.setVisible(show);
+            expandButton.setText(show ? EXPAND_EXPANDED : EXPAND_COLLAPSED);
+            subPanel.revalidate();
+            subPanel.repaint();
+        });
+    }
+
+    private void wireTriStateParentChild(TriStateCheckBox parent, java.util.List<JCheckBox> children) {
+        java.util.concurrent.atomic.AtomicBoolean syncing = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        Runnable syncParentFromChildren = () -> {
+            if (children == null || children.isEmpty()) {
+                return;
+            }
+            int selected = 0;
+            for (JCheckBox c : children) {
+                if (c.isSelected()) {
+                    selected++;
+                }
+            }
+            if (selected == 0) {
+                parent.setState(TriStateCheckBox.State.DESELECTED);
+            } else if (selected == children.size()) {
+                parent.setState(TriStateCheckBox.State.SELECTED);
+            } else {
+                parent.setState(TriStateCheckBox.State.INDETERMINATE);
+            }
+        };
+
+        // Children -> parent state
+        for (JCheckBox child : children) {
+            child.addActionListener(e -> {
+                if (syncing.get()) {
+                    return;
+                }
+                syncing.set(true);
+                try {
+                    syncParentFromChildren.run();
+                } finally {
+                    syncing.set(false);
+                }
+            });
+        }
+
+        // Parent -> children (select all / deselect all)
+        parent.addActionListener(e -> {
+            if (syncing.get()) {
+                return;
+            }
+            syncing.set(true);
+            try {
+                boolean selectAll = parent.getState() != TriStateCheckBox.State.DESELECTED;
+                for (JCheckBox child : children) {
+                    child.setSelected(selectAll);
+                }
+                syncParentFromChildren.run();
+            } finally {
+                syncing.set(false);
+            }
+        });
+
+        // Initial sync
+        syncing.set(true);
+        try {
+            syncParentFromChildren.run();
+        } finally {
+            syncing.set(false);
+        }
     }
 
     /**
@@ -443,11 +643,34 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         String  osUrl        = openSearchUrlField.getText();
         String  filesRoot    = filePathField.getText();
 
+        List<String> settingsSub = new ArrayList<>();
+        if (settingsProjectCheckbox.isSelected()) settingsSub.add(ConfigKeys.SRC_SETTINGS_PROJECT);
+        if (settingsUserCheckbox.isSelected()) settingsSub.add(ConfigKeys.SRC_SETTINGS_USER);
+
+        List<String> trafficToolTypes = new ArrayList<>();
+        if (trafficProxyCheckbox.isSelected()) trafficToolTypes.add("PROXY");
+        if (trafficRepeaterCheckbox.isSelected()) trafficToolTypes.add("REPEATER");
+        if (trafficScannerCheckbox.isSelected()) trafficToolTypes.add("SCANNER");
+        if (trafficIntruderCheckbox.isSelected()) trafficToolTypes.add("INTRUDER");
+        if (trafficExtensionsCheckbox.isSelected()) trafficToolTypes.add("EXTENSIONS");
+        if (trafficBurpAiCheckbox.isSelected()) trafficToolTypes.add("BURP_AI");
+        if (trafficSequencerCheckbox.isSelected()) trafficToolTypes.add("SEQUENCER");
+
+        List<String> findingsSeverities = new ArrayList<>();
+        if (issuesCriticalCheckbox.isSelected()) findingsSeverities.add("CRITICAL");
+        if (issuesHighCheckbox.isSelected()) findingsSeverities.add("HIGH");
+        if (issuesMediumCheckbox.isSelected()) findingsSeverities.add("MEDIUM");
+        if (issuesLowCheckbox.isSelected()) findingsSeverities.add("LOW");
+        if (issuesInformationalCheckbox.isSelected()) findingsSeverities.add("INFORMATIONAL");
+
         return new ConfigState.State(
                 selectedSources,
                 scopeType,
                 custom,
-                new ConfigState.Sinks(filesEnabled, filesRoot, osEnabled, osUrl)
+                new ConfigState.Sinks(filesEnabled, filesRoot, osEnabled, osUrl),
+                settingsSub,
+                trafficToolTypes,
+                findingsSeverities
         );
     }
 
@@ -490,6 +713,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.setName("src.sitemap");
         issuesCheckbox.setName("src.issues");
         trafficCheckbox.setName("src.traffic");
+        settingsProjectCheckbox.setName("src.settings.project");
+        settingsUserCheckbox.setName("src.settings.user");
+        settingsExpandButton.setName("src.settings.expand");
+        issuesCriticalCheckbox.setName("src.issues.critical");
+        issuesHighCheckbox.setName("src.issues.high");
+        issuesMediumCheckbox.setName("src.issues.medium");
+        issuesLowCheckbox.setName("src.issues.low");
+        issuesInformationalCheckbox.setName("src.issues.informational");
+        issuesExpandButton.setName("src.issues.expand");
+        trafficProxyCheckbox.setName("src.traffic.proxy");
+        trafficRepeaterCheckbox.setName("src.traffic.repeater");
+        trafficScannerCheckbox.setName("src.traffic.scanner");
+        trafficIntruderCheckbox.setName("src.traffic.intruder");
+        trafficExtensionsCheckbox.setName("src.traffic.extensions");
+        trafficBurpAiCheckbox.setName("src.traffic.burp_ai");
+        trafficSequencerCheckbox.setName("src.traffic.sequencer");
+        trafficExpandButton.setName("src.traffic.expand");
 
         allRadio.setName("scope.all");
         burpSuiteRadio.setName("scope.burp");
@@ -518,6 +758,18 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.setToolTipText("Include sitemap exports");
         issuesCheckbox.setToolTipText("Include findings exports");
         trafficCheckbox.setToolTipText("Include traffic exports");
+        settingsExpandButton.setToolTipText("Expand or collapse Settings sub-options");
+        issuesExpandButton.setToolTipText("Expand or collapse Issues severity filters");
+        trafficExpandButton.setToolTipText("Expand or collapse Traffic source filters");
+        settingsProjectCheckbox.setToolTipText("Include project-level settings in settings export");
+        settingsUserCheckbox.setToolTipText("Include user-level settings in settings export");
+        trafficProxyCheckbox.setToolTipText("Export traffic from Proxy");
+        trafficRepeaterCheckbox.setToolTipText("Export traffic from Repeater");
+        trafficScannerCheckbox.setToolTipText("Export traffic from Scanner (can be high volume)");
+        trafficIntruderCheckbox.setToolTipText("Export traffic from Intruder (can be high volume)");
+        trafficExtensionsCheckbox.setToolTipText("Export traffic from other extensions");
+        trafficBurpAiCheckbox.setToolTipText("Export traffic from Burp AI");
+        trafficSequencerCheckbox.setToolTipText("Export traffic from Sequencer");
 
         allRadio.setToolTipText("Export all observed");
         burpSuiteRadio.setToolTipText("Export Burp Suite's project scope");

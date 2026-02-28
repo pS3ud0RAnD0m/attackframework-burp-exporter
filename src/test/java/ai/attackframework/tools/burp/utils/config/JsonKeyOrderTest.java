@@ -23,7 +23,8 @@ class JsonKeyOrderTest {
                         new ConfigState.ScopeEntry("aaa",   ConfigState.Kind.STRING),
                         new ConfigState.ScopeEntry("bar.*", ConfigState.Kind.REGEX)
                 ),
-                new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200")
+                new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200"),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -32,7 +33,7 @@ class JsonKeyOrderTest {
         List<String> keys = new ArrayList<>();
         root.fieldNames().forEachRemaining(keys::add);
 
-        assertThat(keys).containsExactly("version", "dataSources", "scope", "sinks");
+        assertThat(keys).containsExactly("version", "dataSources", "dataSourceOptions", "scope", "sinks");
     }
 
     @Test
@@ -45,7 +46,8 @@ class JsonKeyOrderTest {
                         new ConfigState.ScopeEntry("aaa",   ConfigState.Kind.STRING),
                         new ConfigState.ScopeEntry("bar.*", ConfigState.Kind.REGEX)
                 ),
-                new ConfigState.Sinks(false, null, false, null)
+                new ConfigState.Sinks(false, null, false, null),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
         );
 
         String json = ConfigJsonMapper.build(state);

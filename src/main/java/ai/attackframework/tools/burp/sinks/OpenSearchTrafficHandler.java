@@ -64,12 +64,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
                 TimeUnit.SECONDS);
     }
 
-    /**
-     * Whether traffic from this tool source should be exported to the traffic index.
-     * Only Proxy and Repeater are allowed; all other tools (Scanner, Extensions, etc.) are omitted.
-     */
+    /** Whether traffic from this tool source should be exported (user-selected tool types only). */
     private static boolean shouldExportTrafficByToolSource(ToolType toolType) {
-        return toolType == ToolType.PROXY || toolType == ToolType.REPEATER;
+        if (toolType == null) {
+            return false;
+        }
+        var types = RuntimeConfig.getState().trafficToolTypes();
+        return types != null && types.contains(toolType.name());
     }
 
     @Override

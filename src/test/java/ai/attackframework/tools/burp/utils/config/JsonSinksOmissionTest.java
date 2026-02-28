@@ -15,7 +15,8 @@ class JsonSinksOmissionTest {
     void build_omits_blank_sinks_fields() throws IOException {
         var state = new ConfigState.State(
                 null, "all", null,
-                new ConfigState.Sinks(false, "", false, "")
+                new ConfigState.Sinks(false, "", false, ""),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -29,7 +30,8 @@ class JsonSinksOmissionTest {
     void build_includes_nonEmpty_sinks_fields() throws IOException {
         var state = new ConfigState.State(
                 null, "all", null,
-                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL)
+                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
         );
 
         String json = ConfigJsonMapper.build(state);

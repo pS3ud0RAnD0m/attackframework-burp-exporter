@@ -56,7 +56,8 @@ class ConfigPanelImportOrderingHeadlessTest {
         entries.add(new ConfigState.ScopeEntry("two.example.com", ConfigState.Kind.STRING));
         entries.add(new ConfigState.ScopeEntry(".*three.*", ConfigState.Kind.REGEX));
         ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", false, "");
-        return new ConfigState.State(dataSources, "custom", entries, sinks);
+        return new ConfigState.State(dataSources, "custom", entries, sinks,
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES);
     }
 
     private static JRadioButton customRadio(JComponent root) {

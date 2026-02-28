@@ -52,6 +52,9 @@ public final class Json {
         private final List<String> scopeKinds;
         private final String filesPath;
         private final String openSearchUrl;
+        private final List<String> settingsSub;
+        private final List<String> trafficToolTypes;
+        private final List<String> findingsSeverities;
 
         public ImportedConfig(
                 List<String> dataSources,
@@ -59,17 +62,20 @@ public final class Json {
                 List<String> scopeRegexes,
                 List<String> scopeKinds,
                 String filesPath,
-                String openSearchUrl
+                String openSearchUrl,
+                List<String> settingsSub,
+                List<String> trafficToolTypes,
+                List<String> findingsSeverities
         ) {
             this.dataSources = dataSources == null ? List.of() : List.copyOf(dataSources);
             this.scopeType = scopeType == null ? "all" : scopeType;
             this.scopeRegexes = scopeRegexes == null ? List.of() : List.copyOf(scopeRegexes);
-            // scopeKinds: preserve null when absent for backwards compatibility,
-            // otherwise take an unmodifiable defensive copy.
             this.scopeKinds = scopeKinds == null ? null : List.copyOf(scopeKinds);
-            // filesPath and openSearchUrl may remain null
             this.filesPath = filesPath;
             this.openSearchUrl = openSearchUrl;
+            this.settingsSub = settingsSub == null ? List.of() : List.copyOf(settingsSub);
+            this.trafficToolTypes = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
+            this.findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
         }
 
         public List<String> dataSources() {
@@ -95,6 +101,18 @@ public final class Json {
         public String openSearchUrl() {
             return openSearchUrl;
         }
+
+        public List<String> settingsSub() {
+            return settingsSub;
+        }
+
+        public List<String> trafficToolTypes() {
+            return trafficToolTypes;
+        }
+
+        public List<String> findingsSeverities() {
+            return findingsSeverities;
+        }
     }
 
     /* ======================== BUILD (from typed state) ======================== */
@@ -105,6 +123,7 @@ public final class Json {
         root.put("version", VERSION);
 
         buildDataSources(root, state);
+        buildDataSourceOptions(root, state);
         buildScope(root, state);
         buildSinks(root, state);
 
@@ -119,6 +138,28 @@ public final class Json {
         ArrayNode srcArr = root.putArray("dataSources");
         for (String s : state.dataSources()) {
             if (s != null) srcArr.add(s);
+        }
+    }
+
+    private static void buildDataSourceOptions(ObjectNode root, ConfigState.State state) {
+        ObjectNode opts = root.putObject("dataSourceOptions");
+        ArrayNode settingsArr = opts.putArray("settings");
+        if (state.settingsSub() != null) {
+            for (String s : state.settingsSub()) {
+                if (s != null) settingsArr.add(s);
+            }
+        }
+        ArrayNode trafficArr = opts.putArray("traffic");
+        if (state.trafficToolTypes() != null) {
+            for (String s : state.trafficToolTypes()) {
+                if (s != null) trafficArr.add(s);
+            }
+        }
+        ArrayNode findingsArr = opts.putArray("findings");
+        if (state.findingsSeverities() != null) {
+            for (String s : state.findingsSeverities()) {
+                if (s != null) findingsArr.add(s);
+            }
         }
     }
 
@@ -180,6 +221,7 @@ public final class Json {
         JsonNode root = MAPPER.readTree(json);
 
         List<String> sources = parseDataSources(root);
+        DataSourceOptionsParts opts = parseDataSourceOptions(root);
         ScopeParts scope = parseScope(root);
         SinksParts sinks = parseSinks(root);
 
@@ -189,7 +231,10 @@ public final class Json {
                 scope.values(),
                 scope.kinds(),
                 sinks.files(),
-                sinks.os()
+                sinks.os(),
+                opts.settingsSub(),
+                opts.trafficToolTypes(),
+                opts.findingsSeverities()
         );
     }
 
@@ -200,6 +245,39 @@ public final class Json {
         JsonNode ds = root.path("dataSources");
         if (ds.isArray()) {
             for (JsonNode n : ds) {
+                if (n.isTextual()) out.add(n.asText());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Parses dataSourceOptions. If absent (legacy config), returns defaults:
+     * settings both, traffic PROXY+REPEATER (legacy), findings all severities.
+     */
+    private static DataSourceOptionsParts parseDataSourceOptions(JsonNode root) {
+        JsonNode opts = root.path("dataSourceOptions");
+        if (!opts.isObject()) {
+            return new DataSourceOptionsParts(
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.LEGACY_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES
+            );
+        }
+        List<String> settings = arrayToStringList(opts.path("settings"));
+        List<String> traffic = arrayToStringList(opts.path("traffic"));
+        List<String> findings = arrayToStringList(opts.path("findings"));
+        return new DataSourceOptionsParts(
+                settings.isEmpty() ? ConfigState.DEFAULT_SETTINGS_SUB : settings,
+                traffic,
+                findings.isEmpty() ? ConfigState.DEFAULT_FINDINGS_SEVERITIES : findings
+        );
+    }
+
+    private static List<String> arrayToStringList(JsonNode arr) {
+        List<String> out = new ArrayList<>();
+        if (arr.isArray()) {
+            for (JsonNode n : arr) {
                 if (n.isTextual()) out.add(n.asText());
             }
         }
@@ -298,4 +376,5 @@ public final class Json {
 
     private record ScopeParts(String type, List<String> values, List<String> kinds) { }
     private record SinksParts(String files, String os) { }
+    private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }
 }

@@ -115,7 +115,8 @@ class SettingsIndexReporterIT {
                 List.of(ConfigKeys.SRC_SETTINGS),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
-                sinks);
+                sinks,
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES);
         RuntimeConfig.updateState(state);
         RuntimeConfig.setExportRunning(true);
     }

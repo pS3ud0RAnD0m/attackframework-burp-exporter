@@ -21,6 +21,7 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
@@ -70,14 +71,15 @@ public final class SettingsIndexReporter {
             }
             String projectJson = api.burpSuite().exportProjectOptionsAsJson();
             String userJson = api.burpSuite().exportUserOptionsAsJson();
-            Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson);
+            ConfigState.State state = RuntimeConfig.getState();
+            Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
             if (doc == null) {
                 return;
             }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, SETTINGS_INDEX, doc);
             if (ok) {
                 ExportStats.recordSuccess("settings", 1);
-                lastPushedHash = hashSettings(projectJson, userJson);
+                lastPushedHash = hashSettingsForEnabled(state, projectJson, userJson);
                 Logger.logDebug("Settings index: snapshot pushed successfully.");
             } else {
                 ExportStats.recordFailure("settings", 1);
@@ -142,11 +144,12 @@ public final class SettingsIndexReporter {
             }
             String projectJson = api.burpSuite().exportProjectOptionsAsJson();
             String userJson = api.burpSuite().exportUserOptionsAsJson();
-            String currentHash = hashSettings(projectJson, userJson);
+            ConfigState.State state = RuntimeConfig.getState();
+            String currentHash = hashSettingsForEnabled(state, projectJson, userJson);
             if (currentHash.equals(lastPushedHash)) {
                 return;
             }
-            Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson);
+            Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
             if (doc == null) {
                 return;
             }
@@ -179,15 +182,24 @@ public final class SettingsIndexReporter {
         }
     }
 
-    private static Map<String, Object> buildSettingsDoc(MontoyaApi api, String projectOptionsJson, String userOptionsJson) {
+    /** Hash only the enabled settings parts for change detection. */
+    private static String hashSettingsForEnabled(ConfigState.State state, String projectJson, String userJson) {
+        var sub = state != null && state.settingsSub() != null ? state.settingsSub() : java.util.List.<String>of();
+        String projectPart = sub.contains(ConfigKeys.SRC_SETTINGS_PROJECT) ? (projectJson != null ? projectJson : "") : "";
+        String userPart = sub.contains(ConfigKeys.SRC_SETTINGS_USER) ? (userJson != null ? userJson : "") : "";
+        return hashSettings(projectPart, userPart);
+    }
+
+    private static Map<String, Object> buildSettingsDoc(MontoyaApi api, String projectOptionsJson, String userOptionsJson, ConfigState.State state) {
         String projectId;
         try {
             projectId = api.project().id();
         } catch (Exception e) {
             return null;
         }
-        Map<String, Object> settingsProject = parseJsonToMap(projectOptionsJson);
-        Map<String, Object> settingsUser = parseJsonToMap(userOptionsJson);
+        var sub = state != null && state.settingsSub() != null ? state.settingsSub() : java.util.List.<String>of();
+        Map<String, Object> settingsProject = sub.contains(ConfigKeys.SRC_SETTINGS_PROJECT) ? parseJsonToMap(projectOptionsJson) : Map.of();
+        Map<String, Object> settingsUser = sub.contains(ConfigKeys.SRC_SETTINGS_USER) ? parseJsonToMap(userOptionsJson) : Map.of();
 
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("project_id", projectId != null ? projectId : "");
