@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -38,7 +39,13 @@ public final class ToolIndexConfigReporter {
                 return;
             }
             Map<String, Object> doc = buildConfigDoc(RuntimeConfig.getState());
-            OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+            if (ok) {
+                ExportStats.recordSuccess("tool", 1);
+            } else {
+                ExportStats.recordFailure("tool", 1);
+                ExportStats.recordLastError("tool", "Tool config snapshot push failed");
+            }
         } catch (Exception ignored) {
             // Fire-and-forget; avoid feedback loop with tool index
         }

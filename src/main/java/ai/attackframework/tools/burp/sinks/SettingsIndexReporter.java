@@ -19,6 +19,7 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -75,13 +76,18 @@ public final class SettingsIndexReporter {
             }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, SETTINGS_INDEX, doc);
             if (ok) {
+                ExportStats.recordSuccess("settings", 1);
                 lastPushedHash = hashSettings(projectJson, userJson);
                 Logger.logDebug("Settings index: snapshot pushed successfully.");
             } else {
+                ExportStats.recordFailure("settings", 1);
+                ExportStats.recordLastError("settings", "Settings index push failed");
                 Logger.logDebug("Settings index: push failed (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            ExportStats.recordFailure("settings", 1);
+            ExportStats.recordLastError("settings", msg);
             Logger.logDebug("Settings index: push failed: " + msg);
         }
     }
@@ -146,13 +152,18 @@ public final class SettingsIndexReporter {
             }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, SETTINGS_INDEX, doc);
             if (ok) {
+                ExportStats.recordSuccess("settings", 1);
                 lastPushedHash = currentHash;
                 Logger.logDebug("Settings index: snapshot pushed successfully (change detected).");
             } else {
+                ExportStats.recordFailure("settings", 1);
+                ExportStats.recordLastError("settings", "Settings index push failed");
                 Logger.logDebug("Settings index: push failed (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            ExportStats.recordFailure("settings", 1);
+            ExportStats.recordLastError("settings", msg);
             Logger.logDebug("Settings index: push failed: " + msg);
         }
     }

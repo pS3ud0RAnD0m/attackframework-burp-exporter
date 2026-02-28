@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
-import ai.attackframework.tools.burp.utils.TrafficExportStats;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -131,14 +131,14 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         long startNs = System.nanoTime();
         boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, document);
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-        TrafficExportStats.setLastPushDurationMs(durationMs);
+        ExportStats.recordLastPush("traffic", durationMs);
 
         if (success) {
-            TrafficExportStats.incrementSuccess();
+            ExportStats.recordSuccess("traffic", 1);
         } else {
-            TrafficExportStats.incrementFailure();
+            ExportStats.recordFailure("traffic", 1);
             String errMsg = "Failed to index traffic document to " + INDEX_NAME;
-            TrafficExportStats.setLastError(errMsg);
+            ExportStats.recordLastError("traffic", errMsg);
             Logger.logError("[OpenSearch] " + errMsg);
         }
 
@@ -280,13 +280,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             long startNs = System.nanoTime();
             boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, doc);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-            TrafficExportStats.setLastPushDurationMs(durationMs);
+            ExportStats.recordLastPush("traffic", durationMs);
             if (success) {
-                TrafficExportStats.incrementSuccess();
+                ExportStats.recordSuccess("traffic", 1);
             } else {
-                TrafficExportStats.incrementFailure();
+                ExportStats.recordFailure("traffic", 1);
                 String errMsg = "Failed to index orphan traffic document to " + INDEX_NAME;
-                TrafficExportStats.setLastError(errMsg);
+                ExportStats.recordLastError("traffic", errMsg);
                 Logger.logError("[OpenSearch] " + errMsg);
             }
         }

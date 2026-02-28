@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
@@ -186,6 +187,12 @@ public final class FindingsIndexReporter {
 
     private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, FINDINGS_INDEX, batchDocs);
+        int failureCount = batchDocs.size() - successCount;
+        ExportStats.recordSuccess("findings", successCount);
+        ExportStats.recordFailure("findings", failureCount);
+        if (failureCount > 0) {
+            ExportStats.recordLastError("findings", "Bulk had " + failureCount + " failure(s)");
+        }
         if (successCount == batchDocs.size()) {
             pushedIssueKeys.addAll(batchKeys);
         }

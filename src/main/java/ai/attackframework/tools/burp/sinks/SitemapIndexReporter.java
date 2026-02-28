@@ -15,6 +15,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
@@ -193,6 +194,12 @@ public final class SitemapIndexReporter {
 
     private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, SITEMAP_INDEX, batchDocs);
+        int failureCount = batchDocs.size() - successCount;
+        ExportStats.recordSuccess("sitemap", successCount);
+        ExportStats.recordFailure("sitemap", failureCount);
+        if (failureCount > 0) {
+            ExportStats.recordLastError("sitemap", "Bulk had " + failureCount + " failure(s)");
+        }
         if (successCount == batchDocs.size()) {
             pushedItemKeys.addAll(batchKeys);
         }

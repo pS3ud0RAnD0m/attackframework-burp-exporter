@@ -2,8 +2,11 @@ package ai.attackframework.tools.burp.utils.opensearch;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import ai.attackframework.tools.burp.utils.IndexNaming;
 
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.BulkRequest;
@@ -69,36 +72,67 @@ public class OpenSearchClientWrapper {
         }
     }
 
+    /**
+     * Public API: delegates to retry coordinator (one attempt + queue on failure).
+     */
     public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
+        String indexKey = indexKeyFromIndexName(indexName);
+        return IndexingRetryCoordinator.getInstance().pushDocument(baseUrl, indexName, document, indexKey);
+    }
+
+    /**
+     * Public API: delegates to retry coordinator (retries + queue failed items).
+     */
+    public static int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return 0;
+        }
+        String indexKey = indexKeyFromIndexName(indexName);
+        return IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, documents, indexKey);
+    }
+
+    static String indexKeyFromIndexName(String indexName) {
+        if (indexName == null) return "tool";
+        if (indexName.equals(IndexNaming.INDEX_PREFIX)) return "tool";
+        if (indexName.startsWith(IndexNaming.INDEX_PREFIX + "-")) {
+            return indexName.substring(IndexNaming.INDEX_PREFIX.length() + 1);
+        }
+        return "tool";
+    }
+
+    /**
+     * One-shot index (no retry, no queue). Used by coordinator and drain thread.
+     */
+    static boolean doPushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         try {
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
-
             IndexRequest<Map<String, Object>> request = new IndexRequest.Builder<Map<String, Object>>()
                     .index(indexName)
                     .document(document)
                     .build();
-
             IndexResponse response = client.index(request);
             String result = response.result().jsonValue();
             return result != null && (result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated"));
-
         } catch (Exception e) {
-            Logger.logError("Failed to index document to " + indexName + ": " + e.getMessage());
+            Logger.logDebug("doPushDocument failed for " + indexName + ": " + e.getMessage());
             return false;
         }
     }
 
     /**
-     * Index multiple documents in one bulk request. Uses auto-generated IDs.
-     *
-     * @param baseUrl    OpenSearch base URL
-     * @param indexName  target index
-     * @param documents  documents to index (not null; empty list is a no-op)
-     * @return number of documents successfully indexed, or 0 on failure or if documents is empty
+     * One-shot bulk (no retry, no queue). Returns number of successes.
      */
-    public static int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
+    static int doPushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
+        BulkResult result = doPushBulkWithDetails(baseUrl, indexName, documents);
+        return result.successCount;
+    }
+
+    /**
+     * One-shot bulk with per-item failure details. Response items match request order.
+     */
+    static BulkResult doPushBulkWithDetails(String baseUrl, String indexName, List<Map<String, Object>> documents) {
         if (documents == null || documents.isEmpty()) {
-            return 0;
+            return new BulkResult(0, List.of());
         }
         try {
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
@@ -107,21 +141,33 @@ public class OpenSearchClientWrapper {
                 builder.operations(o -> o.index(i -> i.index(indexName).document(doc)));
             }
             BulkResponse response = client.bulk(builder.build());
-            if (response.errors()) {
-                int ok = 0;
-                for (var item : response.items()) {
-                    if (item.error() == null) {
-                        ok++;
-                    } else {
-                        Logger.logDebug("Bulk item error: " + item.error().reason());
-                    }
+            int successCount = 0;
+            List<Integer> failedIndices = new ArrayList<>();
+            int i = 0;
+            for (var item : response.items()) {
+                if (item.error() == null) {
+                    successCount++;
+                } else {
+                    failedIndices.add(i);
+                    var err = item.error();
+                    Logger.logDebug("Bulk item error at " + i + ": " + (err != null ? err.reason() : "unknown"));
                 }
-                return ok;
+                i++;
             }
-            return documents.size();
+            return new BulkResult(successCount, failedIndices);
         } catch (Exception e) {
-            Logger.logError("Bulk index failed for " + indexName + ": " + e.getMessage());
-            return 0;
+            Logger.logDebug("doPushBulk failed for " + indexName + ": " + e.getMessage());
+            return new BulkResult(0, List.of());
+        }
+    }
+
+    static final class BulkResult {
+        final int successCount;
+        final List<Integer> failedIndices;
+
+        BulkResult(int successCount, List<Integer> failedIndices) {
+            this.successCount = successCount;
+            this.failedIndices = failedIndices != null ? List.copyOf(failedIndices) : List.of();
         }
     }
 

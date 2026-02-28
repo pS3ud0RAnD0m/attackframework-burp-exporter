@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
@@ -72,7 +73,13 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                 String baseUrl = RuntimeConfig.openSearchUrl();
                 if (baseUrl == null || baseUrl.isBlank()) continue;
 
-                OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+                if (ok) {
+                    ExportStats.recordSuccess("tool", 1);
+                } else {
+                    ExportStats.recordFailure("tool", 1);
+                    ExportStats.recordLastError("tool", "Tool log push failed");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;

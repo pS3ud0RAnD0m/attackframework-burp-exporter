@@ -13,7 +13,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.TrafficExportStats;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -91,7 +91,13 @@ public final class ToolIndexStatsReporter {
                 return;
             }
             Map<String, Object> doc = buildSnapshotDoc();
-            OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+            if (ok) {
+                ExportStats.recordSuccess("tool", 1);
+            } else {
+                ExportStats.recordFailure("tool", 1);
+                ExportStats.recordLastError("tool", "Tool stats snapshot push failed");
+            }
         } catch (Exception ignored) {
             // Fire-and-forget; avoid feedback loop with tool index
         }
@@ -145,10 +151,10 @@ public final class ToolIndexStatsReporter {
         if (uptimeMs >= 0) {
             message.put("uptime_ms", uptimeMs);
         }
-        message.put("traffic_indexed_count", TrafficExportStats.getSuccessCount());
-        message.put("traffic_failure_count", TrafficExportStats.getFailureCount());
+        message.put("traffic_indexed_count", ExportStats.getSuccessCount("traffic"));
+        message.put("traffic_failure_count", ExportStats.getFailureCount("traffic"));
         message.put("export_running", RuntimeConfig.isExportRunning());
-        long lastPushMs = TrafficExportStats.getLastPushDurationMs();
+        long lastPushMs = ExportStats.getLastPushDurationMs("traffic");
         if (lastPushMs >= 0) {
             message.put("last_push_duration_ms", lastPushMs);
         }
@@ -163,7 +169,7 @@ public final class ToolIndexStatsReporter {
         doc.put("level", "INFO");
         doc.put("event_type", EVENT_TYPE);
         doc.put("message", message);
-        doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used=" + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a") + " threads=" + threadCount + " traffic_indexed=" + TrafficExportStats.getSuccessCount());
+        doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used=" + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a") + " threads=" + threadCount + " traffic_indexed=" + ExportStats.getSuccessCount("traffic"));
         doc.put("extension_version", Version.get());
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);

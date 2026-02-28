@@ -437,7 +437,8 @@ class FindingsIndexReporterIT {
                 .index(FINDINGS_INDEX)
                 .size(1)
                 .build();
-        int maxAttempts = 5;
+        // Allow time for retry-coordinator drain thread (runs every 5s) when first push is queued
+        int maxAttempts = 40;
         for (int i = 0; i < maxAttempts; i++) {
             try {
                 client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
