@@ -16,7 +16,7 @@ import javax.swing.JMenuBar;
 import javax.swing.MenuElement;
 import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
-import javax.swing.JTextPane;
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 
 import javax.swing.text.BadLocationException;
@@ -195,11 +195,11 @@ public class LogPanelTestHarness {
         return onEdt(() -> lbl != null ? lbl.getText() : "0/0");
     }
 
-    /** First (and only) text pane inside the panel. */
-    public static JTextPane textPane(LogPanel root) {
-        Component c = findBy(root, JTextPane.class::isInstance);
-        if (c instanceof JTextPane pane) return pane;
-        throw new IllegalStateException("No JTextPane found in LogPanel");
+    /** First (and only) text area (log content) inside the panel. */
+    public static JTextArea textPane(LogPanel root) {
+        Component c = findBy(root, JTextArea.class::isInstance);
+        if (c instanceof JTextArea area) return area;
+        throw new IllegalStateException("No JTextArea found in LogPanel");
     }
 
     // ---------- Convenience actions ----------
@@ -232,7 +232,7 @@ public class LogPanelTestHarness {
     /** Returns all text currently displayed in the panel’s text pane. */
     public static String allText(LogPanel p) {
         return onEdt(() -> {
-            JTextPane pane = textPane(p);
+            JTextArea pane = textPane(p);
             Document d = pane.getDocument();
             try {
                 return d.getText(0, d.getLength());
@@ -302,7 +302,7 @@ public class LogPanelTestHarness {
                 p.setSize(900, 700);
             }
             p.doLayout();
-            JTextPane tp = textPane(p);
+            JTextArea tp = textPane(p);
             if (tp.getWidth() <= 0 || tp.getHeight() <= 0) {
                 tp.setSize(p.getWidth(), p.getHeight() - 40);
             }

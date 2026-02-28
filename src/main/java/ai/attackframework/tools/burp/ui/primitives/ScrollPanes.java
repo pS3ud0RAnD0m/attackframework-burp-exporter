@@ -31,6 +31,22 @@ public final class ScrollPanes {
     }
 
     /**
+     * Wraps a component in a scroll pane with no horizontal scroll bar (content should wrap).
+     *
+     * @param view child component to wrap
+     * @return configured scroll pane
+     */
+    public static JScrollPane wrapNoHorizontalScroll(Component view) {
+        JScrollPane sp = new JScrollPane(
+                view,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        );
+        configureScrollSpeed(sp);
+        return sp;
+    }
+
+    /**
      * Standardizes scroll speed for both axes to improve usability across panels.
      *
      * @param sp target scroll pane

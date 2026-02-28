@@ -30,7 +30,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JSeparator;
-import javax.swing.JTextPane;
+import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -38,12 +38,12 @@ import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter.HighlightPainter;
-import javax.swing.text.StyledDocument;
 
 import net.miginfocom.swing.MigLayout;
 
 import ai.attackframework.tools.burp.ui.log.LogRenderer;
 import ai.attackframework.tools.burp.ui.log.LogStore;
+import ai.attackframework.tools.burp.ui.text.IndentedWrappedTextAreaUI;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
 import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
@@ -83,13 +83,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private static final String DEFAULT_MIN_LEVEL  = "INFO";
     private static final int MAX_MODEL_ENTRIES     = 5000;
 
-    // Editor and renderer
-    private final JTextPane logTextPane;
+    // Editor and renderer (JTextArea for reliable line wrap; no horizontal scroll)
+    private final JTextArea logTextPane;
     private final transient LogRenderer renderer;
-
-    // Some tests reflect on this field name; keep for back-compat.
-    @SuppressWarnings("unused")
-    private final transient StyledDocument doc;
 
     // Controls
     private final JComboBox<String> levelCombo;
@@ -132,14 +128,16 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         setLayout(new BorderLayout());
         setPreferredSize(new Dimension(1200, 600));
 
-        // Editor + renderer
-        logTextPane = new JTextPane();
+        // Editor + renderer (JTextArea for reliable line wrap; no horizontal scroll bar; continuation indent on wrap)
+        logTextPane = new JTextArea();
+        logTextPane.setLineWrap(true);
+        logTextPane.setWrapStyleWord(true);
+        logTextPane.setUI(new IndentedWrappedTextAreaUI());
         logTextPane.setEditable(false);
         logTextPane.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        logTextPane.setBackground(UIManager.getColor("TextPane.background"));
-        logTextPane.setForeground(UIManager.getColor("TextPane.foreground"));
+        logTextPane.setBackground(UIManager.getColor("TextArea.background"));
+        logTextPane.setForeground(UIManager.getColor("TextArea.foreground"));
         renderer = new LogRenderer(logTextPane);
-        doc = logTextPane.getStyledDocument();
 
         // Highlight painter uses LAF color to integrate visually with theme.
         Color sel = UIManager.getColor("TextField.selectionBackground");
@@ -234,7 +232,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
         add(toolbar, BorderLayout.NORTH);
 
-        add(ScrollPanes.wrap(logTextPane), BorderLayout.CENTER);
+        add(ScrollPanes.wrapNoHorizontalScroll(logTextPane), BorderLayout.CENTER);
 
         // Model created before listeners capture it; filter supplied via visible().
         store = new LogStore(MAX_MODEL_ENTRIES, this::visible);
@@ -531,7 +529,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         }
 
         try {
-            final String hay = doc.getText(0, doc.getLength());
+            final String hay = logTextPane.getDocument().getText(0, logTextPane.getDocument().getLength());
             final TextQuery tq = new TextQuery(
                     q, searchCaseToggle.isSelected(), searchRegexToggle.isSelected(), true
             );
@@ -632,7 +630,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private void copyCurrentLine() {
         try {
             int caret = logTextPane.getCaretPosition();
-            String text = doc.getText(0, doc.getLength());
+            String text = logTextPane.getDocument().getText(0, logTextPane.getDocument().getLength());
             int start = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
             int end = text.indexOf('\n', caret);
             if (end < 0) end = text.length();
@@ -650,7 +648,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      */
     private void copyAll() {
         try {
-            String all = doc.getText(0, doc.getLength());
+            String all = logTextPane.getDocument().getText(0, logTextPane.getDocument().getLength());
             Toolkit.getDefaultToolkit()
                     .getSystemClipboard()
                     .setContents(new StringSelection(all), null);
@@ -675,7 +673,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
         File out = chooser.getSelectedFile();
         try {
-            String text = doc.getText(0, doc.getLength());
+            String text = logTextPane.getDocument().getText(0, logTextPane.getDocument().getLength());
             FileUtil.writeStringCreateDirs(out.toPath(), text);
         } catch (IOException | javax.swing.text.BadLocationException ex) {
             Logger.logError("Save failed: " + ex.getMessage());

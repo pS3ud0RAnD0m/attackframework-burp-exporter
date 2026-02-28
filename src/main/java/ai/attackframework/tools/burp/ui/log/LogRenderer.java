@@ -3,12 +3,10 @@ package ai.attackframework.tools.burp.ui.log;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-import javax.swing.JTextPane;
-import javax.swing.UIManager;
+import javax.swing.text.AbstractDocument;
 import javax.swing.text.BadLocationException;
-import javax.swing.text.Style;
-import javax.swing.text.StyleConstants;
-import javax.swing.text.StyledDocument;
+import javax.swing.text.Document;
+import javax.swing.text.JTextComponent;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -16,16 +14,15 @@ import ai.attackframework.tools.burp.utils.Logger;
 
 /**
  * Renderer: writes/replaces lines in the document, formats output, and autoscrolls.
+ * Uses plain text (no per-level styling) so the log can use JTextArea with line wrap.
  *
  * <p><strong>Threading:</strong> expected on the EDT.</p>
  */
 public final class LogRenderer {
 
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "LogRenderer intentionally holds the provided JTextPane as a UI peer; it is never re-exposed.")
-    private final JTextPane textPane;
-    private final StyledDocument doc;
-    private final Style infoStyle;
-    private final Style errorStyle;
+    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "LogRenderer intentionally holds the provided text component as a UI peer; it is never re-exposed.")
+    private final JTextComponent textComponent;
+    private final Document doc;
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -33,24 +30,15 @@ public final class LogRenderer {
     private int lastLineLen   = 0;
 
     /**
-     * Creates a renderer bound to the provided text pane.
+     * Creates a renderer bound to the provided text component (e.g. JTextArea for line wrap).
      *
-     * <p>Caller must construct on the EDT. The pane is held as a UI peer; styles are initialized
-     * with the current Look and Feel.</p>
+     * <p>Caller must construct on the EDT.</p>
      *
-     * <p>
-     * @param textPane target pane to render into
+     * @param textComponent target component to render into (must have an AbstractDocument)
      */
-    public LogRenderer(JTextPane textPane) {
-        this.textPane = textPane;
-        this.doc = textPane.getStyledDocument();
-
-        infoStyle = doc.addStyle("INFO", null);
-        StyleConstants.setForeground(infoStyle, UIManager.getColor("TextPane.foreground"));
-
-        errorStyle = doc.addStyle("ERROR", null);
-        StyleConstants.setForeground(errorStyle, UIManager.getColor("TextPane.foreground"));
-        StyleConstants.setBold(errorStyle, true);
+    public LogRenderer(JTextComponent textComponent) {
+        this.textComponent = textComponent;
+        this.doc = textComponent.getDocument();
     }
 
     /**
@@ -60,7 +48,9 @@ public final class LogRenderer {
      */
     public void clear() {
         try {
-            doc.remove(0, doc.getLength());
+            if (doc instanceof AbstractDocument ad) {
+                ad.remove(0, doc.getLength());
+            }
             lastLineStart = 0;
             lastLineLen = 0;
         } catch (BadLocationException ex) {
@@ -69,18 +59,19 @@ public final class LogRenderer {
     }
 
     /**
-     * Appends a formatted line to the document with styling derived from the level.
+     * Appends a formatted line to the document.
      *
-     * <p>
      * @param line  text to append (should include trailing newline)
-     * @param level log level determining style
+     * @param level log level (unused; kept for API compatibility)
      */
     public void append(String line, LogStore.Level level) {
         try {
-            int start = doc.getLength();
-            doc.insertString(start, line, styleFor(level));
-            lastLineStart = start;
-            lastLineLen = line.length();
+            if (doc instanceof AbstractDocument ad) {
+                int start = doc.getLength();
+                ad.insertString(start, line, null);
+                lastLineStart = start;
+                lastLineLen = line.length();
+            }
         } catch (BadLocationException ex) {
             Logger.internalDebug("LogRenderer.append: " + ex);
         }
@@ -89,15 +80,16 @@ public final class LogRenderer {
     /**
      * Replaces the most recently written line, preserving cursor bookkeeping.
      *
-     * <p>
      * @param line  replacement text (should include trailing newline)
-     * @param level log level determining style
+     * @param level log level (unused; kept for API compatibility)
      */
     public void replaceLast(String line, LogStore.Level level) {
         try {
-            doc.remove(lastLineStart, lastLineLen);
-            doc.insertString(lastLineStart, line, styleFor(level));
-            lastLineLen = line.length();
+            if (doc instanceof AbstractDocument ad) {
+                ad.remove(lastLineStart, lastLineLen);
+                ad.insertString(lastLineStart, line, null);
+                lastLineLen = line.length();
+            }
         } catch (BadLocationException ex) {
             Logger.internalDebug("LogRenderer.replaceLast: " + ex);
         }
@@ -105,12 +97,9 @@ public final class LogRenderer {
 
     /**
      * Scrolls to the bottom unless paused.
-     *
-     * <p>
-     * @param paused when true, leaves caret position unchanged
      */
     public void autoscrollIfNeeded(boolean paused) {
-        if (!paused) textPane.setCaretPosition(doc.getLength());
+        if (!paused) textComponent.setCaretPosition(doc.getLength());
     }
 
     /**
@@ -129,14 +118,4 @@ public final class LogRenderer {
         return repeats > 1 ? base + "  (x" + repeats + ")\n" : base + "\n";
     }
 
-    /**
-     * Resolves the text style for a log level.
-     *
-     * <p>
-     * @param level log level
-     * @return Swing style to apply
-     */
-    private Style styleFor(LogStore.Level level) {
-        return (level == LogStore.Level.ERROR) ? errorStyle : infoStyle;
-    }
 }

@@ -5,8 +5,9 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JCheckBox;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.JTextArea;
 import javax.swing.text.BadLocationException;
-import javax.swing.text.StyledDocument;
+import javax.swing.text.Document;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,7 +20,8 @@ class LogPanelFilterRegexHeadlessTest {
         JTextField filterField = get(panel, "filterField", JTextField.class);
         JCheckBox filterCaseToggle = get(panel, "filterCaseToggle", JCheckBox.class);
         JCheckBox filterRegexToggle = get(panel, "filterRegexToggle", JCheckBox.class);
-        StyledDocument doc = get(panel, "doc", StyledDocument.class);
+        JTextArea logTextPane = get(panel, "logTextPane", JTextArea.class);
+        Document doc = logTextPane.getDocument();
 
         // Ingest two messages with different casing
         panel.onLog("INFO", "Hello ABC");
@@ -50,7 +52,7 @@ class LogPanelFilterRegexHeadlessTest {
                 .contains("hello abc");
     }
 
-    private static String docText(StyledDocument doc) throws BadLocationException {
+    private static String docText(Document doc) throws BadLocationException {
         return doc.getText(0, doc.getLength());
     }
 

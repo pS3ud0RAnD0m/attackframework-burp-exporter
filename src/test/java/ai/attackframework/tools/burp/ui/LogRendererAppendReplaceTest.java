@@ -4,7 +4,7 @@ import ai.attackframework.tools.burp.ui.log.LogRenderer;
 import ai.attackframework.tools.burp.ui.log.LogStore;
 import org.junit.jupiter.api.Test;
 
-import javax.swing.JTextPane;
+import javax.swing.JTextArea;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,7 +22,7 @@ class LogRendererAppendReplaceTest {
      */
     @Test
     void append_then_replaceLast_updates_document_and_autoscroll_moves_caret() throws Exception {
-        JTextPane pane = new JTextPane();
+        JTextArea pane = new JTextArea();
         LogRenderer r = new LogRenderer(pane);
 
         String line1 = r.formatLine(java.time.LocalDateTime.now(), LogStore.Level.INFO, "one", 1);
