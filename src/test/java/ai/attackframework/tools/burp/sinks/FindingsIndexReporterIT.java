@@ -103,7 +103,6 @@ class FindingsIndexReporterIT {
         assertThat(doc).containsKey("url");
         assertThat(doc).containsKey("request_responses");
         assertThat(doc).containsKey("request_responses_missing");
-        assertThat(doc).containsKey("indexed_at");
         assertThat(doc).containsKey("document_meta");
         assertThat(doc).containsKey("description");
         assertThat(doc).containsKey("remediation_detail");
@@ -132,7 +131,8 @@ class FindingsIndexReporterIT {
         Map<String, Object> documentMeta = (Map<String, Object>) doc.get("document_meta");
         assertThat(documentMeta).isNotNull()
                 .containsKey("schema_version")
-                .containsKey("extension_version");
+                .containsKey("extension_version")
+                .containsKey("indexed_at");
     }
 
     @Test

@@ -203,7 +203,7 @@ public final class RequestResponseDocBuilder {
             entry.put("domain", c.domain());
             entry.put("path", c.path());
             Optional<java.time.ZonedDateTime> exp = c.expiration();
-            entry.put("expiration", exp == null || exp.isEmpty() ? null : exp.get().toString());
+            entry.put("expiration", exp == null || exp.isEmpty() ? null : exp.get().toInstant().toString());
             out.add(entry);
         }
         return out;

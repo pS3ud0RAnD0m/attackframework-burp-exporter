@@ -277,11 +277,10 @@ public final class FindingsIndexReporter {
         }
         doc.put("request_responses", requestResponsesList);
 
-        doc.put("indexed_at", Instant.now().toString());
-
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
     }

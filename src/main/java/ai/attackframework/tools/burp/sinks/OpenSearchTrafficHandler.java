@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -182,6 +183,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
         document.put("document_meta", meta);
 
         return document;
@@ -234,6 +236,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
         document.put("document_meta", meta);
 
         return document;

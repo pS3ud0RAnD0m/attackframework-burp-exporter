@@ -112,7 +112,8 @@ class SitemapIndexReporterIT {
         Map<String, Object> documentMeta = (Map<String, Object>) doc.get("document_meta");
         assertThat(documentMeta).isNotNull()
                 .containsKey("schema_version")
-                .containsKey("extension_version");
+                .containsKey("extension_version")
+                .containsKey("indexed_at");
     }
 
     private void createSitemapIndex() {

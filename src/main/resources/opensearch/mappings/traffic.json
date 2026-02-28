@@ -135,7 +135,8 @@
       "document_meta": {
         "properties": {
           "schema_version": { "type": "keyword" },
-          "extension_version": { "type": "keyword" }
+          "extension_version": { "type": "keyword" },
+          "indexed_at": { "type": "date" }
         }
       },
       "summary": { "type": "text" },

@@ -16,7 +16,6 @@
       "content_length": {"type": "integer"},
       "title": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
       "param_names": {"type": "keyword"},
-      "timestamp": {"type": "date"},
       "node_type": {"type": "keyword"},
       "path": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
       "query_string": {"type": "text"},
@@ -86,7 +85,7 @@
           "outbound_edge_tag_names": {"type": "keyword"}
         }
       },
-      "document_meta": {"properties": {"schema_version": {"type": "keyword"}, "extension_version": {"type": "keyword"}}},
+      "document_meta": {"properties": {"schema_version": {"type": "keyword"}, "extension_version": {"type": "keyword"}, "indexed_at": {"type": "date"}}},
       "summary": {"type": "text"},
       "cluster_id": {"type": "keyword"}
     }

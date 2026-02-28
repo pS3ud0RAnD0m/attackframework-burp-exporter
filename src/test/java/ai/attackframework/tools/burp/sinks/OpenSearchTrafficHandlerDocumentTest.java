@@ -118,7 +118,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> meta = (Map<String, Object>) doc.get("document_meta");
         assertThat(meta).isNotNull();
-        assertThat(meta).containsKeys("schema_version", "extension_version");
+        assertThat(meta).containsKeys("schema_version", "extension_version", "indexed_at");
         assertThat(meta.get("schema_version")).isEqualTo("1");
     }
 }

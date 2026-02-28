@@ -76,7 +76,6 @@ class SettingsIndexReporterIT {
 
         Map<String, Object> doc = awaitFirstDocument();
         assertThat(doc).isNotNull();
-        assertThat(doc).containsKey("timestamp");
         assertThat(doc).containsKey("project_id");
         assertThat(doc).containsKey("settings_project");
         assertThat(doc).containsKey("settings_user");
@@ -98,7 +97,8 @@ class SettingsIndexReporterIT {
         Map<String, Object> documentMeta = (Map<String, Object>) doc.get("document_meta");
         assertThat(documentMeta).isNotNull()
                 .containsKey("schema_version")
-                .containsKey("extension_version");
+                .containsKey("extension_version")
+                .containsKey("indexed_at");
     }
 
     private void createSettingsIndex() {

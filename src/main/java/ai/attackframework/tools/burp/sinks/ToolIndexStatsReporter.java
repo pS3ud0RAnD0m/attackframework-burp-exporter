@@ -34,6 +34,7 @@ public final class ToolIndexStatsReporter {
     /** When false, no scheduler is started and no documents are pushed. */
     public static final boolean ENABLED = true;
 
+    private static final String SCHEMA_VERSION = "1";
     private static final int INTERVAL_SECONDS = 30;
     private static final String EVENT_TYPE = "stats_snapshot";
 
@@ -159,12 +160,16 @@ public final class ToolIndexStatsReporter {
         }
 
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("timestamp", Instant.now().toString());
         doc.put("level", "INFO");
         doc.put("event_type", EVENT_TYPE);
         doc.put("message", message);
         doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used=" + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a") + " threads=" + threadCount + " traffic_indexed=" + TrafficExportStats.getSuccessCount());
         doc.put("extension_version", Version.get());
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("schema_version", SCHEMA_VERSION);
+        meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
+        doc.put("document_meta", meta);
         return doc;
     }
 }

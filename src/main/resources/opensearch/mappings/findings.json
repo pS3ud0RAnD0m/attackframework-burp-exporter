@@ -69,11 +69,11 @@
         }
       },
       "request_responses_missing": { "type": "boolean" },
-      "indexed_at": { "type": "date" },
       "document_meta": {
         "properties": {
           "schema_version": { "type": "keyword" },
-          "extension_version": { "type": "keyword" }
+          "extension_version": { "type": "keyword" },
+          "indexed_at": { "type": "date" }
         }
       },
       "summary": { "type": "text" },

@@ -27,6 +27,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  */
 public final class ToolIndexLogForwarder implements Logger.LogListener {
 
+    private static final String SCHEMA_VERSION = "1";
     private static final String EVENT_TYPE = "log";
     private static final int QUEUE_CAPACITY = 1000;
 
@@ -44,12 +45,16 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
     @Override
     public void onLog(String level, String message) {
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("timestamp", Instant.now().toString());
         doc.put("level", level != null ? level : "INFO");
         doc.put("event_type", EVENT_TYPE);
         doc.put("message_text", message != null ? message : "");
         doc.put("source", "burp-exporter");
         doc.put("extension_version", Version.get());
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("schema_version", SCHEMA_VERSION);
+        meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
+        doc.put("document_meta", meta);
 
         if (!queue.offer(doc)) {
             queue.poll();

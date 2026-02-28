@@ -179,13 +179,13 @@ public final class SettingsIndexReporter {
         Map<String, Object> settingsUser = parseJsonToMap(userOptionsJson);
 
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("timestamp", Instant.now().toString());
         doc.put("project_id", projectId != null ? projectId : "");
         doc.put("settings_project", settingsProject != null ? settingsProject : Map.of());
         doc.put("settings_user", settingsUser != null ? settingsUser : Map.of());
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
     }

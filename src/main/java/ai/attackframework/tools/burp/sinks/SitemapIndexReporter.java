@@ -250,8 +250,6 @@ public final class SitemapIndexReporter {
             doc.put("param_names", List.of());
         }
 
-        doc.put("timestamp", Instant.now().toString());
-
         doc.put("node_type", null);
         doc.put("path", request != null ? nullToEmpty(request.path()) : "");
         doc.put("query_string", request != null ? nullToEmpty(request.query()) : "");
@@ -274,6 +272,7 @@ public final class SitemapIndexReporter {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         doc.put("summary", null);
         doc.put("cluster_id", null);

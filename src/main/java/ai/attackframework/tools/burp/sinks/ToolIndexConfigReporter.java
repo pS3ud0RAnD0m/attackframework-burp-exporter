@@ -18,6 +18,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  */
 public final class ToolIndexConfigReporter {
 
+    private static final String SCHEMA_VERSION = "1";
     private static final String EVENT_TYPE = "config_snapshot";
     private static final String SOURCE = "burp-exporter";
 
@@ -71,13 +72,17 @@ public final class ToolIndexConfigReporter {
                 + " sources=" + (state.dataSources() != null ? state.dataSources().size() : 0);
 
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("timestamp", Instant.now().toString());
         doc.put("level", "INFO");
         doc.put("event_type", EVENT_TYPE);
         doc.put("source", SOURCE);
         doc.put("message", message);
         doc.put("message_text", messageText);
         doc.put("extension_version", Version.get());
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("schema_version", SCHEMA_VERSION);
+        meta.put("extension_version", Version.get());
+        meta.put("indexed_at", Instant.now().toString());
+        doc.put("document_meta", meta);
         return doc;
     }
 }
