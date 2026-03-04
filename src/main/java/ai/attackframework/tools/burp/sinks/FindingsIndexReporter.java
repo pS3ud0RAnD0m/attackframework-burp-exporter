@@ -5,7 +5,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +46,6 @@ public final class FindingsIndexReporter {
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
     private static final String SCHEMA_VERSION = "1";
-    private static final int BODY_BASE64_MAX_BYTES = 32_768;
 
     private static volatile ScheduledExecutorService scheduler;
     /** Keys of issues already pushed this session; only push new on 30s run. */
@@ -283,8 +281,6 @@ public final class FindingsIndexReporter {
                 HttpResponse resp = rr.hasResponse() ? rr.response() : null;
                 Map<String, Object> reqDoc = RequestResponseDocBuilder.buildRequestDoc(req);
                 Map<String, Object> respDoc = resp != null ? RequestResponseDocBuilder.buildResponseDoc(resp) : emptyResponseDoc();
-                applyBodyCap(reqDoc);
-                applyBodyCap(respDoc);
                 Map<String, Object> pair = new LinkedHashMap<>();
                 pair.put("request", reqDoc);
                 pair.put("response", respDoc);
@@ -301,32 +297,29 @@ public final class FindingsIndexReporter {
         return doc;
     }
 
-    private static void applyBodyCap(Map<String, Object> reqOrResp) {
-        Object bodyObj = reqOrResp.get("body");
-        if (bodyObj instanceof String base64) {
-            int decodedLen = Base64.getDecoder().decode(base64).length;
-            if (decodedLen > BODY_BASE64_MAX_BYTES) {
-                reqOrResp.put("body", null);
-                reqOrResp.put("body_content", null);
-            }
-        }
-    }
-
     private static Map<String, Object> emptyResponseDoc() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("status", 0);
         m.put("status_code_class", null);
         m.put("reason_phrase", null);
         m.put("http_version", null);
-        m.put("headers", List.of());
+        Map<String, Object> headers = new LinkedHashMap<>();
+        headers.put("full", List.of());
+        headers.put("names", List.of());
+        headers.put("etag", null);
+        headers.put("last_modified", null);
+        headers.put("content_location", null);
+        m.put("headers", headers);
         m.put("cookies", List.of());
         m.put("mime_type", null);
         m.put("stated_mime_type", null);
         m.put("inferred_mime_type", null);
-        m.put("body", null);
-        m.put("body_length", 0);
-        m.put("body_content", null);
-        m.put("body_offset", 0);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("length", 0);
+        body.put("offset", 0);
+        body.put("b64", null);
+        body.put("text", null);
+        m.put("body", body);
         m.put("markers", List.of());
         return m;
     }

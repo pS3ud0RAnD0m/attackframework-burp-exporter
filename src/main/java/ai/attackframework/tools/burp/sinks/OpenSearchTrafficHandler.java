@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.sinks;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -121,9 +122,10 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
                 return RequestToBeSentAction.continueWith(request);
             }
         }
-        Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request);
+        long requestSentMs = System.currentTimeMillis();
+        Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request, requestSentMs);
         if (skeleton != null) {
-            pendingOrphans.put(request.messageId(), new PendingOrphan(skeleton, System.currentTimeMillis()));
+            pendingOrphans.put(request.messageId(), new PendingOrphan(skeleton, requestSentMs));
         }
         return RequestToBeSentAction.continueWith(request);
     }
@@ -167,7 +169,11 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             }
         }
 
-        Map<String, Object> document = buildDocument(response, request, inScope);
+        long responseReceivedMs = System.currentTimeMillis();
+        PendingOrphan pending = pendingOrphans.get(response.messageId());
+        Long requestSentMs = pending == null ? null : pending.timestamp;
+
+        Map<String, Object> document = buildDocument(response, request, inScope, requestSentMs, responseReceivedMs);
         long startNs = System.nanoTime();
         boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, document);
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
@@ -195,6 +201,15 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * @return map matching traffic index mapping (never null)
      */
     Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean inScope) {
+        return buildDocument(response, request, inScope, null, null);
+    }
+
+    Map<String, Object> buildDocument(
+            HttpResponseReceived response,
+            HttpRequest request,
+            boolean inScope,
+            Long requestSentMs,
+            Long responseReceivedMs) {
         HttpService service = request.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         ToolSource toolSource = response.toolSource();
@@ -205,12 +220,19 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
+        document.put("protocol_transport", scheme);
+        document.put("protocol_application", "http");
+        document.put("protocol_sub", request.httpVersion());
         document.put("http_version", request.httpVersion());
         document.put("tool", toolType == null ? null : toolType.toolName());
         document.put("tool_type", toolType == null ? null : toolType.name());
         document.put("in_scope", inScope);
         document.put("message_id", response.messageId());
+        document.put("time_start", toIsoInstant(requestSentMs));
+        document.put("time_end", toIsoInstant(responseReceivedMs));
+        document.put("duration_ms", durationMs(requestSentMs, responseReceivedMs));
         putAnnotations(document, response.annotations());
+        document.put("edited", null);
         document.put("path", request.path());
         document.put("method", request.method());
         document.put("status", (int) response.statusCode());
@@ -225,6 +247,21 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         meta.put("extension_version", Version.get());
         meta.put("indexed_at", Instant.now().toString());
         document.put("document_meta", meta);
+        document.put("proxy_history_id", null);
+        document.put("listener_port", null);
+        document.put("time_request_sent", toIsoInstant(requestSentMs));
+        document.put("response_start_latency_ms", durationMs(requestSentMs, responseReceivedMs));
+        document.put("websocket_id", null);
+        document.put("ws_direction", null);
+        document.put("ws_message_type", null);
+        document.put("ws_payload", null);
+        document.put("ws_payload_text", null);
+        document.put("ws_payload_length", null);
+        document.put("ws_edited", null);
+        document.put("ws_edited_payload", null);
+        document.put("ws_upgrade_request", null);
+        document.put("ws_time", null);
+        document.put("ws_message_id", null);
 
         return document;
     }
@@ -247,7 +284,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * Caller must hold Burp HTTP thread. Does not include {@code response}; add via
      * {@link #buildOrphanResponse()} when exporting.
      */
-    private Map<String, Object> buildOrphanDocumentSkeleton(HttpRequestToBeSent request) {
+    private Map<String, Object> buildOrphanDocumentSkeleton(HttpRequestToBeSent request, long requestSentMs) {
         HttpService service = request.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         ToolSource toolSource = request.toolSource();
@@ -260,12 +297,19 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
+        document.put("protocol_transport", scheme);
+        document.put("protocol_application", "http");
+        document.put("protocol_sub", request.httpVersion());
         document.put("http_version", request.httpVersion());
         document.put("tool", toolType == null ? null : toolType.toolName());
         document.put("tool_type", toolType == null ? null : toolType.name());
         document.put("in_scope", inScope);
         document.put("message_id", request.messageId());
+        document.put("time_start", toIsoInstant(requestSentMs));
+        document.put("time_end", null);
+        document.put("duration_ms", null);
         putAnnotations(document, request.annotations());
+        document.put("edited", null);
         document.put("path", request.path());
         document.put("method", request.method());
         document.put("status", ORPHAN_STATUS);
@@ -278,6 +322,21 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         meta.put("extension_version", Version.get());
         meta.put("indexed_at", Instant.now().toString());
         document.put("document_meta", meta);
+        document.put("proxy_history_id", null);
+        document.put("listener_port", null);
+        document.put("time_request_sent", toIsoInstant(requestSentMs));
+        document.put("response_start_latency_ms", null);
+        document.put("websocket_id", null);
+        document.put("ws_direction", null);
+        document.put("ws_message_type", null);
+        document.put("ws_payload", null);
+        document.put("ws_payload_text", null);
+        document.put("ws_payload_length", null);
+        document.put("ws_edited", null);
+        document.put("ws_edited_payload", null);
+        document.put("ws_upgrade_request", null);
+        document.put("ws_time", null);
+        document.put("ws_message_id", null);
 
         return document;
     }
@@ -286,6 +345,10 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("status", ORPHAN_STATUS);
         resp.put("reason_phrase", ORPHAN_REASON_PHRASE);
+        resp.put("headers", Collections.emptyList());
+        resp.put("cookies", Collections.emptyList());
+        resp.put("markers", Collections.emptyList());
+        resp.put("header_names", Collections.emptyList());
         return resp;
     }
 
@@ -316,6 +379,10 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
                 continue;
             }
             Map<String, Object> doc = new LinkedHashMap<>(po.documentSkeleton);
+            long nowMs = System.currentTimeMillis();
+            doc.put("time_end", toIsoInstant(nowMs));
+            doc.put("duration_ms", durationMs(po.timestamp, nowMs));
+            doc.put("response_start_latency_ms", durationMs(po.timestamp, nowMs));
             doc.put("response", buildOrphanResponse());
             long startNs = System.nanoTime();
             boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, doc);
@@ -340,5 +407,20 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             this.documentSkeleton = documentSkeleton;
             this.timestamp = timestamp;
         }
+    }
+
+    private static String toIsoInstant(Long epochMs) {
+        if (epochMs == null) {
+            return null;
+        }
+        return Instant.ofEpochMilli(epochMs).toString();
+    }
+
+    private static Long durationMs(Long startMs, Long endMs) {
+        if (startMs == null || endMs == null) {
+            return null;
+        }
+        long d = endMs - startMs;
+        return d >= 0 ? d : 0L;
     }
 }

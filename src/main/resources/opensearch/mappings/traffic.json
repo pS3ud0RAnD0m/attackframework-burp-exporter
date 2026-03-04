@@ -7,7 +7,6 @@
       "host": { "type": "keyword" },
       "port": { "type": "integer" },
       "scheme": { "type": "keyword" },
-      "ip_address": { "type": "keyword" },
       "protocol_transport": { "type": "keyword" },
       "protocol_application": { "type": "keyword" },
       "protocol_sub": { "type": "keyword" },
@@ -36,10 +35,14 @@
           "content_type": { "type": "keyword" },
           "http_version": { "type": "keyword" },
           "headers": {
-            "type": "nested",
             "properties": {
-              "name": { "type": "keyword" },
-              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+              "full": {
+                "type": "nested",
+                "properties": {
+                  "name": { "type": "keyword" },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+                }
+              }
             }
           },
           "parameters": {
@@ -50,9 +53,6 @@
               "type": { "type": "keyword" }
             }
           },
-          "body": { "type": "binary", "doc_values": false },
-          "body_length": { "type": "integer" },
-          "body_offset": { "type": "integer" },
           "content_type_enum": { "type": "keyword" },
           "markers": {
             "type": "nested",
@@ -61,7 +61,14 @@
               "end_index_exclusive": { "type": "integer" }
             }
           },
-          "body_content": { "type": "text" }
+          "body": {
+            "properties": {
+              "length": { "type": "integer" },
+              "offset": { "type": "integer" },
+              "b64": { "type": "binary", "doc_values": false },
+              "text": { "type": "text", "index_options": "offsets" }
+            }
+          }
         }
       },
       "response": {
@@ -70,10 +77,18 @@
           "reason_phrase": { "type": "keyword" },
           "http_version": { "type": "keyword" },
           "headers": {
-            "type": "nested",
             "properties": {
-              "name": { "type": "keyword" },
-              "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+              "full": {
+                "type": "nested",
+                "properties": {
+                  "name": { "type": "keyword" },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+                }
+              },
+              "names": { "type": "keyword" },
+              "etag": { "type": "keyword" },
+              "last_modified": { "type": "keyword" },
+              "content_location": { "type": "keyword" }
             }
           },
           "cookies": {
@@ -89,9 +104,6 @@
           "mime_type": { "type": "keyword" },
           "stated_mime_type": { "type": "keyword" },
           "inferred_mime_type": { "type": "keyword" },
-          "body": { "type": "binary", "doc_values": false },
-          "body_length": { "type": "integer" },
-          "body_offset": { "type": "integer" },
           "status_code_class": { "type": "keyword" },
           "markers": {
             "type": "nested",
@@ -100,30 +112,32 @@
               "end_index_exclusive": { "type": "integer" }
             }
           },
-          "page_title": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
           "location": { "type": "keyword" },
           "content_length": { "type": "integer" },
-          "visible_text": { "type": "text" },
-          "word_count": { "type": "integer" },
-          "visible_word_count": { "type": "integer" },
-          "line_count": { "type": "integer" },
           "cookie_names": { "type": "keyword" },
           "canonical_link": { "type": "keyword" },
-          "limited_body_content": { "type": "text" },
-          "header_names": { "type": "keyword" },
-          "body_content": { "type": "text" },
+          "body": {
+            "properties": {
+              "length": { "type": "integer" },
+              "offset": { "type": "integer" },
+              "b64": { "type": "binary", "doc_values": false },
+              "text": { "type": "text", "index_options": "offsets" },
+              "page_title": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "visible_text": { "type": "text", "index_options": "offsets" },
+              "word_count": { "type": "integer" },
+              "visible_word_count": { "type": "integer" },
+              "line_count": { "type": "integer" },
+              "anchor_labels": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+              "tag_names": { "type": "keyword" },
+              "div_ids": { "type": "keyword" },
+              "css_classes": { "type": "keyword" }
+            }
+          },
           "comments": { "type": "text" },
           "non_hidden_form_input_types": { "type": "keyword" },
-          "anchor_labels": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-          "tag_names": { "type": "keyword" },
-          "div_ids": { "type": "keyword" },
-          "css_classes": { "type": "keyword" },
           "input_submit_labels": { "type": "keyword" },
           "button_submit_labels": { "type": "keyword" },
           "input_image_labels": { "type": "keyword" },
-          "etag_header": { "type": "keyword" },
-          "last_modified_header": { "type": "keyword" },
-          "content_location": { "type": "keyword" },
           "outbound_edge_count": { "type": "integer" },
           "outbound_edge_tag_names": { "type": "keyword" }
         }
@@ -132,6 +146,13 @@
       "ws_direction": { "type": "keyword" },
       "ws_message_type": { "type": "keyword" },
       "ws_payload": { "type": "binary", "doc_values": false },
+      "ws_payload_text": { "type": "text" },
+      "ws_payload_length": { "type": "integer" },
+      "ws_edited": { "type": "boolean" },
+      "ws_edited_payload": { "type": "binary", "doc_values": false },
+      "ws_upgrade_request": { "type": "object", "enabled": true },
+      "ws_time": { "type": "date" },
+      "ws_message_id": { "type": "integer" },
       "document_meta": {
         "properties": {
           "schema_version": { "type": "keyword" },
@@ -139,8 +160,6 @@
           "indexed_at": { "type": "date" }
         }
       },
-      "summary": { "type": "text" },
-      "cluster_id": { "type": "keyword" },
       "proxy_history_id": { "type": "integer" },
       "listener_port": { "type": "integer" },
       "time_request_sent": { "type": "date" },

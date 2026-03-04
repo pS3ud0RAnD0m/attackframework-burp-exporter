@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -50,7 +51,10 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
         doc.put("event_type", EVENT_TYPE);
         doc.put("message_text", message != null ? message : "");
         doc.put("source", "burp-exporter");
+        doc.put("thread", Thread.currentThread().getName());
         doc.put("extension_version", Version.get());
+        doc.put("burp_version", burpVersion());
+        doc.put("project_id", projectId());
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
@@ -86,6 +90,30 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
             } catch (Exception ignored) {
                 // Fire-and-forget; avoid feedback loop
             }
+        }
+    }
+
+    private static String burpVersion() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null) {
+                return null;
+            }
+            return String.valueOf(api.burpSuite().version());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String projectId() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null) {
+                return null;
+            }
+            return api.project().id();
+        } catch (Exception e) {
+            return null;
         }
     }
 }

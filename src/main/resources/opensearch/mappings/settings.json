@@ -12,9 +12,7 @@
           "extension_version": { "type": "keyword" },
           "indexed_at": { "type": "date" }
         }
-      },
-      "summary": { "type": "text" },
-      "cluster_id": { "type": "keyword" }
+      }
     }
   }
 }

@@ -156,12 +156,18 @@ class FindingsIndexReporterIT {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> req = (Map<String, Object>) pair.get("request");
-        assertThat(req).containsKeys("method", "path", "headers", "parameters", "markers", "body_length");
+        assertThat(req).containsKeys("method", "path", "headers", "parameters", "markers", "body");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> reqBody = (Map<String, Object>) req.get("body");
+        assertThat(reqBody).containsKeys("length", "offset");
         assertThat(req.get("method")).isEqualTo("POST");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> resp = (Map<String, Object>) pair.get("response");
-        assertThat(resp).containsKeys("status", "reason_phrase", "headers", "markers", "body_length");
+        assertThat(resp).containsKeys("status", "reason_phrase", "headers", "markers", "body");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        assertThat(respBody).containsKeys("length", "offset");
         assertThat(resp.get("status")).isEqualTo(200);
     }
 
@@ -201,7 +207,9 @@ class FindingsIndexReporterIT {
         Map<String, Object> resp = (Map<String, Object>) requestResponses.get(0).get("response");
         assertThat(resp.get("status")).isEqualTo(0);
         assertThat((List<?>) resp.get("markers")).isEmpty();
-        assertThat((List<?>) resp.get("headers")).isEmpty();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> headers = (Map<String, Object>) resp.get("headers");
+        assertThat((List<?>) headers.get("full")).isEmpty();
     }
 
     private void createFindingsIndex() {

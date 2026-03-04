@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,6 +19,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.handler.TimingData;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
@@ -116,12 +118,18 @@ public final class ProxyHistoryIndexReporter {
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
+        document.put("protocol_transport", scheme);
+        document.put("protocol_application", "http");
+        document.put("protocol_sub", request.httpVersion());
         document.put("http_version", request.httpVersion());
         document.put("tool", "Proxy History");
         document.put("tool_type", "PROXY_HISTORY");
         document.put("in_scope", inScope);
         document.put("message_id", item.id());
         document.put("proxy_history_id", item.id());
+        document.put("listener_port", item.listenerPort());
+        document.put("edited", item.edited());
+        populateTiming(document, item);
         putAnnotations(document, item.annotations());
         document.put("path", request.path());
         document.put("method", request.method());
@@ -144,7 +152,64 @@ public final class ProxyHistoryIndexReporter {
         meta.put("indexed_at", Instant.now().toString());
         document.put("document_meta", meta);
 
+        // HTTP docs from Proxy History are not websocket messages.
+        document.put("websocket_id", null);
+        document.put("ws_direction", null);
+        document.put("ws_message_type", null);
+        document.put("ws_payload", null);
+        document.put("ws_payload_text", null);
+        document.put("ws_payload_length", null);
+        document.put("ws_edited", null);
+        document.put("ws_edited_payload", null);
+        document.put("ws_upgrade_request", null);
+        document.put("ws_time", null);
+        document.put("ws_message_id", null);
+
         return document;
+    }
+
+    private static void populateTiming(Map<String, Object> document, ProxyHttpRequestResponse item) {
+        String timeRequestSent = null;
+        Integer responseStartLatencyMs = null;
+        Integer durationMs = null;
+        String timeEnd = null;
+        try {
+            TimingData td = item.timingData();
+            if (td != null) {
+                ZonedDateTime sent = td.timeRequestSent();
+                if (sent != null) {
+                    timeRequestSent = sent.toInstant().toString();
+                }
+                var start = td.timeBetweenRequestSentAndStartOfResponse();
+                if (start != null) {
+                    responseStartLatencyMs = (int) start.toMillis();
+                }
+                var end = td.timeBetweenRequestSentAndEndOfResponse();
+                if (end != null) {
+                    durationMs = (int) end.toMillis();
+                    if (sent != null) {
+                        timeEnd = sent.plus(end).toInstant().toString();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // optional timing fields
+        }
+        if (timeRequestSent == null) {
+            try {
+                ZonedDateTime t = item.time();
+                if (t != null) {
+                    timeRequestSent = t.toInstant().toString();
+                }
+            } catch (Exception ignored) {
+                // keep null
+            }
+        }
+        document.put("time_request_sent", timeRequestSent);
+        document.put("time_start", timeRequestSent);
+        document.put("time_end", timeEnd);
+        document.put("response_start_latency_ms", responseStartLatencyMs);
+        document.put("duration_ms", durationMs);
     }
 
     private static void putAnnotations(Map<String, Object> document, burp.api.montoya.core.Annotations annotations) {
@@ -171,11 +236,14 @@ public final class ProxyHistoryIndexReporter {
         m.put("mime_type", null);
         m.put("stated_mime_type", null);
         m.put("inferred_mime_type", null);
-        m.put("body", null);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("b64", null);
+        body.put("text", null);
+        m.put("body", body);
         m.put("body_length", 0);
-        m.put("body_content", null);
         m.put("body_offset", 0);
         m.put("markers", List.of());
+        m.put("header_names", List.of());
         return m;
     }
 }

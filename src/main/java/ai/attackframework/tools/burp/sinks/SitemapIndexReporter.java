@@ -228,8 +228,8 @@ public final class SitemapIndexReporter {
         doc.put("host", service != null ? service.host() : "");
         doc.put("port", service != null ? service.port() : 0);
         doc.put("protocol_transport", service != null ? (service.secure() ? "https" : "http") : "");
-        doc.put("protocol_application", null);
-        doc.put("protocol_sub", null);
+        doc.put("protocol_application", "http");
+        doc.put("protocol_sub", request != null ? nullToEmpty(request.httpVersion()) : "");
         doc.put("method", nullToEmpty(method));
 
         if (response != null) {
@@ -257,13 +257,10 @@ public final class SitemapIndexReporter {
             doc.put("param_names", List.of());
         }
 
-        doc.put("node_type", null);
         doc.put("path", request != null ? nullToEmpty(request.path()) : "");
         doc.put("query_string", request != null ? nullToEmpty(request.query()) : "");
         doc.put("request_id", requestId(url, method));
         doc.put("source", SOURCE_VALUE);
-        doc.put("tech_stack", null);
-        doc.put("tags", null);
 
         if (request != null) {
             doc.put("request", RequestResponseDocBuilder.buildRequestDoc(request));
@@ -281,8 +278,6 @@ public final class SitemapIndexReporter {
         meta.put("extension_version", Version.get());
         meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
-        doc.put("summary", null);
-        doc.put("cluster_id", null);
 
         return doc;
     }

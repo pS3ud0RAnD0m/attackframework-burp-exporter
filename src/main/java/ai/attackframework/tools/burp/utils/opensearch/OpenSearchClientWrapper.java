@@ -140,16 +140,24 @@ public class OpenSearchClientWrapper {
             BulkResponse response = client.bulk(builder.build());
             int successCount = 0;
             List<Integer> failedIndices = new ArrayList<>();
+            final int maxLoggedPerBulk = 3;
             int i = 0;
+            int logged = 0;
             for (var item : response.items()) {
                 if (item.error() == null) {
                     successCount++;
                 } else {
                     failedIndices.add(i);
-                    var err = item.error();
-                    Logger.logDebug("Bulk item error at " + i + ": " + (err != null ? err.reason() : "unknown"));
+                    if (logged < maxLoggedPerBulk) {
+                        var err = item.error();
+                        Logger.logDebug("Bulk item error at " + i + ": " + (err != null ? err.reason() : "unknown"));
+                        logged++;
+                    }
                 }
                 i++;
+            }
+            if (failedIndices.size() > maxLoggedPerBulk) {
+                Logger.logDebug("Bulk index " + indexName + ": " + (failedIndices.size() - maxLoggedPerBulk) + " more item errors in this batch (total failed: " + failedIndices.size() + ")");
             }
             return new BulkResult(successCount, failedIndices);
         } catch (Exception e) {

@@ -8,6 +8,7 @@ import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -89,12 +90,39 @@ public final class ToolIndexConfigReporter {
         doc.put("source", SOURCE);
         doc.put("message", message);
         doc.put("message_text", messageText);
+        doc.put("thread", Thread.currentThread().getName());
         doc.put("extension_version", Version.get());
+        doc.put("burp_version", burpVersion());
+        doc.put("project_id", projectId());
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
         meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
+    }
+
+    private static String burpVersion() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null) {
+                return null;
+            }
+            return String.valueOf(api.burpSuite().version());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String projectId() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null) {
+                return null;
+            }
+            return api.project().id();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

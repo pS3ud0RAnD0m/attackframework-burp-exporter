@@ -38,14 +38,41 @@
               "file_extension": { "type": "keyword" },
               "content_type": { "type": "keyword" },
               "http_version": { "type": "keyword" },
-              "headers": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } } } },
-              "parameters": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }, "type": { "type": "keyword" } } },
-              "body": { "type": "binary", "doc_values": false },
-              "body_length": { "type": "integer" },
-              "body_offset": { "type": "integer" },
+              "headers": {
+                "properties": {
+                  "full": {
+                    "type": "nested",
+                    "properties": {
+                      "name": { "type": "keyword" },
+                      "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+                    }
+                  }
+                }
+              },
+              "parameters": {
+                "type": "nested",
+                "properties": {
+                  "name": { "type": "keyword" },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+                  "type": { "type": "keyword" }
+                }
+              },
               "content_type_enum": { "type": "keyword" },
-              "markers": { "type": "nested", "properties": { "start_index_inclusive": { "type": "integer" }, "end_index_exclusive": { "type": "integer" } } },
-              "body_content": { "type": "text" }
+              "markers": {
+                "type": "nested",
+                "properties": {
+                  "start_index_inclusive": { "type": "integer" },
+                  "end_index_exclusive": { "type": "integer" }
+                }
+              },
+              "body": {
+                "properties": {
+                  "length": { "type": "integer" },
+                  "offset": { "type": "integer" },
+                  "b64": { "type": "binary", "doc_values": false },
+                  "text": { "type": "text", "index_options": "offsets" }
+                }
+              }
             }
           },
           "response": {
@@ -53,17 +80,50 @@
               "status": { "type": "integer" },
               "reason_phrase": { "type": "keyword" },
               "http_version": { "type": "keyword" },
-              "headers": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } } } },
-              "cookies": { "type": "nested", "properties": { "name": { "type": "keyword" }, "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }, "domain": { "type": "keyword" }, "path": { "type": "keyword" }, "expiration": { "type": "date" } } },
+              "headers": {
+                "properties": {
+                  "full": {
+                    "type": "nested",
+                    "properties": {
+                      "name": { "type": "keyword" },
+                      "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+                    }
+                  },
+                  "names": { "type": "keyword" },
+                  "etag": { "type": "keyword" },
+                  "last_modified": { "type": "keyword" },
+                  "content_location": { "type": "keyword" }
+                }
+              },
+              "cookies": {
+                "type": "nested",
+                "properties": {
+                  "name": { "type": "keyword" },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
+                  "domain": { "type": "keyword" },
+                  "path": { "type": "keyword" },
+                  "expiration": { "type": "date" }
+                }
+              },
               "mime_type": { "type": "keyword" },
               "stated_mime_type": { "type": "keyword" },
               "inferred_mime_type": { "type": "keyword" },
-              "body": { "type": "binary", "doc_values": false },
-              "body_length": { "type": "integer" },
-              "body_offset": { "type": "integer" },
               "status_code_class": { "type": "keyword" },
-              "markers": { "type": "nested", "properties": { "start_index_inclusive": { "type": "integer" }, "end_index_exclusive": { "type": "integer" } } },
-              "body_content": { "type": "text" }
+              "markers": {
+                "type": "nested",
+                "properties": {
+                  "start_index_inclusive": { "type": "integer" },
+                  "end_index_exclusive": { "type": "integer" }
+                }
+              },
+              "body": {
+                "properties": {
+                  "length": { "type": "integer" },
+                  "offset": { "type": "integer" },
+                  "b64": { "type": "binary", "doc_values": false },
+                  "text": { "type": "text", "index_options": "offsets" }
+                }
+              }
             }
           }
         }
@@ -75,9 +135,7 @@
           "extension_version": { "type": "keyword" },
           "indexed_at": { "type": "date" }
         }
-      },
-      "summary": { "type": "text" },
-      "cluster_id": { "type": "keyword" }
+      }
     }
   }
 }

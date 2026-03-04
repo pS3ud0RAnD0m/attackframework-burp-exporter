@@ -27,6 +27,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 
 import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter;
+import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexConfigReporter;
@@ -242,6 +243,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     SitemapIndexReporter.start();
                     SitemapIndexReporter.pushSnapshotNow();
                     ProxyHistoryIndexReporter.pushSnapshotNow();
+                    ProxyWebSocketIndexReporter.start();
+                    ProxyWebSocketIndexReporter.pushSnapshotNow();
                     Logger.logInfoPanelOnly("Export started.");
                 },
                 () -> {

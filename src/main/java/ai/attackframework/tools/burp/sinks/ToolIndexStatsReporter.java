@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -168,14 +169,42 @@ public final class ToolIndexStatsReporter {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("level", "INFO");
         doc.put("event_type", EVENT_TYPE);
+        doc.put("source", "burp-exporter");
         doc.put("message", message);
         doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used=" + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a") + " threads=" + threadCount + " traffic_indexed=" + ExportStats.getSuccessCount("traffic"));
+        doc.put("thread", Thread.currentThread().getName());
         doc.put("extension_version", Version.get());
+        doc.put("burp_version", burpVersion());
+        doc.put("project_id", projectId());
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
         meta.put("extension_version", Version.get());
         meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
+    }
+
+    private static String burpVersion() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null) {
+                return null;
+            }
+            return String.valueOf(api.burpSuite().version());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String projectId() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null) {
+                return null;
+            }
+            return api.project().id();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
