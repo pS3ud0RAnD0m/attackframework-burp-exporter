@@ -16,6 +16,7 @@ import org.opensearch.client.opensearch.indices.RefreshRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -201,9 +202,10 @@ class FindingsIndexReporterIT {
         FindingsIndexReporter.pushSnapshotNow();
 
         Map<String, Object> doc = awaitFirstDocument();
+        assertThat(doc.get("request_responses_missing")).as("document should have request/response evidence").isEqualTo(false);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> requestResponses = (List<Map<String, Object>>) doc.get("request_responses");
-        assertThat(requestResponses).hasSize(1);
+        assertThat(requestResponses).as("request_responses").hasSize(1);
         Map<String, Object> resp = (Map<String, Object>) requestResponses.get(0).get("response");
         assertThat(resp.get("status")).isEqualTo(0);
         assertThat((List<?>) resp.get("markers")).isEmpty();
@@ -387,7 +389,7 @@ class FindingsIndexReporterIT {
         when(definition.background()).thenReturn(DEF_BACKGROUND);
         when(definition.remediation()).thenReturn(DEF_REMEDIATION);
 
-        when(rr.request()).thenReturn(req);
+        doReturn(req).when(rr).request();
         when(rr.hasResponse()).thenReturn(false);
         when(rr.response()).thenReturn(null);
 
