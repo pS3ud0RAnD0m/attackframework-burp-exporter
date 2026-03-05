@@ -26,6 +26,7 @@ import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
+import ai.attackframework.tools.burp.sinks.OpenSearchSink;
 import ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
@@ -231,8 +232,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::importConfig,
                 this::exportConfig,
                 new ControlSaveButtonListener(),
-                () -> {
+                onStartFailure -> {
                     updateRuntimeConfig();
+                    String url = openSearchUrlField.getText().trim();
+                    if (!url.isEmpty()) {
+                        List<String> sources = getSelectedSources();
+                        Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
+                        List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources);
+                        for (OpenSearchSink.IndexResult r : results) {
+                            Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
+                                    + (r.error() != null ? " (" + r.error() + ")" : ""));
+                        }
+                        if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
+                            Logger.logError("[Start] Ensure indexes: one or more failed; see log above.");
+                            onStartFailure.run();
+                            return;
+                        }
+                    }
                     RuntimeConfig.setExportRunning(true);
                     ToolIndexConfigReporter.pushConfigSnapshot();
                     ToolIndexStatsReporter.start();

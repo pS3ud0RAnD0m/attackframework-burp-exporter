@@ -11,9 +11,9 @@ import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
@@ -22,12 +22,11 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 class OpenSearchSinkToolOnlyIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     @Test
     void create_delete_recreate_toolOnly_viaSink() {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("tool"));
         assertThat(first).isNotEmpty();

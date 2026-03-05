@@ -21,6 +21,7 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -43,7 +44,7 @@ import net.miginfocom.swing.MigLayout;
 public final class ConfigControlPanel {
 
     private static final Color INDICATOR_GREEN = new Color(0x00_88_00);
-    private static final Color INDICATOR_RED   = new Color(0xCC_00_00);
+    private static final Color INDICATOR_RED   = new Color(0x99_00_00);
     private static final Color INDICATOR_BORDER = Color.BLACK;
     /** Inset so the border is not clipped by the component bounds. */
     private static final int INDICATOR_INSET   = 2;
@@ -111,7 +112,8 @@ public final class ConfigControlPanel {
     private final Runnable importAction;
     private final Runnable exportAction;
     private final ActionListener saveAction;
-    private final Runnable startAction;
+    /** Receives a revert-UI runnable to call if start fails (e.g. index creation). */
+    private final Consumer<Runnable> startAction;
     private final Runnable stopAction;
 
     /** Canonical constructor with null checks. */
@@ -126,7 +128,7 @@ public final class ConfigControlPanel {
             Runnable importAction,
             Runnable exportAction,
             ActionListener saveAction,
-            Runnable startAction,
+            Consumer<Runnable> startAction,
             Runnable stopAction
     ) {
         this.importExportStatus = Objects.requireNonNull(importExportStatus, "importExportStatus");
@@ -178,9 +180,14 @@ public final class ConfigControlPanel {
                 updateStartStopButton(startStopBtn, false);
                 indicator.setRunning(false);
             } else {
-                startAction.run();
+                // 1) Paint button green immediately; 2) then create indexes and push (startAction may call revert if index creation fails)
                 updateStartStopButton(startStopBtn, true);
                 indicator.setRunning(true);
+                Runnable revertUi = () -> {
+                    updateStartStopButton(startStopBtn, false);
+                    indicator.setRunning(false);
+                };
+                SwingUtilities.invokeLater(() -> startAction.accept(revertUi));
             }
         });
 

@@ -3,10 +3,12 @@ package ai.attackframework.tools.burp.sinks;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
@@ -18,12 +20,13 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 class OpenSearchCleanupIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private static final List<String> STANDARD_SHORT_NAMES =
             List.of("settings", "sitemap", "findings", "traffic", "tool");
 
     @Test
     void placeholder_soAfterAllRuns() {
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         // No-op; ensures this class is executed so @AfterAll runs.
     }
 

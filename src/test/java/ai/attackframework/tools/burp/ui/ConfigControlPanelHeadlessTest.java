@@ -6,6 +6,7 @@ import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -41,7 +42,7 @@ class ConfigControlPanelHeadlessTest {
     @Test
     void control_panel_has_header_and_named_components() throws Exception {
         RuntimeConfig.setExportRunning(false);
-        JPanel root = buildPanel(noOpRunnables(), noOpRunnables(), noOpActionListener());
+        JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
 
         runEdt(() -> {
             root.setSize(600, 400);
@@ -66,7 +67,7 @@ class ConfigControlPanelHeadlessTest {
     @Test
     void control_panel_buttons_have_expected_labels() throws Exception {
         RuntimeConfig.setExportRunning(false);
-        JPanel root = buildPanel(noOpRunnables(), noOpRunnables(), noOpActionListener());
+        JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
         runEdt(() -> {
             root.setSize(600, 400);
             root.doLayout();
@@ -83,7 +84,7 @@ class ConfigControlPanelHeadlessTest {
         AtomicInteger startCount = new AtomicInteger(0);
         AtomicInteger stopCount = new AtomicInteger(0);
         JPanel root = buildPanel(
-                () -> { startCount.incrementAndGet(); RuntimeConfig.setExportRunning(true); },
+                onStartFailure -> { startCount.incrementAndGet(); RuntimeConfig.setExportRunning(true); },
                 () -> { stopCount.incrementAndGet(); RuntimeConfig.setExportRunning(false); },
                 noOpActionListener()
         );
@@ -100,6 +101,7 @@ class ConfigControlPanelHeadlessTest {
         assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
 
         runEdt(() -> startStop.doClick());
+        runEdt(() -> { /* flush EDT so deferred start action runs */ });
         assertThat(startCount.get()).isEqualTo(1);
         assertThat(stopCount.get()).isEqualTo(0);
         assertThat(RuntimeConfig.isExportRunning()).isTrue();
@@ -115,9 +117,31 @@ class ConfigControlPanelHeadlessTest {
     }
 
     @Test
+    void start_action_calling_onStartFailure_reverts_button_and_indicator_to_stopped() throws Exception {
+        RuntimeConfig.setExportRunning(false);
+        JPanel root = buildPanel(
+                onStartFailure -> onStartFailure.run(),
+                noOpRunnables(),
+                noOpActionListener()
+        );
+        runEdt(() -> {
+            root.setSize(600, 400);
+            root.doLayout();
+        });
+        JButton startStop = findByName(root, "control.startStop", JButton.class);
+        JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+
+        runEdt(() -> startStop.doClick());
+        runEdt(() -> { /* flush EDT so deferred start action runs and calls onStartFailure */ });
+        assertThat(RuntimeConfig.isExportRunning()).isFalse();
+        assertThat(startStop.getText()).isEqualTo("Start");
+        assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+    }
+
+    @Test
     void when_export_running_panel_builds_with_stop_label() throws Exception {
         RuntimeConfig.setExportRunning(true);
-        JPanel root = buildPanel(noOpRunnables(), noOpRunnables(), noOpActionListener());
+        JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
         runEdt(() -> {
             root.setSize(600, 400);
             root.doLayout();
@@ -149,7 +173,7 @@ class ConfigControlPanelHeadlessTest {
     // ---- helpers ----
 
     private static JPanel buildPanel(
-            Runnable startAction,
+            Consumer<Runnable> startAction,
             Runnable stopAction,
             ActionListener saveAction
     ) {
@@ -173,6 +197,10 @@ class ConfigControlPanelHeadlessTest {
                 stopAction
         );
         return panel.build();
+    }
+
+    private static Consumer<Runnable> noOpStartAction() {
+        return r -> { };
     }
 
     private static Runnable noOpRunnables() {

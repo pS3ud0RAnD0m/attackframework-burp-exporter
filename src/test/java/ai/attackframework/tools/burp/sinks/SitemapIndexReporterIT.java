@@ -20,13 +20,13 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
@@ -45,7 +45,7 @@ import burp.api.montoya.sitemap.SiteMap;
 @Tag("integration")
 class SitemapIndexReporterIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private static final String SITEMAP_INDEX = IndexNaming.INDEX_PREFIX + "-sitemap";
 
     private static final String ITEM_URL = "https://example.com/path?q=1";
@@ -59,8 +59,7 @@ class SitemapIndexReporterIT {
 
     @BeforeEach
     void assumeOpenSearchReachable() {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
     }
 
     @AfterEach

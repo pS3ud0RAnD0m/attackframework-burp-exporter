@@ -12,9 +12,9 @@ import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
@@ -23,15 +23,14 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 class OpenSearchSinkSubsetIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private static final int WAIT_AFTER_DELETE_MS = 500;
     private static final int POLL_EXISTS_MAX_MS = 5_000;
     private static final int POLL_INTERVAL_MS = 100;
 
     @Test
     void create_delete_recreate_subset_settings_and_traffic() throws InterruptedException, IOException {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         List<String> sources = List.of("settings", "traffic", "tool");
 

@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenSearchClientWrapperIT {
 
     /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     /**
      * Verifies connectivity, index creation, existence check, and cleanup.
@@ -33,8 +34,7 @@ class OpenSearchClientWrapperIT {
      */
     @Test
     void testConnection_createIndex_verify_delete() throws Exception {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         String indexName = "af-test-" + Instant.now().toEpochMilli();
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
@@ -61,8 +61,7 @@ class OpenSearchClientWrapperIT {
      */
     @Test
     void indexDocument_roundTrip_thenDeleteIndex() throws Exception {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         String indexName = "af-doc-test-" + Instant.now().toEpochMilli();
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);

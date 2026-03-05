@@ -12,7 +12,7 @@ import org.opensearch.client.opensearch.indices.GetMappingResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
@@ -22,12 +22,11 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 class OpenSearchSinkMappingsIT {
 
     /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     @Test
     void mappings_arePresent_andNonEmpty_onServer() throws IOException {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         // Create standard indices via the sink (idempotent).
         List<String> sources = List.of("settings", "sitemap", "findings", "traffic");

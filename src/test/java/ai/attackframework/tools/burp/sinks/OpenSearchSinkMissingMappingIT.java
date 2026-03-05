@@ -9,9 +9,9 @@ import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
@@ -22,12 +22,11 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 class OpenSearchSinkMissingMappingIT {
 
     /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     @Test
     void createIndexFromResource_returnsFailed_whenMappingIsMissing() throws Exception {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         // Choose a short name with no corresponding mapping file.
         String shortName = "nonexistent";

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 
 /**
  * Concurrency smoke test: creating multiple indices in parallel should not deadlock or throw.
@@ -22,7 +22,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  */
 class OpenSearchSinkConcurrencyIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     // Standard short names
     private static final List<String> SOURCES = List.of("sitemap", "findings", "traffic", "settings", "tool");
@@ -38,8 +38,7 @@ class OpenSearchSinkConcurrencyIT {
 
     @Test
     void createIndexes_concurrently_completes_withoutDeadlock() throws Exception {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         try (ExecutorService pool = Executors.newFixedThreadPool(SOURCES.size())) {
             List<Callable<IndexResult>> tasks = SOURCES.stream()

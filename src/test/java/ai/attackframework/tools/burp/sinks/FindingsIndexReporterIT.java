@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -23,13 +24,13 @@ import static org.mockito.Mockito.when;
 import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.MimeType;
 
+import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
@@ -53,7 +54,7 @@ import burp.api.montoya.sitemap.SiteMap;
 @Tag("integration")
 class FindingsIndexReporterIT {
 
-    private static final String BASE_URL = "http://opensearch.url:9200";
+    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
 
     private static final String ISSUE_NAME = "SQL injection";
@@ -67,9 +68,14 @@ class FindingsIndexReporterIT {
     private static final int DEF_TYPE_INDEX = 42;
 
     @BeforeEach
-    void assumeOpenSearchReachable() {
-        var status = OpenSearchClientWrapper.testConnection(BASE_URL);
-        Assumptions.assumeTrue(status.success(), "OpenSearch dev cluster not reachable");
+    void assumeOpenSearchReachableAndCleanFindingsIndex() {
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        try {
+            client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
+        } catch (Exception e) {
+            // Index may not exist; ignore so each test starts with a clean slate
+        }
     }
 
     @AfterEach
@@ -201,7 +207,23 @@ class FindingsIndexReporterIT {
         FindingsIndexReporter.start();
         FindingsIndexReporter.pushSnapshotNow();
 
-        Map<String, Object> doc = awaitFirstDocument();
+        // Wait for this test's document (path /no-response, empty response): scheduler is shared, so first doc may be from another test
+        Map<String, Object> doc = awaitDocumentMatching(d -> {
+            if (Boolean.TRUE.equals(d.get("request_responses_missing"))) return false;
+            List<?> rr = (List<?>) d.get("request_responses");
+            if (rr == null || rr.size() != 1) return false;
+            Object pairObj = rr.get(0);
+            if (!(pairObj instanceof Map)) return false;
+            Map<String, Object> pair = (Map<String, Object>) pairObj;
+            Object reqObj = pair.get("request");
+            Object respObj = pair.get("response");
+            if (!(reqObj instanceof Map) || !(respObj instanceof Map)) return false;
+            Map<String, Object> req = (Map<String, Object>) reqObj;
+            Map<String, Object> resp = (Map<String, Object>) respObj;
+            Object status = resp.get("status");
+            boolean statusZero = status instanceof Number && ((Number) status).intValue() == 0;
+            return "/no-response".equals(req.get("path")) && statusZero;
+        });
         assertThat(doc.get("request_responses_missing")).as("document should have request/response evidence").isEqualTo(false);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> requestResponses = (List<Map<String, Object>>) doc.get("request_responses");
@@ -368,7 +390,7 @@ class FindingsIndexReporterIT {
         when(api.siteMap()).thenReturn(siteMap);
         when(api.scope()).thenReturn(scope);
         when(scope.isInScope(anyString())).thenReturn(true);
-        when(siteMap.issues()).thenReturn(List.of(issue));
+        doReturn(List.of(issue)).when(siteMap).issues();
 
         when(issue.name()).thenReturn(ISSUE_NAME);
         when(issue.baseUrl()).thenReturn(ISSUE_BASE_URL);
@@ -378,7 +400,7 @@ class FindingsIndexReporterIT {
         when(issue.detail()).thenReturn(ISSUE_DETAIL);
         when(issue.remediation()).thenReturn(ISSUE_REMEDIATION);
         when(issue.definition()).thenReturn(definition);
-        when(issue.requestResponses()).thenReturn(List.of(rr));
+        doReturn(List.of(rr)).when(issue).requestResponses();
 
         when(httpService.host()).thenReturn(ISSUE_HOST);
         when(httpService.port()).thenReturn(ISSUE_PORT);
@@ -443,13 +465,18 @@ class FindingsIndexReporterIT {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> awaitFirstDocument() {
+        return awaitDocumentMatching(d -> true);
+    }
+
+    /** Polls until a document matching the predicate appears (avoids taking a doc from another test's late task). */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> awaitDocumentMatching(Predicate<Map<String, Object>> predicate) {
         OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
         SearchRequest req = new SearchRequest.Builder()
                 .index(FINDINGS_INDEX)
-                .size(1)
+                .size(20)
                 .build();
-        // Allow time for retry-coordinator drain thread (runs every 5s) when first push is queued
-        int maxAttempts = 40;
+        int maxAttempts = 120;
         for (int i = 0; i < maxAttempts; i++) {
             try {
                 client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
@@ -458,9 +485,11 @@ class FindingsIndexReporterIT {
             }
             try {
                 SearchResponse<Map<String, Object>> resp = client.search(req, (Class<Map<String, Object>>) (Class<?>) Map.class);
-                List<?> hits = resp.hits().hits();
-                if (!hits.isEmpty()) {
-                    return (Map<String, Object>) resp.hits().hits().get(0).source();
+                for (var hit : resp.hits().hits()) {
+                    Map<String, Object> source = (Map<String, Object>) hit.source();
+                    if (source != null && predicate.test(source)) {
+                        return source;
+                    }
                 }
             } catch (Exception e) {
                 throw new AssertionError("Search failed: " + e.getMessage(), e);
@@ -474,6 +503,39 @@ class FindingsIndexReporterIT {
                 }
             }
         }
-        throw new AssertionError("at least one document indexed (after " + maxAttempts + " attempts)");
+        String diag = buildDocumentMatchDiagnostic(client);
+        throw new AssertionError("no matching document indexed (after " + maxAttempts + " attempts). " + diag);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String buildDocumentMatchDiagnostic(OpenSearchClient client) {
+        try {
+            client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
+        } catch (Exception ignored) { }
+        try {
+            SearchResponse<Map<String, Object>> resp = client.search(
+                    new SearchRequest.Builder().index(FINDINGS_INDEX).size(20).build(),
+                    (Class<Map<String, Object>>) (Class<?>) Map.class);
+            var hits = resp.hits().hits();
+            if (hits.isEmpty()) return "Index had 0 documents.";
+            StringBuilder sb = new StringBuilder("Index had ").append(hits.size()).append(" doc(s): ");
+            for (int j = 0; j < hits.size(); j++) {
+                Map<String, Object> src = (Map<String, Object>) hits.get(j).source();
+                if (j > 0) sb.append("; ");
+                sb.append("doc").append(j).append(" request_responses_missing=").append(src.get("request_responses_missing"));
+                List<?> rr = (List<?>) src.get("request_responses");
+                sb.append(" request_responses.size=").append(rr != null ? rr.size() : "null");
+                if (rr != null && !rr.isEmpty() && rr.get(0) instanceof Map) {
+                    Map<String, Object> pair = (Map<String, Object>) rr.get(0);
+                    Map<String, Object> req = (Map<String, Object>) pair.get("request");
+                    sb.append(" first.path=").append(req != null ? req.get("path") : "n/a");
+                    Map<String, Object> respDoc = (Map<String, Object>) pair.get("response");
+                    sb.append(" first.response.status=").append(respDoc != null ? respDoc.get("status") : "n/a");
+                }
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Diagnostic search failed: " + e.getMessage();
+        }
     }
 }
