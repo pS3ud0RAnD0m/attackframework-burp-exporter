@@ -907,7 +907,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private void assignToolTips() {
         settingsCheckbox.setToolTipText("All in-scope settings");
         sitemapCheckbox.setToolTipText("All in-scope sitemaps");
-        issuesCheckbox.setToolTipText("All in-scope findings (aka issues");
+        issuesCheckbox.setToolTipText("All in-scope findings (aka issues)");
         trafficCheckbox.setToolTipText("All in-scope traffic");
         settingsExpandButton.setToolTipText("Settings sub-options");
         issuesExpandButton.setToolTipText("Issues sub-options");
