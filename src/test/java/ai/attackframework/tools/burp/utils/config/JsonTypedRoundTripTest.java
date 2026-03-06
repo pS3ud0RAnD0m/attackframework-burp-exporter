@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,7 +22,8 @@ class JsonTypedRoundTripTest {
                         new ConfigState.ScopeEntry("y", ConfigState.Kind.STRING)
                 ),
                 new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200"),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -38,7 +41,8 @@ class JsonTypedRoundTripTest {
         var state = new ConfigState.State(
                 List.of("settings"), "all", null,
                 new ConfigState.Sinks(false, null, false, null),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -53,7 +57,8 @@ class JsonTypedRoundTripTest {
         var state = new ConfigState.State(
                 List.of("traffic"), "burp", null,
                 new ConfigState.Sinks(false, null, false, null),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -70,7 +75,8 @@ class JsonTypedRoundTripTest {
                 new ConfigState.Sinks(false, null, false, null),
                 List.of(ConfigKeys.SRC_SETTINGS_PROJECT),
                 List.of("PROXY", "REPEATER"),
-                List.of("HIGH", "CRITICAL")
+                List.of("HIGH", "CRITICAL"),
+                null
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -88,7 +94,8 @@ class JsonTypedRoundTripTest {
                 new ConfigState.Sinks(false, null, false, null),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY", "PROXY_HISTORY", "REPEATER"),
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
         String json = ConfigJsonMapper.build(state);
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
@@ -104,5 +111,34 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.trafficToolTypes()).containsExactlyInAnyOrder("PROXY", "REPEATER");
         assertThat(parsed.settingsSub()).containsExactlyInAnyOrder(ConfigKeys.SRC_SETTINGS_PROJECT, ConfigKeys.SRC_SETTINGS_USER);
         assertThat(parsed.findingsSeverities()).containsExactlyInAnyOrder("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL");
+    }
+
+    @Test
+    void build_and_parse_preserves_exportFields_when_present() throws IOException {
+        Map<String, Set<String>> enabledByIndex = Map.of(
+                "traffic", Set.of("url", "host", "method"),
+                "settings", Set.of("project_id")
+        );
+        var state = new ConfigState.State(
+                List.of("settings", "traffic"), "all", List.of(),
+                new ConfigState.Sinks(false, null, false, null),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                enabledByIndex
+        );
+        String json = ConfigJsonMapper.build(state);
+        assertThat(json).contains("exportFields");
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
+        assertThat(parsed.enabledExportFieldsByIndex().get("traffic")).containsExactlyInAnyOrder("url", "host", "method");
+        assertThat(parsed.enabledExportFieldsByIndex().get("settings")).containsExactly("project_id");
+    }
+
+    @Test
+    void parse_json_without_exportFields_returns_null_enabledExportFieldsByIndex() throws IOException {
+        String json = """
+            {"version":"1.0","dataSources":["settings"],"scope":["all"],"sinks":{},"dataSourceOptions":{"settings":["project","user"],"traffic":[],"findings":["CRITICAL","HIGH","MEDIUM","LOW","INFORMATIONAL"]}}
+            """;
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        assertThat(parsed.enabledExportFieldsByIndex()).isNull();
     }
 }

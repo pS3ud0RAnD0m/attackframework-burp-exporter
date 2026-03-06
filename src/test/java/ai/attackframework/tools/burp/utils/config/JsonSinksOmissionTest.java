@@ -16,7 +16,8 @@ class JsonSinksOmissionTest {
         var state = new ConfigState.State(
                 null, "all", null,
                 new ConfigState.Sinks(false, "", false, ""),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
 
         String json = ConfigJsonMapper.build(state);
@@ -31,7 +32,8 @@ class JsonSinksOmissionTest {
         var state = new ConfigState.State(
                 null, "all", null,
                 new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
 
         String json = ConfigJsonMapper.build(state);

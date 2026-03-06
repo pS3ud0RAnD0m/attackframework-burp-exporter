@@ -57,7 +57,8 @@ class ConfigControllerImportExportIT {
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 new ConfigState.Sinks(false, null, false, null),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES);
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null);
 
         String json = ConfigJsonMapper.build(state);
         Path tmp = Files.createTempFile("cc-export", ".json");

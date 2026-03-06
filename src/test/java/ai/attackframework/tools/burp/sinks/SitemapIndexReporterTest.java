@@ -44,7 +44,8 @@ class SitemapIndexReporterTest {
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 sinks,
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES);
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null);
         RuntimeConfig.updateState(state);
         RuntimeConfig.setExportRunning(true);
         SitemapIndexReporter.pushSnapshotNow();
@@ -71,7 +72,8 @@ class SitemapIndexReporterTest {
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 sinks,
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES);
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null);
         RuntimeConfig.updateState(state);
         RuntimeConfig.setExportRunning(true);
         SitemapIndexReporter.pushNewItemsOnly();

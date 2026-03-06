@@ -23,7 +23,8 @@ class ProxyHistoryIndexReporterTest {
                 new ConfigState.Sinks(false, null, false, null),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         ));
         RuntimeConfig.setExportRunning(false);
     }
@@ -36,7 +37,8 @@ class ProxyHistoryIndexReporterTest {
                 new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY", "REPEATER"),
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         ));
         assertThatCode(() -> ProxyHistoryIndexReporter.pushSnapshotNow()).doesNotThrowAnyException();
     }
@@ -49,7 +51,8 @@ class ProxyHistoryIndexReporterTest {
                 new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY_HISTORY"),
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         ));
         assertThatCode(() -> ProxyHistoryIndexReporter.pushSnapshotNow()).doesNotThrowAnyException();
     }

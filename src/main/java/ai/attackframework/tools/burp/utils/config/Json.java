@@ -2,8 +2,12 @@ package ai.attackframework.tools.burp.utils.config;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -55,6 +59,7 @@ public final class Json {
         private final List<String> settingsSub;
         private final List<String> trafficToolTypes;
         private final List<String> findingsSeverities;
+        private final Map<String, Set<String>> enabledExportFieldsByIndex;
 
         public ImportedConfig(
                 List<String> dataSources,
@@ -65,7 +70,8 @@ public final class Json {
                 String openSearchUrl,
                 List<String> settingsSub,
                 List<String> trafficToolTypes,
-                List<String> findingsSeverities
+                List<String> findingsSeverities,
+                Map<String, Set<String>> enabledExportFieldsByIndex
         ) {
             this.dataSources = dataSources == null ? List.of() : List.copyOf(dataSources);
             this.scopeType = scopeType == null ? "all" : scopeType;
@@ -76,6 +82,18 @@ public final class Json {
             this.settingsSub = settingsSub == null ? List.of() : List.copyOf(settingsSub);
             this.trafficToolTypes = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
             this.findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
+            this.enabledExportFieldsByIndex = copyMapOfSets(enabledExportFieldsByIndex);
+        }
+
+        private static Map<String, Set<String>> copyMapOfSets(Map<String, Set<String>> map) {
+            if (map == null || map.isEmpty()) return null;
+            Map<String, Set<String>> out = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, Set<String>> e : map.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
+                    out.put(e.getKey(), Collections.unmodifiableSet(new LinkedHashSet<>(e.getValue())));
+                }
+            }
+            return out.isEmpty() ? null : Collections.unmodifiableMap(out);
         }
 
         public List<String> dataSources() {
@@ -113,6 +131,11 @@ public final class Json {
         public List<String> findingsSeverities() {
             return findingsSeverities;
         }
+
+        /** Null when absent or empty (all fields enabled). */
+        public Map<String, Set<String>> enabledExportFieldsByIndex() {
+            return enabledExportFieldsByIndex;
+        }
     }
 
     /* ======================== BUILD (from typed state) ======================== */
@@ -126,6 +149,7 @@ public final class Json {
         buildDataSourceOptions(root, state);
         buildScope(root, state);
         buildSinks(root, state);
+        buildExportFields(root, state);
 
         try {
             return MAPPER.writeValueAsString(root);
@@ -215,6 +239,19 @@ public final class Json {
         }
     }
 
+    private static void buildExportFields(ObjectNode root, ConfigState.State state) {
+        Map<String, Set<String>> byIndex = state.enabledExportFieldsByIndex();
+        if (byIndex == null || byIndex.isEmpty()) return;
+        ObjectNode exportFields = root.putObject("exportFields");
+        for (Map.Entry<String, Set<String>> e : byIndex.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) continue;
+            ArrayNode arr = exportFields.putArray(e.getKey());
+            for (String field : e.getValue()) {
+                if (field != null) arr.add(field);
+            }
+        }
+    }
+
     /* ======================== PARSE (into ImportedConfig) ===================== */
 
     public static ImportedConfig parseConfigJson(String json) throws IOException {
@@ -224,6 +261,7 @@ public final class Json {
         DataSourceOptionsParts opts = parseDataSourceOptions(root);
         ScopeParts scope = parseScope(root);
         SinksParts sinks = parseSinks(root);
+        Map<String, Set<String>> exportFields = parseExportFields(root);
 
         return new ImportedConfig(
                 sources,
@@ -234,7 +272,8 @@ public final class Json {
                 sinks.os(),
                 opts.settingsSub(),
                 opts.trafficToolTypes(),
-                opts.findingsSeverities()
+                opts.findingsSeverities(),
+                exportFields
         );
     }
 
@@ -370,6 +409,24 @@ public final class Json {
         }
 
         return new SinksParts(files, os);
+    }
+
+    /** Returns null when absent or empty (all fields enabled). */
+    private static Map<String, Set<String>> parseExportFields(JsonNode root) {
+        JsonNode exportFields = root.path("exportFields");
+        if (!exportFields.isObject()) return null;
+        Map<String, Set<String>> out = new java.util.LinkedHashMap<>();
+        for (Iterator<String> it = exportFields.fieldNames(); it.hasNext(); ) {
+            String indexName = it.next();
+            JsonNode arr = exportFields.get(indexName);
+            if (!arr.isArray()) continue;
+            Set<String> set = new LinkedHashSet<>();
+            for (JsonNode n : arr) {
+                if (n.isTextual()) set.add(n.asText());
+            }
+            if (!set.isEmpty()) out.put(indexName, Set.copyOf(set));
+        }
+        return out.isEmpty() ? null : Map.copyOf(out);
     }
 
     /* ----------------------- small carrier records ----------------------- */

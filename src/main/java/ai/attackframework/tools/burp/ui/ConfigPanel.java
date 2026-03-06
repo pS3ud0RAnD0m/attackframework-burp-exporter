@@ -152,6 +152,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /** Action controller (transient; rebuilt on deserialization). */
     private transient ConfigController controller = new ConfigController(this);
 
+    /** Fields panel: index -> (fieldKey -> checkbox). Populated in constructor when building Fields section. */
+    private java.util.Map<String, java.util.Map<String, JCheckBox>> fieldCheckboxesByIndex;
+    /** Fields panel: index -> expand button; used for enable/disable when Data Source is toggled. */
+    private java.util.Map<String, JButton> fieldsExpandButtons;
+    /** Fields panel: index -> sub-panel of checkboxes; used for enable/disable when Data Source is toggled. */
+    private java.util.Map<String, JPanel> fieldsSubPanels;
+    /** Fields panel: index -> header row panel (label + expand button); used for enable/disable when Data Source is toggled. */
+    private java.util.Map<String, JPanel> fieldsSectionHeaderRows;
+
     /** Public no-arg constructor (EDT). */
     public ConfigPanel() { this(null); }
 
@@ -192,6 +201,46 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 settingsExpandButton, settingsSubPanel, issuesExpandButton, issuesSubPanel,
                 trafficExpandButton, trafficSubPanel, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
+        add(panelSeparator(), MIG_FILL_WRAP);
+
+        // Fields: per-index toggleable export fields (expand/collapse, checkboxes wrap with window width)
+        fieldCheckboxesByIndex = new java.util.LinkedHashMap<>();
+        fieldsExpandButtons = new java.util.LinkedHashMap<>();
+        fieldsSubPanels = new java.util.LinkedHashMap<>();
+        fieldsSectionHeaderRows = new java.util.LinkedHashMap<>();
+        List<String> fieldsPanelIndexOrder = ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL;
+        for (String indexName : fieldsPanelIndexOrder) {
+            java.util.Map<String, JCheckBox> perIndex = new java.util.LinkedHashMap<>();
+            List<String> toggleable = new java.util.ArrayList<>(ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.getToggleableFields(indexName));
+            java.util.Collections.sort(toggleable);
+            for (String fieldKey : toggleable) {
+                JCheckBox cb = new JCheckBox(fieldKey, true);
+                perIndex.put(fieldKey, cb);
+            }
+            fieldCheckboxesByIndex.put(indexName, perIndex);
+            JButton expBtn = new JButton("+");
+            ConfigFieldsPanel.configureExpandButton(expBtn);
+            fieldsExpandButtons.put(indexName, expBtn);
+            JPanel sub = new JPanel(new MigLayout("insets 0, wrap 3", "[left][left][left]"));
+            sub.setOpaque(false);
+            for (JCheckBox cb : perIndex.values()) {
+                sub.add(cb, "gapright 12");
+            }
+            sub.setVisible(false);
+            fieldsSubPanels.put(indexName, sub);
+        }
+        ActionListener fieldsRuntimeUpdater = e -> updateRuntimeConfig();
+        for (String indexName : fieldsPanelIndexOrder) {
+            JButton expBtn = fieldsExpandButtons.get(indexName);
+            JPanel sub = fieldsSubPanels.get(indexName);
+            wireSourcesExpandCollapse(expBtn, sub);
+            for (JCheckBox cb : fieldCheckboxesByIndex.get(indexName).values()) {
+                cb.addActionListener(fieldsRuntimeUpdater);
+            }
+        }
+        add(new ConfigFieldsPanel(fieldCheckboxesByIndex, fieldsExpandButtons, fieldsSubPanels, INDENT).build(fieldsSectionHeaderRows),
+                "growx, gaptop 10, gapbottom 5, wrap");
+        refreshFieldsSectionsEnabled();
         add(panelSeparator(), MIG_FILL_WRAP);
 
         // Scope
@@ -402,14 +451,62 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 default -> allRadio.setSelected(true);
             }
 
+            applyExportFieldsState(state.enabledExportFieldsByIndex());
+            refreshFieldsSectionsEnabled();
             refreshEnabledStates();
             updateRuntimeConfig();
         };
         runOnEdt(r);
     }
 
+    /** Applies imported enabled-export-fields state to Fields panel checkboxes; null = all selected. */
+    private void applyExportFieldsState(java.util.Map<String, java.util.Set<String>> enabledByIndex) {
+        if (fieldCheckboxesByIndex == null) return;
+        for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER) {
+            java.util.Map<String, JCheckBox> checkboxes = fieldCheckboxesByIndex.get(indexName);
+            if (checkboxes == null) continue;
+            java.util.Set<String> enabled = enabledByIndex != null ? enabledByIndex.get(indexName) : null;
+            for (java.util.Map.Entry<String, JCheckBox> e : checkboxes.entrySet()) {
+                boolean select = enabled == null || enabled.contains(e.getKey());
+                e.getValue().setSelected(select);
+            }
+        }
+    }
+
     private void updateRuntimeConfig() {
         RuntimeConfig.updateState(buildCurrentState());
+    }
+
+    /** Grey-out and disable each Fields section when its Data Source is unselected; re-enable when selected. Does not change checkbox selected state. */
+    private void refreshFieldsSectionsEnabled() {
+        if (fieldsSectionHeaderRows == null || fieldsExpandButtons == null || fieldsSubPanels == null || fieldCheckboxesByIndex == null) return;
+        for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL) {
+            JCheckBox dataSourceCheckbox = dataSourceCheckboxForFieldsIndex(indexName);
+            boolean enabled = dataSourceCheckbox != null && dataSourceCheckbox.isSelected();
+            JPanel headerRow = fieldsSectionHeaderRows.get(indexName);
+            if (headerRow != null) {
+                headerRow.setEnabled(enabled);
+                for (java.awt.Component c : headerRow.getComponents()) c.setEnabled(enabled);
+            }
+            JButton expandBtn = fieldsExpandButtons.get(indexName);
+            if (expandBtn != null) expandBtn.setEnabled(true); // keep expand/collapse always enabled
+            JPanel sub = fieldsSubPanels.get(indexName);
+            if (sub != null) sub.setEnabled(enabled);
+            java.util.Map<String, JCheckBox> checkboxes = fieldCheckboxesByIndex.get(indexName);
+            if (checkboxes != null) {
+                for (JCheckBox cb : checkboxes.values()) cb.setEnabled(enabled);
+            }
+        }
+    }
+
+    private JCheckBox dataSourceCheckboxForFieldsIndex(String indexName) {
+        return switch (indexName) {
+            case "settings" -> settingsCheckbox;
+            case "sitemap" -> sitemapCheckbox;
+            case "findings" -> issuesCheckbox;
+            case "traffic" -> trafficCheckbox;
+            default -> null;
+        };
     }
 
     /* ----------------------------- Wiring ----------------------------- */
@@ -431,6 +528,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.addActionListener(runtimeUpdater);
         issuesCheckbox.addActionListener(runtimeUpdater);
         trafficCheckbox.addActionListener(runtimeUpdater);
+        ActionListener refreshFieldsSections = e -> refreshFieldsSectionsEnabled();
+        settingsCheckbox.addActionListener(refreshFieldsSections);
+        sitemapCheckbox.addActionListener(refreshFieldsSections);
+        issuesCheckbox.addActionListener(refreshFieldsSections);
+        trafficCheckbox.addActionListener(refreshFieldsSections);
         settingsProjectCheckbox.addActionListener(runtimeUpdater);
         settingsUserCheckbox.addActionListener(runtimeUpdater);
         trafficBurpAiCheckbox.addActionListener(runtimeUpdater);
@@ -695,8 +797,31 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 new ConfigState.Sinks(filesEnabled, filesRoot, osEnabled, osUrl),
                 settingsSub,
                 trafficToolTypes,
-                findingsSeverities
+                findingsSeverities,
+                buildEnabledExportFieldsByIndex()
         );
+    }
+
+    /** Builds enabled export fields map from Fields panel checkboxes; null = all enabled (omit from JSON). */
+    private java.util.Map<String, java.util.Set<String>> buildEnabledExportFieldsByIndex() {
+        if (fieldCheckboxesByIndex == null) return null;
+        java.util.Map<String, java.util.Set<String>> out = new java.util.LinkedHashMap<>();
+        boolean allSelected = true;
+        for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER) {
+            java.util.Map<String, JCheckBox> checkboxes = fieldCheckboxesByIndex.get(indexName);
+            if (checkboxes == null) continue;
+            java.util.Set<String> enabled = new java.util.LinkedHashSet<>();
+            for (java.util.Map.Entry<String, JCheckBox> e : checkboxes.entrySet()) {
+                if (e.getValue().isSelected()) {
+                    enabled.add(e.getKey());
+                } else {
+                    allSelected = false;
+                }
+            }
+            out.put(indexName, java.util.Collections.unmodifiableSet(enabled));
+        }
+        if (allSelected) return null;
+        return java.util.Collections.unmodifiableMap(out);
     }
 
     /**
@@ -782,7 +907,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private void assignToolTips() {
         settingsCheckbox.setToolTipText("All in-scope settings");
         sitemapCheckbox.setToolTipText("All in-scope sitemaps");
-        issuesCheckbox.setToolTipText("All in-scope findings");
+        issuesCheckbox.setToolTipText("All in-scope findings (aka issues");
         trafficCheckbox.setToolTipText("All in-scope traffic");
         settingsExpandButton.setToolTipText("Settings sub-options");
         issuesExpandButton.setToolTipText("Issues sub-options");

@@ -24,7 +24,8 @@ class ConfigJsonMapperOmissionTest {
                         new ConfigState.ScopeEntry("x",    ConfigState.Kind.REGEX)
                 ),
                 new ConfigState.Sinks(false, null, false, null),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
 
         String json = ConfigJsonMapper.build(state);

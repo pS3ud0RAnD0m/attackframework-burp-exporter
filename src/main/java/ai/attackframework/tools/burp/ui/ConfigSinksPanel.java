@@ -12,12 +12,11 @@ import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
+import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 import net.miginfocom.swing.MigLayout;
 
-import ai.attackframework.tools.burp.ui.primitives.StatusViews;
-
 /**
- * Builds the "Data Sinks" section panel used by ConfigPanel.
+ * Builds the "Sinks" section panel used by ConfigPanel.
  * Components are owned by ConfigPanel and injected to keep a single source of state.
  */
 public final class ConfigSinksPanel {
@@ -82,7 +81,7 @@ public final class ConfigSinksPanel {
     }
 
     /**
-     * Builds the Data Sinks section containing Files and OpenSearch controls.
+     * Builds the Sinks section containing Files and OpenSearch controls.
      * <p>
      * Caller must invoke on the EDT. Layout mirrors the original for test/visual consistency
      * and applies common status configuration to both sink wrappers.</p>
@@ -93,8 +92,9 @@ public final class ConfigSinksPanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Data Sinks");
+        JLabel header = new JLabel("Sinks");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        header.setToolTipText("Configure the sinks to put exported data.");
         panel.add(header, "gapbottom 6, wrap");
 
         // Files row

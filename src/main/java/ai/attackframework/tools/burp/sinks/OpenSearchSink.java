@@ -8,8 +8,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import jakarta.json.Json;
+import jakarta.json.JsonObjectBuilder;
 import jakarta.json.JsonReader;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonWriter;
@@ -24,6 +26,7 @@ import org.opensearch.client.opensearch.indices.IndexSettings;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchLogFormat;
 
@@ -90,6 +93,9 @@ public class OpenSearchSink {
                 Logger.logError(reason);
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
             }
+
+            // Filter mappings to only include fields enabled in the Fields panel (required + selected toggleable).
+            mappingsJson = filterMappingsToAllowedFields(mappingsJson, shortName);
 
             // Local mapper for static JSON content (avoid touching client transport).
             JsonpMapper mapper = new JacksonJsonpMapper();
@@ -190,6 +196,34 @@ public class OpenSearchSink {
         } catch (Exception e) {
             return json;
         }
+    }
+
+    /**
+     * Returns a new mappings JsonObject whose "properties" only contains keys allowed for this index
+     * (Fields panel selection). Other top-level mapping keys (e.g. "dynamic") are preserved.
+     */
+    private static JsonObject filterMappingsToAllowedFields(JsonObject mappingsJson, String shortName) {
+        Set<String> allowed = RuntimeConfig.getAllowedExportKeys(shortName);
+        JsonObjectBuilder builder = Json.createObjectBuilder();
+        for (String key : mappingsJson.keySet()) {
+            if ("properties".equals(key)) {
+                JsonObject props = mappingsJson.getJsonObject("properties");
+                if (props != null) {
+                    JsonObjectBuilder newProps = Json.createObjectBuilder();
+                    for (String allowedKey : allowed) {
+                        if (props.containsKey(allowedKey)) {
+                            newProps.add(allowedKey, props.get(allowedKey));
+                        }
+                    }
+                    builder.add("properties", newProps);
+                } else {
+                    builder.add(key, mappingsJson.get(key));
+                }
+            } else {
+                builder.add(key, mappingsJson.get(key));
+            }
+        }
+        return builder.build();
     }
 
     private static String escapeJson(String s) {

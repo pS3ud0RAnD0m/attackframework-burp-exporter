@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
 
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.BulkRequest;
@@ -71,21 +72,28 @@ public class OpenSearchClientWrapper {
 
     /**
      * Public API: delegates to retry coordinator (one attempt + queue on failure).
+     * Documents are filtered to only include fields enabled in the Fields panel before push.
      */
     public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         String indexKey = indexKeyFromIndexName(indexName);
-        return IndexingRetryCoordinator.getInstance().pushDocument(baseUrl, indexName, document, indexKey);
+        Map<String, Object> filtered = ExportFieldFilter.filterDocument(document, indexKey);
+        return IndexingRetryCoordinator.getInstance().pushDocument(baseUrl, indexName, filtered, indexKey);
     }
 
     /**
      * Public API: delegates to retry coordinator (retries + queue failed items).
+     * Documents are filtered to only include fields enabled in the Fields panel before push.
      */
     public static int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
         String indexKey = indexKeyFromIndexName(indexName);
-        return IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, documents, indexKey);
+        List<Map<String, Object>> filtered = new ArrayList<>(documents.size());
+        for (Map<String, Object> doc : documents) {
+            filtered.add(ExportFieldFilter.filterDocument(doc, indexKey));
+        }
+        return IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, filtered, indexKey);
     }
 
     static String indexKeyFromIndexName(String indexName) {

@@ -1,6 +1,9 @@
 package ai.attackframework.tools.burp.utils.config;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Typed configuration model for import/export and UI binding.
@@ -44,7 +47,8 @@ public final class ConfigState {
                         Sinks sinks,
                         List<String> settingsSub,       // "project", "user"; default both
                         List<String> trafficToolTypes,  // ToolType names; default empty (no traffic)
-                        List<String> findingsSeverities) { // AuditIssueSeverity names; default all five
+                        List<String> findingsSeverities, // AuditIssueSeverity names; default all five
+                        Map<String, Set<String>> enabledExportFieldsByIndex) { // index shortName -> enabled toggleable field keys; null = all enabled
 
         public State {
             dataSources       = dataSources == null ? List.of() : List.copyOf(dataSources);
@@ -53,6 +57,17 @@ public final class ConfigState {
             settingsSub       = settingsSub == null ? List.of() : List.copyOf(settingsSub);
             trafficToolTypes  = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
             findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
+            enabledExportFieldsByIndex = enabledExportFieldsByIndex == null ? null : copyMapOfSets(enabledExportFieldsByIndex);
+        }
+
+        private static Map<String, Set<String>> copyMapOfSets(Map<String, Set<String>> map) {
+            Map<String, Set<String>> out = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, Set<String>> e : map.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    out.put(e.getKey(), Collections.unmodifiableSet(new java.util.LinkedHashSet<>(e.getValue())));
+                }
+            }
+            return Collections.unmodifiableMap(out);
         }
     }
 

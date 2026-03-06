@@ -86,7 +86,8 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
                 new ConfigState.Sinks(false, "", true, BASE_URL),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES));
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
 
         AtomicReference<ConfigPanel> ref = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {

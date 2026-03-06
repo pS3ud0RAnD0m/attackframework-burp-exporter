@@ -19,7 +19,8 @@ class ScopeFilterTest {
                 scopeType,
                 custom == null ? List.of() : custom,
                 new ConfigState.Sinks(false, "", false, ""),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
     }
 

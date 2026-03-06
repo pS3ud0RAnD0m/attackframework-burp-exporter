@@ -152,6 +152,7 @@ public final class ConfigControlPanel {
 
         JLabel header = new JLabel("Control");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
+        header.setToolTipText("Control the configuration and export status.");
         root.add(header, "gapbottom 6");
 
         JButton importBtn = new JButton("Import Config");

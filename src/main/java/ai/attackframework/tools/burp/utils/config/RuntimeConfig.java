@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.utils.config;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Holds the current runtime configuration for export pipelines.
@@ -97,8 +98,9 @@ public final class RuntimeConfig {
                 ? List.copyOf(incoming.findingsSeverities())
                 : ConfigState.DEFAULT_FINDINGS_SEVERITIES;
 
+        Map<String, java.util.Set<String>> enabledFields = incoming.enabledExportFieldsByIndex();
         return new ConfigState.State(sources, scopeType, custom, normalizedSinks,
-                settingsSub, trafficToolTypes, findingsSeverities);
+                settingsSub, trafficToolTypes, findingsSeverities, enabledFields);
     }
 
     private static String safe(String value) {
@@ -130,7 +132,21 @@ public final class RuntimeConfig {
                 new ConfigState.Sinks(false, "", false, ""),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null  // all export fields enabled
         );
+    }
+
+    /**
+     * Returns the set of top-level field keys allowed for export for the given index.
+     * Used for document filtering and Create Index mapping. When no field selection is
+     * saved, returns required + all toggleable fields (current behaviour).
+     */
+    public static java.util.Set<String> getAllowedExportKeys(String indexShortName) {
+        ConfigState.State current = state;
+        java.util.Set<String> enabled = current != null && current.enabledExportFieldsByIndex() != null
+                ? current.enabledExportFieldsByIndex().get(indexShortName)
+                : null;
+        return ExportFieldRegistry.getAllowedKeys(indexShortName, enabled);
     }
 }

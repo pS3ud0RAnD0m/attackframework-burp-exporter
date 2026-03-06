@@ -34,7 +34,8 @@ class ProxyWebSocketIndexReporterTest {
                 new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES));
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
         RuntimeConfig.setExportRunning(false);
     }
 
@@ -47,7 +48,8 @@ class ProxyWebSocketIndexReporterTest {
                 new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY"),
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES));
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
 
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
         when(api.scope().isInScope(anyString())).thenReturn(true);

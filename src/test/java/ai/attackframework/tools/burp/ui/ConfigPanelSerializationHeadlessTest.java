@@ -47,7 +47,8 @@ class ConfigPanelSerializationHeadlessTest {
         ConfigController ctrl = controllerOf(restored);
         ConfigState.State state = new ConfigState.State(
                 List.of(), ConfigKeys.SCOPE_ALL, List.of(), new ConfigState.Sinks(false, null, false, null),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
         );
         ctrl.saveAsync(state);
 

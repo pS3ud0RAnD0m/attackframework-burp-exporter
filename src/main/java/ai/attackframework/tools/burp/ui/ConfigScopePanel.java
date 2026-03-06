@@ -55,6 +55,7 @@ public final class ConfigScopePanel {
 
         JLabel title = new JLabel("Scope");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
+        title.setToolTipText("Configure the scope for export.");
         panel.add(title, "gapbottom 6");
 
         // Group radios
