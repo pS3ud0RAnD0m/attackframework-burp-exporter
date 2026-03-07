@@ -245,6 +245,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_FILL_WRAP);
 
+        // Fields (above Destination)
+        add(fieldsPanel, "growx, gaptop 10, gapbottom 5, wrap");
+        refreshFieldsSectionsEnabled();
+        add(panelSeparator(), MIG_FILL_WRAP);
+
         // Destination
         add(new ConfigDestinationPanel(
                 fileSinkCheckbox,
@@ -264,11 +269,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ).build(), "gaptop 10, gapbottom 5, wrap");
 
         wireButtonActions();
-        add(panelSeparator(), MIG_FILL_WRAP);
-
-        // Fields (between Destination and Control)
-        add(fieldsPanel, "growx, gaptop 10, gapbottom 5, wrap");
-        refreshFieldsSectionsEnabled();
         add(panelSeparator(), MIG_FILL_WRAP);
 
         // Control
