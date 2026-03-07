@@ -45,27 +45,27 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         Map<String, JButton> expandButtons = Reflect.get(panel, "fieldsExpandButtons");
         Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
         Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
-        JCheckBox trafficCheckbox = getTrafficCheckbox();
+        JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
         var refreshMethod = ConfigPanel.class.getDeclaredMethod("refreshFieldsSectionsEnabled");
         refreshMethod.setAccessible(true);
 
-        // Start with Traffic selected and refresh; section should be enabled
+        // Start with at least one Traffic option selected; section should be enabled
         SwingUtilities.invokeAndWait(() -> {
-            trafficCheckbox.setSelected(true);
+            trafficProxyCheckbox.setSelected(true);
             runRefresh(panel, refreshMethod);
         });
         assertThat(sectionEnabled("traffic", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
 
-        // Unselect Traffic and refresh
+        // Deselect all Traffic options and refresh; section disabled
         SwingUtilities.invokeAndWait(() -> {
-            trafficCheckbox.setSelected(false);
+            trafficProxyCheckbox.setSelected(false);
             runRefresh(panel, refreshMethod);
         });
         assertThat(sectionEnabled("traffic", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isFalse();
 
-        // Re-select and refresh
+        // Re-select one Traffic option and refresh
         SwingUtilities.invokeAndWait(() -> {
-            trafficCheckbox.setSelected(true);
+            trafficProxyCheckbox.setSelected(true);
             runRefresh(panel, refreshMethod);
         });
         assertThat(sectionEnabled("traffic", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
@@ -73,7 +73,7 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
     @Test
     void unselecting_settings_data_source_disables_settings_fields_section() throws Exception {
-        JCheckBox settingsCheckbox = Reflect.get(panel, "settingsCheckbox");
+        JCheckBox settingsProjectCheckbox = Reflect.get(panel, "settingsProjectCheckbox");
         Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
         Map<String, JButton> expandButtons = Reflect.get(panel, "fieldsExpandButtons");
         Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
@@ -81,26 +81,139 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         var refreshMethod = ConfigPanel.class.getDeclaredMethod("refreshFieldsSectionsEnabled");
         refreshMethod.setAccessible(true);
 
-        // Start with Settings selected; section should be enabled
+        // Start with at least one Settings option selected; section should be enabled
         SwingUtilities.invokeAndWait(() -> {
-            settingsCheckbox.setSelected(true);
+            settingsProjectCheckbox.setSelected(true);
             runRefresh(panel, refreshMethod);
         });
         assertThat(sectionEnabled("settings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
 
-        // Unselect Settings and refresh
+        // Deselect all Settings options (parent and children) and refresh; section disabled
+        JCheckBox settingsUserCheckbox = Reflect.get(panel, "settingsUserCheckbox");
+        JCheckBox settingsCheckbox = Reflect.get(panel, "settingsCheckbox");
         SwingUtilities.invokeAndWait(() -> {
             settingsCheckbox.setSelected(false);
+            settingsProjectCheckbox.setSelected(false);
+            settingsUserCheckbox.setSelected(false);
             runRefresh(panel, refreshMethod);
         });
         assertThat(sectionEnabled("settings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isFalse();
 
-        // Re-select and refresh
+        // Re-select one Settings option and refresh
         SwingUtilities.invokeAndWait(() -> {
-            settingsCheckbox.setSelected(true);
+            settingsProjectCheckbox.setSelected(true);
             runRefresh(panel, refreshMethod);
         });
         assertThat(sectionEnabled("settings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
+    }
+
+    @Test
+    void unselecting_sitemap_data_source_disables_sitemap_fields_section() throws Exception {
+        JCheckBox sitemapCheckbox = Reflect.get(panel, "sitemapCheckbox");
+        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
+        Map<String, JButton> expandButtons = Reflect.get(panel, "fieldsExpandButtons");
+        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        var refreshMethod = ConfigPanel.class.getDeclaredMethod("refreshFieldsSectionsEnabled");
+        refreshMethod.setAccessible(true);
+
+        SwingUtilities.invokeAndWait(() -> {
+            sitemapCheckbox.setSelected(true);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("sitemap", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
+
+        SwingUtilities.invokeAndWait(() -> {
+            sitemapCheckbox.setSelected(false);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("sitemap", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isFalse();
+
+        SwingUtilities.invokeAndWait(() -> {
+            sitemapCheckbox.setSelected(true);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("sitemap", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
+    }
+
+    @Test
+    void unselecting_findings_data_source_disables_findings_fields_section() throws Exception {
+        JCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox");
+        JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox");
+        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
+        Map<String, JButton> expandButtons = Reflect.get(panel, "fieldsExpandButtons");
+        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        var refreshMethod = ConfigPanel.class.getDeclaredMethod("refreshFieldsSectionsEnabled");
+        refreshMethod.setAccessible(true);
+
+        SwingUtilities.invokeAndWait(() -> {
+            issuesCriticalCheckbox.setSelected(true);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("findings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
+
+        JCheckBox issuesHighCheckbox = Reflect.get(panel, "issuesHighCheckbox");
+        JCheckBox issuesMediumCheckbox = Reflect.get(panel, "issuesMediumCheckbox");
+        JCheckBox issuesLowCheckbox = Reflect.get(panel, "issuesLowCheckbox");
+        JCheckBox issuesInformationalCheckbox = Reflect.get(panel, "issuesInformationalCheckbox");
+        SwingUtilities.invokeAndWait(() -> {
+            issuesCheckbox.setSelected(false);
+            issuesCriticalCheckbox.setSelected(false);
+            issuesHighCheckbox.setSelected(false);
+            issuesMediumCheckbox.setSelected(false);
+            issuesLowCheckbox.setSelected(false);
+            issuesInformationalCheckbox.setSelected(false);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("findings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isFalse();
+
+        SwingUtilities.invokeAndWait(() -> {
+            issuesCriticalCheckbox.setSelected(true);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("findings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
+    }
+
+    @Test
+    void parent_only_selected_enables_settings_fields_section() throws Exception {
+        JCheckBox settingsCheckbox = Reflect.get(panel, "settingsCheckbox");
+        JCheckBox settingsProjectCheckbox = Reflect.get(panel, "settingsProjectCheckbox");
+        JCheckBox settingsUserCheckbox = Reflect.get(panel, "settingsUserCheckbox");
+        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
+        Map<String, JButton> expandButtons = Reflect.get(panel, "fieldsExpandButtons");
+        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        var refreshMethod = ConfigPanel.class.getDeclaredMethod("refreshFieldsSectionsEnabled");
+        refreshMethod.setAccessible(true);
+
+        SwingUtilities.invokeAndWait(() -> {
+            settingsCheckbox.setSelected(true);
+            settingsProjectCheckbox.setSelected(false);
+            settingsUserCheckbox.setSelected(false);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("settings", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
+    }
+
+    @Test
+    void parent_only_selected_enables_traffic_fields_section() throws Exception {
+        JCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
+        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
+        Map<String, JButton> expandButtons = Reflect.get(panel, "fieldsExpandButtons");
+        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        var refreshMethod = ConfigPanel.class.getDeclaredMethod("refreshFieldsSectionsEnabled");
+        refreshMethod.setAccessible(true);
+        String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
+                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
+
+        SwingUtilities.invokeAndWait(() -> {
+            trafficCheckbox.setSelected(true);
+            for (String name : trafficChildNames) ((JCheckBox) Reflect.get(panel, name)).setSelected(false);
+            runRefresh(panel, refreshMethod);
+        });
+        assertThat(sectionEnabled("traffic", headerRows, expandButtons, subPanels, fieldCheckboxesByIndex)).isTrue();
     }
 
     @SuppressWarnings("unchecked")

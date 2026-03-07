@@ -12,7 +12,7 @@ import javax.swing.JPanel;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Builds the "Sources" section panel used by ConfigPanel.
+ * Builds the "Burp Suite Sources" section panel used by ConfigPanel.
  * State (checkbox instances and component names) is owned by ConfigPanel
  * and injected here to keep a single source of truth.
  * Sections Settings, Issues, and Traffic have collapsible sub-checkboxes.
@@ -57,7 +57,7 @@ public final class ConfigSourcesPanel {
     }
 
     /**
-     * Builds the Sources section with the four source checkboxes and
+     * Builds the Burp Suite Sources section with the four source checkboxes and
      * collapsible sub-rows for Settings, Issues, and Traffic.
      *
      * <p>Caller must invoke on the EDT. Sub-panels start collapsed.</p>
@@ -68,9 +68,9 @@ public final class ConfigSourcesPanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[left]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Sources");
+        JLabel header = new JLabel("Burp Suite Sources");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Configure the sources of data for export.");
+        header.setToolTipText("Configure the Burp Suite sources of data for export.");
         panel.add(header, "gapbottom 6");
 
         int subIndent = indentPx * 2;

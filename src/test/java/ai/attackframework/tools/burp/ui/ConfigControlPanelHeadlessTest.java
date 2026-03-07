@@ -49,9 +49,9 @@ class ConfigControlPanelHeadlessTest {
             root.doLayout();
         });
 
-        JLabel header = findLabelByText(root, "Control");
-        assertThat(header).as("Control header").isNotNull();
-        assertThat(header.getText()).isEqualTo("Control");
+        JLabel header = findLabelByText(root, "Config Control");
+        assertThat(header).as("Config Control header").isNotNull();
+        assertThat(header.getText()).isEqualTo("Config Control");
 
         JButton save = findByName(root, "control.save", JButton.class);
         JButton startStop = findByName(root, "control.startStop", JButton.class);
@@ -162,7 +162,7 @@ class ConfigControlPanelHeadlessTest {
         JButton save = findByName(configPanel, "control.save", JButton.class);
         JButton startStop = findByName(configPanel, "control.startStop", JButton.class);
         JComponent indicator = findByName(configPanel, "control.exportIndicator", JComponent.class);
-        JLabel header = findLabelByText(configPanel, "Control");
+        JLabel header = findLabelByText(configPanel, "Config Control");
 
         assertThat(header).isNotNull();
         assertThat(save.getText()).isEqualTo("Save");

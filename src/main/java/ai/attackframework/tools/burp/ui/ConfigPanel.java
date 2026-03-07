@@ -53,7 +53,7 @@ import burp.api.montoya.core.BurpSuiteEdition;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Main configuration panel for data sources, scope, sinks, and control actions.
+ * Main configuration panel for data sources, scope, destination, and control actions.
  *
  * <p><strong>Responsibilities:</strong> render the UI, compose/parse {@link ConfigState.State},
  * and delegate long-running work to {@link ConfigController}.</p>
@@ -127,7 +127,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             List.of(new ScopeGrid.ScopeEntryInit("^.*acme\\.com$", true))
     );
 
-    // ---- Sinks
+    // ---- Destination
     private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", false);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
     private final JButton    createFilesButton = new JButton("Create Files");
@@ -238,18 +238,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 cb.addActionListener(fieldsRuntimeUpdater);
             }
         }
-        add(new ConfigFieldsPanel(fieldCheckboxesByIndex, fieldsExpandButtons, fieldsSubPanels, INDENT).build(fieldsSectionHeaderRows),
-                "growx, gaptop 10, gapbottom 5, wrap");
-        refreshFieldsSectionsEnabled();
-        add(panelSeparator(), MIG_FILL_WRAP);
+        JPanel fieldsPanel = new ConfigFieldsPanel(fieldCheckboxesByIndex, fieldsExpandButtons, fieldsSubPanels, INDENT).build(fieldsSectionHeaderRows);
 
         // Scope
         add(new ConfigScopePanel(allRadio, burpSuiteRadio, customRadio, scopeGrid, INDENT).build(),
                 "gaptop 10, gapbottom 5, wrap");
         add(panelSeparator(), MIG_FILL_WRAP);
 
-        // Sinks
-        add(new ConfigSinksPanel(
+        // Destination
+        add(new ConfigDestinationPanel(
                 fileSinkCheckbox,
                 filePathField,
                 createFilesButton,
@@ -267,6 +264,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ).build(), "gaptop 10, gapbottom 5, wrap");
 
         wireButtonActions();
+        add(panelSeparator(), MIG_FILL_WRAP);
+
+        // Fields (between Destination and Control)
+        add(fieldsPanel, "growx, gaptop 10, gapbottom 5, wrap");
+        refreshFieldsSectionsEnabled();
         add(panelSeparator(), MIG_FILL_WRAP);
 
         // Control
@@ -477,12 +479,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         RuntimeConfig.updateState(buildCurrentState());
     }
 
-    /** Grey-out and disable each Fields section when its Data Source is unselected; re-enable when selected. Does not change checkbox selected state. */
+    /** Grey-out and disable each Fields section when no related source option is selected; re-enable when at least one is selected. Does not change checkbox selected state. */
     private void refreshFieldsSectionsEnabled() {
         if (fieldsSectionHeaderRows == null || fieldsExpandButtons == null || fieldsSubPanels == null || fieldCheckboxesByIndex == null) return;
         for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL) {
-            JCheckBox dataSourceCheckbox = dataSourceCheckboxForFieldsIndex(indexName);
-            boolean enabled = dataSourceCheckbox != null && dataSourceCheckbox.isSelected();
+            boolean enabled = isAnySourceOptionSelectedForFieldsIndex(indexName);
             JPanel headerRow = fieldsSectionHeaderRows.get(indexName);
             if (headerRow != null) {
                 headerRow.setEnabled(enabled);
@@ -499,20 +500,24 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
     }
 
-    private JCheckBox dataSourceCheckboxForFieldsIndex(String indexName) {
+    /** True if at least one source option for this index is selected (so the Fields section should be enabled). Handles partial selection and parent-click timing: parent selected OR any child selected. */
+    private boolean isAnySourceOptionSelectedForFieldsIndex(String indexName) {
         return switch (indexName) {
-            case "settings" -> settingsCheckbox;
-            case "sitemap" -> sitemapCheckbox;
-            case "findings" -> issuesCheckbox;
-            case "traffic" -> trafficCheckbox;
-            default -> null;
+            case "settings" -> settingsCheckbox.isSelected() || settingsProjectCheckbox.isSelected() || settingsUserCheckbox.isSelected();
+            case "sitemap" -> sitemapCheckbox.isSelected();
+            case "findings" -> issuesCheckbox.isSelected() || issuesCriticalCheckbox.isSelected() || issuesHighCheckbox.isSelected()
+                    || issuesMediumCheckbox.isSelected() || issuesLowCheckbox.isSelected() || issuesInformationalCheckbox.isSelected();
+            case "traffic" -> trafficCheckbox.isSelected() || trafficBurpAiCheckbox.isSelected() || trafficExtensionsCheckbox.isSelected() || trafficIntruderCheckbox.isSelected()
+                    || trafficProxyCheckbox.isSelected() || trafficProxyHistoryCheckbox.isSelected() || trafficRepeaterCheckbox.isSelected()
+                    || trafficScannerCheckbox.isSelected() || trafficSequencerCheckbox.isSelected();
+            default -> false;
         };
     }
 
     /* ----------------------------- Wiring ----------------------------- */
 
     /**
-     * Wires button and checkbox actions for sinks and layout relayout hooks.
+     * Wires button and checkbox actions for destination and layout relayout hooks.
      *
      * <p>Caller must invoke on the EDT. Validates required fields before delegating to
      * {@link ConfigController} and keeps text fields revalidated as their contents change.</p>
@@ -528,26 +533,42 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.addActionListener(runtimeUpdater);
         issuesCheckbox.addActionListener(runtimeUpdater);
         trafficCheckbox.addActionListener(runtimeUpdater);
-        ActionListener refreshFieldsSections = e -> refreshFieldsSectionsEnabled();
+        // Defer so checkbox model and other listeners run first, avoiding flakiness when toggling source
+        ActionListener refreshFieldsSections = e -> SwingUtilities.invokeLater(this::refreshFieldsSectionsEnabled);
         settingsCheckbox.addActionListener(refreshFieldsSections);
         sitemapCheckbox.addActionListener(refreshFieldsSections);
         issuesCheckbox.addActionListener(refreshFieldsSections);
         trafficCheckbox.addActionListener(refreshFieldsSections);
         settingsProjectCheckbox.addActionListener(runtimeUpdater);
+        settingsProjectCheckbox.addActionListener(refreshFieldsSections);
         settingsUserCheckbox.addActionListener(runtimeUpdater);
+        settingsUserCheckbox.addActionListener(refreshFieldsSections);
         trafficBurpAiCheckbox.addActionListener(runtimeUpdater);
+        trafficBurpAiCheckbox.addActionListener(refreshFieldsSections);
         trafficExtensionsCheckbox.addActionListener(runtimeUpdater);
+        trafficExtensionsCheckbox.addActionListener(refreshFieldsSections);
         trafficIntruderCheckbox.addActionListener(runtimeUpdater);
+        trafficIntruderCheckbox.addActionListener(refreshFieldsSections);
         trafficProxyCheckbox.addActionListener(runtimeUpdater);
+        trafficProxyCheckbox.addActionListener(refreshFieldsSections);
         trafficProxyHistoryCheckbox.addActionListener(runtimeUpdater);
+        trafficProxyHistoryCheckbox.addActionListener(refreshFieldsSections);
         trafficRepeaterCheckbox.addActionListener(runtimeUpdater);
+        trafficRepeaterCheckbox.addActionListener(refreshFieldsSections);
         trafficScannerCheckbox.addActionListener(runtimeUpdater);
+        trafficScannerCheckbox.addActionListener(refreshFieldsSections);
         trafficSequencerCheckbox.addActionListener(runtimeUpdater);
+        trafficSequencerCheckbox.addActionListener(refreshFieldsSections);
         issuesCriticalCheckbox.addActionListener(runtimeUpdater);
+        issuesCriticalCheckbox.addActionListener(refreshFieldsSections);
         issuesHighCheckbox.addActionListener(runtimeUpdater);
+        issuesHighCheckbox.addActionListener(refreshFieldsSections);
         issuesMediumCheckbox.addActionListener(runtimeUpdater);
+        issuesMediumCheckbox.addActionListener(refreshFieldsSections);
         issuesLowCheckbox.addActionListener(runtimeUpdater);
+        issuesLowCheckbox.addActionListener(refreshFieldsSections);
         issuesInformationalCheckbox.addActionListener(runtimeUpdater);
+        issuesInformationalCheckbox.addActionListener(refreshFieldsSections);
 
         allRadio.addActionListener(runtimeUpdater);
         burpSuiteRadio.addActionListener(runtimeUpdater);

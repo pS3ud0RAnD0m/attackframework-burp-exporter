@@ -15,10 +15,10 @@ import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
- * Verifies that toggling sink checkboxes enables/disables the corresponding
+ * Verifies that toggling destination checkboxes enables/disables the corresponding
  * text fields and action buttons.
  */
-class ConfigPanelSinkEnablementHeadlessTest {
+class ConfigPanelDestinationEnablementHeadlessTest {
 
     private ConfigPanel panel;
 
@@ -37,7 +37,7 @@ class ConfigPanelSinkEnablementHeadlessTest {
     }
 
     @Test
-    void deselecting_sinks_disables_textfields_and_action_buttons() {
+    void deselecting_destinations_disables_textfields_and_action_buttons() {
         // Files row (access private fields directly via shared Reflect helper).
         JCheckBox filesEnable = get(panel, "fileSinkCheckbox");
         JTextField filesPath  = get(panel, "filePathField");
@@ -49,7 +49,7 @@ class ConfigPanelSinkEnablementHeadlessTest {
         JButton osTest      = get(panel, "testConnectionButton");
         JButton osIndexes   = get(panel, "createIndexesButton");
 
-        // Ensure both sinks are enabled
+        // Ensure both destinations are enabled
         if (!filesEnable.isSelected()) filesEnable.doClick();
         if (!osEnable.isSelected()) osEnable.doClick();
 
@@ -60,7 +60,7 @@ class ConfigPanelSinkEnablementHeadlessTest {
         assertThat(osTest.isEnabled()).isTrue();
         assertThat(osIndexes.isEnabled()).isTrue();
 
-        // Disable both sinks
+        // Disable both destinations
         if (filesEnable.isSelected()) filesEnable.doClick();
         if (osEnable.isSelected()) osEnable.doClick();
 

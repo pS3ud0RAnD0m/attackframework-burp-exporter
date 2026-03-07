@@ -14,7 +14,7 @@ import ai.attackframework.tools.burp.utils.config.ExportFieldRegistry;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Builds the "Fields" section panel: per-index expand/collapse groups with checkboxes
+ * Builds the "Index Fields" section panel: per-index expand/collapse groups with checkboxes
  * for toggleable export fields. Layout uses wrapping so all fields are in view when expanded.
  */
 public final class ConfigFieldsPanel {
@@ -40,7 +40,7 @@ public final class ConfigFieldsPanel {
     }
 
     /**
-     * Builds the Fields section: title and one expandable group per index with checkboxes.
+     * Builds the Index Fields section: title and one expandable group per index with checkboxes.
      * Sub-panels start collapsed. Caller must invoke on the EDT.
      * If {@code sectionHeaderRowsOut} is non-null, it is filled with index name -> header row panel for enable/disable.
      */
@@ -48,9 +48,9 @@ public final class ConfigFieldsPanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[grow,left]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Fields");
+        JLabel header = new JLabel("Index Fields");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Configure the fields to export for each index.");
+        header.setToolTipText("Configure the index fields to export for each document.");
         panel.add(header, "gapbottom 6, wrap");
 
         int subIndent = indentPx * 2;

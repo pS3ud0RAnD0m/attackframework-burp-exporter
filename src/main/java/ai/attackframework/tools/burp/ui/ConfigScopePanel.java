@@ -13,7 +13,7 @@ import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Builds the "Scope" section panel used by ConfigPanel.
+ * Builds the "Export Scope" section panel used by ConfigPanel.
  * Components are owned by ConfigPanel and injected to keep a single source of state.
  */
 public final class ConfigScopePanel {
@@ -44,8 +44,8 @@ public final class ConfigScopePanel {
     /**
      * Builds the Scope section UI containing header, radios, and the custom grid row.
      *
-     * <p>Caller must invoke on the EDT. Layout mirrors other sections (Sources/Sinks/Control) and
-     * aligns the grid's field column with Sinks (first column 150!, gap 20).</p>
+     * <p>Caller must invoke on the EDT. Layout mirrors other sections (Sources/Destination/Control) and
+     * aligns the grid's field column with Destination (first column 150!, gap 20).</p>
      *
      * @return assembled panel with scope controls and custom grid
      */
@@ -53,9 +53,9 @@ public final class ConfigScopePanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", ""));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel title = new JLabel("Scope");
+        JLabel title = new JLabel("Export Scope");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
-        title.setToolTipText("Configure the scope for export.");
+        title.setToolTipText("Configure the export scope.");
         panel.add(title, "gapbottom 6");
 
         // Group radios

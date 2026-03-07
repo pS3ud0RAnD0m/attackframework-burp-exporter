@@ -16,19 +16,19 @@ import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Builds the "Sinks" section panel used by ConfigPanel.
+ * Builds the "Destinations" section panel used by ConfigPanel.
  * Components are owned by ConfigPanel and injected to keep a single source of state.
  */
-public final class ConfigSinksPanel {
+public final class ConfigDestinationPanel {
 
-    // Files sink
+    // Files destination
     private final JCheckBox fileSinkCheckbox;
     private final JTextField filePathField;
     private final JButton createFilesButton;
     private final JTextArea fileStatus;
     private final JPanel fileStatusWrapper;
 
-    // OpenSearch sink
+    // OpenSearch destination
     private final JCheckBox openSearchSinkCheckbox;
     private final JTextField openSearchUrlField;
     private final JButton testConnectionButton;
@@ -46,7 +46,7 @@ public final class ConfigSinksPanel {
     private static final String GAPLEFT = "gapleft ";
     private static final String ALIGN_LEFT_TOP = "alignx left, top";
 
-    public ConfigSinksPanel(
+    public ConfigDestinationPanel(
             JCheckBox fileSinkCheckbox,
             JTextField filePathField,
             JButton createFilesButton,
@@ -81,20 +81,20 @@ public final class ConfigSinksPanel {
     }
 
     /**
-     * Builds the Sinks section containing Files and OpenSearch controls.
+     * Builds the Destination section containing Files and OpenSearch controls.
      * <p>
      * Caller must invoke on the EDT. Layout mirrors the original for test/visual consistency
-     * and applies common status configuration to both sink wrappers.</p>
-     * <p>
-     * @return assembled panel with sink controls and status areas
+     * and applies common status configuration to both destination wrappers.</p>
+     *
+     * @return assembled panel with destination controls and status areas
      */
     public JPanel build() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Sinks");
+        JLabel header = new JLabel("Destinations");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Configure the sinks to put exported data.");
+        header.setToolTipText("Configure where to put exported data.");
         panel.add(header, "gapbottom 6, wrap");
 
         // Files row

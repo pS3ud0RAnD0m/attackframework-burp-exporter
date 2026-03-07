@@ -1,17 +1,17 @@
 package ai.attackframework.tools.burp.ui;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.event.ActionListener;
-import java.awt.BasicStroke;
-import java.awt.geom.Ellipse2D;
 import java.awt.MultipleGradientPaint.CycleMethod;
 import java.awt.RadialGradientPaint;
+import java.awt.RenderingHints;
+import java.awt.event.ActionListener;
+import java.awt.geom.Ellipse2D;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -28,7 +28,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Control section: Import / Export / Save actions, Start/Stop export, and their status rows.
+ * Config Control section: Import / Export / Save actions, Start/Stop export, and their status rows.
  *
  * <p><strong>Responsibilities:</strong> render control panel and expose the assembled panel.
  * Callers supply actions and a status configurator for consistent text-area setup. A single
@@ -145,12 +145,12 @@ public final class ConfigControlPanel {
         this.stopAction = Objects.requireNonNull(stopAction, "stopAction");
     }
 
-    /** Builds and returns the Control panel. */
+    /** Builds and returns the Config Control panel. */
     public JPanel build() {
         JPanel root = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Control");
+        JLabel header = new JLabel("Config Control");
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         header.setToolTipText("Control the configuration and export status.");
         root.add(header, "gapbottom 6");
@@ -212,7 +212,7 @@ public final class ConfigControlPanel {
 
         root.add(buttons);
 
-        // Status rows (mirror ConfigSinksPanel styling: compact, bordered, pref-width areas)
+        // Status rows (mirror ConfigDestinationPanel styling: compact, bordered, pref-width areas)
         statusConfigurator.accept(importExportStatus);
         statusConfigurator.accept(controlStatus);
 
@@ -247,7 +247,7 @@ public final class ConfigControlPanel {
         btn.setText(runningButtonLabel(running));
         btn.setToolTipText(running
                 ? "Stop exporting (configuration unchanged)"
-                : "Start exporting to configured sinks");
+                : "Start exporting to configured destination(s)");
     }
 
     /**
