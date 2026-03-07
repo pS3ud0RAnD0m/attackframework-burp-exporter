@@ -15,6 +15,7 @@ import javax.swing.Timer;
 import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 
 /**
  * Panel that displays live export and JVM metrics for all indexes.
@@ -64,7 +65,8 @@ public class StatsPanel extends JPanel {
         boolean exportRunning = RuntimeConfig.isExportRunning();
         sb.append("Export state\n");
         sb.append("  export running: ").append(exportRunning ? "yes" : "no").append("\n");
-        sb.append("  OpenSearch URL set: ").append(urlSet ? "yes" : "no").append("\n\n");
+        sb.append("  OpenSearch URL set: ").append(urlSet ? "yes" : "no").append("\n");
+        sb.append("  current batch size: ").append(BatchSizeController.getInstance().getCurrentBatchSize()).append("\n\n");
 
         // Session totals
         long totalSuccess = ExportStats.getTotalSuccessCount();

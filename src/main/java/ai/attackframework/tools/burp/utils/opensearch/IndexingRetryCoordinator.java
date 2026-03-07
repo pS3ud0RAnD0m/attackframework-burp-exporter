@@ -26,8 +26,6 @@ public final class IndexingRetryCoordinator {
     private static final long BACKOFF_BASE_MS = 1_000;
     private static final int BACKOFF_MULTIPLIER = 2;
     private static final int OUTAGE_LOG_THROTTLE_MS = 30_000;
-    private static final int DRAIN_BATCH_SIZE = 100;
-
     private static volatile IndexingRetryCoordinator instance;
 
     private final RetryQueue queue;
@@ -97,12 +95,14 @@ public final class IndexingRetryCoordinator {
             OpenSearchClientWrapper.BulkResult result = OpenSearchClientWrapper.doPushBulkWithDetails(baseUrl, indexName, documents);
             if (result.successCount == documents.size()) {
                 consecutiveFailures.set(0);
+                BatchSizeController.getInstance().recordSuccess(result.successCount);
                 if (outageMode.get()) {
                     checkRecoveryAndLog(baseUrl);
                 }
                 return result.successCount;
             }
             if (result.successCount > 0) {
+                BatchSizeController.getInstance().recordPartialSuccess(result.successCount, documents.size());
                 consecutiveFailures.set(0);
                 if (outageMode.get()) {
                     checkRecoveryAndLog(baseUrl);
@@ -116,6 +116,7 @@ public final class IndexingRetryCoordinator {
                 break;
             }
             if (attempt == maxAttempts) {
+                BatchSizeController.getInstance().recordFailure(documents.size());
                 toQueue = new ArrayList<>(documents);
                 successCount = 0;
                 break;
@@ -224,20 +225,24 @@ public final class IndexingRetryCoordinator {
 
             for (String indexKey : ExportStats.getIndexKeys()) {
                 String indexName = indexNameFromKey(indexKey);
-                List<Map<String, Object>> batch = queue.pollBatch(indexName, DRAIN_BATCH_SIZE);
+                int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
+                List<Map<String, Object>> batch = queue.pollBatch(indexName, batchSize);
                 if (batch.isEmpty()) continue;
 
                 int sent = OpenSearchClientWrapper.doPushBulk(baseUrl, indexName, batch);
                 if (sent == batch.size()) {
+                    BatchSizeController.getInstance().recordSuccess(sent);
                     ExportStats.recordSuccess(indexKey, sent);
                     if (outageMode.get() && queue.allEmpty()) {
                         checkRecoveryAndLog(baseUrl);
                     }
                 } else if (sent > 0) {
+                    BatchSizeController.getInstance().recordPartialSuccess(sent, batch.size());
                     ExportStats.recordSuccess(indexKey, sent);
                     List<Map<String, Object>> reQueue = batch.subList(sent, batch.size());
                     queue.offerAll(indexName, reQueue);
                 } else {
+                    BatchSizeController.getInstance().recordFailure(batch.size());
                     queue.offerAll(indexName, batch);
                 }
             }

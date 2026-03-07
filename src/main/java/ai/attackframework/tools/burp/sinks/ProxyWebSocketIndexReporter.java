@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.Version;
@@ -41,8 +42,6 @@ public final class ProxyWebSocketIndexReporter {
     private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
     private static final int INTERVAL_SECONDS = 30;
-    private static final int BULK_BATCH_SIZE = 200;
-
     private static volatile ScheduledExecutorService scheduler;
     private static final Set<String> pushedKeys = ConcurrentHashMap.newKeySet();
     private static volatile boolean runInProgress;
@@ -129,8 +128,9 @@ public final class ProxyWebSocketIndexReporter {
             if (history == null || history.isEmpty()) {
                 return;
             }
-            List<String> batchKeys = new ArrayList<>(BULK_BATCH_SIZE);
-            List<Map<String, Object>> batchDocs = new ArrayList<>(BULK_BATCH_SIZE);
+            int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
+            List<String> batchKeys = new ArrayList<>(batchSize);
+            List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
             for (ProxyWebSocketMessage msg : history) {
                 String key = messageKey(msg);
                 if (!pushAll && pushedKeys.contains(key)) {
@@ -142,7 +142,7 @@ public final class ProxyWebSocketIndexReporter {
                 }
                 batchKeys.add(key);
                 batchDocs.add(doc);
-                if (batchDocs.size() >= BULK_BATCH_SIZE) {
+                if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize()) {
                     flushBatch(baseUrl, batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();

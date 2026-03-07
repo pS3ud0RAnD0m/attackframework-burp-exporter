@@ -8,6 +8,7 @@ import ai.attackframework.tools.burp.sinks.OpenSearchTrafficHandler;
 import ai.attackframework.tools.burp.sinks.ToolIndexLogForwarder;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import burp.api.montoya.BurpExtension;
@@ -37,6 +38,7 @@ public class Exporter implements BurpExtension {
             MontoyaApiProvider.set(api);
             Logger.initialize(api.logging());
             Logger.registerListener(new ToolIndexLogForwarder());
+            BatchSizeController.getInstance().setOnChangeListener(size -> Logger.logDebug("Batch size: " + size));
 
             if (SwingUtilities.isEventDispatchThread()) {
                 registerUi(api, tabTitle);

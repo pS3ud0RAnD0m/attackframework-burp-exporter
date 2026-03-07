@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
@@ -31,7 +32,6 @@ import burp.api.montoya.proxy.ProxyHttpRequestResponse;
  */
 public final class ProxyHistoryIndexReporter {
 
-    private static final int BULK_BATCH_SIZE = 100;
     private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
 
@@ -89,9 +89,11 @@ public final class ProxyHistoryIndexReporter {
         }
         long startNs = System.nanoTime();
         int success = 0;
-        for (int i = 0; i < batch.size(); i += BULK_BATCH_SIZE) {
-            List<Map<String, Object>> chunk = batch.subList(i, Math.min(i + BULK_BATCH_SIZE, batch.size()));
+        for (int i = 0; i < batch.size(); ) {
+            int chunkSize = BatchSizeController.getInstance().getCurrentBatchSize();
+            List<Map<String, Object>> chunk = batch.subList(i, Math.min(i + chunkSize, batch.size()));
             success += OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
+            i += chunk.size();
         }
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
         ExportStats.recordLastPush("traffic", durationMs);

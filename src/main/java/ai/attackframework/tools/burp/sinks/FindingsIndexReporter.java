@@ -20,6 +20,7 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -41,7 +42,6 @@ import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity;
 public final class FindingsIndexReporter {
 
     private static final int INTERVAL_SECONDS = 30;
-    private static final int BULK_BATCH_SIZE = 100;
     /** Flush when batch exceeds this approximate payload size (bytes) so large request/response bodies don't produce huge bulk requests. */
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
@@ -146,8 +146,9 @@ public final class FindingsIndexReporter {
                 return;
             }
             var state = RuntimeConfig.getState();
-            List<String> batchKeys = new ArrayList<>(BULK_BATCH_SIZE);
-            List<Map<String, Object>> batchDocs = new ArrayList<>(BULK_BATCH_SIZE);
+            int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
+            List<String> batchKeys = new ArrayList<>(batchSize);
+            List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
             long runningBatchBytes = 0;
 
             var severities = state.findingsSeverities();
@@ -177,7 +178,7 @@ public final class FindingsIndexReporter {
                 batchDocs.add(doc);
                 runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
 
-                if (batchDocs.size() >= BULK_BATCH_SIZE || runningBatchBytes >= BULK_MAX_BYTES) {
+                if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize() || runningBatchBytes >= BULK_MAX_BYTES) {
                     flushBatch(baseUrl, batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();
