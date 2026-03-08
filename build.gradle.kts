@@ -42,6 +42,7 @@ dependencies {
     // testImplementation
     testImplementation(platform(libs.junitBom))
     testImplementation(libs.junitJupiter)
+    testImplementation(libs.junitPlatformSuite)
     testImplementation(libs.mockitoCore)
     testImplementation(libs.mockitoJunitJupiter)
     testImplementation(libs.assertjCore)
@@ -50,7 +51,6 @@ dependencies {
     // testRuntimeOnly
     testRuntimeOnly(libs.junitJupiterEngine)
     testRuntimeOnly(libs.junitPlatformLauncher)
-    testImplementation(libs.junitPlatformSuite)
     testRuntimeOnly(libs.junitPlatformSuiteEngine)
 
     // runtimeOnly

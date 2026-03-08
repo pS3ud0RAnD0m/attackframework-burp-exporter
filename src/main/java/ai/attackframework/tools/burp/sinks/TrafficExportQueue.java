@@ -1,7 +1,5 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -11,13 +9,14 @@ import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
 
 /**
  * Bounded queue for traffic documents so the HTTP thread can enqueue and return immediately.
  *
- * <p>A dedicated worker thread drains the queue in batches and pushes via the OpenSearch Bulk API.
- * When full, the oldest document is dropped (backpressure). Batches are limited by count
+ * <p>A dedicated worker thread drains the queue and pushes via the OpenSearch Bulk API using
+ * chunked request body (NDJSON written incrementally; no full batch list in memory). When full,
+ * the oldest document is dropped (backpressure). Batches are limited by count
  * ({@link BatchSizeController}), payload size ({@link BulkPayloadEstimator}, 5 MB cap), and time
  * (flush after 100 ms). Used only by the traffic export path.</p>
  */
@@ -77,51 +76,40 @@ public final class TrafficExportQueue {
             Thread.currentThread().interrupt();
             return;
         }
-        List<Map<String, Object>> batch = new ArrayList<>(BatchSizeController.getInstance().getCurrentBatchSize());
+        BatchSizeController batchController = BatchSizeController.getInstance();
         while (true) {
-            batch.clear();
-            long batchStartNanos = System.nanoTime();
-            try {
-                Map<String, Object> first = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                if (first != null) {
-                    batch.add(first);
-                    long runningBytes = BulkPayloadEstimator.estimateBytes(first);
-                    int maxBatch = BatchSizeController.getInstance().getCurrentBatchSize();
-                    long maxWaitNanos = BATCH_MAX_WAIT_MS * 1_000_000L;
-                    while (batch.size() < maxBatch && runningBytes < BULK_MAX_BYTES) {
-                        if ((System.nanoTime() - batchStartNanos) >= maxWaitNanos) {
-                            break;
-                        }
-                        Map<String, Object> doc = queue.poll();
-                        if (doc == null) break;
-                        long docEst = BulkPayloadEstimator.estimateBytes(doc);
-                        if (runningBytes + docEst > BULK_MAX_BYTES && !batch.isEmpty()) {
-                            queue.offer(doc);
-                            break;
-                        }
-                        batch.add(doc);
-                        runningBytes += docEst;
-                    }
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-            if (batch.isEmpty()) continue;
-
             String baseUrl = RuntimeConfig.openSearchUrl();
             if (baseUrl == null || baseUrl.isBlank() || !RuntimeConfig.isExportRunning()) {
-                ExportStats.recordFailure("traffic", batch.size());
+                try {
+                    Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    if (doc != null) {
+                        queue.offer(doc);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
                 continue;
             }
 
+            int maxBatch = batchController.getCurrentBatchSize();
             long startNs = System.nanoTime();
-            int success = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, batch);
+            ChunkedBulkSender.Result result = ChunkedBulkSender.push(
+                    baseUrl, TRAFFIC_INDEX, queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+
+            if (result.attemptedCount == 0) {
+                continue;
+            }
             ExportStats.recordLastPush("traffic", durationMs);
-            ExportStats.recordSuccess("traffic", success);
-            if (success < batch.size()) {
-                ExportStats.recordFailure("traffic", batch.size() - success);
+            ExportStats.recordSuccess("traffic", result.successCount);
+            if (result.successCount < result.attemptedCount) {
+                ExportStats.recordFailure("traffic", result.attemptedCount - result.successCount);
+            }
+            if (result.isFullSuccess()) {
+                batchController.recordSuccess(result.attemptedCount);
+            } else {
+                batchController.recordFailure(result.attemptedCount);
             }
         }
     }
