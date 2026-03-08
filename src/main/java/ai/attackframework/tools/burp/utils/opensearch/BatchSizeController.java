@@ -10,8 +10,6 @@ import java.util.function.Consumer;
  * Grows on success (with smoothing) and shrinks on failure; used by all reporters
  * and {@link IndexingRetryCoordinator}. Bounds are fixed in code; effective range
  * is driven only by success/failure observations. Thread-safe.
- *
- * <p>See REFERENCE-main.md §7 (adaptive batch size).</p>
  */
 public final class BatchSizeController {
 

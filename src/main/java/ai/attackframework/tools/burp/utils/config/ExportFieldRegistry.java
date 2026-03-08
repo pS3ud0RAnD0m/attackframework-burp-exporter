@@ -8,7 +8,7 @@ import java.util.Set;
 
 /**
  * Canonical list of export fields per index for the Fields panel and document filtering.
- * Aligned with docs/REFERENCE-main.md "Is required" column: toggleable = No or No*, required = Yes.
+ * "Is required" column: toggleable = No or No*, required = Yes.
  * Keep this class as the single source of truth when adding or changing index fields.
  */
 public final class ExportFieldRegistry {
