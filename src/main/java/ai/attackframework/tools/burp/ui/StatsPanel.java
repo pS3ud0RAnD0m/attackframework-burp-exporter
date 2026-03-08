@@ -69,7 +69,9 @@ public class StatsPanel extends JPanel {
         sb.append("  current batch size: ").append(BatchSizeController.getInstance().getCurrentBatchSize()).append("\n");
         int trafficQueueSize = ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize();
         long trafficQueueDrops = ExportStats.getTrafficQueueDrops();
-        sb.append("  traffic queue: size=").append(trafficQueueSize).append(" drops=").append(trafficQueueDrops).append("\n\n");
+        sb.append("  traffic queue: size=").append(trafficQueueSize).append(" drops=").append(trafficQueueDrops).append("\n");
+        double throughput = ExportStats.getThroughputDocsPerSecLast60s();
+        sb.append("  throughput (last 60s): ").append(String.format("%.1f", throughput)).append(" docs/s\n\n");
 
         // Session totals
         long totalSuccess = ExportStats.getTotalSuccessCount();
@@ -80,19 +82,20 @@ public class StatsPanel extends JPanel {
 
         // By index (table)
         sb.append("By index\n");
-        sb.append(String.format("  %-10s %12s %8s %10s %14s  %s%n",
-                "Index", "Docs pushed", "Queued", "Failures", "Last push (ms)", "Last error"));
-        sb.append("  ").append("-".repeat(10)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(10)).append(" ").append("-".repeat(14)).append("  ").append("-".repeat(ERROR_COL_MAX)).append("\n");
+        sb.append(String.format("  %-10s %12s %8s %8s %10s %14s  %s%n",
+                "Index", "Docs pushed", "Queued", "Rty drop", "Failures", "Last push (ms)", "Last error"));
+        sb.append("  ").append("-".repeat(10)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(10)).append(" ").append("-".repeat(14)).append("  ").append("-".repeat(ERROR_COL_MAX)).append("\n");
         for (String indexKey : ExportStats.getIndexKeys()) {
             long success = ExportStats.getSuccessCount(indexKey);
             int queued = ExportStats.getQueueSize(indexKey);
+            long retryDrops = ExportStats.getRetryQueueDrops(indexKey);
             long failure = ExportStats.getFailureCount(indexKey);
             long lastPushMs = ExportStats.getLastPushDurationMs(indexKey);
             String lastError = ExportStats.getLastError(indexKey);
             String lastPushStr = lastPushMs >= 0 ? String.valueOf(lastPushMs) : "-";
             String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
-            sb.append(String.format("  %-10s %12d %8d %10d %14s  %s%n",
-                    indexKey, success, queued, failure, lastPushStr, errStr));
+            sb.append(String.format("  %-10s %12d %8d %8d %10d %14s  %s%n",
+                    indexKey, success, queued, retryDrops, failure, lastPushStr, errStr));
         }
         sb.append("\n");
 

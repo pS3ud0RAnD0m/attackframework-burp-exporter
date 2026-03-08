@@ -80,6 +80,7 @@ public final class IndexingRetryCoordinator {
 
         boolean offered = queue.offer(indexName, document);
         if (!offered) {
+            ExportStats.recordRetryQueueDrop(indexKey, 1);
             Logger.logError("[OpenSearch] Retry queue full for index " + indexName + "; dropping document.");
         }
         return false;
@@ -154,9 +155,12 @@ public final class IndexingRetryCoordinator {
             if (toQueue.size() <= MAX_QUEUE_SIZE_PER_INDEX) {
                 int added = queue.offerAll(indexName, toQueue);
                 if (added < toQueue.size()) {
-                    Logger.logError("[OpenSearch] Retry queue full for index " + indexName + "; dropping " + (toQueue.size() - added) + " documents.");
+                    int dropped = toQueue.size() - added;
+                    ExportStats.recordRetryQueueDrop(indexKey, dropped);
+                    Logger.logError("[OpenSearch] Retry queue full for index " + indexName + "; dropping " + dropped + " documents.");
                 }
             } else {
+                ExportStats.recordRetryQueueDrop(indexKey, toQueue.size());
                 Logger.logError("[OpenSearch] Bulk failure batch too large to queue (" + toQueue.size() + "); dropping.");
             }
         }

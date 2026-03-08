@@ -100,4 +100,45 @@ class ExportStatsTest {
         ExportStats.recordTrafficQueueDrop(-1);
         assertThat(ExportStats.getTrafficQueueDrops()).isEqualTo(before);
     }
+
+    @Test
+    void recordRetryQueueDrop_incrementsPerIndexAndTotal() {
+        long beforeTraffic = ExportStats.getRetryQueueDrops("traffic");
+        long beforeTool = ExportStats.getRetryQueueDrops("tool");
+        long beforeTotal = ExportStats.getTotalRetryQueueDrops();
+        ExportStats.recordRetryQueueDrop("traffic", 2);
+        assertThat(ExportStats.getRetryQueueDrops("traffic")).isEqualTo(beforeTraffic + 2);
+        assertThat(ExportStats.getTotalRetryQueueDrops()).isEqualTo(beforeTotal + 2);
+        ExportStats.recordRetryQueueDrop("tool", 1);
+        assertThat(ExportStats.getRetryQueueDrops("tool")).isEqualTo(beforeTool + 1);
+        assertThat(ExportStats.getTotalRetryQueueDrops()).isEqualTo(beforeTotal + 3);
+    }
+
+    @Test
+    void recordRetryQueueDrop_zeroOrNegative_doesNotChangeCount() {
+        long before = ExportStats.getRetryQueueDrops("sitemap");
+        ExportStats.recordRetryQueueDrop("sitemap", 0);
+        ExportStats.recordRetryQueueDrop("sitemap", -1);
+        assertThat(ExportStats.getRetryQueueDrops("sitemap")).isEqualTo(before);
+    }
+
+    @Test
+    void getThroughputDocsPerSecLast60s_afterRecordSuccess_reflectsCount() {
+        ExportStats.recordSuccess("traffic", 60);
+        double t = ExportStats.getThroughputDocsPerSecLast60s();
+        assertThat(t).isGreaterThanOrEqualTo(1.0);
+    }
+
+    @Test
+    void getThroughputDocsPerSecLast60s_returnsNonNegative() {
+        assertThat(ExportStats.getThroughputDocsPerSecLast60s()).isGreaterThanOrEqualTo(0.0);
+    }
+
+    @Test
+    void recordSuccess_zeroOrNegative_doesNotAffectThroughput() {
+        double before = ExportStats.getThroughputDocsPerSecLast60s();
+        ExportStats.recordSuccess("traffic", 0);
+        ExportStats.recordSuccess("traffic", -1);
+        assertThat(ExportStats.getThroughputDocsPerSecLast60s()).isEqualTo(before);
+    }
 }

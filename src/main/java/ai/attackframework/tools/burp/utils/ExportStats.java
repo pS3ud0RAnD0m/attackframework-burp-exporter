@@ -1,7 +1,9 @@
 package ai.attackframework.tools.burp.utils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,6 +24,11 @@ public final class ExportStats {
     private static final List<String> INDEX_KEYS = Collections.unmodifiableList(
             Arrays.asList("traffic", "tool", "settings", "sitemap", "findings"));
     private static final int LAST_ERROR_MAX_LEN = 200;
+    private static final long THROUGHPUT_WINDOW_MS = 60_000L;
+    private static final int THROUGHPUT_CAP = 10_000;
+
+    /** Pairs of { timeMs, count } for successes in the last 60s. Old entries pruned on read. */
+    private static final List<long[]> recentSuccesses = Collections.synchronizedList(new ArrayList<>());
 
     private static final Map<String, PerIndexStats> STATS = new ConcurrentHashMap<>();
 
@@ -52,6 +59,22 @@ public final class ExportStats {
     public static void recordSuccess(String indexKey, long count) {
         if (count <= 0) return;
         forIndex(indexKey).successCount.addAndGet(count);
+        long now = System.currentTimeMillis();
+        synchronized (recentSuccesses) {
+            recentSuccesses.add(new long[] { now, count });
+            if (recentSuccesses.size() > THROUGHPUT_CAP) {
+                pruneRecentSuccessesOlderThan(now - THROUGHPUT_WINDOW_MS);
+            }
+        }
+    }
+
+    private static void pruneRecentSuccessesOlderThan(long cutoffMs) {
+        Iterator<long[]> it = recentSuccesses.iterator();
+        while (it.hasNext()) {
+            if (it.next()[0] < cutoffMs) {
+                it.remove();
+            }
+        }
     }
 
     /**
@@ -162,10 +185,53 @@ public final class ExportStats {
         return sum;
     }
 
+    /** Per-index retry queue: count of documents dropped when the retry queue was full. */
+    public static void recordRetryQueueDrop(String indexKey, long count) {
+        if (count <= 0) return;
+        forIndex(indexKey).retryQueueDrops.addAndGet(count);
+    }
+
+    /** Returns the session total of documents dropped from the retry queue for the given index. */
+    public static long getRetryQueueDrops(String indexKey) {
+        return forIndex(indexKey).retryQueueDrops.get();
+    }
+
+    /** Returns the session total of documents dropped from retry queues across all indexes. */
+    public static long getTotalRetryQueueDrops() {
+        long sum = 0;
+        for (String key : INDEX_KEYS) {
+            sum += forIndex(key).retryQueueDrops.get();
+        }
+        return sum;
+    }
+
+    /**
+     * Returns documents per second over the last 60 seconds (rolling throughput).
+     * Prunes entries older than the window. Thread-safe.
+     *
+     * @return docs/sec (0.0 or positive)
+     */
+    public static double getThroughputDocsPerSecLast60s() {
+        long now = System.currentTimeMillis();
+        long cutoff = now - THROUGHPUT_WINDOW_MS;
+        long sum;
+        synchronized (recentSuccesses) {
+            pruneRecentSuccessesOlderThan(cutoff);
+            sum = 0;
+            for (long[] pair : recentSuccesses) {
+                if (pair[0] >= cutoff) {
+                    sum += pair[1];
+                }
+            }
+        }
+        return sum / (THROUGHPUT_WINDOW_MS / 1000.0);
+    }
+
     private static final class PerIndexStats {
         final AtomicLong successCount = new AtomicLong(0);
         final AtomicLong failureCount = new AtomicLong(0);
         final AtomicLong lastPushDurationMs = new AtomicLong(-1);
         final AtomicReference<String> lastError = new AtomicReference<>(null);
+        final AtomicLong retryQueueDrops = new AtomicLong(0);
     }
 }

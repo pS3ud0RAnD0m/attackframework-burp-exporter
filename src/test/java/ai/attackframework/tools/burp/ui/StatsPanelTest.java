@@ -15,6 +15,8 @@ class StatsPanelTest {
         assertThat(text).contains("OpenSearch URL set:");
         assertThat(text).contains("traffic queue:");
         assertThat(text).contains("drops=");
+        assertThat(text).contains("throughput (last 60s):");
+        assertThat(text).contains("docs/s");
 
         assertThat(text).contains("Session totals (this session)");
         assertThat(text).contains("total docs pushed:");
@@ -24,6 +26,7 @@ class StatsPanelTest {
         assertThat(text).contains("Index");
         assertThat(text).contains("Docs pushed");
         assertThat(text).contains("Queued");
+        assertThat(text).contains("Rty drop");
         assertThat(text).contains("Failures");
         assertThat(text).contains("Last push (ms)");
         assertThat(text).contains("Last error");
