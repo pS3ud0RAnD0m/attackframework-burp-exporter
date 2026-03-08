@@ -35,7 +35,9 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 /**
  * Burp HTTP handler that indexes request/response traffic into the OpenSearch traffic index.
  *
- * <p>Runs on Burp's HTTP thread. Only indexes when OpenSearch traffic export is enabled, the
+ * <p>Builds the document on Burp's HTTP thread and enqueues it to {@link TrafficExportQueue};
+ * a dedicated worker drains the queue in batches and pushes via the Bulk API. The HTTP thread
+ * is not blocked on network I/O. Only indexes when OpenSearch traffic export is enabled, the
  * OpenSearch URL is set, and the request passes scope filtering. Document shape matches
  * {@code /opensearch/mappings/traffic.json}.</p>
  */
@@ -174,19 +176,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         Long requestSentMs = pending == null ? null : pending.timestamp;
 
         Map<String, Object> document = buildDocument(response, request, inScope, requestSentMs, responseReceivedMs);
-        long startNs = System.nanoTime();
-        boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, document);
-        long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-        ExportStats.recordLastPush("traffic", durationMs);
-
-        if (success) {
-            ExportStats.recordSuccess("traffic", 1);
-        } else {
-            ExportStats.recordFailure("traffic", 1);
-            String errMsg = "Failed to index traffic document to " + INDEX_NAME;
-            ExportStats.recordLastError("traffic", errMsg);
-            Logger.logError("[OpenSearch] " + errMsg);
-        }
+        TrafficExportQueue.offer(document);
 
         pendingOrphans.remove(response.messageId());
         return ResponseReceivedAction.continueWith(response);
