@@ -51,8 +51,16 @@ public final class IndexingRetryCoordinator {
     }
 
     /**
-     * Push a single document. One attempt only (caller may be on HTTP thread).
-     * On failure, offers to queue; if queue full, returns false.
+     * Pushes a single document. One attempt only (caller may be on HTTP thread).
+     *
+     * <p>On failure, offers to the retry queue; if the queue is full, the document is dropped and
+     * this method returns {@code false}.</p>
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param indexName target index name
+     * @param document the document to index
+     * @param indexKey short index key for stats (e.g. {@code "traffic"})
+     * @return {@code true} if indexed successfully, {@code false} otherwise
      */
     public boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document, String indexKey) {
         ensureDrainThreadStarted(baseUrl);
@@ -78,8 +86,16 @@ public final class IndexingRetryCoordinator {
     }
 
     /**
-     * Push documents in bulk. Up to 3 attempts with exponential backoff.
-     * On partial failure, queues only the failed items. On full failure after retries, queues whole batch (if not too large).
+     * Pushes documents in bulk. Up to 3 attempts with exponential backoff.
+     *
+     * <p>On partial failure, queues only the failed items. On full failure after retries, queues
+     * the whole batch if within queue capacity.</p>
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param indexName target index name
+     * @param documents documents to index
+     * @param indexKey short index key for stats (e.g. {@code "traffic"})
+     * @return number of documents successfully indexed
      */
     public int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents, String indexKey) {
         if (documents == null || documents.isEmpty()) {

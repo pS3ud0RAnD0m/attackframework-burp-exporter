@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import java.util.Map;
@@ -26,5 +27,17 @@ class TrafficExportQueueTest {
     void offer_validDoc_doesNotThrow() {
         Map<String, Object> doc = Map.of("url", "https://example.com/", "status", 200);
         assertThatCode(() -> TrafficExportQueue.offer(doc)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void getCurrentSize_returnsNonNegative() {
+        assertThat(TrafficExportQueue.getCurrentSize()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void getCurrentSize_increasesWhenDocOffered() {
+        int before = TrafficExportQueue.getCurrentSize();
+        TrafficExportQueue.offer(Map.of("url", "https://example.com/a", "status", 200));
+        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(before + 1);
     }
 }

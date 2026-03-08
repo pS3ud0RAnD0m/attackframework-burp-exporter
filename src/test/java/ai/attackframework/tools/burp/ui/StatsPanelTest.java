@@ -13,6 +13,8 @@ class StatsPanelTest {
         assertThat(text).contains("Export state");
         assertThat(text).contains("export running:");
         assertThat(text).contains("OpenSearch URL set:");
+        assertThat(text).contains("traffic queue:");
+        assertThat(text).contains("drops=");
 
         assertThat(text).contains("Session totals (this session)");
         assertThat(text).contains("total docs pushed:");

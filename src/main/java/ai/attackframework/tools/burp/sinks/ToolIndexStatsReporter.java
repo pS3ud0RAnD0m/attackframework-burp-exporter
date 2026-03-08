@@ -154,6 +154,8 @@ public final class ToolIndexStatsReporter {
         }
         message.put("traffic_indexed_count", ExportStats.getSuccessCount("traffic"));
         message.put("traffic_failure_count", ExportStats.getFailureCount("traffic"));
+        message.put("traffic_queue_size", ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize());
+        message.put("traffic_queue_drops", ExportStats.getTrafficQueueDrops());
         message.put("export_running", RuntimeConfig.isExportRunning());
         message.put("batch_size", ai.attackframework.tools.burp.utils.opensearch.BatchSizeController.getInstance().getCurrentBatchSize());
         long lastPushMs = ExportStats.getLastPushDurationMs("traffic");

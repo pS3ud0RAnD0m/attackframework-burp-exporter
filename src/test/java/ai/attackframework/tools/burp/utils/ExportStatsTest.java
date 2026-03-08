@@ -83,4 +83,21 @@ class ExportStatsTest {
             assertThat(size).isGreaterThanOrEqualTo(0);
         }
     }
+
+    @Test
+    void recordTrafficQueueDrop_incrementsAndGetTrafficQueueDrops_returnsValue() {
+        long before = ExportStats.getTrafficQueueDrops();
+        ExportStats.recordTrafficQueueDrop(1);
+        assertThat(ExportStats.getTrafficQueueDrops()).isEqualTo(before + 1);
+        ExportStats.recordTrafficQueueDrop(3);
+        assertThat(ExportStats.getTrafficQueueDrops()).isEqualTo(before + 4);
+    }
+
+    @Test
+    void recordTrafficQueueDrop_zeroOrNegative_doesNotChangeCount() {
+        long before = ExportStats.getTrafficQueueDrops();
+        ExportStats.recordTrafficQueueDrop(0);
+        ExportStats.recordTrafficQueueDrop(-1);
+        assertThat(ExportStats.getTrafficQueueDrops()).isEqualTo(before);
+    }
 }

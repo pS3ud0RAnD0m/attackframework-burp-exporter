@@ -6,8 +6,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
@@ -34,13 +35,22 @@ public final class ProxyHistoryIndexReporter {
 
     private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
+    /** Delay (seconds) before the one-time Proxy History push runs, to avoid hammering the UI. */
+    private static final long START_DELAY_SECONDS = 2;
+
+    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "attackframework-proxy-history-scheduler");
+        t.setDaemon(true);
+        return t;
+    });
 
     private ProxyHistoryIndexReporter() {}
 
     /**
-     * Pushes all current proxy history items once (on Start), in batches. Safe to call
-     * from any thread; work runs on a background thread and returns immediately.
-     * No-op if export is not running, OpenSearch URL is blank, or PROXY_HISTORY is not selected.
+     * Schedules a one-time push of all current proxy history items (on Start), after a short delay.
+     *
+     * <p>Safe to call from any thread; work runs on a background thread. No-op if export is not
+     * running, OpenSearch URL is blank, or PROXY_HISTORY is not selected.</p>
      */
     public static void pushSnapshotNow() {
         try {
@@ -59,13 +69,12 @@ public final class ProxyHistoryIndexReporter {
             if (api == null || api.proxy() == null) {
                 return;
             }
-            ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-proxy-history-once");
-                t.setDaemon(true);
-                return t;
-            });
-            exec.submit(() -> pushItems(api, baseUrl));
-            exec.shutdown();
+            MontoyaApi apiRef = api;
+            String baseUrlRef = baseUrl;
+            scheduler.schedule(() -> {
+                if (!RuntimeConfig.isExportRunning()) return;
+                pushItems(apiRef, baseUrlRef);
+            }, START_DELAY_SECONDS, TimeUnit.SECONDS);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logDebug("Proxy History index: push failed: " + msg);

@@ -71,8 +71,14 @@ public class OpenSearchClientWrapper {
     }
 
     /**
-     * Public API: delegates to retry coordinator (one attempt + queue on failure).
-     * Documents are filtered to only include fields enabled in the Fields panel before push.
+     * Pushes a single document. Delegates to the retry coordinator (one attempt, then queue on failure).
+     *
+     * <p>Documents are filtered to include only fields enabled in the Fields panel before push.</p>
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param indexName target index name
+     * @param document the document to index (filtered by {@link ai.attackframework.tools.burp.utils.config.ExportFieldFilter})
+     * @return {@code true} if indexed successfully, {@code false} otherwise
      */
     public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         String indexKey = indexKeyFromIndexName(indexName);
@@ -81,8 +87,14 @@ public class OpenSearchClientWrapper {
     }
 
     /**
-     * Public API: delegates to retry coordinator (retries + queue failed items).
-     * Documents are filtered to only include fields enabled in the Fields panel before push.
+     * Pushes documents in bulk. Delegates to the retry coordinator (retries with backoff, then queue failed items).
+     *
+     * <p>Documents are filtered to include only fields enabled in the Fields panel before push.</p>
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param indexName target index name
+     * @param documents documents to index (each filtered by {@link ai.attackframework.tools.burp.utils.config.ExportFieldFilter})
+     * @return number of documents successfully indexed
      */
     public static int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
         if (documents == null || documents.isEmpty()) {

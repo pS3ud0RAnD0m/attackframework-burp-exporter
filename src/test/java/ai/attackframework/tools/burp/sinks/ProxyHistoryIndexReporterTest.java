@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
@@ -55,5 +56,22 @@ class ProxyHistoryIndexReporterTest {
                 null
         ));
         assertThatCode(() -> ProxyHistoryIndexReporter.pushSnapshotNow()).doesNotThrowAnyException();
+    }
+
+    @Test
+    void pushSnapshotNow_returnsImmediately_withoutBlocking() throws InterruptedException {
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"), "all", List.of(),
+                new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("PROXY_HISTORY"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
+        ));
+        long start = System.currentTimeMillis();
+        ProxyHistoryIndexReporter.pushSnapshotNow();
+        long elapsed = System.currentTimeMillis() - start;
+        assertThat(elapsed).isLessThan(500);
     }
 }

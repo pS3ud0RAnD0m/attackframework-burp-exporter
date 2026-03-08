@@ -11,7 +11,7 @@ import java.util.function.Consumer;
  * and {@link IndexingRetryCoordinator}. Bounds are fixed in code; effective range
  * is driven only by success/failure observations. Thread-safe.
  *
- * See REFERENCE-main.md §7 (adaptive batch size).
+ * <p>See REFERENCE-main.md §7 (adaptive batch size).</p>
  */
 public final class BatchSizeController {
 
@@ -28,8 +28,8 @@ public final class BatchSizeController {
     private final Deque<Integer> successSizes = new ArrayDeque<>(SMOOTHING_WINDOW);
     private volatile Consumer<Integer> onChangeListener;
 
+    /** Constructs the controller. Instance is set by {@link #getInstance()} or by tests via {@link #setInstance(BatchSizeController)}. */
     public BatchSizeController() {
-        // instance set by caller (getInstance or test)
     }
 
     public static BatchSizeController getInstance() {

@@ -66,7 +66,10 @@ public class StatsPanel extends JPanel {
         sb.append("Export state\n");
         sb.append("  export running: ").append(exportRunning ? "yes" : "no").append("\n");
         sb.append("  OpenSearch URL set: ").append(urlSet ? "yes" : "no").append("\n");
-        sb.append("  current batch size: ").append(BatchSizeController.getInstance().getCurrentBatchSize()).append("\n\n");
+        sb.append("  current batch size: ").append(BatchSizeController.getInstance().getCurrentBatchSize()).append("\n");
+        int trafficQueueSize = ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize();
+        long trafficQueueDrops = ExportStats.getTrafficQueueDrops();
+        sb.append("  traffic queue: size=").append(trafficQueueSize).append(" drops=").append(trafficQueueDrops).append("\n\n");
 
         // Session totals
         long totalSuccess = ExportStats.getTotalSuccessCount();

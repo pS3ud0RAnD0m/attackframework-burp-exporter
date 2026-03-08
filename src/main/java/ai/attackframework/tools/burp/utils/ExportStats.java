@@ -43,24 +43,44 @@ public final class ExportStats {
         return INDEX_KEYS;
     }
 
-    /** Records successful document push(es) for the given index. */
+    /**
+     * Records successful document push(es) for the given index.
+     *
+     * @param indexKey index key (e.g. {@code "traffic"})
+     * @param count number of documents; ignored if &lt;= 0
+     */
     public static void recordSuccess(String indexKey, long count) {
         if (count <= 0) return;
         forIndex(indexKey).successCount.addAndGet(count);
     }
 
-    /** Records failed document push(es) for the given index. */
+    /**
+     * Records failed document push(es) for the given index.
+     *
+     * @param indexKey index key (e.g. {@code "traffic"})
+     * @param count number of failures; ignored if &lt;= 0
+     */
     public static void recordFailure(String indexKey, long count) {
         if (count <= 0) return;
         forIndex(indexKey).failureCount.addAndGet(count);
     }
 
-    /** Records the duration in ms of the last push for the given index (-1 if unknown). */
+    /**
+     * Records the duration in ms of the last push for the given index.
+     *
+     * @param indexKey index key
+     * @param durationMs duration in milliseconds, or -1 if unknown
+     */
     public static void recordLastPush(String indexKey, long durationMs) {
         forIndex(indexKey).lastPushDurationMs.set(durationMs);
     }
 
-    /** Records the last error for the given index (null or empty clears). */
+    /**
+     * Records the last error for the given index.
+     *
+     * @param indexKey index key
+     * @param message error message; {@code null} or empty clears the stored error
+     */
     public static void recordLastError(String indexKey, String message) {
         if (message == null || message.isEmpty()) {
             forIndex(indexKey).lastError.set(null);
@@ -72,10 +92,12 @@ public final class ExportStats {
         forIndex(indexKey).lastError.set(truncated);
     }
 
+    /** Returns the session total of documents successfully pushed for the given index. */
     public static long getSuccessCount(String indexKey) {
         return forIndex(indexKey).successCount.get();
     }
 
+    /** Returns the session total of failed push attempts for the given index. */
     public static long getFailureCount(String indexKey) {
         return forIndex(indexKey).failureCount.get();
     }
@@ -85,6 +107,7 @@ public final class ExportStats {
         return forIndex(indexKey).lastPushDurationMs.get();
     }
 
+    /** Returns the last recorded error message for the given index, or {@code null} if none. */
     public static String getLastError(String indexKey) {
         return forIndex(indexKey).lastError.get();
     }
@@ -98,6 +121,27 @@ public final class ExportStats {
                 ? IndexNaming.INDEX_PREFIX
                 : IndexNaming.INDEX_PREFIX + "-" + indexKey;
         return IndexingRetryCoordinator.getInstance().getQueueSize(indexName);
+    }
+
+    /** Traffic export queue backpressure: count of documents dropped when the queue is full (oldest dropped). */
+    private static final AtomicLong trafficQueueDrops = new AtomicLong(0);
+
+    /**
+     * Records that one or more documents were dropped from the traffic queue (queue full, drop oldest).
+     *
+     * @param count number of documents dropped; ignored if &lt;= 0
+     */
+    public static void recordTrafficQueueDrop(long count) {
+        if (count > 0) trafficQueueDrops.addAndGet(count);
+    }
+
+    /**
+     * Returns the session total of documents dropped from the traffic queue because it was full.
+     *
+     * @return total drop count (0 or positive)
+     */
+    public static long getTrafficQueueDrops() {
+        return trafficQueueDrops.get();
     }
 
     /** Session total: sum of docs pushed across all indexes. */
