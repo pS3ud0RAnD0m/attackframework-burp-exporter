@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Canonical list of export fields per index for the Fields panel and document/mapping filtering.
+ * Canonical list of export fields per index for the Fields panel and document filtering.
  * Aligned with docs/REFERENCE-main.md "Is required" column: toggleable = No or No*, required = Yes.
  * Keep this class as the single source of truth when adding or changing index fields.
  */
@@ -81,7 +81,7 @@ public final class ExportFieldRegistry {
     /**
      * Returns the set of field keys that may be included in documents for this index:
      * required + (enabledToggleable if provided, else all toggleable).
-     * Used for document filtering and for Create Index mapping.
+     * Used for document filtering (which fields to include in pushed documents).
      */
     public static Set<String> getAllowedKeys(String indexShortName, Set<String> enabledToggleable) {
         Set<String> out = new java.util.LinkedHashSet<>(getRequiredFields(indexShortName));

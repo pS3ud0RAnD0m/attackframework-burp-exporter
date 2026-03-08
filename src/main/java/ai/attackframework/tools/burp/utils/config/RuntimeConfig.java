@@ -139,8 +139,8 @@ public final class RuntimeConfig {
 
     /**
      * Returns the set of top-level field keys allowed for export for the given index.
-     * Used for document filtering and Create Index mapping. When no field selection is
-     * saved, returns required + all toggleable fields (current behaviour).
+     * Used for document filtering (which fields to include in pushed documents). When no
+     * field selection is saved, returns required + all toggleable fields.
      */
     public static java.util.Set<String> getAllowedExportKeys(String indexShortName) {
         ConfigState.State current = state;
