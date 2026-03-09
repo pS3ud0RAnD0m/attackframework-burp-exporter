@@ -10,13 +10,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
-import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
@@ -26,7 +19,13 @@ import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.InputStreamEntity;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+
+import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
 
 /**
  * Sends traffic documents to OpenSearch using a chunked POST to the standard Bulk API.
@@ -73,7 +72,7 @@ public final class ChunkedBulkSender {
      * is available within the first {@code maxWaitMs}, returns a result with zero attempted
      * count (no request is sent).</p>
      *
-     * @param baseUrl    OpenSearch base URL (e.g. {@code http://localhost:9200})
+     * @param baseUrl    OpenSearch base URL (e.g. {@code http://opensearch.url:9200})
      * @param indexName  target index name (e.g. {@code attackframework-tool-burp-traffic})
      * @param queue      source of documents; each element is a {@code Map} to index
      * @param maxBatch   maximum documents per bulk request

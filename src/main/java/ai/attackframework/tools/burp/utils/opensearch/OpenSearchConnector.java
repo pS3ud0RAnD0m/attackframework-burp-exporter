@@ -28,7 +28,7 @@ public final class OpenSearchConnector {
     /**
      * Returns a cached client for the given base URL, creating it on first use.
      *
-     * @param baseUrl e.g., http://localhost:9200
+     * @param baseUrl e.g., http://opensearch.url:9200
      * @return shared client
      * @throws OpenSearchClientBuildException when the client cannot be constructed
      */

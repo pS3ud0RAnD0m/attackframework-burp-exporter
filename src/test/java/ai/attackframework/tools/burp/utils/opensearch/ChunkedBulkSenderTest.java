@@ -1,10 +1,9 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -15,14 +14,14 @@ class ChunkedBulkSenderTest {
 
     @Test
     void buildBulkUrl_normalizesTrailingSlash() {
-        assertThat(ChunkedBulkSender.buildBulkUrl("http://localhost:9200/", "my-index"))
-                .isEqualTo("http://localhost:9200/my-index/_bulk");
+        assertThat(ChunkedBulkSender.buildBulkUrl("http://opensearch.url:9200/", "my-index"))
+                .isEqualTo("http://opensearch.url:9200/my-index/_bulk");
     }
 
     @Test
     void buildBulkUrl_noTrailingSlash() {
-        assertThat(ChunkedBulkSender.buildBulkUrl("http://localhost:9200", "attackframework-tool-burp-traffic"))
-                .isEqualTo("http://localhost:9200/attackframework-tool-burp-traffic/_bulk");
+        assertThat(ChunkedBulkSender.buildBulkUrl("http://opensearch.url:9200", "attackframework-tool-burp-traffic"))
+                .isEqualTo("http://opensearch.url:9200/attackframework-tool-burp-traffic/_bulk");
     }
 
     @Test
@@ -65,7 +64,7 @@ class ChunkedBulkSenderTest {
     void push_emptyQueue_returnsZeroAttempted_afterShortWait() {
         LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
         ChunkedBulkSender.Result r = ChunkedBulkSender.push(
-                "http://localhost:9999", "test-index", queue, 10, 5 * 1024 * 1024, 50);
+                "http://opensearch.url:9999", "test-index", queue, 10, 5 * 1024 * 1024, 50);
         assertThat(r.attemptedCount).isZero();
         assertThat(r.successCount).isZero();
     }
