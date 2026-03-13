@@ -23,7 +23,7 @@ class JsonKeyOrderTest {
                         new ConfigState.ScopeEntry("aaa",   ConfigState.Kind.STRING),
                         new ConfigState.ScopeEntry("bar.*", ConfigState.Kind.REGEX)
                 ),
-                new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200"),
+                new ConfigState.Sinks(true, "/path/to/directory", true, "https://opensearch.url:9200", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -47,7 +47,7 @@ class JsonKeyOrderTest {
                         new ConfigState.ScopeEntry("aaa",   ConfigState.Kind.STRING),
                         new ConfigState.ScopeEntry("bar.*", ConfigState.Kind.REGEX)
                 ),
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );

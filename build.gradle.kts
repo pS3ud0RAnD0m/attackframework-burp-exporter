@@ -72,8 +72,16 @@ tasks.test {
         }
     }
 
+    workingDir = project.projectDir
     systemProperty("java.awt.headless", "true")
     systemProperty("attackframework.version", project.version.toString())
+    // Forward OpenSearch URL/creds from -D or env into the test JVM (forked test process does not inherit Gradle's -D)
+    listOf("OPENSEARCH_URL", "OPENSEARCH_USER", "OPENSEARCH_PASSWORD").forEach { key ->
+        val value = System.getenv(key)?.takeIf { it.isNotBlank() } ?: System.getProperty(key)?.takeIf { it.isNotBlank() }
+        if (value != null) systemProperty(key, value)
+    }
+    // Allow HTTPS to local/test OpenSearch with self-signed cert (same as curl -k)
+    systemProperty("OPENSEARCH_INSECURE", "true")
 
     testLogging {
         events("passed", "skipped", "failed")

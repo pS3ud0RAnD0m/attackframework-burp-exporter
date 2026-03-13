@@ -21,7 +21,7 @@ class ProxyHistoryIndexReporterTest {
     void resetRuntimeConfig() {
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of(), "all", List.of(),
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -35,7 +35,7 @@ class ProxyHistoryIndexReporterTest {
         RuntimeConfig.setExportRunning(true);
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"), "all", List.of(),
-                new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY", "REPEATER"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -49,7 +49,7 @@ class ProxyHistoryIndexReporterTest {
         RuntimeConfig.setExportRunning(false);
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"), "all", List.of(),
-                new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY_HISTORY"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -63,7 +63,7 @@ class ProxyHistoryIndexReporterTest {
         RuntimeConfig.setExportRunning(true);
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"), "all", List.of(),
-                new ConfigState.Sinks(false, null, true, "http://opensearch.url:9200"),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY_HISTORY"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,

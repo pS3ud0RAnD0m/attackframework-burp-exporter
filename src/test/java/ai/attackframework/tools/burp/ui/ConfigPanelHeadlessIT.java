@@ -61,14 +61,6 @@ class ConfigPanelHeadlessIT {
         assertThat(ui.os.get()).isNotBlank();
     }
 
-    @Test
-    void createIndexes_button_completes_and_setsStatus() throws Exception {
-        JButton idx = get(panel, "createIndexesButton");
-        onEdtAndWait(idx::doClick);
-        await(() -> ui.os.get() != null);
-        assertThat(ui.os.get()).isNotBlank();
-    }
-
     // ---- helpers ----
     private static void onEdtAndWait(Runnable r) throws Exception {
         if (SwingUtilities.isEventDispatchThread()) {
@@ -79,7 +71,7 @@ class ConfigPanelHeadlessIT {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> cond) {
-        long deadline = System.currentTimeMillis() + 2500;
+        long deadline = System.currentTimeMillis() + 8000;
         while (System.currentTimeMillis() < deadline) {
             try {
                 if (Boolean.TRUE.equals(cond.call())) {

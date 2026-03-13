@@ -32,7 +32,7 @@ class OpenSearchSinkMissingMappingIT {
         String shortName = "nonexistent";
         String expectedFull = IndexNaming.INDEX_PREFIX + "-" + shortName;
 
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
 
         // Ensure the index is absent before the test (best-effort cleanup).
         try {
@@ -43,7 +43,7 @@ class OpenSearchSinkMissingMappingIT {
         }
 
         // Attempt creation; sink should fail due to missing resource.
-        IndexResult result = OpenSearchSink.createIndexFromResource(BASE_URL, shortName);
+        IndexResult result = OpenSearchReachable.createIndexFromResource(shortName);
         assertThat(result.shortName()).isEqualTo(shortName);
         assertThat(result.fullName()).isEqualTo(expectedFull);
         assertThat(result.status()).isEqualTo(IndexResult.Status.FAILED);

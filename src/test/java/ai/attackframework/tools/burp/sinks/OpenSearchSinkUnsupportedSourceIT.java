@@ -35,7 +35,7 @@ class OpenSearchSinkUnsupportedSourceIT {
     void unknownSource_producesNoUnknownShortNames_andCleansUp() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        List<IndexResult> results = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("bogus"));
+        List<IndexResult> results = OpenSearchReachable.createSelectedIndexes(List.of("bogus"));
 
         // No result should carry the unknown short name.
         assertThat(results.stream().anyMatch(r -> r.shortName().equals("bogus"))).isFalse();
@@ -51,7 +51,7 @@ class OpenSearchSinkUnsupportedSourceIT {
 
         // Cleanup of any indices that were produced (best-effort).
         if (!results.isEmpty()) {
-            OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+            OpenSearchClient client = OpenSearchReachable.getClient();
             for (IndexResult r : results) {
                 try {
                     client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());

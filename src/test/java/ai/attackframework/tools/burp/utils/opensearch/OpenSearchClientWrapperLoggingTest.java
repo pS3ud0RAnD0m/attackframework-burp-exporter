@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Verifies that {@link OpenSearchClientWrapper#testConnection(String)} emits log events
  * to the {@link Logger} listener bus so {@code LogPanel} can display connection attempts.
+ * For client-side failures (no HTTP exchanged), only the error is logged — no reconstructed request/response.
  */
 class OpenSearchClientWrapperLoggingTest {
 
@@ -43,11 +44,13 @@ class OpenSearchClientWrapperLoggingTest {
         SwingUtilities.invokeAndWait(() ->
                 OpenSearchClientWrapper.testConnection("http://127.0.0.1:1"));
 
+        // Client-side failure (connection refused): we log the error only, no fake request/response.
         assertThat(events)
                 .anySatisfy(e -> {
                     assertThat(e.level()).isNotEmpty();
-                    assertThat(e.message()).contains("[OpenSearch]").contains("Request:").contains("GET");
+                    assertThat(e.message()).contains("[OpenSearch]").contains("Connection failed");
                 });
+        assertThat(events).noneMatch(e -> e.message().contains("Request:"));
     }
 
     private record LoggerEvent(String level, String message) {

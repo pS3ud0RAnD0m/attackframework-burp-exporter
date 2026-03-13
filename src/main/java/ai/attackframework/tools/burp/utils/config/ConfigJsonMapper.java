@@ -28,7 +28,9 @@ public final class ConfigJsonMapper {
 
         Sinks sinks = new Sinks(
                 cfg.filesPath() != null && !cfg.filesPath().isBlank(), cfg.filesPath(),
-                cfg.openSearchUrl() != null && !cfg.openSearchUrl().isBlank(), cfg.openSearchUrl()
+                cfg.openSearchUrl() != null && !cfg.openSearchUrl().isBlank(), cfg.openSearchUrl(),
+                cfg.openSearchUser(), cfg.openSearchPassword(),
+                cfg.openSearchInsecureSsl()
         );
 
         return new State(cfg.dataSources(), cfg.scopeType(), entries, sinks,

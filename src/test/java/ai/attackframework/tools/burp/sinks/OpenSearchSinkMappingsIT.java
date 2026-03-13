@@ -30,10 +30,10 @@ class OpenSearchSinkMappingsIT {
 
         // Create standard indices via the sink (idempotent).
         List<String> sources = List.of("settings", "sitemap", "findings", "traffic");
-        List<IndexResult> results = OpenSearchSink.createSelectedIndexes(BASE_URL, sources);
+        List<IndexResult> results = OpenSearchReachable.createSelectedIndexes(sources);
         assertThat(results).isNotEmpty();
 
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
 
         for (IndexResult r : results) {
             GetMappingResponse resp = client.indices()

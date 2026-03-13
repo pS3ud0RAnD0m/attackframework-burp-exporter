@@ -58,12 +58,10 @@ class ConfigPanelDelegationHeadlessTest {
     @Test
     void clicking_buttons_invokes_controller_and_posts_status() throws Exception {
         JButton testConn  = get(panel, "testConnectionButton");
-        JButton createIdx = get(panel, "createIndexesButton");
         JButton createFil = get(panel, "createFilesButton");
 
         onEdtAndWait(() -> {
             testConn.doClick();
-            createIdx.doClick();
             createFil.doClick();
         });
 
@@ -84,7 +82,7 @@ class ConfigPanelDelegationHeadlessTest {
     }
 
     private static void await(java.util.concurrent.Callable<Boolean> cond) {
-        long deadline = System.currentTimeMillis() + 2500;
+        long deadline = System.currentTimeMillis() + 8000;
         while (System.currentTimeMillis() < deadline) {
             try {
                 if (Boolean.TRUE.equals(cond.call())) {

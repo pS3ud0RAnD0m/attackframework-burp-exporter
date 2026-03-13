@@ -6,13 +6,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.BulkRequest;
 import org.opensearch.client.opensearch.core.BulkResponse;
-import org.opensearch.client.opensearch.core.InfoResponse;
 import org.opensearch.client.opensearch.core.IndexRequest;
 import org.opensearch.client.opensearch.core.IndexResponse;
 
@@ -21,45 +24,59 @@ import ai.attackframework.tools.burp.utils.Logger;
 public class OpenSearchClientWrapper {
 
     public static OpenSearchStatus testConnection(String baseUrl) {
-        try {
-            String rawRequest = OpenSearchLogFormat.buildRawRequest(baseUrl, "GET", "/", "");
-            Logger.logDebug("[OpenSearch] Request:\n" + OpenSearchLogFormat.indentRaw(rawRequest));
+        return testConnection(baseUrl, null, null);
+    }
 
-            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
-            InfoResponse info = client.info();
+    private static final ObjectMapper JSON = new ObjectMapper();
 
-            String version = info.version().number();
-            String distribution = info.version().distribution();
+    /**
+     * Tests connectivity with optional basic auth. Performs a raw GET / so logs show the actual
+     * HTTP version and status line from the wire; on 200 parses the response body for version/distribution.
+     */
+    public static OpenSearchStatus testConnection(String baseUrl, String username, String password) {
+        OpenSearchRawGet.RawGetResult result = OpenSearchRawGet.performRawGet(baseUrl, username, password);
 
-            String responseBody = buildTestConnectionResponseBody(distribution, version);
-            Logger.logDebug("[OpenSearch] Response:\n" + OpenSearchLogFormat.indentRaw(
-                    OpenSearchLogFormat.buildRawResponse(responseBody)));
-
-            return new OpenSearchStatus(true, distribution, version, "Connection successful");
-
-        } catch (Exception e) {
-            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            Logger.logError("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
-            StringWriter sw = new StringWriter();
-            e.printStackTrace(new PrintWriter(sw));
-            Logger.logError(sw.toString().stripTrailing());
-            return new OpenSearchStatus(false, "", "", msg);
+        // Log request/response only when we actually got an HTTP response from the server.
+        // For client-side failures (e.g. SSL handshake never completed), no HTTP was exchanged — do not log reconstructed request/response.
+        if (result.statusCode() > 0) {
+            Logger.logDebug("[OpenSearch] Request:\n" + OpenSearchLogFormat.indentRaw(result.requestForLog()));
+            String responseLog = OpenSearchLogFormat.buildRawResponseWithHeaders(
+                    result.body(), result.protocol(), result.statusCode(),
+                    result.reasonPhrase() != null ? result.reasonPhrase() : "",
+                    result.responseHeaderLines());
+            Logger.logDebug("[OpenSearch] Response:\n" + OpenSearchLogFormat.indentRaw(responseLog));
         }
-    }
 
-    /** Builds a JSON-like response body for full HTTP logging (GET / cluster info). */
-    private static String buildTestConnectionResponseBody(String distribution, String version) {
-        return "{\"version\":{\"distribution\":\"" + escapeJson(distribution) + "\",\"number\":\"" + escapeJson(version) + "\"}}";
-    }
+        if (result.statusCode() == 200) {
+            String version = "";
+            String distribution = "";
+            if (result.body() != null && !result.body().isBlank()) {
+                try {
+                    JsonNode root = JSON.readTree(result.body());
+                    JsonNode ver = root.path("version");
+                    version = ver.path("number").asText("");
+                    distribution = ver.path("distribution").asText("");
+                } catch (Exception ignored) {
+                    // keep empty version/distribution
+                }
+            }
+            return new OpenSearchStatus(true, distribution, version, "Connection successful");
+        }
 
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+        String msg = result.statusCode() == 0
+                ? (result.reasonPhrase() != null ? result.reasonPhrase() : "Connection failed")
+                : "HTTP " + result.statusCode() + (result.reasonPhrase() != null && !result.reasonPhrase().isBlank() ? " " + result.reasonPhrase() : "");
+        Logger.logError("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
+        return new OpenSearchStatus(false, "", "", msg);
     }
 
     public static OpenSearchStatus safeTestConnection(String baseUrl) {
+        return safeTestConnection(baseUrl, null, null);
+    }
+
+    public static OpenSearchStatus safeTestConnection(String baseUrl, String username, String password) {
         try {
-            return testConnection(baseUrl);
+            return testConnection(baseUrl, username, password);
         } catch (Exception e) {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             Logger.logError("[OpenSearch] safeTestConnection threw for " + baseUrl + ": " + msg);
@@ -122,7 +139,8 @@ public class OpenSearchClientWrapper {
      */
     static boolean doPushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         try {
-            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
+            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl,
+                    RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
             IndexRequest<Map<String, Object>> request = new IndexRequest.Builder<Map<String, Object>>()
                     .index(indexName)
                     .document(document)
@@ -152,7 +170,8 @@ public class OpenSearchClientWrapper {
             return new BulkResult(0, List.of());
         }
         try {
-            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
+            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl,
+                    RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
             BulkRequest.Builder builder = new BulkRequest.Builder();
             for (Map<String, Object> doc : documents) {
                 builder.operations(o -> o.index(i -> i.index(indexName).document(doc)));

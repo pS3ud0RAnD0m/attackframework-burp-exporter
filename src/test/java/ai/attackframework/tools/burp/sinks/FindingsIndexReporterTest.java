@@ -38,7 +38,7 @@ class FindingsIndexReporterTest {
 
     @Test
     void pushSnapshotNow_completesWithoutThrow_whenFindingsNotInDataSources() {
-        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, "http://opensearch.url:9200");
+        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, "https://opensearch.url:9200", "", "", false);
         ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_SETTINGS),
                 ConfigKeys.SCOPE_ALL,
@@ -66,7 +66,7 @@ class FindingsIndexReporterTest {
 
     @Test
     void pushNewIssuesOnly_completesWithoutThrow_whenFindingsNotInDataSources() {
-        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, "http://opensearch.url:9200");
+        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, "https://opensearch.url:9200", "", "", false);
         ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_SETTINGS),
                 ConfigKeys.SCOPE_ALL,

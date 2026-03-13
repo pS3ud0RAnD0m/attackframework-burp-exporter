@@ -34,7 +34,7 @@ class OpenSearchSinkFreshCreateIT {
     void deleteThenCreate_allStandardIndices_reportsCreated() throws InterruptedException, IOException {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
 
         // Delete all first (best effort)
         for (String s : SOURCES) {
@@ -61,7 +61,7 @@ class OpenSearchSinkFreshCreateIT {
         }
 
         // Re-create each index and assert CREATED
-        List<IndexResult> results = OpenSearchSink.createSelectedIndexes(BASE_URL, SOURCES);
+        List<IndexResult> results = OpenSearchReachable.createSelectedIndexes(SOURCES);
         assertThat(results).isNotEmpty();
 
         for (IndexResult r : results) {

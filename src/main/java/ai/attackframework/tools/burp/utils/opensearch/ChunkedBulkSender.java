@@ -72,7 +72,7 @@ public final class ChunkedBulkSender {
      * is available within the first {@code maxWaitMs}, returns a result with zero attempted
      * count (no request is sent).</p>
      *
-     * @param baseUrl    OpenSearch base URL (e.g. {@code http://opensearch.url:9200})
+     * @param baseUrl    OpenSearch base URL (e.g. {@code https://opensearch.url:9200})
      * @param indexName  target index name (e.g. {@code attackframework-tool-burp-traffic})
      * @param queue      source of documents; each element is a {@code Map} to index
      * @param maxBatch   maximum documents per bulk request

@@ -36,9 +36,14 @@ public final class ConfigState {
         }
     }
 
-    /** Sinks selection and values. */
+    /** Sinks selection and values. Optional OpenSearch basic-auth (empty = no auth). When true, openSearchInsecureSsl skips TLS verification (e.g. self-signed). */
     public record Sinks(boolean filesEnabled, String filesPath,
-                        boolean osEnabled, String openSearchUrl) { }
+                        boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword, boolean openSearchInsecureSsl) {
+        public Sinks {
+            openSearchUser = openSearchUser != null ? openSearchUser : "";
+            openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
+        }
+    }
 
     /** Top-level state. */
     public record State(List<String> dataSources,

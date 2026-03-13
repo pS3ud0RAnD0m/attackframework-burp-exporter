@@ -37,7 +37,7 @@ class OpenSearchClientWrapperIT {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         String indexName = "af-test-" + Instant.now().toEpochMilli();
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
 
         boolean existsBefore = client.indices().exists(b -> b.index(indexName)).value();
         assertThat(existsBefore).isFalse();
@@ -64,7 +64,7 @@ class OpenSearchClientWrapperIT {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         String indexName = "af-doc-test-" + Instant.now().toEpochMilli();
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
 
         client.indices().create(new CreateIndexRequest.Builder().index(indexName).build());
 

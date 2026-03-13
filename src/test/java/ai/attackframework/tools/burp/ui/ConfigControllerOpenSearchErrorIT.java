@@ -37,15 +37,4 @@ class ConfigControllerOpenSearchErrorIT {
         assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
         assertThat(ui.osMsg).startsWith("Test failed").isNotEmpty();
     }
-
-    @Test
-    void createIndexes_withInvalidUrl_reportsFailure() throws Exception {
-        CountDownLatch done = new CountDownLatch(1);
-        TestUi ui = new TestUi(done);
-        ConfigController cc = new ConfigController(ui);
-
-        cc.createIndexesAsync("http://127.0.0.1:1", List.of("settings"));
-        assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(ui.osMsg).isNotBlank();
-    }
 }

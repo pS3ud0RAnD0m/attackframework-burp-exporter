@@ -33,7 +33,7 @@ class OpenSearchCleanupIT {
     @AfterAll
     static void deleteCreatedIndices() {
         try {
-            OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+            OpenSearchClient client = OpenSearchReachable.getClient();
             for (String s : STANDARD_SHORT_NAMES) {
                 String fullName = "tool".equals(s)
                         ? IndexNaming.INDEX_PREFIX

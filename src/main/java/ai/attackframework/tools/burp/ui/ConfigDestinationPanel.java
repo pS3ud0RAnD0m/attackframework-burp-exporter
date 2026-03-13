@@ -31,8 +31,10 @@ public final class ConfigDestinationPanel {
     // OpenSearch destination
     private final JCheckBox openSearchSinkCheckbox;
     private final JTextField openSearchUrlField;
+    private final JCheckBox openSearchInsecureSslCheckbox;
+    private final JButton authenticationButton;
     private final JButton testConnectionButton;
-    private final JButton createIndexesButton;
+    private final JPanel openSearchAuthFormPanel;
     private final JTextArea openSearchStatus;
     private final JPanel statusWrapper;
 
@@ -54,8 +56,10 @@ public final class ConfigDestinationPanel {
             JPanel fileStatusWrapper,
             JCheckBox openSearchSinkCheckbox,
             JTextField openSearchUrlField,
+            JCheckBox openSearchInsecureSslCheckbox,
+            JButton authenticationButton,
             JButton testConnectionButton,
-            JButton createIndexesButton,
+            JPanel openSearchAuthFormPanel,
             JTextArea openSearchStatus,
             JPanel statusWrapper,
             int indentPx,
@@ -70,8 +74,10 @@ public final class ConfigDestinationPanel {
 
         this.openSearchSinkCheckbox = Objects.requireNonNull(openSearchSinkCheckbox, "openSearchSinkCheckbox");
         this.openSearchUrlField = Objects.requireNonNull(openSearchUrlField, "openSearchUrlField");
+        this.openSearchInsecureSslCheckbox = Objects.requireNonNull(openSearchInsecureSslCheckbox, "openSearchInsecureSslCheckbox");
+        this.authenticationButton = Objects.requireNonNull(authenticationButton, "authenticationButton");
         this.testConnectionButton = Objects.requireNonNull(testConnectionButton, "testConnectionButton");
-        this.createIndexesButton = Objects.requireNonNull(createIndexesButton, "createIndexesButton");
+        this.openSearchAuthFormPanel = Objects.requireNonNull(openSearchAuthFormPanel, "openSearchAuthFormPanel");
         this.openSearchStatus = Objects.requireNonNull(openSearchStatus, "openSearchStatus");
         this.statusWrapper = Objects.requireNonNull(statusWrapper, "statusWrapper");
 
@@ -89,7 +95,7 @@ public final class ConfigDestinationPanel {
      * @return assembled panel with destination controls and status areas
      */
     public JPanel build() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"+rowGap+"[]"+rowGap+"[]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel header = new JLabel("Destinations");
@@ -110,19 +116,25 @@ public final class ConfigDestinationPanel {
         fileRow.add(fileStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
         panel.add(fileRow, "growx, wrap");
 
-        // OpenSearch row
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left, grow]"));
+        // OpenSearch row (controls only)
+        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left]20[left, grow]"));
         openSearchRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         openSearchRow.add(openSearchSinkCheckbox, GAPLEFT + indentPx + ", top");
         openSearchRow.add(openSearchUrlField,     ALIGN_LEFT_TOP);
-        openSearchRow.add(testConnectionButton,   "split 2, " + ALIGN_LEFT_TOP);
-        openSearchRow.add(createIndexesButton,    "gapleft 15, " + ALIGN_LEFT_TOP);
+        openSearchRow.add(authenticationButton,   "split 2, " + ALIGN_LEFT_TOP);
+        openSearchRow.add(testConnectionButton,   "gapleft 15, " + ALIGN_LEFT_TOP);
+        openSearchRow.add(openSearchInsecureSslCheckbox, "gapleft 10, " + ALIGN_LEFT_TOP);
 
+        panel.add(openSearchRow, "growx, wrap");
+
+        // OpenSearch auth form (expandable; hidden by default, toggled by Authentication button)
+        panel.add(openSearchAuthFormPanel, "gapleft " + indentPx + ", alignx left, growx, wrap");
+
+        // OpenSearch status (below the row), left-aligned with checkboxes
         statusConfigurer.accept(openSearchStatus);
         StatusViews.configureWrapper(statusWrapper, openSearchStatus);
-        openSearchRow.add(statusWrapper, "hidemode 3, alignx left, w pref!, wrap");
-        panel.add(openSearchRow, "growx, wrap");
+        panel.add(statusWrapper, "gapleft " + indentPx + ", hidemode 3, alignx left, w pref!, wrap");
 
         return panel;
     }

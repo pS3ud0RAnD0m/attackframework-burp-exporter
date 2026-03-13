@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
+import ai.attackframework.tools.burp.testutils.OpenSearchTestConfig;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
@@ -79,11 +80,12 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
         deleteFindingsIndex();
 
         MontoyaApiProvider.set(mockMontoyaApiWithOneIssue());
+        OpenSearchTestConfig config = OpenSearchTestConfig.get();
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of(ConfigKeys.SRC_FINDINGS),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
-                new ConfigState.Sinks(false, "", true, BASE_URL),
+                new ConfigState.Sinks(false, "", true, BASE_URL, config.username(), config.password(), false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -103,6 +105,14 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
             JCheckBox issuesCheckbox = get(p, "issuesCheckbox");
             issuesCheckbox.setEnabled(true);
             if (!issuesCheckbox.isSelected()) issuesCheckbox.doClick();
+            javax.swing.JComboBox<?> authCombo = get(p, "openSearchAuthTypeCombo");
+            if (authCombo != null && config.username() != null && !config.username().isBlank()) {
+                authCombo.setSelectedIndex(1);
+                JTextField userField = get(p, "openSearchUserField");
+                JTextField passField = get(p, "openSearchPasswordField");
+                if (userField != null) userField.setText(config.username());
+                if (passField != null) passField.setText(config.password() != null ? config.password() : "");
+            }
             ref.set(p);
         });
         panel = ref.get();
@@ -126,7 +136,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
 
         awaitFindingsIndexWithAtLeastOneDoc();
 
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         GetMappingResponse mappingResp = client.indices()
                 .getMapping(new GetMappingRequest.Builder().index(FINDINGS_INDEX).build());
         assertThat(mappingResp.result()).containsKey(FINDINGS_INDEX);
@@ -181,7 +191,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
     }
 
     private void awaitFindingsIndexWithAtLeastOneDoc() {
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
             try {
@@ -202,7 +212,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
 
     private static void deleteFindingsIndex() {
         try {
-            OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+            OpenSearchClient client = OpenSearchReachable.getClient();
             client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
         } catch (Exception ignored) {
             // index may not exist

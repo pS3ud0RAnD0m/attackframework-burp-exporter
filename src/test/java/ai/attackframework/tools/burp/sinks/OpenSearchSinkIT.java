@@ -43,7 +43,7 @@ class OpenSearchSinkIT {
         List<String> sources = List.of("settings", "sitemap", "findings", "traffic", "tool");
 
         // Pass 1: create or report existing
-        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, sources);
+        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(sources);
 
         EnumSet<IndexResult.Status> allowed = EnumSet.of(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
         assertThat(first)
@@ -60,7 +60,7 @@ class OpenSearchSinkIT {
 
         // Delete reported indices (best-effort cleanup of dev cluster)
         List<String> fullNames = first.stream().map(IndexResult::fullName).toList();
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         for (String index : fullNames) {
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(index).build());
@@ -78,7 +78,7 @@ class OpenSearchSinkIT {
         }
 
         // Pass 2: re-create and verify CREATED status
-        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, sources);
+        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(sources);
         assertThat(second)
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED));
@@ -96,7 +96,7 @@ class OpenSearchSinkIT {
     void create_delete_recreate_singleSource_traffic_viaSink() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("traffic", "tool"));
+        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("traffic", "tool"));
         assertThat(first).isNotEmpty();
 
         // Validate expected short names and full names
@@ -108,7 +108,7 @@ class OpenSearchSinkIT {
         }
 
         // Delete both indices reported (best-effort cleanup of dev cluster)
-        OpenSearchClient client2 = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client2 = OpenSearchReachable.getClient();
         for (IndexResult r : first) {
             try {
                 client2.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
@@ -118,7 +118,7 @@ class OpenSearchSinkIT {
         }
 
         // Re-create and verify CREATED status
-        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("traffic", "tool"));
+        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(List.of("traffic", "tool"));
         assertThat(second)
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED));

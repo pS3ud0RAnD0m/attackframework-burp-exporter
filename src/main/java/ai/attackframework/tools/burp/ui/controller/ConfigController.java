@@ -9,7 +9,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink;
-import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.FileUtil.CreateResult;
 import ai.attackframework.tools.burp.utils.FileUtil.Status;
@@ -17,6 +16,7 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
@@ -194,15 +194,19 @@ public final class ConfigController {
      * Tests connectivity to an OpenSearch cluster asynchronously.
      * <p>
      * The result message is sent to {@link Ui#onOpenSearchStatus} on the EDT.
+     * Uses current RuntimeConfig for credentials and insecure-SSL (caller should call
+     * updateRuntimeConfig / buildCurrentState before this so the checkbox and saved creds apply).
      *
      * @param url base URL of the OpenSearch cluster
      */
     public void testConnectionAsync(String url) {
         Logger.logDebug("[ConfigPanel] testConnectionAsync invoked; url=" + url);
+        String user = RuntimeConfig.openSearchUser();
+        String pass = RuntimeConfig.openSearchPassword();
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
-                    var s = OpenSearchClientWrapper.safeTestConnection(url);
+                    var s = OpenSearchClientWrapper.safeTestConnection(url, user, pass);
                     Logger.logDebug("[ConfigPanel] testConnection result: success=" + s.success()
                             + ", message=" + s.message());
                     if (s.success()) {
@@ -223,41 +227,6 @@ public final class ConfigController {
                     ui.onOpenSearchStatus(TEST_FAILED + "interrupted.");
                 } catch (Exception ex) {
                     ui.onOpenSearchStatus(TEST_FAILED + rootMessage(ex));
-                }
-            }
-        }.execute();
-    }
-
-    /**
-     * Attempts to create OpenSearch indexes for the selected sources asynchronously.
-     * <p>
-     * Completion status is sent to {@link Ui#onOpenSearchStatus} on the EDT.
-     *
-     * @param url base URL of the OpenSearch cluster
-     * @param selectedSources data sources to index
-     */
-    public void createIndexesAsync(String url, List<String> selectedSources) {
-        Logger.logDebug("[ConfigPanel] createIndexesAsync invoked; url=" + url
-                + ", selectedSources=" + selectedSources);
-        new SwingWorker<String, Void>() {
-            @Override protected String doInBackground() {
-                try {
-                    List<IndexResult> results = OpenSearchSink.createSelectedIndexes(url, selectedSources);
-                    Logger.logDebug("[ConfigPanel] createIndexesAsync results=" + results);
-                    return formatCreateIndexesResult(results);
-                } catch (Exception ex) {
-                    Logger.logError("[ConfigPanel] Create indexes failed: " + rootMessage(ex));
-                    return "Create indexes failed: " + rootMessage(ex);
-                }
-            }
-            @Override protected void done() {
-                try {
-                    ui.onOpenSearchStatus(get());
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    ui.onOpenSearchStatus("Create indexes interrupted.");
-                } catch (Exception ex) {
-                    ui.onOpenSearchStatus("Create indexes failed: " + rootMessage(ex));
                 }
             }
         }.execute();
@@ -296,40 +265,6 @@ public final class ConfigController {
             sb.append(failed.size() == 1 ? "File failed:\n  " : "Files failed:\n  ")
                     .append(String.join("\n  ", failed)).append('\n');
             if (firstError != null) sb.append("Reason: ").append(firstError).append('\n');
-        }
-        return sb.toString().trim();
-    }
-
-    private static String formatCreateIndexesResult(List<IndexResult> results) {
-        List<String> created = new ArrayList<>();
-        List<String> existed = new ArrayList<>();
-        List<String> failed  = new ArrayList<>();
-        String firstReason = null;
-
-        for (IndexResult r : results) {
-            switch (r.status()) {
-                case CREATED -> created.add(r.fullName());
-                case EXISTS  -> existed.add(r.fullName());
-                case FAILED  -> {
-                    failed.add(r.fullName());
-                    if (firstReason == null && r.error() != null) firstReason = r.error();
-                }
-            }
-        }
-
-        StringBuilder sb = new StringBuilder();
-        if (!created.isEmpty()) {
-            sb.append(created.size() == 1 ? "Created index:\n  " : "Created indexes:\n  ")
-                    .append(String.join("\n  ", created)).append('\n');
-        }
-        if (!existed.isEmpty()) {
-            sb.append(existed.size() == 1 ? "Index already existed:\n  " : "Indexes already existed:\n  ")
-                    .append(String.join("\n  ", existed)).append('\n');
-        }
-        if (!failed.isEmpty()) {
-            sb.append(failed.size() == 1 ? "Index failed:\n  " : "Indexes failed:\n  ")
-                    .append(String.join("\n  ", failed)).append('\n');
-            if (firstReason != null) sb.append("Reason: ").append(firstReason).append('\n');
         }
         return sb.toString().trim();
     }

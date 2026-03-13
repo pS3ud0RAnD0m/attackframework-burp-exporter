@@ -28,7 +28,7 @@ class OpenSearchSinkToolOnlyIT {
     void create_delete_recreate_toolOnly_viaSink() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        List<IndexResult> first = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("tool"));
+        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("tool"));
         assertThat(first).isNotEmpty();
 
         EnumSet<IndexResult.Status> allowed = EnumSet.of(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
@@ -41,7 +41,7 @@ class OpenSearchSinkToolOnlyIT {
         }
 
         // Delete reported index (best-effort cleanup of dev cluster)
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         for (IndexResult r : first) {
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
@@ -51,7 +51,7 @@ class OpenSearchSinkToolOnlyIT {
         }
 
         // Re-create and verify CREATED status
-        List<IndexResult> second = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("tool"));
+        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(List.of("tool"));
         assertThat(second)
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r)

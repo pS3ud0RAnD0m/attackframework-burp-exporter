@@ -25,6 +25,7 @@ import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.MimeType;
 
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
+import ai.attackframework.tools.burp.testutils.OpenSearchTestConfig;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -70,7 +71,7 @@ class FindingsIndexReporterIT {
     @BeforeEach
     void assumeOpenSearchReachableAndCleanFindingsIndex() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
         } catch (Exception e) {
@@ -82,7 +83,7 @@ class FindingsIndexReporterIT {
     void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
         } catch (Exception e) {
@@ -237,7 +238,7 @@ class FindingsIndexReporterIT {
     }
 
     private void createFindingsIndex() {
-        List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("findings"));
+        List<OpenSearchSink.IndexResult> results = OpenSearchReachable.createSelectedIndexes(List.of("findings"));
         assertThat(results).isNotEmpty();
         boolean findingsCreated = results.stream()
                 .anyMatch(r -> r.shortName().equals("findings") && (r.status() == OpenSearchSink.IndexResult.Status.CREATED || r.status() == OpenSearchSink.IndexResult.Status.EXISTS));
@@ -245,7 +246,9 @@ class FindingsIndexReporterIT {
     }
 
     private void setRuntimeConfigForFindingsExport() {
-        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, BASE_URL);
+        OpenSearchTestConfig config = OpenSearchTestConfig.get();
+        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, BASE_URL,
+                config.username(), config.password(), false);
         ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_FINDINGS),
                 ConfigKeys.SCOPE_ALL,
@@ -472,7 +475,7 @@ class FindingsIndexReporterIT {
     /** Polls until a document matching the predicate appears (avoids taking a doc from another test's late task). */
     @SuppressWarnings("unchecked")
     private Map<String, Object> awaitDocumentMatching(Predicate<Map<String, Object>> predicate) {
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
                 .index(FINDINGS_INDEX)
                 .size(20)

@@ -1,6 +1,5 @@
 package ai.attackframework.tools.burp.ui;
 
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -28,13 +27,12 @@ class ConfigControllerOpenSearchReasonIT {
     }
 
     @Test
-    void createIndexes_failure_containsReason_whenAvailable() throws Exception {
+    void testConnection_failure_containsReason_whenAvailable() throws Exception {
         CountDownLatch done = new CountDownLatch(1);
         TestUi ui = new TestUi(done);
         ConfigController cc = new ConfigController(ui);
 
-        // Using an unreachable endpoint should produce a failure summary with a reason
-        cc.createIndexesAsync("http://127.0.0.1:1", List.of("settings"));
+        cc.testConnectionAsync("http://127.0.0.1:1");
         assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
         assertThat(ui.osMsg).containsAnyOf("failed", "interrupted", "Test failed");
     }

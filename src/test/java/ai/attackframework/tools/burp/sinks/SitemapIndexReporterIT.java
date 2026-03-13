@@ -66,7 +66,7 @@ class SitemapIndexReporterIT {
     void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(SITEMAP_INDEX).build());
         } catch (Exception e) {
@@ -116,7 +116,7 @@ class SitemapIndexReporterIT {
     }
 
     private void createSitemapIndex() {
-        List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("sitemap"));
+        List<OpenSearchSink.IndexResult> results = OpenSearchReachable.createSelectedIndexes(List.of("sitemap"));
         assertThat(results).isNotEmpty();
         boolean sitemapCreated = results.stream()
                 .anyMatch(r -> r.shortName().equals("sitemap") && (r.status() == OpenSearchSink.IndexResult.Status.CREATED || r.status() == OpenSearchSink.IndexResult.Status.EXISTS));
@@ -124,7 +124,8 @@ class SitemapIndexReporterIT {
     }
 
     private void setRuntimeConfigForSitemapExport() {
-        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, BASE_URL);
+        ai.attackframework.tools.burp.testutils.OpenSearchTestConfig config = ai.attackframework.tools.burp.testutils.OpenSearchTestConfig.get();
+        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, BASE_URL, config.username(), config.password(), false);
         ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_SITEMAP),
                 ConfigKeys.SCOPE_ALL,
@@ -176,7 +177,7 @@ class SitemapIndexReporterIT {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> awaitFirstDocument() {
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
                 .index(SITEMAP_INDEX)
                 .size(1)

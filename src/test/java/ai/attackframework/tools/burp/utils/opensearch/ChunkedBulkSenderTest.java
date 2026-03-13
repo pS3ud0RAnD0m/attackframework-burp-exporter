@@ -14,14 +14,14 @@ class ChunkedBulkSenderTest {
 
     @Test
     void buildBulkUrl_normalizesTrailingSlash() {
-        assertThat(ChunkedBulkSender.buildBulkUrl("http://opensearch.url:9200/", "my-index"))
-                .isEqualTo("http://opensearch.url:9200/my-index/_bulk");
+        assertThat(ChunkedBulkSender.buildBulkUrl("https://opensearch.url:9200/", "my-index"))
+                .isEqualTo("https://opensearch.url:9200/my-index/_bulk");
     }
 
     @Test
     void buildBulkUrl_noTrailingSlash() {
-        assertThat(ChunkedBulkSender.buildBulkUrl("http://opensearch.url:9200", "attackframework-tool-burp-traffic"))
-                .isEqualTo("http://opensearch.url:9200/attackframework-tool-burp-traffic/_bulk");
+        assertThat(ChunkedBulkSender.buildBulkUrl("https://opensearch.url:9200", "attackframework-tool-burp-traffic"))
+                .isEqualTo("https://opensearch.url:9200/attackframework-tool-burp-traffic/_bulk");
     }
 
     @Test

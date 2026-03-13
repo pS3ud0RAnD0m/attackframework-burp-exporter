@@ -43,7 +43,7 @@ class OpenSearchSinkConcurrencyIT {
         try (ExecutorService pool = Executors.newFixedThreadPool(SOURCES.size())) {
             List<Callable<IndexResult>> tasks = SOURCES.stream()
                     .map(shortName -> (Callable<IndexResult>) () ->
-                            OpenSearchSink.createIndexFromResource(BASE_URL, shortName))
+                            OpenSearchReachable.createIndexFromResource(shortName))
                     .toList();
 
             List<Future<IndexResult>> results = pool.invokeAll(tasks);

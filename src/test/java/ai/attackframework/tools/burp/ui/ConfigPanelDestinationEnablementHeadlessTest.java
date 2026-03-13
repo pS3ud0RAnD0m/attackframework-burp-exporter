@@ -46,8 +46,8 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         // OpenSearch row
         JCheckBox osEnable  = get(panel, "openSearchSinkCheckbox");
         JTextField osUrl    = get(panel, "openSearchUrlField");
+        JButton osAuth      = get(panel, "authenticationButton");
         JButton osTest      = get(panel, "testConnectionButton");
-        JButton osIndexes   = get(panel, "createIndexesButton");
 
         // Ensure both destinations are enabled
         if (!filesEnable.isSelected()) filesEnable.doClick();
@@ -57,8 +57,8 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(filesPath.isEnabled()).isTrue();
         assertThat(filesCreate.isEnabled()).isTrue();
         assertThat(osUrl.isEnabled()).isTrue();
+        assertThat(osAuth.isEnabled()).isTrue();
         assertThat(osTest.isEnabled()).isTrue();
-        assertThat(osIndexes.isEnabled()).isTrue();
 
         // Disable both destinations
         if (filesEnable.isSelected()) filesEnable.doClick();
@@ -68,8 +68,8 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(filesPath.isEnabled()).isFalse();
         assertThat(filesCreate.isEnabled()).isFalse();
         assertThat(osUrl.isEnabled()).isFalse();
+        assertThat(osAuth.isEnabled()).isFalse();
         assertThat(osTest.isEnabled()).isFalse();
-        assertThat(osIndexes.isEnabled()).isFalse();
     }
 
     private static final class NoopUi implements ConfigController.Ui {

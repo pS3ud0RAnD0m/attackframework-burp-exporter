@@ -16,7 +16,7 @@ class OpenSearchSinkMissingResourceIT {
     @Test
     void createIndexFromResource_returnsFailed_whenMappingResourceMissing() {
         // "nonexistent" does not correspond to any mapping file under resources/opensearch/mappings
-        IndexResult res = OpenSearchSink.createIndexFromResource("http://opensearch.url:9200", "nonexistent");
+        IndexResult res = OpenSearchSink.createIndexFromResource("https://opensearch.url:9200", "nonexistent");
 
         assertThat(res.shortName()).isEqualTo("nonexistent");
         assertThat(res.fullName()).endsWith("-nonexistent");

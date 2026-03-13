@@ -9,13 +9,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JsonSinksOmissionTest {
 
     private static final String FILES_ROOT = "/path/to/directory";
-    private static final String OS_URL = "http://opensearch.url:9200";
+    private static final String OS_URL = "https://opensearch.url:9200";
 
     @Test
     void build_omits_blank_sinks_fields() throws IOException {
         var state = new ConfigState.State(
                 null, "all", null,
-                new ConfigState.Sinks(false, "", false, ""),
+                new ConfigState.Sinks(false, "", false, "", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -31,7 +31,7 @@ class JsonSinksOmissionTest {
     void build_includes_nonEmpty_sinks_fields() throws IOException {
         var state = new ConfigState.State(
                 null, "all", null,
-                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL),
+                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL, "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );

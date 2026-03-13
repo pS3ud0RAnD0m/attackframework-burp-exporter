@@ -57,7 +57,7 @@ class SettingsIndexReporterIT {
     void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(SETTINGS_INDEX).build());
         } catch (Exception e) {
@@ -101,7 +101,7 @@ class SettingsIndexReporterIT {
     }
 
     private void createSettingsIndex() {
-        List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(BASE_URL, List.of("settings"));
+        List<OpenSearchSink.IndexResult> results = OpenSearchReachable.createSelectedIndexes(List.of("settings"));
         assertThat(results).isNotEmpty();
         boolean settingsCreated = results.stream()
                 .anyMatch(r -> r.shortName().equals("settings") && (r.status() == OpenSearchSink.IndexResult.Status.CREATED || r.status() == OpenSearchSink.IndexResult.Status.EXISTS));
@@ -109,7 +109,8 @@ class SettingsIndexReporterIT {
     }
 
     private void setRuntimeConfigForSettingsExport() {
-        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, BASE_URL);
+        ai.attackframework.tools.burp.testutils.OpenSearchTestConfig config = ai.attackframework.tools.burp.testutils.OpenSearchTestConfig.get();
+        ConfigState.Sinks sinks = new ConfigState.Sinks(false, "", true, BASE_URL, config.username(), config.password(), false);
         ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_SETTINGS),
                 ConfigKeys.SCOPE_ALL,
@@ -140,7 +141,7 @@ class SettingsIndexReporterIT {
      */
     @SuppressWarnings("unchecked")
     private Map<String, Object> awaitFirstDocument() {
-        OpenSearchClient client = OpenSearchConnector.getClient(BASE_URL);
+        OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
                 .index(SETTINGS_INDEX)
                 .size(1)

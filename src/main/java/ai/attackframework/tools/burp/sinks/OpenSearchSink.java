@@ -25,7 +25,6 @@ import org.opensearch.client.opensearch.indices.IndexSettings;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchLogFormat;
 
 /**
  * Creates OpenSearch indices from bundled JSON mapping files.
@@ -39,13 +38,23 @@ public class OpenSearchSink {
     /** Creates an index from {@code /opensearch/mappings/<shortName>.json}. */
     public static IndexResult createIndexFromResource(String baseUrl, String shortName) {
         final String root = System.getProperty("attackframework.mappings.root", DEFAULT_MAPPINGS_RESOURCE_ROOT);
-        return createIndexFromResource(baseUrl, shortName, root);
+        return createIndexFromResource(baseUrl, shortName, root, null, null);
     }
 
     /** Creates an index from {@code <mappingsResourceRoot>/<shortName>.json}. */
     public static IndexResult createIndexFromResource(String baseUrl, String shortName, String mappingsResourceRoot) {
+        return createIndexFromResource(baseUrl, shortName, mappingsResourceRoot, null, null);
+    }
+
+    /**
+     * Creates an index from {@code <mappingsResourceRoot>/<shortName>.json} with optional basic auth.
+     * When username and password are non-null and non-empty, uses basic auth for the request.
+     */
+    public static IndexResult createIndexFromResource(String baseUrl, String shortName, String mappingsResourceRoot,
+            String username, String password) {
+        final String defaultRoot = System.getProperty("attackframework.mappings.root", DEFAULT_MAPPINGS_RESOURCE_ROOT);
         final String resourceRoot = (mappingsResourceRoot == null || mappingsResourceRoot.isBlank())
-                ? DEFAULT_MAPPINGS_RESOURCE_ROOT
+                ? defaultRoot
                 : mappingsResourceRoot;
 
         final String fullIndexName = shortName.equals("tool")
@@ -60,7 +69,7 @@ public class OpenSearchSink {
         String jsonBody = null;
 
         try {
-            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl);
+            OpenSearchClient client = OpenSearchConnector.getClient(baseUrl, username, password);
 
             boolean exists = client.indices().exists(b -> b.index(fullIndexName)).value();
             if (exists) {
@@ -110,15 +119,9 @@ public class OpenSearchSink {
                     .mappings(mappings)
                     .build();
 
-            String compactBody = compactJson(jsonBody);
-            Logger.logDebug("[OpenSearch] Request:\n" + OpenSearchLogFormat.indentRaw(
-                    OpenSearchLogFormat.buildRawRequest(baseUrl, "PUT", "/" + fullIndexName, compactBody)));
-
             CreateIndexResponse response = client.indices().create(request);
 
-            String createResponseBody = buildCreateIndexResponseBody(response, fullIndexName);
-            Logger.logDebug("[OpenSearch] Response:\n" + OpenSearchLogFormat.indentRaw(
-                    OpenSearchLogFormat.buildRawResponse(createResponseBody)));
+            Logger.logDebug("[OpenSearch] Create index " + fullIndexName + " acknowledged=" + response.acknowledged());
 
             return new IndexResult(
                     shortName,
@@ -140,6 +143,15 @@ public class OpenSearchSink {
 
     /** Creates all indices required by the selected sources; always includes "tool". */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
+        return createSelectedIndexes(baseUrl, selectedSources, null, null);
+    }
+
+    /**
+     * Creates all indices required by the selected sources with optional basic auth.
+     * When username and password are non-null and non-empty, uses basic auth.
+     */
+    public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources,
+            String username, String password) {
         Logger.logDebug("Entered createSelectedIndexes with sources: " + selectedSources);
 
         List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
@@ -155,31 +167,14 @@ public class OpenSearchSink {
         List<IndexResult> results = new ArrayList<>();
         for (String shortName : shortNames) {
             Logger.logInfoPanelOnly("Creating index for: " + shortName);
-            IndexResult result = createIndexFromResource(baseUrl, shortName);
+            IndexResult result = createIndexFromResource(baseUrl, shortName, null, username, password);
             Logger.logInfoPanelOnly("Result for " + shortName + ": " + result.status());
             results.add(result);
         }
         return results;
     }
 
-    /** Builds response body JSON for full HTTP logging (Create index). */
-    private static String buildCreateIndexResponseBody(CreateIndexResponse response, String fullIndexName) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"acknowledged\":").append(response.acknowledged());
-        try {
-            if (response.index() != null && !response.index().isBlank()) {
-                sb.append(",\"index\":\"").append(escapeJson(response.index())).append("\"");
-            } else {
-                sb.append(",\"index\":\"").append(escapeJson(fullIndexName)).append("\"");
-            }
-        } catch (Exception ignored) {
-            sb.append(",\"index\":\"").append(escapeJson(fullIndexName)).append("\"");
-        }
-        sb.append("}");
-        return sb.toString();
-    }
-
-    /** Serializes mapping JSON to a single line so create-index request bodies do not clutter logs. */
+    /** Serializes mapping JSON to a single line so error logs do not clutter. */
     private static String compactJson(String json) {
         if (json == null || json.isBlank()) return json;
         try (JsonReader reader = Json.createReader(new StringReader(json));
@@ -190,11 +185,6 @@ public class OpenSearchSink {
         } catch (Exception e) {
             return json;
         }
-    }
-
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }
 
     /** Compact root-cause message, capped for UI status. */

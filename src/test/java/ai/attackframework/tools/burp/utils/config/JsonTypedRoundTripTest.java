@@ -21,7 +21,7 @@ class JsonTypedRoundTripTest {
                         new ConfigState.ScopeEntry("x", ConfigState.Kind.REGEX),
                         new ConfigState.ScopeEntry("y", ConfigState.Kind.STRING)
                 ),
-                new ConfigState.Sinks(true, "/path/to/directory", true, "http://opensearch.url:9200"),
+                new ConfigState.Sinks(true, "/path/to/directory", true, "https://opensearch.url:9200", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -33,14 +33,14 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.scopeType()).isEqualTo("custom");
         assertThat(parsed.scopeRegexes()).containsExactly("x", "y");
         assertThat(parsed.filesPath()).isEqualTo("/path/to/directory");
-        assertThat(parsed.openSearchUrl()).isEqualTo("http://opensearch.url:9200");
+        assertThat(parsed.openSearchUrl()).isEqualTo("https://opensearch.url:9200");
     }
 
     @Test
     void build_all_scope_sets_flag_only() throws IOException {
         var state = new ConfigState.State(
                 List.of("settings"), "all", null,
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -56,7 +56,7 @@ class JsonTypedRoundTripTest {
     void build_burp_scope_sets_flag_only() throws IOException {
         var state = new ConfigState.State(
                 List.of("traffic"), "burp", null,
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -72,7 +72,7 @@ class JsonTypedRoundTripTest {
     void build_and_parse_preserves_data_source_sub_options() throws IOException {
         var state = new ConfigState.State(
                 List.of("settings", "traffic", "findings"), "all", List.of(),
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 List.of(ConfigKeys.SRC_SETTINGS_PROJECT),
                 List.of("PROXY", "REPEATER"),
                 List.of("HIGH", "CRITICAL"),
@@ -91,7 +91,7 @@ class JsonTypedRoundTripTest {
     void build_and_parse_preserves_PROXY_HISTORY_in_traffic_tool_types() throws IOException {
         var state = new ConfigState.State(
                 List.of("traffic"), "all", List.of(),
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("PROXY", "PROXY_HISTORY", "REPEATER"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -121,7 +121,7 @@ class JsonTypedRoundTripTest {
         );
         var state = new ConfigState.State(
                 List.of("settings", "traffic"), "all", List.of(),
-                new ConfigState.Sinks(false, null, false, null),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 enabledByIndex
         );

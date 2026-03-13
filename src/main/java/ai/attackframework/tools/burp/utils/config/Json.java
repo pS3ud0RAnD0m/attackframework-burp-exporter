@@ -56,6 +56,9 @@ public final class Json {
         private final List<String> scopeKinds;
         private final String filesPath;
         private final String openSearchUrl;
+        private final String openSearchUser;
+        private final String openSearchPassword;
+        private final boolean openSearchInsecureSsl;
         private final List<String> settingsSub;
         private final List<String> trafficToolTypes;
         private final List<String> findingsSeverities;
@@ -68,6 +71,9 @@ public final class Json {
                 List<String> scopeKinds,
                 String filesPath,
                 String openSearchUrl,
+                String openSearchUser,
+                String openSearchPassword,
+                boolean openSearchInsecureSsl,
                 List<String> settingsSub,
                 List<String> trafficToolTypes,
                 List<String> findingsSeverities,
@@ -79,6 +85,9 @@ public final class Json {
             this.scopeKinds = scopeKinds == null ? null : List.copyOf(scopeKinds);
             this.filesPath = filesPath;
             this.openSearchUrl = openSearchUrl;
+            this.openSearchUser = openSearchUser != null ? openSearchUser : "";
+            this.openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
+            this.openSearchInsecureSsl = openSearchInsecureSsl;
             this.settingsSub = settingsSub == null ? List.of() : List.copyOf(settingsSub);
             this.trafficToolTypes = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
             this.findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
@@ -118,6 +127,18 @@ public final class Json {
 
         public String openSearchUrl() {
             return openSearchUrl;
+        }
+
+        public String openSearchUser() {
+            return openSearchUser;
+        }
+
+        public String openSearchPassword() {
+            return openSearchPassword;
+        }
+
+        public boolean openSearchInsecureSsl() {
+            return openSearchInsecureSsl;
         }
 
         public List<String> settingsSub() {
@@ -237,6 +258,11 @@ public final class Json {
         if (sinks.osEnabled() && os != null && !os.isBlank()) {
             sinksNode.put("openSearch", os);
         }
+        String osUser = sinks.openSearchUser();
+        if (osUser != null && !osUser.isBlank()) sinksNode.put("openSearchUser", osUser);
+        String osPass = sinks.openSearchPassword();
+        if (osPass != null && !osPass.isBlank()) sinksNode.put("openSearchPassword", osPass);
+        if (sinks.openSearchInsecureSsl()) sinksNode.put("openSearchInsecureSsl", true);
     }
 
     private static void buildExportFields(ObjectNode root, ConfigState.State state) {
@@ -270,6 +296,9 @@ public final class Json {
                 scope.kinds(),
                 sinks.files(),
                 sinks.os(),
+                sinks.osUser(),
+                sinks.osPass(),
+                sinks.openSearchInsecureSsl(),
                 opts.settingsSub(),
                 opts.trafficToolTypes(),
                 opts.findingsSeverities(),
@@ -408,7 +437,22 @@ public final class Json {
             if (!v.isBlank()) os = v;
         }
 
-        return new SinksParts(files, os);
+        String osUser = null;
+        JsonNode osUserNode = sinks.path("openSearchUser");
+        if (osUserNode.isTextual()) {
+            String v = osUserNode.asText();
+            if (!v.isBlank()) osUser = v;
+        }
+        String osPass = null;
+        JsonNode osPassNode = sinks.path("openSearchPassword");
+        if (osPassNode.isTextual()) {
+            String v = osPassNode.asText();
+            if (!v.isBlank()) osPass = v;
+        }
+
+        boolean insecureSsl = sinks.path("openSearchInsecureSsl").asBoolean(false);
+
+        return new SinksParts(files, os, osUser, osPass, insecureSsl);
     }
 
     /** Returns null when absent or empty (all fields enabled). */
@@ -432,6 +476,6 @@ public final class Json {
     /* ----------------------- small carrier records ----------------------- */
 
     private record ScopeParts(String type, List<String> values, List<String> kinds) { }
-    private record SinksParts(String files, String os) { }
+    private record SinksParts(String files, String os, String osUser, String osPass, boolean openSearchInsecureSsl) { }
     private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }
 }

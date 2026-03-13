@@ -64,6 +64,24 @@ public final class RuntimeConfig {
         return current == null ? "" : safe(current.sinks().openSearchUrl());
     }
 
+    /** Optional OpenSearch username for basic auth (empty = no auth). */
+    public static String openSearchUser() {
+        ConfigState.State current = state;
+        return current == null ? "" : safe(current.sinks().openSearchUser());
+    }
+
+    /** Optional OpenSearch password for basic auth (empty = no auth). */
+    public static String openSearchPassword() {
+        ConfigState.State current = state;
+        return current == null ? "" : safe(current.sinks().openSearchPassword());
+    }
+
+    /** When true, OpenSearch client skips TLS verification (for self-signed certs). */
+    public static boolean openSearchInsecureSsl() {
+        ConfigState.State current = state;
+        return current != null && current.sinks().openSearchInsecureSsl();
+    }
+
     private static ConfigState.State normalize(ConfigState.State incoming) {
         if (incoming == null) {
             return defaultState();
@@ -78,12 +96,15 @@ public final class RuntimeConfig {
 
         ConfigState.Sinks sinks = incoming.sinks();
         ConfigState.Sinks normalizedSinks = sinks == null
-                ? new ConfigState.Sinks(false, "", false, "")
+                ? new ConfigState.Sinks(false, "", false, "", "", "", false)
                 : new ConfigState.Sinks(
                         sinks.filesEnabled(),
                         safe(sinks.filesPath()),
                         sinks.osEnabled(),
-                        safe(sinks.openSearchUrl())
+                        safe(sinks.openSearchUrl()),
+                        safe(sinks.openSearchUser()),
+                        safe(sinks.openSearchPassword()),
+                        sinks.openSearchInsecureSsl()
                 );
 
         String scopeType = normalizeScopeType(incoming.scopeType());
@@ -129,7 +150,7 @@ public final class RuntimeConfig {
                 List.of(),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
-                new ConfigState.Sinks(false, "", false, ""),
+                new ConfigState.Sinks(false, "", false, "", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
