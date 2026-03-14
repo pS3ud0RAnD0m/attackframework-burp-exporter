@@ -33,7 +33,6 @@ import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.DefaultHighlighter;
@@ -43,6 +42,7 @@ import net.miginfocom.swing.MigLayout;
 
 import ai.attackframework.tools.burp.ui.log.LogRenderer;
 import ai.attackframework.tools.burp.ui.log.LogStore;
+import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
 import ai.attackframework.tools.burp.ui.text.IndentedWrappedTextAreaUI;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
 import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
@@ -77,6 +77,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private static final String GAP4               = "gapx 4";
     private static final String GAP6               = "gapx 6";
     private static final String GAP8               = "gapx 8";
+    private static final String SECTION_SPACER     = "pushx, growx, wmin 20";
 
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
@@ -189,8 +190,13 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         clearBtn.setName("log.clear");
         JButton copyBtn = new JButton("Copy");
         copyBtn.setName("log.copy");
-        JButton saveBtn = new JButton("Save…");
+        JButton saveBtn = new JButton("Save");
         saveBtn.setName("log.save");
+        ButtonStyles.normalize(searchPrevBtn);
+        ButtonStyles.normalize(searchNextBtn);
+        ButtonStyles.normalize(clearBtn);
+        ButtonStyles.normalize(copyBtn);
+        ButtonStyles.normalize(saveBtn);
 
         assignToolTips(
                 searchPrevBtn,
@@ -204,6 +210,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         toolbar.add(new JLabel("Min level:"));
         toolbar.add(levelCombo, "w 110!");
         toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
+        toolbar.add(new JLabel(), SECTION_SPACER);
 
         toolbar.add(new JLabel("Filter:"), GAP0);
         toolbar.add(filterField, GAP0);
@@ -212,6 +219,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         toolbar.add(filterRegexIndicator, GAP6);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
+        toolbar.add(new JLabel(), SECTION_SPACER);
 
         toolbar.add(new JLabel("Find:"), GAP0);
         toolbar.add(searchField, GAP0);
@@ -222,7 +230,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         toolbar.add(searchNextBtn, GAP4);
         toolbar.add(searchCountLabel, GAP6);
 
-        toolbar.add(new JLabel(), "pushx, growx");
+        toolbar.add(new JLabel(), SECTION_SPACER);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
         toolbar.add(pauseAutoscroll);
@@ -685,7 +693,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         JMenuItem copySel = new JMenuItem("Copy selection");
         JMenuItem copyLine = new JMenuItem("Copy current line");
         JMenuItem copyAll = new JMenuItem("Copy all");
-        JMenuItem saveVisible = new JMenuItem("Save visible…");
+        JMenuItem saveVisible = new JMenuItem("Save visible");
         copySel.addActionListener(e -> copySelection());
         copyLine.addActionListener(e -> copyCurrentLine());
         copyAll.addActionListener(e -> copyAll());

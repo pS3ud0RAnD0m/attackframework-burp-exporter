@@ -87,6 +87,7 @@ public class ScopeGrid implements Serializable {
         }
 
         addButton.setName("scope.custom.add");
+        ButtonStyles.normalize(addButton);
         addButton.setToolTipText(TIP_ADD_ROW);
         addButton.addActionListener(e -> {
             if (rows.size() < MAX_ROWS) {
@@ -278,6 +279,7 @@ public class ScopeGrid implements Serializable {
         Row(String value, boolean isRegex) {
             field.setText(value);
             toggle.setSelected(isRegex);
+            ButtonStyles.normalize(delete);
             binding = RegexIndicatorBinder.bind(field, toggle, null, false, indicator);
         }
 

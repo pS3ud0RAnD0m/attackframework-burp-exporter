@@ -23,6 +23,7 @@ import javax.swing.JPanel;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 
+import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
@@ -162,6 +163,10 @@ public final class ConfigControlPanel {
 
         JButton startStopBtn = new JButton(runningButtonLabel(RuntimeConfig.isExportRunning()));
         startStopBtn.setName("control.startStop");
+        ButtonStyles.normalize(importBtn);
+        ButtonStyles.normalize(exportBtn);
+        ButtonStyles.normalize(saveBtn);
+        ButtonStyles.normalize(startStopBtn);
         updateStartStopButton(startStopBtn, RuntimeConfig.isExportRunning());
 
         int btnHeight = startStopBtn.getPreferredSize().height;

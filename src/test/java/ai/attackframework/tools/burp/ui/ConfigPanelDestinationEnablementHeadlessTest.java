@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
@@ -46,7 +47,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         // OpenSearch row
         JCheckBox osEnable  = get(panel, "openSearchSinkCheckbox");
         JTextField osUrl    = get(panel, "openSearchUrlField");
-        JButton osAuth      = get(panel, "authenticationButton");
+        JComboBox<?> osAuthType = get(panel, "openSearchAuthTypeCombo");
         JButton osTest      = get(panel, "testConnectionButton");
 
         // Ensure both destinations are enabled
@@ -57,7 +58,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(filesPath.isEnabled()).isTrue();
         assertThat(filesCreate.isEnabled()).isTrue();
         assertThat(osUrl.isEnabled()).isTrue();
-        assertThat(osAuth.isEnabled()).isTrue();
+        assertThat(osAuthType.isEnabled()).isTrue();
         assertThat(osTest.isEnabled()).isTrue();
 
         // Disable both destinations
@@ -68,7 +69,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(filesPath.isEnabled()).isFalse();
         assertThat(filesCreate.isEnabled()).isFalse();
         assertThat(osUrl.isEnabled()).isFalse();
-        assertThat(osAuth.isEnabled()).isFalse();
+        assertThat(osAuthType.isEnabled()).isFalse();
         assertThat(osTest.isEnabled()).isFalse();
     }
 

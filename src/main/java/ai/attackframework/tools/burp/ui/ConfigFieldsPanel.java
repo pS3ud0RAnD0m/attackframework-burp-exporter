@@ -10,6 +10,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
+import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
 import ai.attackframework.tools.burp.utils.config.ExportFieldRegistry;
 import net.miginfocom.swing.MigLayout;
 
@@ -102,13 +103,7 @@ public final class ConfigFieldsPanel {
 
     /** Configures expand button style (match Data Sources). */
     public static void configureExpandButton(JButton b) {
-        b.setBorderPainted(false);
-        b.setContentAreaFilled(false);
-        b.setFocusPainted(false);
-        b.setOpaque(false);
-        b.setMargin(new java.awt.Insets(0, 0, 0, 0));
-        b.setFocusable(false);
-        b.setFont(b.getFont().deriveFont(Font.PLAIN, 22f));
+        ButtonStyles.configureExpandButton(b);
     }
 
     /** Sets expand button label and sub-panel visibility. */

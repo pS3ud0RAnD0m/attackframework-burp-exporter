@@ -1,8 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
-import java.awt.CardLayout;
 import java.awt.Component;
-import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyAdapter;
@@ -43,6 +41,7 @@ import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingPasswordField;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
+import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
 import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
 import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
@@ -115,16 +114,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JButton issuesExpandButton   = new JButton(EXPAND_COLLAPSED);
     private final JButton trafficExpandButton  = new JButton(EXPAND_COLLAPSED);
 
-    private void configureExpandButton(JButton b) {
-        b.setBorderPainted(false);
-        b.setContentAreaFilled(false);
-        b.setFocusPainted(false);
-        b.setOpaque(false);
-        b.setMargin(new java.awt.Insets(0, 0, 0, 0));
-        b.setFocusable(false);
-        b.setFont(b.getFont().deriveFont(Font.PLAIN, 22f));
-    }
-
     // ---- Scope
     private final JRadioButton allRadio       = new JRadioButton("All");
     private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
@@ -145,10 +134,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private final JCheckBox  openSearchSinkCheckbox = new JCheckBox("OpenSearch", true);
     private final JTextField openSearchUrlField     = new AutoSizingTextField("https://opensearch.url:9200");
-    private final JCheckBox  openSearchInsecureSslCheckbox = new JCheckBox("Accept self-signed certificate", false);
-    private final JButton    authenticationButton   = new JButton("Authentication");
+    private final JCheckBox  openSearchInsecureSslCheckbox = new JCheckBox("Accept self-signed cert", false);
     private final JButton    testConnectionButton   = new JButton("Test Connection");
-    /** OpenSearch auth form panel (expandable below OpenSearch row). Built in {@link #buildAuthFormPanel()}. */
+    /** OpenSearch auth controls panel (inline on the OpenSearch row). Built in {@link #buildAuthFormPanel()}. */
     private JPanel           openSearchAuthFormPanel;
     /** Auth type dropdown (used in buildCurrentState to clear creds when None). Set in buildAuthFormPanel. */
     private JComboBox<String> openSearchAuthTypeCombo;
@@ -189,9 +177,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         assignToolTips();
 
         // Sources: build sub-panels and wire expand/collapse (default collapsed)
-        configureExpandButton(settingsExpandButton);
-        configureExpandButton(issuesExpandButton);
-        configureExpandButton(trafficExpandButton);
+        ButtonStyles.configureExpandButton(settingsExpandButton);
+        ButtonStyles.configureExpandButton(issuesExpandButton);
+        ButtonStyles.configureExpandButton(trafficExpandButton);
 
         JPanel settingsSubPanel = buildSettingsSubPanel();
         JPanel issuesSubPanel = buildIssuesSubPanel();
@@ -280,7 +268,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 openSearchSinkCheckbox,
                 openSearchUrlField,
                 openSearchInsecureSslCheckbox,
-                authenticationButton,
                 testConnectionButton,
                 openSearchAuthFormPanel,
                 openSearchStatus,
@@ -348,6 +335,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         assignComponentNames();
         wireTextFieldEnhancements();
         scopeGrid.setOnContentChange(this::updateRuntimeConfig);
+        ButtonStyles.normalizeTree(this);
         refreshEnabledStates();
         applyEditionRestrictions();
     }
@@ -631,17 +619,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             controller.testConnectionAsync(url);
         });
 
-        authenticationButton.addActionListener(e -> {
-            if (openSearchAuthFormPanel != null) {
-                openSearchAuthFormPanel.setVisible(!openSearchAuthFormPanel.isVisible());
-                JPanel parent = (JPanel) openSearchAuthFormPanel.getParent();
-                if (parent != null) {
-                    parent.revalidate();
-                    parent.repaint();
-                }
-            }
-        });
-
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
@@ -669,9 +646,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Builds the expandable OpenSearch authentication form: scheme dropdown, type-specific fields, and Authenticate button.
-     * Layout grows to the right. Authenticate is disabled when None is selected or (for Basic) when user/password are empty.
-     * Hidden by default; toggled by the Authentication button.
+     * Builds inline OpenSearch authentication controls: auth-type dropdown, type-specific fields, and Authenticate button.
+     * Authenticate is disabled when None is selected or (for Basic) when user/password are empty.
      * @param onAuthenticate run when Authenticate is clicked (applies form credentials to runtime config)
      */
     private JPanel buildAuthFormPanel(Runnable onAuthenticate) {
@@ -682,7 +658,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         String longest = java.util.Arrays.stream(authTypes).max(java.util.Comparator.comparingInt(String::length)).orElse("Certificate");
         authTypeCombo.setPrototypeDisplayValue(longest);
 
-        JPanel contentCards = new JPanel(new CardLayout());
+        JPanel contentCards = new JPanel(new MigLayout("insets 0, hidemode 3", "[left]", "[]"));
         contentCards.setName("os.authContent");
 
         JPanel noneCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
@@ -712,11 +688,17 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         JPanel clientCertCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
         clientCertCard.add(new JLabel("Cert path, key path (not yet implemented)."));
 
-        contentCards.add(noneCard, "none");
-        contentCards.add(basicCard, "basic");
-        contentCards.add(apiKeyCard, "apikey");
-        contentCards.add(jwtCard, "jwt");
-        contentCards.add(clientCertCard, "clientcert");
+        contentCards.add(noneCard, "hidemode 3");
+        contentCards.add(basicCard, "hidemode 3");
+        contentCards.add(apiKeyCard, "hidemode 3");
+        contentCards.add(jwtCard, "hidemode 3");
+        contentCards.add(clientCertCard, "hidemode 3");
+
+        noneCard.setVisible(true);
+        basicCard.setVisible(false);
+        apiKeyCard.setVisible(false);
+        jwtCard.setVisible(false);
+        clientCertCard.setVisible(false);
 
         java.util.function.Consumer<Object> updateAuthenticateEnabled = ignore -> {
             int i = authTypeCombo.getSelectedIndex();
@@ -731,20 +713,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         };
 
         authTypeCombo.addActionListener(e -> {
-            String[] keys = { "none", "basic", "apikey", "jwt", "clientcert" };
             int i = authTypeCombo.getSelectedIndex();
-            if (i >= 0 && i < keys.length) {
-                ((CardLayout) contentCards.getLayout()).show(contentCards, keys[i]);
-            }
+            noneCard.setVisible(i == 0);
+            basicCard.setVisible(i == 1);
+            apiKeyCard.setVisible(i == 2);
+            jwtCard.setVisible(i == 3);
+            clientCertCard.setVisible(i == 4);
             if (i == 0) {
                 updateRuntimeConfig();
                 onOpenSearchStatus("Authentication cleared.");
             }
             updateAuthenticateEnabled.accept(null);
+            contentCards.revalidate();
+            contentCards.repaint();
         });
-        JPanel form = new JPanel(new MigLayout("insets " + ROW_GAP + " " + INDENT + " 0 0", "[pref][pref][pref]", "[]"));
+        JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow]", "[]"));
         form.setAlignmentX(Component.LEFT_ALIGNMENT);
-        form.add(new JLabel("Authentication type:"));
+        form.add(new JLabel("Auth type:"));
         form.add(authTypeCombo);
         form.add(contentCards);
 
@@ -765,7 +750,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
         });
 
-        form.setVisible(false);
         return form;
     }
 
@@ -868,8 +852,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         boolean os = openSearchSinkCheckbox.isSelected();
         openSearchUrlField.setEnabled(os);
         openSearchInsecureSslCheckbox.setEnabled(os);
-        authenticationButton.setEnabled(os);
         testConnectionButton.setEnabled(os);
+        if (openSearchAuthFormPanel != null) {
+            setEnabledRecursively(openSearchAuthFormPanel, os);
+        }
+    }
+
+    private static void setEnabledRecursively(Component c, boolean enabled) {
+        c.setEnabled(enabled);
+        if (c instanceof java.awt.Container container) {
+            for (Component child : container.getComponents()) {
+                setEnabledRecursively(child, enabled);
+            }
+        }
     }
 
     /**
@@ -1069,7 +1064,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         openSearchSinkCheckbox.setName("os.enable");
         openSearchUrlField.setName("os.url");
-        authenticationButton.setName("os.authentication");
         testConnectionButton.setName("os.test");
 
         controlStatusWrapper.setName("control.statusWrapper");
@@ -1112,7 +1106,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.setToolTipText("Base URL of the OpenSearch cluster");
         openSearchInsecureSslCheckbox.setName("os.insecureSsl");
         openSearchInsecureSslCheckbox.setToolTipText("Skip TLS certificate verification (e.g. for self-signed certs)");
-        authenticationButton.setToolTipText("Configure authentication for OpenSearch");
         testConnectionButton.setToolTipText("Test connectivity to OpenSearch");
     }
 
