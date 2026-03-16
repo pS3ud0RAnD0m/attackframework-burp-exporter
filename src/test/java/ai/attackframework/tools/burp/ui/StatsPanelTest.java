@@ -1,8 +1,27 @@
 package ai.attackframework.tools.burp.ui;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import java.text.SimpleDateFormat;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Map;
+import java.util.concurrent.Callable;
+
+import javax.swing.SwingUtilities;
+
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.DateAxis;
+import org.jfree.chart.axis.DateTickUnitType;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.data.RangeType;
+import org.jfree.data.time.TimeSeries;
+
+import ai.attackframework.tools.burp.utils.ExportStats;
 
 class StatsPanelTest {
 
@@ -58,5 +77,87 @@ class StatsPanelTest {
         assertThat(text).doesNotContain("Burp + other extensions");
         assertThat(text).doesNotContain("heap (MB)");
         assertThat(text).doesNotContain("thread count:");
+    }
+
+    @Test
+    void docsChart_usesReadableTimeAxis_andPositiveWholeNumberDefaults() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JFreeChart docsChart = get(panel, "docsChart");
+        XYPlot plot = docsChart.getXYPlot();
+
+        NumberAxis range = (NumberAxis) plot.getRangeAxis();
+        assertThat(range.getRangeType()).isEqualTo(RangeType.POSITIVE);
+        assertThat(range.getLowerBound()).isEqualTo(0.0);
+        assertThat(range.getUpperBound()).isEqualTo(10.0);
+
+        DateAxis domain = (DateAxis) plot.getDomainAxis();
+        assertThat(domain.isTickLabelsVisible()).isTrue();
+        assertThat(domain.getDateFormatOverride()).isInstanceOf(SimpleDateFormat.class);
+        assertThat(((SimpleDateFormat) domain.getDateFormatOverride()).toPattern()).isEqualTo("HH:mm:ss");
+        assertThat(domain.getTickUnit().getUnitType()).isEqualTo(DateTickUnitType.SECOND);
+
+        JFreeChart kibChart = get(panel, "kibChart");
+        NumberAxis kibRange = (NumberAxis) kibChart.getXYPlot().getRangeAxis();
+        assertThat(kibRange.getRangeType()).isEqualTo(RangeType.POSITIVE);
+        assertThat(kibRange.getLowerBound()).isEqualTo(0.0);
+        assertThat(kibRange.getUpperBound()).isEqualTo(10.0);
+    }
+
+    @Test
+    void refreshVisibleStats_addsSamplesEvenWhenPanelIsNotShowing() throws Exception {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        assertThat(onEdt(panel::isShowing)).isFalse();
+
+        Map<String, TimeSeries> seriesByIndex = get(panel, "docsSeriesByIndex");
+        int before = onEdt(() -> {
+            TimeSeries traffic = seriesByIndex.get("traffic");
+            return traffic == null ? 0 : traffic.getItemCount();
+        });
+
+        ExportStats.recordSuccess("traffic", 3);
+        Thread.sleep(20L);
+        onEdt(() -> call(panel, "refreshVisibleStats"));
+
+        int after = onEdt(() -> {
+            TimeSeries traffic = seriesByIndex.get("traffic");
+            return traffic == null ? 0 : traffic.getItemCount();
+        });
+        assertThat(after).isGreaterThan(before);
+    }
+
+    private static void onEdt(Runnable runnable) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            runnable.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(runnable);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static <T> T onEdt(Callable<T> callable) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            try {
+                return callable.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+        final Object[] box = new Object[1];
+        onEdt(() -> {
+            try {
+                box[0] = callable.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        @SuppressWarnings("unchecked")
+        T value = (T) box[0];
+        return value;
     }
 }

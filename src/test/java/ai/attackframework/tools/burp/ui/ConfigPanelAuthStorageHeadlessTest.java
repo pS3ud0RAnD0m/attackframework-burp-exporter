@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
@@ -54,6 +55,18 @@ class ConfigPanelAuthStorageHeadlessTest {
                 assertThat(user.getText()).isEqualTo("alice");
                 assertThat(new String(pass.getPassword())).isEqualTo("secret");
             });
+        } finally {
+            teardownStore();
+        }
+    }
+
+    @Test
+    void insecureSsl_defaultsToChecked() throws Exception {
+        setupStore();
+        try {
+            ConfigPanel panel = newPanelOnEdt();
+            JCheckBox insecureSsl = get(panel, "openSearchInsecureSslCheckbox");
+            runEdt(() -> assertThat(insecureSsl.isSelected()).isTrue());
         } finally {
             teardownStore();
         }

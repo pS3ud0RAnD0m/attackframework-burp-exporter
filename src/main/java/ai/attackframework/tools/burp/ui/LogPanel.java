@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.HeadlessException;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -35,6 +36,7 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
+import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter.HighlightPainter;
 
@@ -546,7 +548,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             Logger.internalTrace(
                     "LogPanel highlight recompute, matches=" + (matches == null ? 0 : matches.size())
             );
-        } catch (Exception ex) {
+        } catch (BadLocationException | RuntimeException ex) {
             matches = List.of();
             Logger.internalDebug("LogPanel highlight recompute failed: " + ex);
         }
@@ -591,7 +593,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         try {
             var r2d = logTextPane.modelToView2D(offset);
             if (r2d != null) logTextPane.scrollRectToVisible(r2d.getBounds());
-        } catch (Exception ex) {
+        } catch (BadLocationException | RuntimeException ex) {
             Logger.internalDebug("LogPanel ensureVisible failed: " + ex);
         }
     }
@@ -646,7 +648,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             Toolkit.getDefaultToolkit()
                     .getSystemClipboard()
                     .setContents(new StringSelection(line), null);
-        } catch (Exception ex) {
+        } catch (BadLocationException | IllegalStateException | SecurityException | HeadlessException ex) {
             Logger.internalDebug("LogPanel copy current line failed: " + ex);
         }
     }
@@ -660,7 +662,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             Toolkit.getDefaultToolkit()
                     .getSystemClipboard()
                     .setContents(new StringSelection(all), null);
-        } catch (Exception ex) {
+        } catch (BadLocationException | IllegalStateException | SecurityException | HeadlessException ex) {
             Logger.internalDebug("LogPanel copy all failed: " + ex);
         }
     }

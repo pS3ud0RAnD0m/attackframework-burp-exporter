@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JTextField;
+import java.util.prefs.Preferences;
 
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,6 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Ensures min-level, pause flag, filter text, and last search query persist across new instances.
  */
 class LogPanelPersistenceHeadlessTest {
+
+    @Test
+    void defaults_minLevelToTrace_whenPreferenceMissing() {
+        Preferences prefs = Preferences.userRoot().node("ai.attackframework.tools.burp.ui.LogPanel");
+        prefs.remove("minLevel");
+
+        LogPanel panel = newPanel();
+        @SuppressWarnings("unchecked")
+        JComboBox<String> level = (JComboBox<String>) combo(panel, "log.filter.level");
+        assertThat(level.getSelectedItem()).isEqualTo("TRACE");
+    }
 
     @Test
     void persists_minLevel_pause_filterText_lastSearch() {
