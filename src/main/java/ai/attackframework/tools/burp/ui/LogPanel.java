@@ -81,7 +81,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
-    private static final String DEFAULT_MIN_LEVEL  = "INFO";
+    private static final String DEFAULT_MIN_LEVEL  = "TRACE";
     private static final int MAX_MODEL_ENTRIES     = 5000;
 
     // Editor and renderer (JTextArea for reliable line wrap; no horizontal scroll)

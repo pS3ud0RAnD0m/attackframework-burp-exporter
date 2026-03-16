@@ -12,15 +12,15 @@ class StatsPanelTest {
 
         assertThat(text).contains("Export state");
         assertThat(text).contains("export running:");
-        assertThat(text).contains("OpenSearch URL set:");
         assertThat(text).contains("traffic queue:");
         assertThat(text).contains("drops=");
         assertThat(text).contains("null tool/source hits:");
-        assertThat(text).contains("throughput (last 60s):");
+        assertThat(text).contains("throughput (last 10s):");
         assertThat(text).contains("docs/s");
         assertThat(text).contains("Efficiency");
-        assertThat(text).contains("start -> first traffic push (ms):");
+        assertThat(text).contains("start click -> first successful traffic doc acknowledged (ms):");
         assertThat(text).contains("proxy-history last snapshot:");
+        assertThat(text).doesNotContain("proxy-history recorded at:");
 
         assertThat(text).contains("Session totals (this session)");
         assertThat(text).contains("total docs pushed:");
@@ -53,10 +53,10 @@ class StatsPanelTest {
         assertThat(text).contains("sitemap");
         assertThat(text).contains("findings");
 
-        assertThat(text).contains("Process total (Burp + all extensions)");
-        assertThat(text).contains("Our extension (attackframework-burp-exporter)");
-        assertThat(text).contains("Burp + other extensions");
-        assertThat(text).contains("heap (MB)");
-        assertThat(text).contains("thread count:");
+        assertThat(text).doesNotContain("Process total (Burp + all extensions)");
+        assertThat(text).doesNotContain("Our extension (attackframework-burp-exporter)");
+        assertThat(text).doesNotContain("Burp + other extensions");
+        assertThat(text).doesNotContain("heap (MB)");
+        assertThat(text).doesNotContain("thread count:");
     }
 }

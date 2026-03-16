@@ -108,8 +108,13 @@ public final class ToolIndexConfigReporter {
             if (api == null) {
                 return null;
             }
-            return String.valueOf(api.burpSuite().version());
-        } catch (Exception e) {
+            var burpSuite = api.burpSuite();
+            if (burpSuite == null) {
+                return null;
+            }
+            var version = burpSuite.version();
+            return version != null ? String.valueOf(version) : null;
+        } catch (Throwable e) {
             return null;
         }
     }
@@ -120,8 +125,12 @@ public final class ToolIndexConfigReporter {
             if (api == null) {
                 return null;
             }
-            return api.project().id();
-        } catch (Exception e) {
+            var project = api.project();
+            if (project == null) {
+                return null;
+            }
+            return project.id();
+        } catch (Throwable e) {
             return null;
         }
     }

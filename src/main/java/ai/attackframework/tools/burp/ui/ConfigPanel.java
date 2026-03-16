@@ -145,7 +145,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private final JCheckBox  openSearchSinkCheckbox = new JCheckBox("OpenSearch", true);
     private final JTextField openSearchUrlField     = new AutoSizingTextField("https://opensearch.url:9200");
-    private final JCheckBox  openSearchInsecureSslCheckbox = new JCheckBox("Accept self-signed cert", false);
+    private final JCheckBox  openSearchInsecureSslCheckbox = new JCheckBox("Accept self-signed cert", true);
     private final JButton    testConnectionButton   = new JButton("Test Connection");
     /** OpenSearch auth controls panel (inline on the OpenSearch row). Built in {@link #buildAuthFormPanel()}. */
     private JPanel           openSearchAuthFormPanel;
@@ -349,7 +349,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (openSearchAuthTypeCombo == null) {
             return;
         }
-        openSearchAuthTypeCombo.setSelectedItem("None");
+        openSearchAuthTypeCombo.setSelectedItem("Basic");
         updateRuntimeConfig();
     }
 
@@ -533,9 +533,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 openSearchUserField.setText(sinks.openSearchUser() != null ? sinks.openSearchUser() : "");
                 openSearchPasswordField.setText(sinks.openSearchPassword() != null ? sinks.openSearchPassword() : "");
                 if (openSearchAuthTypeCombo != null) {
-                    boolean hasCreds = (sinks.openSearchUser() != null && !sinks.openSearchUser().isBlank())
-                            || (sinks.openSearchPassword() != null && !sinks.openSearchPassword().isBlank());
-                    openSearchAuthTypeCombo.setSelectedIndex(hasCreds ? 1 : 0);
+                    openSearchAuthTypeCombo.setSelectedItem("Basic");
                 }
             }
 
@@ -729,7 +727,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         JComboBox<String> authTypeCombo = new JComboBox<>(authTypes);
         openSearchAuthTypeCombo = authTypeCombo;
         authTypeCombo.setName("os.authType");
-        authTypeCombo.setSelectedItem("None");
+        authTypeCombo.setSelectedItem("Basic");
         String longest = java.util.Arrays.stream(authTypes).max(java.util.Comparator.comparingInt(String::length)).orElse("Certificate");
         authTypeCombo.setPrototypeDisplayValue(longest);
 

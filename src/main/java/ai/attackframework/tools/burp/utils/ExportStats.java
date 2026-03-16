@@ -29,6 +29,7 @@ public final class ExportStats {
             Arrays.asList("BURP_AI", "EXTENSIONS", "INTRUDER", "PROXY", "PROXY_HISTORY", "REPEATER", "SCANNER", "SEQUENCER", "UNKNOWN"));
     private static final int LAST_ERROR_MAX_LEN = 200;
     private static final long THROUGHPUT_WINDOW_MS = 60_000L;
+    private static final long THROUGHPUT_WINDOW_SHORT_MS = 10_000L;
     private static final int THROUGHPUT_CAP = 10_000;
 
     /** Pairs of { timeMs, count } for successes in the last 60s. Old entries pruned on read. */
@@ -341,8 +342,22 @@ public final class ExportStats {
      * @return docs/sec (0.0 or positive)
      */
     public static double getThroughputDocsPerSecLast60s() {
+        return getThroughputDocsPerSec(THROUGHPUT_WINDOW_MS);
+    }
+
+    /**
+     * Returns documents per second over the last 10 seconds (rolling throughput).
+     * Prunes entries older than the window. Thread-safe.
+     *
+     * @return docs/sec (0.0 or positive)
+     */
+    public static double getThroughputDocsPerSecLast10s() {
+        return getThroughputDocsPerSec(THROUGHPUT_WINDOW_SHORT_MS);
+    }
+
+    private static double getThroughputDocsPerSec(long windowMs) {
         long now = System.currentTimeMillis();
-        long cutoff = now - THROUGHPUT_WINDOW_MS;
+        long cutoff = now - windowMs;
         long sum;
         synchronized (recentSuccesses) {
             pruneRecentSuccessesOlderThan(cutoff);
@@ -353,7 +368,7 @@ public final class ExportStats {
                 }
             }
         }
-        return sum / (THROUGHPUT_WINDOW_MS / 1000.0);
+        return sum / (windowMs / 1000.0);
     }
 
     /**

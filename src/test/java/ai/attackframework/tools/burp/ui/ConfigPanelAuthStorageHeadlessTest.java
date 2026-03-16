@@ -37,7 +37,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     }
 
     @Test
-    void authDefaultsToNone_thenLoadsSecureBasicValuesOnSelection() throws Exception {
+    void authDefaultsToBasic_andLoadsSecureBasicValues() throws Exception {
         setupStore();
         try {
             SecureCredentialStore.saveOpenSearchCredentials("alice", "secret");
@@ -47,10 +47,7 @@ class ConfigPanelAuthStorageHeadlessTest {
             JPasswordField pass = get(panel, "openSearchPasswordField");
 
             runEdt(() -> {
-                assertThat(authType.getSelectedItem()).isEqualTo("None");
-                assertThat(user.getText()).isBlank();
-                assertThat(new String(pass.getPassword())).isBlank();
-                authType.setSelectedItem("Basic");
+                assertThat(authType.getSelectedItem()).isEqualTo("Basic");
             });
 
             runEdt(() -> {

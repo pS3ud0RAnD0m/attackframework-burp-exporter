@@ -78,7 +78,13 @@ public final class SitemapIndexReporter {
                 return;
             }
             if (scheduler != null) {
-                scheduler.submit(() -> pushItems(api, baseUrl, true));
+                scheduler.submit(() -> {
+                    try {
+                        pushItems(api, baseUrl, true);
+                    } catch (Throwable ignored) {
+                        // Startup/lifecycle races in Burp can transiently null sub-APIs.
+                    }
+                });
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -142,7 +148,7 @@ public final class SitemapIndexReporter {
         }
         runInProgress = true;
         try {
-            List<HttpRequestResponse> items = api.siteMap().requestResponses();
+            List<HttpRequestResponse> items = safeSiteMapItems(api);
             if (items == null) {
                 return;
             }
@@ -161,7 +167,7 @@ public final class SitemapIndexReporter {
                 if (url == null) {
                     url = "";
                 }
-                boolean burpInScope = api.scope().isInScope(url);
+                boolean burpInScope = safeBurpInScope(api, url);
                 if (!ScopeFilter.shouldExport(state, url, burpInScope)) {
                     continue;
                 }
@@ -190,6 +196,37 @@ public final class SitemapIndexReporter {
             }
         } finally {
             runInProgress = false;
+        }
+    }
+
+    /** Returns sitemap request/response items, tolerating transient Burp lifecycle nulls. */
+    private static List<HttpRequestResponse> safeSiteMapItems(MontoyaApi api) {
+        try {
+            if (api == null) {
+                return null;
+            }
+            var siteMap = api.siteMap();
+            if (siteMap == null) {
+                return null;
+            }
+            return siteMap.requestResponses();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean safeBurpInScope(MontoyaApi api, String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            if (api == null) {
+                return false;
+            }
+            var scope = api.scope();
+            return scope != null && scope.isInScope(url);
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 

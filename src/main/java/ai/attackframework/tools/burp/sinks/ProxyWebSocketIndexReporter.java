@@ -83,11 +83,17 @@ public final class ProxyWebSocketIndexReporter {
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();
-            if (api == null || api.proxy() == null) {
+            if (api == null) {
                 return;
             }
             if (scheduler != null) {
-                scheduler.submit(() -> pushItems(api, baseUrl, true));
+                scheduler.submit(() -> {
+                    try {
+                        pushItems(api, baseUrl, true);
+                    } catch (Throwable ignored) {
+                        // Startup/lifecycle races in Burp can transiently null sub-APIs.
+                    }
+                });
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -108,7 +114,7 @@ public final class ProxyWebSocketIndexReporter {
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();
-            if (api == null || api.proxy() == null) {
+            if (api == null) {
                 return;
             }
             pushItems(api, baseUrl, false);
@@ -124,7 +130,7 @@ public final class ProxyWebSocketIndexReporter {
         }
         runInProgress = true;
         try {
-            List<ProxyWebSocketMessage> history = api.proxy().webSocketHistory();
+            List<ProxyWebSocketMessage> history = safeWebSocketHistory(api);
             if (history == null || history.isEmpty()) {
                 return;
             }
@@ -156,6 +162,23 @@ public final class ProxyWebSocketIndexReporter {
         }
     }
 
+    /** Returns websocket history, tolerating transient Burp lifecycle nulls. */
+    private static List<ProxyWebSocketMessage> safeWebSocketHistory(MontoyaApi api) {
+        try {
+            if (api == null) {
+                return List.of();
+            }
+            var proxy = api.proxy();
+            if (proxy == null) {
+                return List.of();
+            }
+            List<ProxyWebSocketMessage> history = proxy.webSocketHistory();
+            return history != null ? history : List.of();
+        } catch (Throwable ignored) {
+            return List.of();
+        }
+    }
+
     private static void flushBatch(String baseUrl, List<String> keys, List<Map<String, Object>> docs) {
         int success = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, docs);
         int failure = docs.size() - success;
@@ -180,7 +203,7 @@ public final class ProxyWebSocketIndexReporter {
         } catch (Exception ignored) {
             // malformed upgrade request
         }
-        boolean burpInScope = url != null && api.scope().isInScope(url);
+        boolean burpInScope = safeBurpInScope(api, url);
         boolean inScope = ScopeFilter.shouldExport(RuntimeConfig.getState(), url, burpInScope);
         if (!inScope) {
             return null;
@@ -244,6 +267,21 @@ public final class ProxyWebSocketIndexReporter {
         meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
+    }
+
+    private static boolean safeBurpInScope(MontoyaApi api, String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            if (api == null) {
+                return false;
+            }
+            var scope = api.scope();
+            return scope != null && scope.isInScope(url);
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static String messageKey(ProxyWebSocketMessage ws) {

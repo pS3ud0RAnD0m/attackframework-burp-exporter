@@ -6,11 +6,7 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
-import java.lang.management.ThreadMXBean;
-import java.time.Instant;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
@@ -20,17 +16,23 @@ import javax.swing.JPanel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-import javax.swing.Timer;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.text.DefaultCaret;
 
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
+import org.jfree.chart.axis.DateTickUnit;
+import org.jfree.chart.axis.DateTickUnitType;
+import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.chart.title.TextTitle;
+import org.jfree.chart.ui.VerticalAlignment;
+import org.jfree.data.RangeType;
 import org.jfree.data.time.Millisecond;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
@@ -50,23 +52,28 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 public class StatsPanel extends JPanel {
 
     private static final int REFRESH_INTERVAL_MS = 3000;
-    private static final long MEGABYTE = 1024 * 1024;
     private static final int ERROR_COL_MAX = 50;
     private static final int CHART_MAX_POINTS = 240;
     private static final int CHART_PANEL_HEIGHT = 520;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
-    private static final Font CHART_TITLE_FONT = new Font("SansSerif", Font.BOLD, 14);
-    private static final Font CHART_AXIS_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 12);
+    private static final double DEFAULT_RATE_RANGE_MAX = 10.0;
+    private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
+    private static final int DOMAIN_TARGET_LABELS = 14;
+    private static final int[] DOMAIN_CANDIDATE_SECONDS = new int[] { 1, 2, 3, 5, 6, 10, 12, 15, 20, 30, 60, 120, 300 };
+    private static final Font CHART_TITLE_FONT = new Font("SansSerif", Font.PLAIN, 14);
+    private static final Font CHART_AXIS_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 15);
     private static final Font CHART_TICK_FONT = new Font("SansSerif", Font.PLAIN, 11);
+    private static final Font CHART_LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 14);
+    private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
     private static final Color CHART_BG = new Color(38, 38, 38);
     private static final Color PLOT_BG = new Color(48, 48, 48);
     private static final Color TEXT_FG = new Color(235, 235, 235);
     private static final Color GRID_FG = new Color(95, 95, 95);
     private static final Color[] SERIES_COLORS = new Color[] {
             new Color(86, 156, 214),   // blue
-            new Color(78, 201, 176),   // teal
+            new Color(57, 255, 20),    // neon green
             new Color(220, 220, 170),  // yellow
-            new Color(197, 134, 192),  // purple
+            new Color(120, 70, 160),   // darker purple
             new Color(244, 71, 71)     // red
     };
 
@@ -95,11 +102,11 @@ public class StatsPanel extends JPanel {
         docsPerSecondDataset = new TimeSeriesCollection();
         kibPerSecondDataset = new TimeSeriesCollection();
         docsChart = createRateChart(
-                "Export Throughput - Documents/sec by Index",
+                "Export - Docs/sec",
                 "Docs per second",
                 docsPerSecondDataset);
         kibChart = createRateChart(
-                "Export Throughput - Payload KiB/sec by Index",
+                "Export - KiB/sec",
                 "KiB per second",
                 kibPerSecondDataset);
 
@@ -120,11 +127,7 @@ public class StatsPanel extends JPanel {
 
         add(ScrollPanes.wrap(statsArea), BorderLayout.CENTER);
 
-        refreshTimer = new Timer(REFRESH_INTERVAL_MS, e -> {
-            if (isShowing()) {
-                refreshVisibleStats();
-            }
-        });
+        refreshTimer = new Timer(REFRESH_INTERVAL_MS, e -> refreshVisibleStats());
         refreshTimer.setRepeats(true);
 
         refreshVisibleStats();
@@ -206,24 +209,33 @@ public class StatsPanel extends JPanel {
 
     private void ensureSeries(String indexKey) {
         docsSeriesByIndex.computeIfAbsent(indexKey, key -> {
-            TimeSeries s = new TimeSeries(key);
+            TimeSeries s = new TimeSeries(displaySeriesLabel(key));
             s.setMaximumItemCount(CHART_MAX_POINTS);
             docsPerSecondDataset.addSeries(s);
             return s;
         });
         kibSeriesByIndex.computeIfAbsent(indexKey, key -> {
-            TimeSeries s = new TimeSeries(key);
+            TimeSeries s = new TimeSeries(displaySeriesLabel(key));
             s.setMaximumItemCount(CHART_MAX_POINTS);
             kibPerSecondDataset.addSeries(s);
             return s;
         });
     }
 
+    private static String displaySeriesLabel(String indexKey) {
+        if (indexKey == null || indexKey.isBlank()) {
+            return "";
+        }
+        return Character.toUpperCase(indexKey.charAt(0)) + indexKey.substring(1);
+    }
+
     private static JFreeChart createRateChart(String title, String yLabel, TimeSeriesCollection dataset) {
         JFreeChart chart = ChartFactory.createTimeSeriesChart(title, "Time", yLabel, dataset, true, false, false);
         chart.setBackgroundPaint(CHART_BG);
-        chart.getTitle().setPaint(TEXT_FG);
-        chart.getTitle().setFont(CHART_TITLE_FONT);
+        TextTitle titleNode = chart.getTitle();
+        titleNode.setPaint(TEXT_FG);
+        titleNode.setFont(CHART_TITLE_FONT);
+        titleNode.setVerticalAlignment(VerticalAlignment.BOTTOM);
         XYPlot plot = chart.getXYPlot();
         plot.setBackgroundPaint(PLOT_BG);
         plot.setDomainGridlinePaint(GRID_FG);
@@ -232,24 +244,42 @@ public class StatsPanel extends JPanel {
         plot.setRangeGridlinesVisible(true);
         ValueAxis domain = plot.getDomainAxis();
         ValueAxis range = plot.getRangeAxis();
-        domain.setLabelPaint(TEXT_FG);
-        range.setLabelPaint(TEXT_FG);
-        domain.setTickLabelPaint(TEXT_FG);
-        range.setTickLabelPaint(TEXT_FG);
-        domain.setLabelFont(CHART_AXIS_LABEL_FONT);
-        range.setLabelFont(CHART_AXIS_LABEL_FONT);
-        domain.setTickLabelFont(CHART_TICK_FONT);
-        range.setTickLabelFont(CHART_TICK_FONT);
+        if (range instanceof NumberAxis numberAxis) {
+            // Throughput charts are non-negative metrics; keep zero anchored at the bottom.
+            numberAxis.setRangeType(RangeType.POSITIVE);
+            numberAxis.setAutoRangeIncludesZero(true);
+            numberAxis.setAutoRangeStickyZero(true);
+            // Keep Y-axis labels/ticks as whole numbers for readability.
+            numberAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+        }
+        if (domain != null) {
+            domain.setLabelPaint(TEXT_FG);
+            domain.setTickLabelPaint(TEXT_FG);
+            domain.setLabelFont(CHART_AXIS_LABEL_FONT);
+            domain.setTickLabelFont(CHART_TICK_FONT);
+            domain.setTickLabelsVisible(true);
+            if (domain instanceof DateAxis dateAxis) {
+                // Keep x-axis labels human-readable as local wall-clock time.
+                dateAxis.setDateFormatOverride(new SimpleDateFormat(DOMAIN_TIME_PATTERN));
+            }
+        }
+        if (range != null) {
+            range.setLabelPaint(TEXT_FG);
+            range.setTickLabelPaint(TEXT_FG);
+            range.setLabelFont(CHART_AXIS_LABEL_FONT);
+            range.setTickLabelFont(CHART_TICK_FONT);
+        }
         XYLineAndShapeRenderer renderer = (XYLineAndShapeRenderer) plot.getRenderer();
         renderer.setDefaultShapesVisible(false);
-        renderer.setDefaultStroke(new BasicStroke(2.0f));
+        renderer.setDefaultStroke(new BasicStroke(CHART_LINE_STROKE_WIDTH));
         for (int i = 0; i < SERIES_COLORS.length; i++) {
             renderer.setSeriesPaint(i, SERIES_COLORS[i]);
+            renderer.setSeriesStroke(i, new BasicStroke(CHART_LINE_STROKE_WIDTH));
         }
         if (chart.getLegend() != null) {
             chart.getLegend().setBackgroundPaint(CHART_BG);
             chart.getLegend().setItemPaint(TEXT_FG);
-            chart.getLegend().setItemFont(CHART_TICK_FONT);
+            chart.getLegend().setItemFont(CHART_LEGEND_FONT);
         }
         return chart;
     }
@@ -272,6 +302,8 @@ public class StatsPanel extends JPanel {
         long minMs = (nowMs - startMs) < CHART_WINDOW_MAX_MS ? startMs : (nowMs - CHART_WINDOW_MAX_MS);
         updateDomainRange(docsChart, minMs, nowMs);
         updateDomainRange(kibChart, minMs, nowMs);
+        applyReasonableDefaultRange(docsChart, docsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
+        applyReasonableDefaultRange(kibChart, kibPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
     }
 
     private static void updateDomainRange(JFreeChart chart, long minMs, long maxMs) {
@@ -282,7 +314,64 @@ public class StatsPanel extends JPanel {
         if (plot.getDomainAxis() instanceof DateAxis axis) {
             axis.setAutoRange(false);
             axis.setRange(new Date(minMs), new Date(maxMs));
+            configureDomainTickUnit(axis, minMs, maxMs);
         }
+    }
+
+    /**
+     * Chooses a readable date tick unit from a small "nice" set to keep label count bounded.
+     *
+     * <p>Without this, date labels can become too dense over long sessions and increase render
+     * overhead on repeated refresh. This keeps the chart adaptive while avoiding label crowding.</p>
+     */
+    private static void configureDomainTickUnit(DateAxis axis, long minMs, long maxMs) {
+        long spanMs = Math.max(1L, maxMs - minMs);
+        double targetStepSec = Math.max(1.0, (spanMs / 1000.0) / DOMAIN_TARGET_LABELS);
+        int chosenSec = DOMAIN_CANDIDATE_SECONDS[DOMAIN_CANDIDATE_SECONDS.length - 1];
+        for (int candidate : DOMAIN_CANDIDATE_SECONDS) {
+            if (candidate >= targetStepSec) {
+                chosenSec = candidate;
+                break;
+            }
+        }
+        axis.setTickUnit(new DateTickUnit(DateTickUnitType.SECOND, chosenSec));
+    }
+
+    /**
+     * Keeps a sane startup Y-axis range while charts have no positive throughput yet.
+     *
+     * <p>With empty/zero-only data, chart auto-range can pick confusing scientific-notation bounds
+     * near zero. This fallback shows {@code 0..defaultMax} until positive values appear, then
+     * returns to adaptive auto-range.</p>
+     */
+    private static void applyReasonableDefaultRange(
+            JFreeChart chart, TimeSeriesCollection dataset, double defaultMax) {
+        XYPlot plot = chart.getXYPlot();
+        ValueAxis rangeAxis = plot.getRangeAxis();
+        if (!(rangeAxis instanceof NumberAxis numberAxis)) {
+            return;
+        }
+        if (hasAnyPositiveSample(dataset)) {
+            numberAxis.setAutoRange(true);
+            return;
+        }
+        numberAxis.setAutoRange(false);
+        numberAxis.setRange(0.0, defaultMax);
+    }
+
+    /** Returns {@code true} when any series currently contains a value &gt; 0. */
+    private static boolean hasAnyPositiveSample(TimeSeriesCollection dataset) {
+        for (int seriesIndex = 0; seriesIndex < dataset.getSeriesCount(); seriesIndex++) {
+            TimeSeries series = dataset.getSeries(seriesIndex);
+            int items = series.getItemCount();
+            for (int itemIndex = 0; itemIndex < items; itemIndex++) {
+                Number value = series.getValue(itemIndex);
+                if (value != null && value.doubleValue() > 0.0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -317,31 +406,29 @@ public class StatsPanel extends JPanel {
         StringBuilder sb = new StringBuilder();
 
         // Export state
-        String osUrl = RuntimeConfig.openSearchUrl();
-        boolean urlSet = osUrl != null && !osUrl.isBlank();
         boolean exportRunning = RuntimeConfig.isExportRunning();
         sb.append("Export state\n");
         sb.append("  export running: ").append(exportRunning ? "yes" : "no").append("\n");
-        sb.append("  OpenSearch URL set: ").append(urlSet ? "yes" : "no").append("\n");
         sb.append("  current batch size: ").append(BatchSizeController.getInstance().getCurrentBatchSize()).append("\n");
         int trafficQueueSize = ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize();
         long trafficQueueDrops = ExportStats.getTrafficQueueDrops();
         sb.append("  traffic queue: size=").append(trafficQueueSize).append(" drops=").append(trafficQueueDrops).append("\n");
         sb.append("  null tool/source hits: ").append(ExportStats.getTrafficToolSourceFallbacks()).append("\n");
-        double throughput = ExportStats.getThroughputDocsPerSecLast60s();
-        sb.append("  throughput (last 60s): ").append(String.format("%.1f", throughput)).append(" docs/s\n\n");
+        double throughput = ExportStats.getThroughputDocsPerSecLast10s();
+        sb.append("  throughput (last 10s): ").append(String.format("%.1f", throughput)).append(" docs/s\n\n");
 
         // Efficiency metrics (startup and proxy-history backfill)
         sb.append("Efficiency\n");
         long startToFirstTrafficMs = ExportStats.getStartToFirstTrafficMs();
         if (startToFirstTrafficMs >= 0) {
-            sb.append("  start -> first traffic push (ms): ").append(startToFirstTrafficMs).append("\n");
+            sb.append("  start click -> first successful traffic doc acknowledged (ms): ")
+                    .append(startToFirstTrafficMs).append("\n");
         } else {
             long startRequestedAt = ExportStats.getExportStartRequestedAtMs();
             if (startRequestedAt > 0) {
-                sb.append("  start -> first traffic push (ms): pending\n");
+                sb.append("  start click -> first successful traffic doc acknowledged (ms): pending\n");
             } else {
-                sb.append("  start -> first traffic push (ms): n/a\n");
+                sb.append("  start click -> first successful traffic doc acknowledged (ms): n/a\n");
             }
         }
         ExportStats.ProxyHistorySnapshotStats proxySnapshot = ExportStats.getLastProxyHistorySnapshot();
@@ -351,9 +438,6 @@ public class StatsPanel extends JPanel {
                     .append(" durationMs=").append(proxySnapshot.durationMs())
                     .append(" docs/s=").append(String.format("%.1f", proxySnapshot.docsPerSecond()))
                     .append(" finalChunkTarget=").append(proxySnapshot.finalChunkTarget())
-                    .append("\n");
-            sb.append("  proxy-history recorded at: ")
-                    .append(Instant.ofEpochMilli(proxySnapshot.recordedAtMs()))
                     .append("\n");
         } else {
             sb.append("  proxy-history last snapshot: n/a\n");
@@ -404,94 +488,7 @@ public class StatsPanel extends JPanel {
         }
         sb.append("\n");
 
-        // JVM stats: process total, then our extension (threads by name), then Burp + other (derived)
-        Runtime rt = Runtime.getRuntime();
-        long maxMb = rt.maxMemory() / MEGABYTE;
-        long totalMb = rt.totalMemory() / MEGABYTE;
-        long freeMb = rt.freeMemory() / MEGABYTE;
-        long usedMb = totalMb - freeMb;
-
-        long nonHeapUsedMb = -1;
-        long nonHeapMaxMb = -1;
-        int processThreadCount = -1;
-        int ourExtensionThreadCount = -1;
-        long uptimeSec = -1;
-        long gcCount = -1;
-        long gcTimeSec = -1;
-        try {
-            MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-            MemoryUsage nonHeap = memoryBean.getNonHeapMemoryUsage();
-            if (nonHeap != null && nonHeap.getUsed() >= 0) {
-                nonHeapUsedMb = nonHeap.getUsed() / MEGABYTE;
-                nonHeapMaxMb = nonHeap.getMax() >= 0 ? nonHeap.getMax() / MEGABYTE : -1;
-            }
-            ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
-            processThreadCount = threadBean.getThreadCount();
-            ourExtensionThreadCount = countOurExtensionThreads(threadBean);
-            uptimeSec = ManagementFactory.getRuntimeMXBean().getUptime() / 1000;
-            gcCount = ManagementFactory.getGarbageCollectorMXBeans().stream()
-                    .mapToLong(gc -> gc.getCollectionCount() >= 0 ? gc.getCollectionCount() : 0)
-                    .sum();
-            gcTimeSec = ManagementFactory.getGarbageCollectorMXBeans().stream()
-                    .mapToLong(gc -> gc.getCollectionTime() >= 0 ? gc.getCollectionTime() : 0)
-                    .sum() / 1000;
-        } catch (Exception ignored) {
-            // JMX may be restricted
-        }
-
-        // Process total (Burp + all extensions; single JVM)
-        sb.append("Process total (Burp + all extensions)\n");
-        sb.append("  heap (MB): used=").append(usedMb).append(" max=").append(maxMb).append(" free=").append(freeMb).append("\n");
-        if (nonHeapUsedMb >= 0) {
-            sb.append("  non-heap (MB): used=").append(nonHeapUsedMb).append(" max=");
-            if (nonHeapMaxMb >= 0) sb.append(nonHeapMaxMb); else sb.append("n/a");
-            sb.append("  [metaspace, code cache]\n");
-        }
-        if (processThreadCount >= 0) {
-            sb.append("  thread count: ").append(processThreadCount).append("\n");
-        }
-        if (uptimeSec >= 0) {
-            sb.append("  uptime (s): ").append(uptimeSec).append("\n");
-        }
-        if (gcCount >= 0) {
-            sb.append("  GC collections: ").append(gcCount).append("  total time (s): ").append(gcTimeSec).append("\n");
-        }
-        sb.append("\n");
-
-        // Our extension (threads by name; memory n/a)
-        sb.append("Our extension (attackframework-burp-exporter)\n");
-        if (ourExtensionThreadCount >= 0) {
-            sb.append("  threads (by name): ").append(ourExtensionThreadCount).append("\n");
-        }
-        sb.append("  memory: n/a (JVM does not expose per-extension heap)\n");
-        sb.append("  activity: see Session totals and By index above.\n");
-        sb.append("\n");
-
-        // Burp + other extensions (derived thread count; memory n/a)
-        sb.append("Burp + other extensions\n");
-        if (processThreadCount >= 0 && ourExtensionThreadCount >= 0) {
-            int otherThreads = Math.max(0, processThreadCount - ourExtensionThreadCount);
-            sb.append("  threads (approx): ").append(otherThreads).append("  (process total minus our threads)\n");
-        }
-        sb.append("  memory: n/a (shared process heap; not separable via JVM APIs).\n");
-
         return sb.toString();
-    }
-
-    /** Counts threads we create (by known name prefixes). Heuristic only. */
-    private static int countOurExtensionThreads(ThreadMXBean threadBean) {
-        long[] ids = threadBean.getAllThreadIds();
-        int count = 0;
-        for (long id : ids) {
-            var info = threadBean.getThreadInfo(id);
-            if (info != null) {
-                String name = info.getThreadName();
-                if (name != null && (name.contains("attackframework") || name.contains("OpenSearchRetryDrain"))) {
-                    count++;
-                }
-            }
-        }
-        return count;
     }
 
     /**
