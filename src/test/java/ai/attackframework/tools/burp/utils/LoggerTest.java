@@ -7,6 +7,7 @@ import javax.swing.SwingUtilities;
 import java.util.ArrayList;
 import java.util.List;
 
+import ai.attackframework.tools.burp.testutils.Reflect;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LoggerTest {
@@ -133,9 +134,7 @@ class LoggerTest {
 
     private static int replayBufferSize() {
         try {
-            var f = Logger.class.getDeclaredField("REPLAY_BUFFER_SIZE");
-            f.setAccessible(true);
-            return (int) f.get(null);
+            return Reflect.getStatic(Logger.class, "REPLAY_BUFFER_SIZE");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

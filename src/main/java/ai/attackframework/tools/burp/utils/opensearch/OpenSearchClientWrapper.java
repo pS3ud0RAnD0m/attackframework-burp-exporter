@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
@@ -100,7 +102,11 @@ public class OpenSearchClientWrapper {
     public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         String indexKey = indexKeyFromIndexName(indexName);
         Map<String, Object> filtered = ExportFieldFilter.filterDocument(document, indexKey);
-        return IndexingRetryCoordinator.getInstance().pushDocument(baseUrl, indexName, filtered, indexKey);
+        boolean success = IndexingRetryCoordinator.getInstance().pushDocument(baseUrl, indexName, filtered, indexKey);
+        if (success) {
+            ExportStats.recordExportedBytes(indexKey, BulkPayloadEstimator.estimateBytes(filtered));
+        }
+        return success;
     }
 
     /**
@@ -119,10 +125,18 @@ public class OpenSearchClientWrapper {
         }
         String indexKey = indexKeyFromIndexName(indexName);
         List<Map<String, Object>> filtered = new ArrayList<>(documents.size());
+        long totalEstimatedBytes = 0;
         for (Map<String, Object> doc : documents) {
-            filtered.add(ExportFieldFilter.filterDocument(doc, indexKey));
+            Map<String, Object> filteredDoc = ExportFieldFilter.filterDocument(doc, indexKey);
+            filtered.add(filteredDoc);
+            totalEstimatedBytes += BulkPayloadEstimator.estimateBytes(filteredDoc);
         }
-        return IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, filtered, indexKey);
+        int successCount = IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, filtered, indexKey);
+        if (successCount > 0 && !filtered.isEmpty()) {
+            long estimatedSuccessBytes = Math.round((double) totalEstimatedBytes * successCount / filtered.size());
+            ExportStats.recordExportedBytes(indexKey, estimatedSuccessBytes);
+        }
+        return successCount;
     }
 
     static String indexKeyFromIndexName(String indexName) {

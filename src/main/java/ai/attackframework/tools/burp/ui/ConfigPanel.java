@@ -12,6 +12,8 @@ import java.io.Serial;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -51,10 +53,12 @@ import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.BurpSuiteEdition;
 import net.miginfocom.swing.MigLayout;
@@ -80,6 +84,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
     private static final int CONTROL_HIDE_DELAY_MS = 3000;
+    /** Background executor for Start-path OpenSearch bootstrap work. */
+    private static final ExecutorService STARTUP_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "attackframework-startup");
+        t.setDaemon(true);
+        return t;
+    });
 
     // ---- Sources
     private final TriStateCheckBox settingsCheckbox = new TriStateCheckBox("Settings", TriStateCheckBox.State.SELECTED);
@@ -143,6 +153,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /** Basic auth fields (used in auth form; applied to runtime config on Authenticate click and in buildCurrentState). */
     private final JTextField openSearchUserField   = new AutoSizingTextField("");
     private final JPasswordField openSearchPasswordField = new AutoSizingPasswordField();
+    /** API key auth fields. */
+    private final JTextField openSearchApiKeyIdField = new AutoSizingTextField("");
+    private final JPasswordField openSearchApiKeySecretField = new AutoSizingPasswordField();
+    /** JWT auth field. */
+    private final JTextField openSearchJwtTokenField = new AutoSizingTextField("");
+    /** Certificate auth fields. */
+    private final JTextField openSearchCertPathField = new AutoSizingTextField("");
+    private final JTextField openSearchCertKeyPathField = new AutoSizingTextField("");
+    private final JPasswordField openSearchCertPassphraseField = new AutoSizingPasswordField();
     private final JTextArea  openSearchStatus       = new JTextArea();
     private final JPanel     openSearchStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
@@ -256,8 +275,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         // Destination
         openSearchAuthFormPanel = buildAuthFormPanel(() -> {
+            persistSelectedAuthSecrets();
             updateRuntimeConfig();
-            onOpenSearchStatus("Authentication updated. Use Test Connection to verify.");
+            onOpenSearchStatus("Authentication updated and stored securely in Burp. Use Test Connection to verify.");
         });
         add(new ConfigDestinationPanel(
                 fileSinkCheckbox,
@@ -292,38 +312,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::importConfig,
                 this::exportConfig,
                 new ControlSaveButtonListener(),
-                onStartFailure -> {
-                    updateRuntimeConfig();
-                    String url = openSearchUrlField.getText().trim();
-                    if (!url.isEmpty()) {
-                        List<String> sources = getSelectedSources();
-                        Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
-                        List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
-                                RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
-                        for (OpenSearchSink.IndexResult r : results) {
-                            Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
-                                    + (r.error() != null ? " (" + r.error() + ")" : ""));
-                        }
-                        if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
-                            Logger.logError("[Start] Ensure indexes: one or more failed; see log above.");
-                            onStartFailure.run();
-                            return;
-                        }
-                    }
-                    RuntimeConfig.setExportRunning(true);
-                    ToolIndexConfigReporter.pushConfigSnapshot();
-                    ToolIndexStatsReporter.start();
-                    SettingsIndexReporter.pushSnapshotNow();
-                    SettingsIndexReporter.start();
-                    FindingsIndexReporter.start();
-                    FindingsIndexReporter.pushSnapshotNow();
-                    SitemapIndexReporter.start();
-                    SitemapIndexReporter.pushSnapshotNow();
-                    ProxyHistoryIndexReporter.pushSnapshotNow();
-                    ProxyWebSocketIndexReporter.start();
-                    ProxyWebSocketIndexReporter.pushSnapshotNow();
-                    Logger.logInfoPanelOnly("Export started.");
-                },
+                this::startExportAsync,
                 () -> {
                     RuntimeConfig.setExportRunning(false);
                     Logger.logInfoPanelOnly("Export stopped.");
@@ -336,8 +325,79 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         wireTextFieldEnhancements();
         scopeGrid.setOnContentChange(this::updateRuntimeConfig);
         ButtonStyles.normalizeTree(this);
+        loadSecureOpenSearchCredentials();
         refreshEnabledStates();
         applyEditionRestrictions();
+    }
+
+    /** Loads persisted auth type and per-type secrets from Montoya secure storage. */
+    private void loadSecureOpenSearchCredentials() {
+        if (openSearchAuthTypeCombo == null) {
+            return;
+        }
+        openSearchAuthTypeCombo.setSelectedItem("None");
+        updateRuntimeConfig();
+    }
+
+    /**
+     * Starts export without blocking the EDT.
+     *
+     * <p>Caller must invoke on the EDT. This method captures UI state, marks export running
+     * immediately, then performs OpenSearch bootstrap and initial snapshot pushes on a background
+     * executor. If bootstrap fails, runtime state and UI start/stop controls are reverted on EDT.</p>
+     *
+     * @param onStartFailure callback from {@link ConfigControlPanel} to revert Start UI state
+     */
+    private void startExportAsync(Runnable onStartFailure) {
+        updateRuntimeConfig();
+        String url = openSearchUrlField.getText().trim();
+        List<String> sources = List.copyOf(getSelectedSources());
+        ExportStats.recordExportStartRequested();
+        RuntimeConfig.setExportRunning(true);
+        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, onStartFailure));
+    }
+
+    /**
+     * Runs OpenSearch bootstrap and initial reporter startup on a background thread.
+     *
+     * <p>Not EDT-only. On bootstrap failure, this method posts revert work to EDT so UI state
+     * remains consistent with runtime state.</p>
+     *
+     * @param url OpenSearch base URL from UI
+     * @param sources selected source keys at Start time
+     * @param onStartFailure callback to revert Start button/indicator state
+     */
+    private void runStartupPipeline(String url, List<String> sources, Runnable onStartFailure) {
+        if (!url.isEmpty()) {
+            Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
+            List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
+                    RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
+            for (OpenSearchSink.IndexResult r : results) {
+                Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
+                        + (r.error() != null ? " (" + r.error() + ")" : ""));
+            }
+            if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
+                Logger.logError("[Start] Ensure indexes: one or more failed; see log above.");
+                SwingUtilities.invokeLater(() -> {
+                    RuntimeConfig.setExportRunning(false);
+                    onStartFailure.run();
+                });
+                return;
+            }
+        }
+
+        ToolIndexConfigReporter.pushConfigSnapshot();
+        ToolIndexStatsReporter.start();
+        SettingsIndexReporter.pushSnapshotNow();
+        SettingsIndexReporter.start();
+        FindingsIndexReporter.start();
+        FindingsIndexReporter.pushSnapshotNow();
+        SitemapIndexReporter.start();
+        SitemapIndexReporter.pushSnapshotNow();
+        ProxyHistoryIndexReporter.pushSnapshotNow();
+        ProxyWebSocketIndexReporter.start();
+        ProxyWebSocketIndexReporter.pushSnapshotNow();
+        Logger.logInfoPanelOnly("Export started.");
     }
 
     /**
@@ -666,7 +726,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         JButton authenticateButton = new JButton("Authenticate");
         authenticateButton.setName("os.authenticate");
-        authenticateButton.setToolTipText("Apply username/password for Test Connection and export.");
+        authenticateButton.setToolTipText("Apply selected auth values now and store them securely via Burp's secure storage. Values are never exported.");
         authenticateButton.setEnabled(false);
         if (onAuthenticate != null) {
             authenticateButton.addActionListener(e -> onAuthenticate.run());
@@ -677,16 +737,24 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         basicCard.add(openSearchUserField, "gapright 15");
         basicCard.add(new JLabel("Password:"));
         basicCard.add(openSearchPasswordField, "gapright 15");
-        basicCard.add(authenticateButton);
 
-        JPanel apiKeyCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
-        apiKeyCard.add(new JLabel("API Key Id and Key (not yet implemented)."));
+        JPanel apiKeyCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref][pref][pref]", "[]"));
+        apiKeyCard.add(new JLabel("Key ID:"));
+        apiKeyCard.add(openSearchApiKeyIdField, "gapright 15");
+        apiKeyCard.add(new JLabel("Key Secret:"));
+        apiKeyCard.add(openSearchApiKeySecretField, "gapright 15");
 
-        JPanel jwtCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
-        jwtCard.add(new JLabel("Token (not yet implemented)."));
+        JPanel jwtCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref]", "[]"));
+        jwtCard.add(new JLabel("JWT Token:"));
+        jwtCard.add(openSearchJwtTokenField, "w 360!");
 
-        JPanel clientCertCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
-        clientCertCard.add(new JLabel("Cert path, key path (not yet implemented)."));
+        JPanel clientCertCard = new JPanel(new MigLayout("insets 0, wrap 2", "[pref][pref]", "[][][]"));
+        clientCertCard.add(new JLabel("Cert Path:"));
+        clientCertCard.add(openSearchCertPathField, "w 360!");
+        clientCertCard.add(new JLabel("Key Path:"));
+        clientCertCard.add(openSearchCertKeyPathField, "w 360!");
+        clientCertCard.add(new JLabel("Passphrase:"));
+        clientCertCard.add(openSearchCertPassphraseField, "w 360!");
 
         contentCards.add(noneCard, "hidemode 3");
         contentCards.add(basicCard, "hidemode 3");
@@ -702,23 +770,28 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         java.util.function.Consumer<Object> updateAuthenticateEnabled = ignore -> {
             int i = authTypeCombo.getSelectedIndex();
-            boolean enable = false;
-            if (i == 1) { // Basic
-                enable = openSearchUserField.getText() != null && !openSearchUserField.getText().isBlank()
+            boolean enable = switch (i) {
+                case 1 -> openSearchUserField.getText() != null && !openSearchUserField.getText().isBlank()
                         && openSearchPasswordField.getPassword() != null && openSearchPasswordField.getPassword().length > 0;
-            } else if (i > 1) {
-                enable = true; // API Key, JWT, Client cert (stubs)
-            }
+                case 2 -> openSearchApiKeyIdField.getText() != null && !openSearchApiKeyIdField.getText().isBlank()
+                        && openSearchApiKeySecretField.getPassword() != null && openSearchApiKeySecretField.getPassword().length > 0;
+                case 3 -> openSearchJwtTokenField.getText() != null && !openSearchJwtTokenField.getText().isBlank();
+                case 4 -> openSearchCertPathField.getText() != null && !openSearchCertPathField.getText().isBlank()
+                        && openSearchCertKeyPathField.getText() != null && !openSearchCertKeyPathField.getText().isBlank();
+                default -> false;
+            };
             authenticateButton.setEnabled(enable);
         };
 
         authTypeCombo.addActionListener(e -> {
             int i = authTypeCombo.getSelectedIndex();
+            String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
             noneCard.setVisible(i == 0);
             basicCard.setVisible(i == 1);
             apiKeyCard.setVisible(i == 2);
             jwtCard.setVisible(i == 3);
             clientCertCard.setVisible(i == 4);
+            loadAuthFieldsForSelectedType(selectedType);
             if (i == 0) {
                 updateRuntimeConfig();
                 onOpenSearchStatus("Authentication cleared.");
@@ -727,17 +800,42 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             contentCards.revalidate();
             contentCards.repaint();
         });
-        JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow]", "[]"));
+        JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow][pref]", "[]"));
         form.setAlignmentX(Component.LEFT_ALIGNMENT);
         form.add(new JLabel("Auth type:"));
         form.add(authTypeCombo);
         form.add(contentCards);
+        form.add(authenticateButton, "alignx right");
 
         openSearchUserField.getDocument().addDocumentListener(Doc.onChange(() -> {
             updateAuthenticateEnabled.accept(null);
             form.revalidate();
         }));
         openSearchPasswordField.getDocument().addDocumentListener(Doc.onChange(() -> {
+            updateAuthenticateEnabled.accept(null);
+            form.revalidate();
+        }));
+        openSearchApiKeyIdField.getDocument().addDocumentListener(Doc.onChange(() -> {
+            updateAuthenticateEnabled.accept(null);
+            form.revalidate();
+        }));
+        openSearchApiKeySecretField.getDocument().addDocumentListener(Doc.onChange(() -> {
+            updateAuthenticateEnabled.accept(null);
+            form.revalidate();
+        }));
+        openSearchJwtTokenField.getDocument().addDocumentListener(Doc.onChange(() -> {
+            updateAuthenticateEnabled.accept(null);
+            form.revalidate();
+        }));
+        openSearchCertPathField.getDocument().addDocumentListener(Doc.onChange(() -> {
+            updateAuthenticateEnabled.accept(null);
+            form.revalidate();
+        }));
+        openSearchCertKeyPathField.getDocument().addDocumentListener(Doc.onChange(() -> {
+            updateAuthenticateEnabled.accept(null);
+            form.revalidate();
+        }));
+        openSearchCertPassphraseField.getDocument().addDocumentListener(Doc.onChange(() -> {
             updateAuthenticateEnabled.accept(null);
             form.revalidate();
         }));
@@ -751,6 +849,59 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         });
 
         return form;
+    }
+
+    private void loadAuthFieldsForSelectedType(String authType) {
+        if (authType == null) {
+            return;
+        }
+        switch (authType) {
+            case "Basic" -> {
+                SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
+                openSearchUserField.setText(creds.username());
+                openSearchPasswordField.setText(creds.password());
+            }
+            case "API Key" -> {
+                SecureCredentialStore.ApiKeyCredentials creds = SecureCredentialStore.loadApiKeyCredentials();
+                openSearchApiKeyIdField.setText(creds.keyId());
+                openSearchApiKeySecretField.setText(creds.keySecret());
+            }
+            case "JWT" -> {
+                SecureCredentialStore.JwtCredentials creds = SecureCredentialStore.loadJwtCredentials();
+                openSearchJwtTokenField.setText(creds.token());
+            }
+            case "Certificate" -> {
+                SecureCredentialStore.CertificateCredentials creds = SecureCredentialStore.loadCertificateCredentials();
+                openSearchCertPathField.setText(creds.certPath());
+                openSearchCertKeyPathField.setText(creds.keyPath());
+                openSearchCertPassphraseField.setText(creds.passphrase());
+            }
+            default -> {
+                // None: no-op
+            }
+        }
+    }
+
+    private void persistSelectedAuthSecrets() {
+        String selectedType = openSearchAuthTypeCombo == null
+                ? "None"
+                : String.valueOf(openSearchAuthTypeCombo.getSelectedItem());
+        switch (selectedType) {
+            case "Basic" -> SecureCredentialStore.saveOpenSearchCredentials(
+                    openSearchUserField.getText(),
+                    passwordText(openSearchPasswordField));
+            case "API Key" -> SecureCredentialStore.saveApiKeyCredentials(
+                    openSearchApiKeyIdField.getText(),
+                    passwordText(openSearchApiKeySecretField));
+            case "JWT" -> SecureCredentialStore.saveJwtCredentials(openSearchJwtTokenField.getText());
+            case "Certificate" -> SecureCredentialStore.saveCertificateCredentials(
+                    openSearchCertPathField.getText(),
+                    openSearchCertKeyPathField.getText(),
+                    passwordText(openSearchCertPassphraseField));
+            default -> {
+                // None: keep stored values but runtime does not use them.
+            }
+        }
     }
 
     private JPanel buildTrafficSubPanel() {
@@ -956,9 +1107,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (issuesLowCheckbox.isSelected()) findingsSeverities.add("LOW");
         if (issuesInformationalCheckbox.isSelected()) findingsSeverities.add("INFORMATIONAL");
 
-        boolean authNone = openSearchAuthTypeCombo != null && openSearchAuthTypeCombo.getSelectedIndex() == 0;
-        String osUser = authNone ? "" : nonBlankOr(openSearchUserField.getText(), RuntimeConfig.openSearchUser());
-        String osPass = authNone ? "" : nonBlankOr(new String(openSearchPasswordField.getPassword()), RuntimeConfig.openSearchPassword());
+        int authTypeIndex = openSearchAuthTypeCombo != null ? openSearchAuthTypeCombo.getSelectedIndex() : 0;
+        boolean authBasic = authTypeIndex == 1;
+        String osUser = authBasic ? nonBlankOr(openSearchUserField.getText(), "") : "";
+        String osPass = authBasic ? nonBlankOr(passwordText(openSearchPasswordField), "") : "";
         return new ConfigState.State(
                 selectedSources,
                 scopeType,
@@ -1117,6 +1269,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      */
     private class ControlSaveButtonListener implements ActionListener {
         @Override public void actionPerformed(ActionEvent e) {
+            persistSelectedAuthSecrets();
             updateRuntimeConfig();
             if (RuntimeConfig.isExportRunning()) {
                 ToolIndexConfigReporter.pushConfigSnapshot();
@@ -1135,6 +1288,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private void runOnEdt(Runnable r) {
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else SwingUtilities.invokeLater(r);
+    }
+
+    private static String passwordText(JPasswordField field) {
+        if (field == null || field.getPassword() == null) {
+            return "";
+        }
+        return new String(field.getPassword());
     }
 
     /** Rebuild transient collaborators after deserialization. */

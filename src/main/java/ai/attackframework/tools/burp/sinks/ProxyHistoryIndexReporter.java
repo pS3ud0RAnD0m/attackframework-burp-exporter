@@ -35,8 +35,12 @@ public final class ProxyHistoryIndexReporter {
 
     private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
-    /** Delay (seconds) before the one-time Proxy History push runs, to avoid hammering the UI. */
+    /** Delay (seconds) before one-time history push so startup UI/other reporters can settle. */
     private static final long START_DELAY_SECONDS = 2;
+    private static final long BULK_MAX_BYTES = 5L * 1024 * 1024;
+    private static final int SNAPSHOT_BATCH_INITIAL = 250;
+    private static final int SNAPSHOT_BATCH_MIN = 100;
+    private static final int SNAPSHOT_BATCH_MAX = 1500;
 
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "attackframework-proxy-history-scheduler");
@@ -81,36 +85,102 @@ public final class ProxyHistoryIndexReporter {
         }
     }
 
+    /**
+     * Pushes proxy-history items using bounded, streaming chunks.
+     *
+     * <p>Runs only on the reporter scheduler thread. This method avoids building the full
+     * history payload in memory by flushing chunks when either doc-count or estimated payload
+     * size thresholds are reached.</p>
+     *
+     * @param api Burp API reference
+     * @param baseUrl OpenSearch base URL
+     */
     private static void pushItems(MontoyaApi api, String baseUrl) {
         List<ProxyHttpRequestResponse> history = api.proxy().history();
         if (history == null || history.isEmpty()) {
             return;
         }
-        List<Map<String, Object>> batch = new ArrayList<>();
-        for (ProxyHttpRequestResponse item : history) {
-            Map<String, Object> doc = buildDocument(api, item);
-            if (doc != null) {
-                batch.add(doc);
-            }
-        }
-        if (batch.isEmpty()) {
-            return;
-        }
+
         long startNs = System.nanoTime();
         int success = 0;
-        for (int i = 0; i < batch.size(); ) {
-            int chunkSize = BatchSizeController.getInstance().getCurrentBatchSize();
-            List<Map<String, Object>> chunk = batch.subList(i, Math.min(i + chunkSize, batch.size()));
-            success += OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
-            i += chunk.size();
+        int attempted = 0;
+        int chunkTarget = initialSnapshotBatchSize();
+        long estBytes = 0;
+        List<Map<String, Object>> chunk = new ArrayList<>(chunkTarget);
+
+        for (ProxyHttpRequestResponse item : history) {
+            Map<String, Object> doc = buildDocument(api, item);
+            if (doc == null) {
+                continue;
+            }
+            long docBytes = BulkPayloadEstimator.estimateBytes(doc);
+            boolean sizeCapReached = !chunk.isEmpty() && (estBytes + docBytes) > BULK_MAX_BYTES;
+            boolean countCapReached = !chunk.isEmpty() && chunk.size() >= chunkTarget;
+            if (sizeCapReached || countCapReached) {
+                int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
+                success += sent;
+                attempted += chunk.size();
+                chunkTarget = adjustSnapshotBatchTarget(chunkTarget, chunk.size(), sent);
+                chunk.clear();
+                estBytes = 0;
+            }
+            chunk.add(doc);
+            estBytes += docBytes;
         }
+        if (!chunk.isEmpty()) {
+            int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
+            success += sent;
+            attempted += chunk.size();
+        }
+
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
         ExportStats.recordLastPush("traffic", durationMs);
         ExportStats.recordSuccess("traffic", success);
-        if (success < batch.size()) {
-            ExportStats.recordFailure("traffic", batch.size() - success);
+        ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", success);
+        if (success < attempted) {
+            int failure = attempted - success;
+            ExportStats.recordFailure("traffic", failure);
+            ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failure);
         }
-        Logger.logTrace("[ProxyHistory] pushed " + success + " of " + batch.size());
+        ExportStats.recordProxyHistorySnapshot(attempted, success, durationMs, chunkTarget);
+        Logger.logTrace("[ProxyHistory] pushed " + success + " of " + attempted);
+    }
+
+    /**
+     * Chooses the initial proxy-history chunk target using shared runtime observations.
+     *
+     * <p>When the shared controller already converged above baseline, we reuse that value as a
+     * lower bound so history backfill does not start at an unnecessarily small chunk size.</p>
+     *
+     * @return initial doc-count target for history chunks
+     */
+    private static int initialSnapshotBatchSize() {
+        int shared = BatchSizeController.getInstance().getCurrentBatchSize();
+        int base = Math.max(SNAPSHOT_BATCH_INITIAL, shared);
+        return Math.min(SNAPSHOT_BATCH_MAX, Math.max(SNAPSHOT_BATCH_MIN, base));
+    }
+
+    /**
+     * Adjusts proxy-history chunk target from observed bulk outcome.
+     *
+     * <p>On full success, grows quickly to improve history-drain throughput. On partial/full
+     * failures, shrinks conservatively to reduce pressure on cluster and queueing paths.</p>
+     *
+     * @param current current target doc count
+     * @param attempted docs attempted in the last chunk
+     * @param succeeded docs acknowledged successful in the last chunk
+     * @return next target doc count
+     */
+    private static int adjustSnapshotBatchTarget(int current, int attempted, int succeeded) {
+        if (attempted <= 0) {
+            return current;
+        }
+        if (succeeded >= attempted) {
+            int grow = Math.max(25, current / 4);
+            return Math.min(SNAPSHOT_BATCH_MAX, current + grow);
+        }
+        int reduced = Math.max(SNAPSHOT_BATCH_MIN, current / 2);
+        return Math.min(reduced, Math.max(SNAPSHOT_BATCH_MIN, succeeded));
     }
 
     private static Map<String, Object> buildDocument(MontoyaApi api, ProxyHttpRequestResponse item) {

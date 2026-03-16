@@ -59,6 +59,7 @@ class ConfigControlPanelHeadlessTest {
 
         assertThat(save).as("control.save").isNotNull();
         assertThat(save.getText()).isEqualTo("Save");
+        assertThat(save.getToolTipText()).contains("securely").contains("not exported");
         assertThat(startStop).as("control.startStop").isNotNull();
         assertThat(startStop.getText()).isEqualTo("Start");
         assertThat(indicator).as("control.exportIndicator").isNotNull();

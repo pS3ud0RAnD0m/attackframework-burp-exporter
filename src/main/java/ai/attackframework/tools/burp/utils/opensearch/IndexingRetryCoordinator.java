@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -253,12 +254,14 @@ public final class IndexingRetryCoordinator {
                 if (sent == batch.size()) {
                     BatchSizeController.getInstance().recordSuccess(sent);
                     ExportStats.recordSuccess(indexKey, sent);
+                    ExportStats.recordExportedBytes(indexKey, estimateSuccessfulBytes(batch, sent));
                     if (outageMode.get() && queue.allEmpty()) {
                         checkRecoveryAndLog(baseUrl);
                     }
                 } else if (sent > 0) {
                     BatchSizeController.getInstance().recordPartialSuccess(sent, batch.size());
                     ExportStats.recordSuccess(indexKey, sent);
+                    ExportStats.recordExportedBytes(indexKey, estimateSuccessfulBytes(batch, sent));
                     List<Map<String, Object>> reQueue = batch.subList(sent, batch.size());
                     queue.offerAll(indexName, reQueue);
                 } else {
@@ -271,5 +274,16 @@ public final class IndexingRetryCoordinator {
 
     public int getQueueSize(String indexName) {
         return queue.size(indexName);
+    }
+
+    private static long estimateSuccessfulBytes(List<Map<String, Object>> batch, int successCount) {
+        if (batch == null || batch.isEmpty() || successCount <= 0) {
+            return 0;
+        }
+        long total = 0;
+        for (Map<String, Object> doc : batch) {
+            total += BulkPayloadEstimator.estimateBytes(doc);
+        }
+        return Math.round((double) total * successCount / batch.size());
     }
 }

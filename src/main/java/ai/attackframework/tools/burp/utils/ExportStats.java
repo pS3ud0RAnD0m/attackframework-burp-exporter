@@ -23,6 +23,10 @@ public final class ExportStats {
 
     private static final List<String> INDEX_KEYS = Collections.unmodifiableList(
             Arrays.asList("traffic", "tool", "settings", "sitemap", "findings"));
+    private static final List<String> TRAFFIC_SOURCE_KEYS = Collections.unmodifiableList(
+            Arrays.asList("proxy_live_http", "proxy_history_snapshot", "proxy_websocket"));
+    private static final List<String> TRAFFIC_TOOL_TYPE_KEYS = Collections.unmodifiableList(
+            Arrays.asList("BURP_AI", "EXTENSIONS", "INTRUDER", "PROXY", "PROXY_HISTORY", "REPEATER", "SCANNER", "SEQUENCER", "UNKNOWN"));
     private static final int LAST_ERROR_MAX_LEN = 200;
     private static final long THROUGHPUT_WINDOW_MS = 60_000L;
     private static final int THROUGHPUT_CAP = 10_000;
@@ -31,10 +35,22 @@ public final class ExportStats {
     private static final List<long[]> recentSuccesses = Collections.synchronizedList(new ArrayList<>());
 
     private static final Map<String, PerIndexStats> STATS = new ConcurrentHashMap<>();
+    private static final Map<String, TrafficSourceStats> TRAFFIC_SOURCE_STATS = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_COUNTS = new ConcurrentHashMap<>();
+    private static final AtomicLong exportStartRequestedAtMs = new AtomicLong(-1);
+    private static final AtomicLong firstTrafficSuccessAtMs = new AtomicLong(-1);
+    private static final AtomicReference<ProxyHistorySnapshotStats> lastProxyHistorySnapshot =
+            new AtomicReference<>(null);
 
     static {
         for (String key : INDEX_KEYS) {
             STATS.put(key, new PerIndexStats());
+        }
+        for (String sourceKey : TRAFFIC_SOURCE_KEYS) {
+            TRAFFIC_SOURCE_STATS.put(sourceKey, new TrafficSourceStats());
+        }
+        for (String toolType : TRAFFIC_TOOL_TYPE_KEYS) {
+            TRAFFIC_TOOL_TYPE_COUNTS.put(toolType, new AtomicLong(0));
         }
     }
 
@@ -50,6 +66,21 @@ public final class ExportStats {
         return INDEX_KEYS;
     }
 
+    /** Returns known traffic source keys used for source-level traffic stats. */
+    public static List<String> getTrafficSourceKeys() {
+        return TRAFFIC_SOURCE_KEYS;
+    }
+
+    /** Returns known traffic tool type keys shown in Config > Traffic. */
+    public static List<String> getTrafficToolTypeKeys() {
+        return TRAFFIC_TOOL_TYPE_KEYS;
+    }
+
+    private static TrafficSourceStats forTrafficSource(String sourceKey) {
+        TrafficSourceStats s = TRAFFIC_SOURCE_STATS.get(sourceKey);
+        return s != null ? s : TRAFFIC_SOURCE_STATS.computeIfAbsent(sourceKey, k -> new TrafficSourceStats());
+    }
+
     /**
      * Records successful document push(es) for the given index.
      *
@@ -60,6 +91,12 @@ public final class ExportStats {
         if (count <= 0) return;
         forIndex(indexKey).successCount.addAndGet(count);
         long now = System.currentTimeMillis();
+        if ("traffic".equals(indexKey)) {
+            long startMs = exportStartRequestedAtMs.get();
+            if (startMs > 0) {
+                firstTrafficSuccessAtMs.compareAndSet(-1, now);
+            }
+        }
         synchronized (recentSuccesses) {
             recentSuccesses.add(new long[] { now, count });
             if (recentSuccesses.size() > THROUGHPUT_CAP) {
@@ -86,6 +123,28 @@ public final class ExportStats {
     public static void recordFailure(String indexKey, long count) {
         if (count <= 0) return;
         forIndex(indexKey).failureCount.addAndGet(count);
+    }
+
+    /**
+     * Records successful traffic pushes for a specific traffic source.
+     *
+     * @param sourceKey source key (for example {@code "proxy_live_http"})
+     * @param count number of successful documents; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSourceSuccess(String sourceKey, long count) {
+        if (count <= 0) return;
+        forTrafficSource(sourceKey).successCount.addAndGet(count);
+    }
+
+    /**
+     * Records failed traffic pushes for a specific traffic source.
+     *
+     * @param sourceKey source key (for example {@code "proxy_live_http"})
+     * @param count number of failed documents; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSourceFailure(String sourceKey, long count) {
+        if (count <= 0) return;
+        forTrafficSource(sourceKey).failureCount.addAndGet(count);
     }
 
     /**
@@ -125,6 +184,50 @@ public final class ExportStats {
         return forIndex(indexKey).failureCount.get();
     }
 
+    /** Returns estimated successful payload bytes pushed for the given index this session. */
+    public static long getExportedBytes(String indexKey) {
+        return forIndex(indexKey).successBytes.get();
+    }
+
+    /**
+     * Records estimated successful payload bytes for the given index.
+     *
+     * @param indexKey index key (e.g. {@code "traffic"})
+     * @param bytes estimated successful payload bytes; ignored if {@code <= 0}
+     */
+    public static void recordExportedBytes(String indexKey, long bytes) {
+        if (bytes <= 0) return;
+        forIndex(indexKey).successBytes.addAndGet(bytes);
+    }
+
+    /** Returns successful traffic pushes for a specific traffic source. */
+    public static long getTrafficSourceSuccessCount(String sourceKey) {
+        return forTrafficSource(sourceKey).successCount.get();
+    }
+
+    /** Returns failed traffic pushes for a specific traffic source. */
+    public static long getTrafficSourceFailureCount(String sourceKey) {
+        return forTrafficSource(sourceKey).failureCount.get();
+    }
+
+    /**
+     * Records captured traffic events for a specific traffic tool type.
+     *
+     * <p>This tracks accepted events at capture time (before queue drain), useful for
+     * visibility into tool-source distribution.</p>
+     */
+    public static void recordTrafficToolTypeCaptured(String toolTypeKey, long count) {
+        if (count <= 0) return;
+        AtomicLong c = TRAFFIC_TOOL_TYPE_COUNTS.computeIfAbsent(toolTypeKey, k -> new AtomicLong(0));
+        c.addAndGet(count);
+    }
+
+    /** Returns captured traffic event count for a specific tool type. */
+    public static long getTrafficToolTypeCapturedCount(String toolTypeKey) {
+        AtomicLong c = TRAFFIC_TOOL_TYPE_COUNTS.get(toolTypeKey);
+        return c == null ? 0 : c.get();
+    }
+
     /** Returns last push duration in ms, or -1 if not set. */
     public static long getLastPushDurationMs(String indexKey) {
         return forIndex(indexKey).lastPushDurationMs.get();
@@ -148,6 +251,8 @@ public final class ExportStats {
 
     /** Traffic export queue backpressure: count of documents dropped when the queue is full (oldest dropped). */
     private static final AtomicLong trafficQueueDrops = new AtomicLong(0);
+    /** Count of response-path exports that required request-side tool-type fallback. */
+    private static final AtomicLong trafficToolSourceFallbacks = new AtomicLong(0);
 
     /**
      * Records that one or more documents were dropped from the traffic queue (queue full, drop oldest).
@@ -167,6 +272,21 @@ public final class ExportStats {
         return trafficQueueDrops.get();
     }
 
+    /**
+     * Records a response-path export decision that used request-side tool-type fallback.
+     *
+     * <p>This is used for observability when response tool source is absent but request-side
+     * correlation by message id still allows correct traffic export gating.</p>
+     */
+    public static void recordTrafficToolSourceFallback() {
+        trafficToolSourceFallbacks.incrementAndGet();
+    }
+
+    /** Returns total response-path tool-source fallbacks recorded this session. */
+    public static long getTrafficToolSourceFallbacks() {
+        return trafficToolSourceFallbacks.get();
+    }
+
     /** Session total: sum of docs pushed across all indexes. */
     public static long getTotalSuccessCount() {
         long sum = 0;
@@ -181,6 +301,15 @@ public final class ExportStats {
         long sum = 0;
         for (String key : INDEX_KEYS) {
             sum += forIndex(key).failureCount.get();
+        }
+        return sum;
+    }
+
+    /** Session total: sum of estimated successful payload bytes across all indexes. */
+    public static long getTotalExportedBytes() {
+        long sum = 0;
+        for (String key : INDEX_KEYS) {
+            sum += forIndex(key).successBytes.get();
         }
         return sum;
     }
@@ -227,11 +356,86 @@ public final class ExportStats {
         return sum / (THROUGHPUT_WINDOW_MS / 1000.0);
     }
 
+    /**
+     * Records that a new export start was requested.
+     *
+     * <p>Resets startup latency tracking so the next successful traffic push can produce
+     * an updated start-to-first-traffic metric.</p>
+     */
+    public static void recordExportStartRequested() {
+        exportStartRequestedAtMs.set(System.currentTimeMillis());
+        firstTrafficSuccessAtMs.set(-1);
+    }
+
+    /**
+     * Returns milliseconds from the latest export Start request to the first successful
+     * traffic push, or {@code -1} when not available yet.
+     */
+    public static long getStartToFirstTrafficMs() {
+        long start = exportStartRequestedAtMs.get();
+        long first = firstTrafficSuccessAtMs.get();
+        if (start <= 0 || first <= 0 || first < start) {
+            return -1;
+        }
+        return first - start;
+    }
+
+    /** Returns timestamp (epoch ms) for latest export Start request, or {@code -1}. */
+    public static long getExportStartRequestedAtMs() {
+        return exportStartRequestedAtMs.get();
+    }
+
+    /**
+     * Records summary metrics for the latest proxy-history snapshot push.
+     *
+     * @param attempted attempted document count
+     * @param success successful document count
+     * @param durationMs wall-clock duration in milliseconds
+     * @param finalChunkTarget final chunk target doc count at end of run
+     */
+    public static void recordProxyHistorySnapshot(
+            int attempted, int success, long durationMs, int finalChunkTarget) {
+        lastProxyHistorySnapshot.set(new ProxyHistorySnapshotStats(
+                attempted,
+                success,
+                durationMs,
+                finalChunkTarget,
+                System.currentTimeMillis()));
+    }
+
+    /** Returns the latest proxy-history snapshot stats, or {@code null} when none recorded. */
+    public static ProxyHistorySnapshotStats getLastProxyHistorySnapshot() {
+        return lastProxyHistorySnapshot.get();
+    }
+
+    /** Immutable proxy-history snapshot performance summary. */
+    public record ProxyHistorySnapshotStats(
+            int attempted,
+            int success,
+            long durationMs,
+            int finalChunkTarget,
+            long recordedAtMs
+    ) {
+        /** Returns effective throughput in docs/sec for this snapshot, or 0 when unavailable. */
+        public double docsPerSecond() {
+            if (durationMs <= 0 || attempted <= 0) {
+                return 0.0;
+            }
+            return attempted / (durationMs / 1000.0);
+        }
+    }
+
     private static final class PerIndexStats {
         final AtomicLong successCount = new AtomicLong(0);
         final AtomicLong failureCount = new AtomicLong(0);
+        final AtomicLong successBytes = new AtomicLong(0);
         final AtomicLong lastPushDurationMs = new AtomicLong(-1);
         final AtomicReference<String> lastError = new AtomicReference<>(null);
         final AtomicLong retryQueueDrops = new AtomicLong(0);
+    }
+
+    private static final class TrafficSourceStats {
+        final AtomicLong successCount = new AtomicLong(0);
+        final AtomicLong failureCount = new AtomicLong(0);
     }
 }

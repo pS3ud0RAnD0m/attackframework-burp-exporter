@@ -1,12 +1,11 @@
 package ai.attackframework.tools.burp.ui;
 
-import java.lang.reflect.Method;
-
 import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.utils.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,22 +46,10 @@ class LogPanelLoggerLifecycleHeadlessTest {
     }
 
     private static void invokeAddNotify(LogPanel panel) {
-        try {
-            Method m = java.awt.Component.class.getDeclaredMethod("addNotify");
-            m.setAccessible(true);
-            m.invoke(panel);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        Reflect.call(panel, "addNotify");
     }
 
     private static void invokeRemoveNotify(LogPanel panel) {
-        try {
-            Method m = java.awt.Component.class.getDeclaredMethod("removeNotify");
-            m.setAccessible(true);
-            m.invoke(panel);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        Reflect.call(panel, "removeNotify");
     }
 }

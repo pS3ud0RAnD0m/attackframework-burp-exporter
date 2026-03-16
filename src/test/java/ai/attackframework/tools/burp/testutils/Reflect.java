@@ -13,6 +13,9 @@ import java.util.Objects;
 /**
  * Lightweight reflection helpers for tests.
  * Supports null arguments, primitive parameters, and overload resolution.
+ *
+ * <p>Test convention: prefer this helper over ad-hoc {@code getDeclared*}/{@code setAccessible}
+ * usage in individual tests so reflection behavior stays consistent and maintainable.</p>
  */
 public final class Reflect {
 
@@ -34,8 +37,43 @@ public final class Reflect {
             Field f = findField(target.getClass(), fieldName);
             makeAccessible(f, target);
             return (T) f.get(target);
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | SecurityException e) {
             throw new RuntimeException("get(field=" + fieldName + ")", e);
+        }
+    }
+
+    /**
+     * Returns and casts the value of a (possibly private) field by name.
+     *
+     * @param target    instance declaring (or inheriting) the field
+     * @param fieldName declared field name
+     * @param type      expected field type
+     * @param <T>       expected type
+     * @return field value cast to {@code type}
+     */
+    public static <T> T get(Object target, String fieldName, Class<T> type) {
+        Objects.requireNonNull(type, "type");
+        return type.cast(get(target, fieldName));
+    }
+
+    /**
+     * Returns the value of a static (possibly private) field by name.
+     *
+     * @param owner     class declaring (or inheriting) the field
+     * @param fieldName declared field name
+     * @param <T>       expected type
+     * @return field value cast to T
+     */
+    @SuppressWarnings("unchecked") // Caller is responsible for requesting the correct field type.
+    public static <T> T getStatic(Class<?> owner, String fieldName) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(fieldName, "fieldName");
+        try {
+            Field f = findField(owner, fieldName);
+            makeAccessible(f, null);
+            return (T) f.get(null);
+        } catch (ReflectiveOperationException | SecurityException e) {
+            throw new RuntimeException("getStatic(field=" + owner.getName() + "#" + fieldName + ")", e);
         }
     }
 
@@ -53,8 +91,27 @@ public final class Reflect {
             Field f = findField(target.getClass(), fieldName);
             makeAccessible(f, target);
             f.set(target, value);
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | SecurityException e) {
             throw new RuntimeException("set(field=" + fieldName + ")", e);
+        }
+    }
+
+    /**
+     * Sets a static (possibly private) field by name.
+     *
+     * @param owner     class declaring (or inheriting) the field
+     * @param fieldName declared field name
+     * @param value     new value
+     */
+    public static void setStatic(Class<?> owner, String fieldName, Object value) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(fieldName, "fieldName");
+        try {
+            Field f = findField(owner, fieldName);
+            makeAccessible(f, null);
+            f.set(null, value);
+        } catch (ReflectiveOperationException | SecurityException e) {
+            throw new RuntimeException("setStatic(field=" + owner.getName() + "#" + fieldName + ")", e);
         }
     }
 
@@ -79,9 +136,35 @@ public final class Reflect {
             throw new RuntimeException(
                     "call(method=" + methodName + ", args=" + Arrays.toString(args) + ")",
                     ite.getTargetException());
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | SecurityException e) {
             throw new RuntimeException(
                     "call(method=" + methodName + ", args=" + Arrays.toString(args) + ")", e);
+        }
+    }
+
+    /**
+     * Invokes a static (possibly private) method by name.
+     *
+     * @param owner      class declaring (or inheriting) the method
+     * @param methodName declared method name
+     * @param args       arguments to pass (may contain nulls)
+     * @return return value (or null for void)
+     */
+    public static Object callStatic(Class<?> owner, String methodName, Object... args) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(methodName, "methodName");
+        try {
+            Method m = resolveMethod(owner, methodName, args);
+            makeAccessible(m, null);
+            return m.invoke(null, args);
+        } catch (InvocationTargetException ite) {
+            throw new RuntimeException(
+                    "callStatic(method=" + owner.getName() + "#" + methodName + ", args=" + Arrays.toString(args) + ")",
+                    ite.getTargetException());
+        } catch (ReflectiveOperationException | SecurityException e) {
+            throw new RuntimeException(
+                    "callStatic(method=" + owner.getName() + "#" + methodName + ", args=" + Arrays.toString(args) + ")",
+                    e);
         }
     }
 
@@ -93,6 +176,7 @@ public final class Reflect {
      * and {@code null} for static members.
      */
     private static void makeAccessible(AccessibleObject ao, Object receiver) {
+        Objects.requireNonNull(ao, "ao");
         try {
             if (ao instanceof Field f) {
                 boolean isStatic = Modifier.isStatic(f.getModifiers());
@@ -106,8 +190,12 @@ public final class Reflect {
                 if (!m.canAccess(rec)) m.setAccessible(true);
                 return;
             }
-            // Fallback for other AccessibleObject types
-            if (!ao.canAccess(receiver)) ao.setAccessible(true);
+            // Fallback for other AccessibleObject types.
+            if (receiver == null) {
+                ao.setAccessible(true);
+            } else if (!ao.canAccess(receiver)) {
+                ao.setAccessible(true);
+            }
         } catch (IllegalArgumentException ignored) {
             // Some JDKs throw when receiver is null for instance members; force accessibility.
             ao.setAccessible(true);
@@ -119,12 +207,11 @@ public final class Reflect {
     private static Field findField(Class<?> type, String name) throws NoSuchFieldException {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(name, "name");
-        Class<?> c = type;
-        while (c != null && c != Object.class) {
+        for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             try {
                 return c.getDeclaredField(name);
             } catch (NoSuchFieldException ignored) {
-                c = c.getSuperclass();
+                // Continue up the inheritance hierarchy.
             }
         }
         throw new NoSuchFieldException(type.getName() + "#" + name);

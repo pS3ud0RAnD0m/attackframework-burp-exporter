@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
 import org.junit.jupiter.api.Test;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.opensearch.client.opensearch.OpenSearchClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,5 +32,18 @@ class OpenSearchConnectorTest {
     void getClient_withCredentials_returnsNonNull() {
         OpenSearchClient client = OpenSearchConnector.getClient(DUMMY_URL, "user", "pass");
         assertThat(client).isNotNull();
+    }
+
+    @Test
+    void getClassicHttpClient_returnsNonNull() {
+        CloseableHttpClient client = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
+        assertThat(client).isNotNull();
+    }
+
+    @Test
+    void getClassicHttpClient_withSameKey_returnsSameCachedInstance() {
+        CloseableHttpClient a = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
+        CloseableHttpClient b = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
+        assertThat(a).isSameAs(b);
     }
 }

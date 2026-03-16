@@ -10,6 +10,9 @@ import org.apache.hc.client5.http.auth.AuthScope;
 import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
 import org.apache.hc.client5.http.config.TlsConfig;
 import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.nio.AsyncClientConnectionManager;
 import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
@@ -35,6 +38,7 @@ import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBui
 public final class OpenSearchConnector {
 
     private static final ConcurrentHashMap<String, OpenSearchClient> clientCache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, CloseableHttpClient> classicClientCache = new ConcurrentHashMap<>();
 
     private OpenSearchConnector() {
         throw new AssertionError("No instances");
@@ -62,13 +66,30 @@ public final class OpenSearchConnector {
      * @throws OpenSearchClientBuildException when the client cannot be constructed
      */
     public static OpenSearchClient getClient(String baseUrl, String username, String password) {
-        boolean insecure = "true".equalsIgnoreCase(System.getProperty(INSECURE_PROP, "").trim())
-                || RuntimeConfig.openSearchInsecureSsl();
+        boolean insecure = isInsecureEnabled();
         String key = cacheKey(baseUrl, username, password, insecure);
         return clientCache.computeIfAbsent(key, k -> buildClient(baseUrl, username, password, insecure));
     }
 
+    /**
+     * Returns a cached classic HTTP client with the same TLS/auth behavior as {@link #getClient}.
+     *
+     * <p>Used by raw/chunked HTTP paths that call OpenSearch APIs directly, so they stay
+     * behaviorally aligned with connector/test-connection.</p>
+     */
+    static CloseableHttpClient getClassicHttpClient(String baseUrl, String username, String password) {
+        boolean insecure = isInsecureEnabled();
+        String key = cacheKey(baseUrl, username, password, insecure);
+        return classicClientCache.computeIfAbsent(
+                key, k -> buildClassicClient(baseUrl, username, password, insecure));
+    }
+
     private static final String INSECURE_PROP = "OPENSEARCH_INSECURE";
+
+    static boolean isInsecureEnabled() {
+        return "true".equalsIgnoreCase(System.getProperty(INSECURE_PROP, "").trim())
+                || RuntimeConfig.openSearchInsecureSsl();
+    }
 
     private static String cacheKey(String baseUrl, String username, String password, boolean insecure) {
         String cred = (username == null && password == null) ? "" : "|" + (username != null ? username : "") + "|" + (password != null ? password : "");
@@ -93,7 +114,7 @@ public final class OpenSearchConnector {
                                 .setDefaultTlsConfig(TlsConfig.custom()
                                         .setVersionPolicy(HttpVersionPolicy.NEGOTIATE)
                                         .build());
-                if (username != null && !username.isBlank() && password != null && !password.isBlank()) {
+                if (hasCredentials(username, password)) {
                     BasicCredentialsProvider credsProvider = new BasicCredentialsProvider();
                     credsProvider.setCredentials(
                             new AuthScope(host),
@@ -123,5 +144,48 @@ public final class OpenSearchConnector {
         } catch (Exception e) {
             throw new OpenSearchClientBuildException("Failed to build OpenSearch client for " + baseUrl, e);
         }
+    }
+
+    private static CloseableHttpClient buildClassicClient(
+            String baseUrl, String username, String password, boolean insecure) {
+        try {
+            URI uri = URI.create(baseUrl);
+            HttpHost host = new HttpHost(uri.getScheme(), uri.getHost(), uri.getPort());
+            boolean useHttps = "https".equalsIgnoreCase(uri.getScheme());
+
+            PoolingHttpClientConnectionManagerBuilder connManagerBuilder =
+                    PoolingHttpClientConnectionManagerBuilder.create()
+                            .setDefaultTlsConfig(TlsConfig.custom()
+                                    .setVersionPolicy(HttpVersionPolicy.NEGOTIATE)
+                                    .build());
+
+            if (insecure && useHttps) {
+                SSLContext sslContext = SSLContextBuilder.create()
+                        .loadTrustMaterial(TrustAllStrategy.INSTANCE)
+                        .build();
+                connManagerBuilder.setTlsSocketStrategy(ClientTlsStrategyBuilder.create()
+                        .setSslContext(sslContext)
+                        .setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                        .buildClassic());
+            }
+
+            var httpBuilder = HttpClients.custom()
+                    .setConnectionManager(connManagerBuilder.build());
+            if (hasCredentials(username, password)) {
+                BasicCredentialsProvider credsProvider = new BasicCredentialsProvider();
+                credsProvider.setCredentials(
+                        new AuthScope(host),
+                        new UsernamePasswordCredentials(username, password.toCharArray()));
+                httpBuilder.setDefaultCredentialsProvider(credsProvider);
+            }
+            return httpBuilder.build();
+        } catch (Exception e) {
+            throw new OpenSearchClientBuildException(
+                    "Failed to build classic OpenSearch HTTP client for " + baseUrl, e);
+        }
+    }
+
+    private static boolean hasCredentials(String username, String password) {
+        return username != null && !username.isBlank() && password != null && !password.isBlank();
     }
 }

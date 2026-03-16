@@ -154,12 +154,28 @@ public final class ToolIndexStatsReporter {
         }
         message.put("traffic_indexed_count", ExportStats.getSuccessCount("traffic"));
         message.put("traffic_failure_count", ExportStats.getFailureCount("traffic"));
+        message.put("traffic_indexed_bytes", ExportStats.getExportedBytes("traffic"));
         message.put("traffic_queue_size", ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize());
         message.put("traffic_queue_drops", ExportStats.getTrafficQueueDrops());
+        message.put("traffic_tool_source_fallback_hits", ExportStats.getTrafficToolSourceFallbacks());
         message.put("retry_queue_drops_total", ExportStats.getTotalRetryQueueDrops());
         message.put("throughput_docs_per_sec_60", ExportStats.getThroughputDocsPerSecLast60s());
+        message.put("total_indexed_bytes", ExportStats.getTotalExportedBytes());
+        for (String key : ExportStats.getIndexKeys()) {
+            message.put(key + "_indexed_count", ExportStats.getSuccessCount(key));
+            message.put(key + "_indexed_bytes", ExportStats.getExportedBytes(key));
+        }
         message.put("export_running", RuntimeConfig.isExportRunning());
         message.put("batch_size", ai.attackframework.tools.burp.utils.opensearch.BatchSizeController.getInstance().getCurrentBatchSize());
+        message.put("start_to_first_traffic_ms", ExportStats.getStartToFirstTrafficMs());
+        ExportStats.ProxyHistorySnapshotStats proxySnapshot = ExportStats.getLastProxyHistorySnapshot();
+        if (proxySnapshot != null) {
+            message.put("proxy_history_attempted", proxySnapshot.attempted());
+            message.put("proxy_history_success", proxySnapshot.success());
+            message.put("proxy_history_duration_ms", proxySnapshot.durationMs());
+            message.put("proxy_history_docs_per_sec", proxySnapshot.docsPerSecond());
+            message.put("proxy_history_final_chunk_target", proxySnapshot.finalChunkTarget());
+        }
         long lastPushMs = ExportStats.getLastPushDurationMs("traffic");
         if (lastPushMs >= 0) {
             message.put("last_push_duration_ms", lastPushMs);

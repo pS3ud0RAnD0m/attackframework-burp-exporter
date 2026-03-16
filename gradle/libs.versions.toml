@@ -11,6 +11,7 @@ glassfishJson = "2.0.1"
 opensearchJava = "3.7.0"
 slf4j = "2.0.17"
 spotbugs = "4.9.8"
+jfreechart = "1.5.5"
 
 [libraries]
 montoya = { group = "net.portswigger.burp.extensions", name = "montoya-api", version.ref = "montoya" }
@@ -40,3 +41,4 @@ opensearchJava = { group = "org.opensearch.client", name = "opensearch-java", ve
 
 slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
 spotbugsAnnotations = { group = "com.github.spotbugs", name = "spotbugs-annotations", version.ref = "spotbugs" }
+jfreechart = { group = "org.jfree", name = "jfreechart", version.ref = "jfreechart" }

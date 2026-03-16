@@ -46,6 +46,13 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
 
     @Override
     public void onLog(String level, String message) {
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
+        String baseUrl = RuntimeConfig.openSearchUrl();
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return;
+        }
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("level", level != null ? level : "INFO");
         doc.put("event_type", EVENT_TYPE);
@@ -73,7 +80,6 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                 Map<String, Object> doc = queue.poll(1, TimeUnit.SECONDS);
                 if (doc == null) continue;
 
-                if (!RuntimeConfig.isExportRunning()) continue;
                 String baseUrl = RuntimeConfig.openSearchUrl();
                 if (baseUrl == null || baseUrl.isBlank()) continue;
 

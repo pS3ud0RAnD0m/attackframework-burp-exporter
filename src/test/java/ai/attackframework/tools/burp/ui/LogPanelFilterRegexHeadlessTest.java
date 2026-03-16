@@ -9,6 +9,7 @@ import javax.swing.JTextArea;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LogPanelFilterRegexHeadlessTest {
@@ -56,9 +57,4 @@ class LogPanelFilterRegexHeadlessTest {
         return doc.getText(0, doc.getLength());
     }
 
-    private static <T> T get(Object target, String fieldName, Class<T> type) throws Exception {
-        var f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return type.cast(f.get(target));
-    }
 }

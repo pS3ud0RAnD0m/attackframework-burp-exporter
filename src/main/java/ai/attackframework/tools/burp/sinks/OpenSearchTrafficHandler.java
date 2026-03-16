@@ -78,6 +78,17 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
     }
 
     /**
+     * Whether null/unknown tool-source traffic should be exported.
+     *
+     * <p>Some Burp flows do not provide tool source on response/request callbacks. We allow these
+     * events when Proxy export is enabled so normal browser-driven Proxy traffic is not dropped.</p>
+     */
+    private static boolean shouldExportNullToolSourceTraffic() {
+        var types = RuntimeConfig.getState().trafficToolTypes();
+        return types != null && types.contains("PROXY");
+    }
+
+    /**
      * True if the request is to the configured OpenSearch base URL (same host and port).
      * Used when tool type is EXTENSIONS to exclude this extension's own export traffic.
      */
@@ -125,9 +136,11 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             }
         }
         long requestSentMs = System.currentTimeMillis();
+        ToolSource reqToolSource = request.toolSource();
+        ToolType reqToolType = reqToolSource == null ? null : reqToolSource.toolType();
         Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request, requestSentMs);
         if (skeleton != null) {
-            pendingOrphans.put(request.messageId(), new PendingOrphan(skeleton, requestSentMs));
+            pendingOrphans.put(request.messageId(), new PendingOrphan(skeleton, requestSentMs, reqToolType));
         }
         return RequestToBeSentAction.continueWith(request);
     }
@@ -157,13 +170,27 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             return ResponseReceivedAction.continueWith(response);
         }
 
-        ToolSource respToolSource = response.toolSource();
-        ToolType respToolType = respToolSource == null ? null : respToolSource.toolType();
-        if (!shouldExportTrafficByToolSource(respToolType)) {
+        PendingOrphan pending = pendingOrphans.get(response.messageId());
+        ToolType requestFallbackType = pending == null ? null : pending.toolType;
+        ToolSource responseSource = response.toolSource();
+        ToolType responseType = responseSource == null ? null : responseSource.toolType();
+        if (responseType == null) {
+            ExportStats.recordTrafficToolSourceFallback();
+        }
+        // Prefer selected response source, then selected request-correlated source.
+        ToolType toolType = null;
+        if (shouldExportTrafficByToolSource(responseType)) {
+            toolType = responseType;
+        } else if (shouldExportTrafficByToolSource(requestFallbackType)) {
+            toolType = requestFallbackType;
+        } else if (responseType == null && requestFallbackType == null && shouldExportNullToolSourceTraffic()) {
+            toolType = null; // allowed unknown source when proxy traffic export is enabled
+        } else {
             pendingOrphans.remove(response.messageId());
             return ResponseReceivedAction.continueWith(response);
         }
-        if (respToolType == ToolType.EXTENSIONS) {
+
+        if (toolType == ToolType.EXTENSIONS || toolType == null) {
             HttpService svc = request.httpService();
             if (svc != null && isRequestToConfiguredOpenSearch(svc.host(), svc.port())) {
                 pendingOrphans.remove(response.messageId());
@@ -172,14 +199,26 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         }
 
         long responseReceivedMs = System.currentTimeMillis();
-        PendingOrphan pending = pendingOrphans.get(response.messageId());
         Long requestSentMs = pending == null ? null : pending.timestamp;
 
-        Map<String, Object> document = buildDocument(response, request, inScope, requestSentMs, responseReceivedMs);
+        Map<String, Object> document = buildDocument(response, request, inScope, requestSentMs, responseReceivedMs, toolType);
+        ExportStats.recordTrafficToolTypeCaptured(toolType == null ? "UNKNOWN" : toolType.name(), 1);
         TrafficExportQueue.offer(document);
 
         pendingOrphans.remove(response.messageId());
         return ResponseReceivedAction.continueWith(response);
+    }
+
+    /**
+     * Resolves tool type for response handling with fallback to request-side metadata.
+     *
+     * <p>In some Burp paths, response tool source can be null. Fallback to request-side
+     * correlation prevents dropping valid live traffic.</p>
+     */
+    static ToolType resolveResponseToolType(HttpResponseReceived response, ToolType requestFallbackType) {
+        ToolSource responseSource = response == null ? null : response.toolSource();
+        ToolType responseType = responseSource == null ? null : responseSource.toolType();
+        return responseType != null ? responseType : requestFallbackType;
     }
 
     /**
@@ -191,7 +230,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * @return map matching traffic index mapping (never null)
      */
     Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean inScope) {
-        return buildDocument(response, request, inScope, null, null);
+        return buildDocument(response, request, inScope, null, null, null);
     }
 
     Map<String, Object> buildDocument(
@@ -199,11 +238,15 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             HttpRequest request,
             boolean inScope,
             Long requestSentMs,
-            Long responseReceivedMs) {
+            Long responseReceivedMs,
+            ToolType resolvedToolType) {
         HttpService service = request.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         ToolSource toolSource = response.toolSource();
-        ToolType toolType = toolSource == null ? null : toolSource.toolType();
+        ToolType toolType = resolvedToolType;
+        if (toolType == null) {
+            toolType = toolSource == null ? null : toolSource.toolType();
+        }
 
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("url", request.url());
@@ -380,8 +423,10 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             ExportStats.recordLastPush("traffic", durationMs);
             if (success) {
                 ExportStats.recordSuccess("traffic", 1);
+                ExportStats.recordTrafficSourceSuccess("proxy_live_http", 1);
             } else {
                 ExportStats.recordFailure("traffic", 1);
+                ExportStats.recordTrafficSourceFailure("proxy_live_http", 1);
                 String errMsg = "Failed to index orphan traffic document to " + INDEX_NAME;
                 ExportStats.recordLastError("traffic", errMsg);
                 Logger.logError("[OpenSearch] " + errMsg);
@@ -392,10 +437,12 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
     private static final class PendingOrphan {
         final Map<String, Object> documentSkeleton;
         final long timestamp;
+        final ToolType toolType;
 
-        PendingOrphan(Map<String, Object> documentSkeleton, long timestamp) {
+        PendingOrphan(Map<String, Object> documentSkeleton, long timestamp, ToolType toolType) {
             this.documentSkeleton = documentSkeleton;
             this.timestamp = timestamp;
+            this.toolType = toolType;
         }
     }
 

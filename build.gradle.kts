@@ -38,6 +38,7 @@ dependencies {
     implementation(libs.glassfishJson)
     implementation(libs.opensearchJava)
     implementation(libs.slf4jApi)
+    implementation(libs.jfreechart)
 
     // testImplementation
     testImplementation(platform(libs.junitBom))

@@ -27,7 +27,9 @@ public final class TrafficExportQueue {
     private static final long POLL_TIMEOUT_MS = 50;
     private static final long BATCH_MAX_WAIT_MS = 100;
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024;
-    private static final long RAMP_UP_MS = 2_500;
+    private static final long STARTUP_GRACE_MAX_MS = 2_000;
+    private static final long STARTUP_POLL_MS = 25;
+    private static final int START_DRAIN_BACKLOG_DOCS = 64;
 
     private static final LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>(CAPACITY);
     private static final AtomicBoolean workerStarted = new AtomicBoolean(false);
@@ -70,10 +72,7 @@ public final class TrafficExportQueue {
     }
 
     private static void drainLoop() {
-        try {
-            Thread.sleep(RAMP_UP_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        if (!awaitInitialWarmup()) {
             return;
         }
         BatchSizeController batchController = BatchSizeController.getInstance();
@@ -103,8 +102,12 @@ public final class TrafficExportQueue {
             }
             ExportStats.recordLastPush("traffic", durationMs);
             ExportStats.recordSuccess("traffic", result.successCount);
+            ExportStats.recordExportedBytes("traffic", result.successBytes);
+            ExportStats.recordTrafficSourceSuccess("proxy_live_http", result.successCount);
             if (result.successCount < result.attemptedCount) {
-                ExportStats.recordFailure("traffic", result.attemptedCount - result.successCount);
+                long failure = result.attemptedCount - result.successCount;
+                ExportStats.recordFailure("traffic", failure);
+                ExportStats.recordTrafficSourceFailure("proxy_live_http", failure);
             }
             if (result.isFullSuccess()) {
                 batchController.recordSuccess(result.attemptedCount);
@@ -112,5 +115,34 @@ public final class TrafficExportQueue {
                 batchController.recordFailure(result.attemptedCount);
             }
         }
+    }
+
+    /**
+     * Applies startup grace before first drain while allowing immediate drain under backlog.
+     *
+     * <p>This keeps the extension responsive at startup when there is little traffic, but avoids
+     * fixed-delay throughput penalties during initial backlog loads (for example proxy-history
+     * or scanner bursts).</p>
+     *
+     * @return {@code true} when the worker should continue, {@code false} if interrupted
+     */
+    private static boolean awaitInitialWarmup() {
+        long deadline = System.currentTimeMillis() + STARTUP_GRACE_MAX_MS;
+        while (System.currentTimeMillis() < deadline) {
+            if (queue.size() >= START_DRAIN_BACKLOG_DOCS) {
+                return true;
+            }
+            try {
+                long remaining = Math.max(1, deadline - System.currentTimeMillis());
+                Map<String, Object> observed = queue.poll(Math.min(STARTUP_POLL_MS, remaining), TimeUnit.MILLISECONDS);
+                if (observed != null) {
+                    queue.offer(observed);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return true;
     }
 }

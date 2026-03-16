@@ -11,6 +11,7 @@ import javax.swing.KeyStroke;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -31,7 +32,7 @@ class ConfigPanelUndoRedoHeadlessTest {
     @Test
     void filePathField_undoRedo_bindings_and_actions() throws Exception {
         ConfigPanel panel = new ConfigPanel();
-        JTextField field = (JTextField) getPrivate(panel, "filePathField");
+        JTextField field = get(panel, "filePathField");
 
         // 1) Verify key bindings exist (Ctrl and Meta variants, plus Shift+Z redo)
         InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
@@ -63,7 +64,7 @@ class ConfigPanelUndoRedoHeadlessTest {
     @Test
     void openSearchUrlField_undoRedo_bindings_and_actions() throws Exception {
         ConfigPanel panel = new ConfigPanel();
-        JTextField field = (JTextField) getPrivate(panel, "openSearchUrlField");
+        JTextField field = get(panel, "openSearchUrlField");
 
         // 1) Verify key bindings exist (Ctrl and Meta variants, plus Shift+Z redo)
         InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
@@ -93,13 +94,6 @@ class ConfigPanelUndoRedoHeadlessTest {
     }
 
     // ---------- helpers ----------
-
-    /** Small reflection helper for private UI fields—keeps tests focused on behavior, not wiring. */
-    private static Object getPrivate(Object target, String fieldName) throws Exception {
-        var f = target.getClass().getDeclaredField(fieldName);
-        f.setAccessible(true);
-        return f.get(target);
-    }
 
     /** Run a block on the EDT and wait for completion (avoids subtle race conditions). */
     private static void onEdtAndWait(Runnable r) throws Exception {

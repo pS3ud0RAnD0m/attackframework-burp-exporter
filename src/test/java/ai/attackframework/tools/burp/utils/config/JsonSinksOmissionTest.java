@@ -31,16 +31,20 @@ class JsonSinksOmissionTest {
     void build_includes_nonEmpty_sinks_fields() throws IOException {
         var state = new ConfigState.State(
                 null, "all", null,
-                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL, "", "", false),
+                new ConfigState.Sinks(true, FILES_ROOT, true, OS_URL, "admin", "admin", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
 
         String json = ConfigJsonMapper.build(state);
+        assertThat(json).doesNotContain("openSearchUser");
+        assertThat(json).doesNotContain("openSearchPassword");
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         assertThat(cfg.filesPath()).isEqualTo(FILES_ROOT);
         assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
+        assertThat(cfg.openSearchUser()).isBlank();
+        assertThat(cfg.openSearchPassword()).isBlank();
     }
 
     @Test

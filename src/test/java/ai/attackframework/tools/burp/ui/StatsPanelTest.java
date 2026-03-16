@@ -15,12 +15,28 @@ class StatsPanelTest {
         assertThat(text).contains("OpenSearch URL set:");
         assertThat(text).contains("traffic queue:");
         assertThat(text).contains("drops=");
+        assertThat(text).contains("null tool/source hits:");
         assertThat(text).contains("throughput (last 60s):");
         assertThat(text).contains("docs/s");
+        assertThat(text).contains("Efficiency");
+        assertThat(text).contains("start -> first traffic push (ms):");
+        assertThat(text).contains("proxy-history last snapshot:");
 
         assertThat(text).contains("Session totals (this session)");
         assertThat(text).contains("total docs pushed:");
         assertThat(text).contains("total failures:");
+
+        assertThat(text).contains("Traffic by source");
+        assertThat(text).contains("Source");
+        assertThat(text).contains("burp_ai");
+        assertThat(text).contains("extensions");
+        assertThat(text).contains("intruder");
+        assertThat(text).contains("proxy");
+        assertThat(text).contains("proxy_history");
+        assertThat(text).contains("repeater");
+        assertThat(text).contains("scanner");
+        assertThat(text).contains("sequencer");
+        assertThat(text).contains("total");
 
         assertThat(text).contains("By index");
         assertThat(text).contains("Index");

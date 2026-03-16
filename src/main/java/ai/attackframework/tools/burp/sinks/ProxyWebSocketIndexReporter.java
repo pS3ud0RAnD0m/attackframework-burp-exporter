@@ -160,7 +160,9 @@ public final class ProxyWebSocketIndexReporter {
         int success = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, docs);
         int failure = docs.size() - success;
         ExportStats.recordSuccess("traffic", success);
+        ExportStats.recordTrafficSourceSuccess("proxy_websocket", success);
         ExportStats.recordFailure("traffic", failure);
+        ExportStats.recordTrafficSourceFailure("proxy_websocket", failure);
         if (success == docs.size()) {
             pushedKeys.addAll(keys);
         } else if (failure > 0) {

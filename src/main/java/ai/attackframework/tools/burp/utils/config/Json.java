@@ -258,10 +258,6 @@ public final class Json {
         if (sinks.osEnabled() && os != null && !os.isBlank()) {
             sinksNode.put("openSearch", os);
         }
-        String osUser = sinks.openSearchUser();
-        if (osUser != null && !osUser.isBlank()) sinksNode.put("openSearchUser", osUser);
-        String osPass = sinks.openSearchPassword();
-        if (osPass != null && !osPass.isBlank()) sinksNode.put("openSearchPassword", osPass);
         if (sinks.openSearchInsecureSsl()) sinksNode.put("openSearchInsecureSsl", true);
     }
 

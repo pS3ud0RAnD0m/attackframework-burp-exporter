@@ -9,7 +9,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serial;
 import java.io.Serializable;
-import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,6 +19,7 @@ import javax.swing.JTextArea;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -94,9 +94,7 @@ class ConfigPanelSerializationHeadlessTest {
 
     /** Extracts the controller restored in readObject(...) on the panel. */
     private static ConfigController controllerOf(ConfigPanel p) throws Exception {
-        Field f = ConfigPanel.class.getDeclaredField("controller");
-        f.setAccessible(true);
-        return (ConfigController) f.get(p);
+        return Reflect.get(p, "controller");
     }
 
     private static Component findByName(Container root, String name) {

@@ -9,6 +9,7 @@ import javax.swing.JLabel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LogPanelKeyboardWrapHeadlessTest {
@@ -67,9 +68,4 @@ class LogPanelKeyboardWrapHeadlessTest {
         SwingUtilities.invokeAndWait(() -> { /* drain EDT */ });
     }
 
-    private static <T> T get(Object target, String fieldName, Class<T> type) throws Exception {
-        var field = target.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        return type.cast(field.get(target));
-    }
 }

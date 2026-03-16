@@ -8,7 +8,6 @@ import java.util.Objects;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 
-import ai.attackframework.tools.burp.sinks.OpenSearchSink;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.FileUtil.CreateResult;
 import ai.attackframework.tools.burp.utils.FileUtil.Status;
@@ -56,7 +55,7 @@ public final class ConfigController {
      */
     public void exportConfigAsync(Path out, String json) {
         Logger.logDebug("[ConfigPanel] exportConfigAsync invoked; out=" + out);
-        Logger.logInfoPanelOnly("[ConfigPanel] exportConfigAsync payload=" + json);
+        Logger.logInfoPanelOnly("[ConfigPanel] exportConfigAsync payload prepared");
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
@@ -92,7 +91,7 @@ public final class ConfigController {
         new SwingWorker<ConfigState.State, Void>() {
             @Override protected ConfigState.State doInBackground() throws Exception {
                 String json = FileUtil.readString(in);
-                Logger.logInfoPanelOnly("[ConfigPanel] importConfigAsync payload=" + json);
+                Logger.logInfoPanelOnly("[ConfigPanel] importConfigAsync payload loaded");
                 return ConfigJsonMapper.parse(json);
             }
             @Override protected void done() {
@@ -127,8 +126,8 @@ public final class ConfigController {
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
-                    String json = ConfigJsonMapper.build(state);
-                    Logger.logInfoPanelOnly("[ConfigPanel] saveAsync payload=" + json);
+                    ConfigJsonMapper.build(state);
+                    Logger.logInfoPanelOnly("[ConfigPanel] saveAsync payload updated");
                     return "Saved.";
                 } catch (Exception ex) {
                     Logger.logError("[ConfigPanel] Save failed: " + rootMessage(ex));

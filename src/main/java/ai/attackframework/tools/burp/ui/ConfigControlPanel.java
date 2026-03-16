@@ -265,6 +265,6 @@ public final class ConfigControlPanel {
     private static void assignToolTips(JButton importBtn, JButton exportBtn, JButton saveBtn) {
         importBtn.setToolTipText("Import configuration from file");
         exportBtn.setToolTipText("Export configuration to file");
-        saveBtn.setToolTipText("Save current configuration. Auto-applies. No need to restart export service.");
+        saveBtn.setToolTipText("Save current configuration and securely persist OpenSearch auth secrets in Burp. Secrets are not exported.");
     }
 }

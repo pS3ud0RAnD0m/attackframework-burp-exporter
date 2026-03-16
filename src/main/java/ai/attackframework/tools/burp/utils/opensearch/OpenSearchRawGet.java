@@ -26,16 +26,12 @@ import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.apache.hc.core5.util.Timeout;
 
-import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-
 /**
  * Performs a raw HTTP GET to the OpenSearch root (/) with the same auth, SSL, and
  * HTTP version policy (NEGOTIATE) as {@link OpenSearchConnector}, so we can log the
  * actual protocol and status line from the wire (including HTTP/2 when negotiated).
  */
 public final class OpenSearchRawGet {
-
-    private static final String INSECURE_PROP = "OPENSEARCH_INSECURE";
 
     private OpenSearchRawGet() {}
 
@@ -60,8 +56,7 @@ public final class OpenSearchRawGet {
             return new RawGetResult(0, null, "Invalid base URL", "", reqLog, java.util.List.of());
         }
         String requestUri = normalized + "/";
-        boolean insecure = "true".equalsIgnoreCase(System.getProperty(INSECURE_PROP, "").trim())
-                || RuntimeConfig.openSearchInsecureSsl();
+        boolean insecure = OpenSearchConnector.isInsecureEnabled();
         try {
             URI uri = URI.create(requestUri);
             HttpHost host = new HttpHost(uri.getScheme(), uri.getHost(), uri.getPort());

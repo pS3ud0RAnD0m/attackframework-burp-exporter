@@ -37,6 +37,15 @@ class ExportStatsTest {
     }
 
     @Test
+    void recordExportedBytes_incrementsPerIndexAndTotal() {
+        long beforeTraffic = ExportStats.getExportedBytes("traffic");
+        long beforeTotal = ExportStats.getTotalExportedBytes();
+        ExportStats.recordExportedBytes("traffic", 2048);
+        assertThat(ExportStats.getExportedBytes("traffic")).isEqualTo(beforeTraffic + 2048);
+        assertThat(ExportStats.getTotalExportedBytes()).isEqualTo(beforeTotal + 2048);
+    }
+
+    @Test
     void recordSuccess_withZeroOrNegative_doesNotChangeCount() {
         long before = ExportStats.getSuccessCount("settings");
         ExportStats.recordSuccess("settings", 0);
@@ -102,6 +111,14 @@ class ExportStatsTest {
     }
 
     @Test
+    void recordTrafficToolSourceFallback_incrementsCounter() {
+        long before = ExportStats.getTrafficToolSourceFallbacks();
+        ExportStats.recordTrafficToolSourceFallback();
+        ExportStats.recordTrafficToolSourceFallback();
+        assertThat(ExportStats.getTrafficToolSourceFallbacks()).isEqualTo(before + 2);
+    }
+
+    @Test
     void recordRetryQueueDrop_incrementsPerIndexAndTotal() {
         long beforeTraffic = ExportStats.getRetryQueueDrops("traffic");
         long beforeTool = ExportStats.getRetryQueueDrops("tool");
@@ -140,5 +157,37 @@ class ExportStatsTest {
         ExportStats.recordSuccess("traffic", 0);
         ExportStats.recordSuccess("traffic", -1);
         assertThat(ExportStats.getThroughputDocsPerSecLast60s()).isEqualTo(before);
+    }
+
+    @Test
+    void recordExportStartRequested_thenTrafficSuccess_setsStartToFirstTrafficMetric() {
+        ExportStats.recordExportStartRequested();
+        assertThat(ExportStats.getStartToFirstTrafficMs()).isEqualTo(-1);
+        ExportStats.recordSuccess("traffic", 1);
+        assertThat(ExportStats.getStartToFirstTrafficMs()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void recordProxyHistorySnapshot_storesLatestSnapshotStats() {
+        ExportStats.recordProxyHistorySnapshot(200, 190, 4000, 300);
+        ExportStats.ProxyHistorySnapshotStats s = ExportStats.getLastProxyHistorySnapshot();
+        assertThat(s).isNotNull();
+        assertThat(s.attempted()).isEqualTo(200);
+        assertThat(s.success()).isEqualTo(190);
+        assertThat(s.durationMs()).isEqualTo(4000);
+        assertThat(s.finalChunkTarget()).isEqualTo(300);
+        assertThat(s.docsPerSecond()).isGreaterThan(0.0);
+    }
+
+    @Test
+    void trafficSourceStats_recordAndRead_bySourceKey() {
+        long liveSuccessBefore = ExportStats.getTrafficSourceSuccessCount("proxy_live_http");
+        long liveFailureBefore = ExportStats.getTrafficSourceFailureCount("proxy_live_http");
+        ExportStats.recordTrafficSourceSuccess("proxy_live_http", 5);
+        ExportStats.recordTrafficSourceFailure("proxy_live_http", 2);
+        assertThat(ExportStats.getTrafficSourceSuccessCount("proxy_live_http"))
+                .isEqualTo(liveSuccessBefore + 5);
+        assertThat(ExportStats.getTrafficSourceFailureCount("proxy_live_http"))
+                .isEqualTo(liveFailureBefore + 2);
     }
 }

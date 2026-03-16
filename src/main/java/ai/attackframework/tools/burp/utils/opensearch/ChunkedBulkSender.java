@@ -5,15 +5,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Sends traffic documents to OpenSearch using a chunked POST to the standard Bulk API.
@@ -42,7 +44,6 @@ public final class ChunkedBulkSender {
 
     private static final String INDEX_ACTION_LINE = "{\"index\":{}}\n";
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final CloseableHttpClient HTTP_CLIENT = HttpClients.createDefault();
 
     private ChunkedBulkSender() {}
 
@@ -54,10 +55,16 @@ public final class ChunkedBulkSender {
         public final int successCount;
         /** Total number of documents sent in this bulk request. */
         public final int attemptedCount;
+        /** Estimated payload bytes attempted in this bulk request. */
+        public final long attemptedBytes;
+        /** Estimated payload bytes for successful documents in this bulk request. */
+        public final long successBytes;
 
-        public Result(int successCount, int attemptedCount) {
+        public Result(int successCount, int attemptedCount, long attemptedBytes, long successBytes) {
             this.successCount = successCount;
             this.attemptedCount = attemptedCount;
+            this.attemptedBytes = attemptedBytes;
+            this.successBytes = successBytes;
         }
         public boolean isFullSuccess() { return attemptedCount > 0 && successCount == attemptedCount; }
     }
@@ -87,31 +94,73 @@ public final class ChunkedBulkSender {
             int maxBatch,
             long maxBytes,
             long maxWaitMs) {
+        Map<String, Object> firstDoc = pollFirstDoc(queue, maxWaitMs);
+        if (firstDoc == null) {
+            return new Result(0, 0, 0, 0);
+        }
         String bulkUrl = buildBulkUrl(baseUrl, indexName);
         HttpPost post = new HttpPost(URI.create(bulkUrl));
         long maxWaitNanos = maxWaitMs * 1_000_000L;
         AtomicInteger attemptedRef = new AtomicInteger(0);
-        InputStream ndjsonStream = new NdjsonQueueInputStream(queue, maxBatch, maxBytes, maxWaitNanos, attemptedRef);
+        AtomicLong attemptedBytesRef = new AtomicLong(0);
+        InputStream ndjsonStream = new NdjsonQueueInputStream(
+                queue, firstDoc, maxBatch, maxBytes, maxWaitNanos, attemptedRef, attemptedBytesRef);
         post.setEntity(new InputStreamEntity(ndjsonStream, -1, ContentType.create("application/x-ndjson")));
+        addPreemptiveBasicAuthHeader(post);
 
-        try (CloseableHttpResponse response = executeRequest(post)) {
+        try (CloseableHttpResponse response = executeRequest(baseUrl, post)) {
             int status = response.getCode();
             String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
             int attempted = attemptedRef.get();
+            long attemptedBytes = attemptedBytesRef.get();
             if (status < 200 || status >= 300) {
                 Logger.logDebug("ChunkedBulkSender bulk request failed: " + status + " " + responseBody);
-                return new Result(0, attempted);
+                return new Result(0, attempted, attemptedBytes, 0);
             }
-            return parseBulkResponse(responseBody, attempted);
+            Result parsed = parseBulkResponse(responseBody, attempted);
+            long successBytes = parsed.successCount > 0 && attempted > 0
+                    ? Math.round((double) attemptedBytes * parsed.successCount / attempted)
+                    : 0;
+            return new Result(parsed.successCount, parsed.attemptedCount, attemptedBytes, successBytes);
         } catch (IOException | ParseException | RuntimeException e) {
+            long attemptedBytes = attemptedBytesRef.get();
             Logger.logDebug("ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
-            return new Result(0, attemptedRef.get());
+            return new Result(0, attemptedRef.get(), attemptedBytes, 0);
         }
     }
 
     @SuppressWarnings("deprecation")
-    private static CloseableHttpResponse executeRequest(HttpPost post) throws IOException {
-        return HTTP_CLIENT.execute(post);
+    private static CloseableHttpResponse executeRequest(String baseUrl, HttpPost post) throws IOException {
+        CloseableHttpClient client = OpenSearchConnector.getClassicHttpClient(
+                baseUrl, RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
+        return client.execute(post);
+    }
+
+    /**
+     * Adds a preemptive Basic Auth header when credentials are configured.
+     *
+     * <p>Chunked NDJSON entities are not repeatable. If authentication waits for a 401 challenge,
+     * some clients cannot transparently replay the same request body. Sending Authorization on the
+     * first request avoids repeated 401 loops on the live traffic bulk path.</p>
+     */
+    static void addPreemptiveBasicAuthHeader(HttpPost post) {
+        String username = RuntimeConfig.openSearchUser();
+        String password = RuntimeConfig.openSearchPassword();
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            return;
+        }
+        String token = Base64.getEncoder()
+                .encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
+        post.setHeader("Authorization", "Basic " + token);
+    }
+
+    private static Map<String, Object> pollFirstDoc(BlockingQueue<Map<String, Object>> queue, long maxWaitMs) {
+        try {
+            return queue.poll(maxWaitMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
     }
 
     static String buildBulkUrl(String baseUrl, String indexName) {
@@ -123,13 +172,13 @@ public final class ChunkedBulkSender {
     /** Package-private for tests. */
     static Result parseBulkResponse(String responseBody, int attemptedCount) {
         if (responseBody == null || responseBody.isBlank()) {
-            return new Result(0, attemptedCount);
+            return new Result(0, attemptedCount, 0, 0);
         }
         try {
             JsonNode root = JSON.readTree(responseBody);
             JsonNode items = root.get("items");
             if (items == null || !items.isArray()) {
-                return new Result(0, attemptedCount);
+                return new Result(0, attemptedCount, 0, 0);
             }
             ArrayNode arr = (ArrayNode) items;
             int successCount = 0;
@@ -153,10 +202,10 @@ public final class ChunkedBulkSender {
             if (arr.size() - successCount > maxLogged) {
                 Logger.logDebug("Bulk index: " + (arr.size() - successCount - maxLogged) + " more item errors (total failed: " + (arr.size() - successCount) + ")");
             }
-            return new Result(successCount, attemptedCount);
-        } catch (Exception e) {
+            return new Result(successCount, attemptedCount, 0, 0);
+        } catch (IOException | RuntimeException e) {
             Logger.logDebug("ChunkedBulkSender parse response failed: " + e.getMessage());
-            return new Result(0, attemptedCount);
+            return new Result(0, attemptedCount, 0, 0);
         }
     }
 
@@ -167,24 +216,32 @@ public final class ChunkedBulkSender {
      */
     private static final class NdjsonQueueInputStream extends InputStream {
         private final BlockingQueue<Map<String, Object>> queue;
+        private Map<String, Object> firstDoc;
         private final int maxBatch;
         private final long maxBytes;
         private final long maxWaitNanos;
         private final AtomicInteger attemptedRef;
+        private final AtomicLong attemptedBytesRef;
 
         private byte[] buffer = new byte[0];
         private int pos;
         private boolean finished;
-        private long batchStartNanos = System.nanoTime();
+        private final long batchStartNanos = System.nanoTime();
         private long runningBytes;
 
-        NdjsonQueueInputStream(BlockingQueue<Map<String, Object>> queue, int maxBatch, long maxBytes,
-                long maxWaitNanos, AtomicInteger attemptedRef) {
+        NdjsonQueueInputStream(
+                BlockingQueue<Map<String, Object>> queue,
+                Map<String, Object> firstDoc,
+                int maxBatch,
+                long maxBytes,
+                long maxWaitNanos, AtomicInteger attemptedRef, AtomicLong attemptedBytesRef) {
             this.queue = queue;
+            this.firstDoc = firstDoc;
             this.maxBatch = maxBatch;
             this.maxBytes = maxBytes;
             this.maxWaitNanos = maxWaitNanos;
             this.attemptedRef = attemptedRef;
+            this.attemptedBytesRef = attemptedBytesRef;
         }
 
         @Override
@@ -221,16 +278,11 @@ public final class ChunkedBulkSender {
         private boolean fillBuffer() throws IOException {
             if (attemptedRef.get() >= maxBatch) return false;
             if ((System.nanoTime() - batchStartNanos) >= maxWaitNanos) return false;
-            Map<String, Object> doc;
-            try {
-                if (attemptedRef.get() == 0) {
-                    doc = queue.poll(maxWaitNanos / 1_000_000, TimeUnit.MILLISECONDS);
-                } else {
-                    doc = queue.poll();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
+            Map<String, Object> doc = firstDoc;
+            if (doc != null) {
+                firstDoc = null;
+            } else {
+                doc = queue.poll();
             }
             if (doc == null) return false;
             Map<String, Object> filtered = ExportFieldFilter.filterDocument(doc, "traffic");
@@ -247,6 +299,7 @@ public final class ChunkedBulkSender {
             pos = 0;
             attemptedRef.incrementAndGet();
             runningBytes += docBytes;
+            attemptedBytesRef.addAndGet(docBytes);
             return true;
         }
     }

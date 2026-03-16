@@ -20,6 +20,8 @@ import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.analysis.AttributeType;
 import burp.api.montoya.core.ByteArray;
+import burp.api.montoya.core.ToolSource;
+import burp.api.montoya.core.ToolType;
 
 /**
  * Asserts that {@link OpenSearchTrafficHandler#buildDocument} produces a document
@@ -282,5 +284,30 @@ class OpenSearchTrafficHandlerDocumentTest {
         assertThat(meta).isNotNull();
         assertThat(meta).containsKeys("schema_version", "extension_version", "indexed_at");
         assertThat(meta.get("schema_version")).isEqualTo("1");
+    }
+
+    @Test
+    void resolveResponseToolType_prefersResponseToolTypeWhenPresent() {
+        ToolSource responseSource = mock(ToolSource.class);
+        when(responseSource.toolType()).thenReturn(ToolType.REPEATER);
+        when(response.toolSource()).thenReturn(responseSource);
+
+        assertThat(OpenSearchTrafficHandler.resolveResponseToolType(response, ToolType.PROXY))
+                .isEqualTo(ToolType.REPEATER);
+    }
+
+    @Test
+    void resolveResponseToolType_fallsBackToRequestToolTypeWhenResponseMissing() {
+        when(response.toolSource()).thenReturn(null);
+
+        assertThat(OpenSearchTrafficHandler.resolveResponseToolType(response, ToolType.PROXY))
+                .isEqualTo(ToolType.PROXY);
+    }
+
+    @Test
+    void resolveResponseToolType_returnsNullWhenBothMissing() {
+        when(response.toolSource()).thenReturn(null);
+
+        assertThat(OpenSearchTrafficHandler.resolveResponseToolType(response, null)).isNull();
     }
 }
