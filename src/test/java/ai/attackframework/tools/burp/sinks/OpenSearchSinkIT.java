@@ -17,7 +17,6 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Integration tests for index lifecycle using OpenSearchSink against a live test cluster.
@@ -25,9 +24,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
 class OpenSearchSinkIT {
-
-    /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     /**
      * Verifies full lifecycle for the standard index set using the sink:

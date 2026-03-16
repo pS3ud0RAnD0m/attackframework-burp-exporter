@@ -43,14 +43,20 @@ public final class ConfigJsonMapper {
         List<ScopeEntry> out = new ArrayList<>();
         if (!"custom".equals(cfg.scopeType())) return out;
 
-        List<String> vals  = cfg.scopeRegexes();
+        List<String> vals = cfg.scopeRegexes();
+        if (vals == null || vals.isEmpty()) {
+            return out;
+        }
         List<String> kinds = cfg.scopeKinds(); // may be null
-        int n = (vals == null) ? 0 : vals.size();
+        int n = vals.size();
 
         boolean typed = kinds != null && kinds.size() == n;
         for (int i = 0; i < n; i++) {
             String v = vals.get(i);
-            String k = typed ? kinds.get(i) : "regex";
+            String k = "regex";
+            if (typed && kinds != null) {
+                k = kinds.get(i);
+            }
             out.add(new ScopeEntry(v, "string".equalsIgnoreCase(k)
                     ? ConfigState.Kind.STRING
                     : ConfigState.Kind.REGEX));

@@ -141,7 +141,7 @@ public final class OpenSearchConnector {
 
             OpenSearchTransport transport = builder.build();
             return new OpenSearchClient(transport);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             throw new OpenSearchClientBuildException("Failed to build OpenSearch client for " + baseUrl, e);
         }
     }
@@ -179,7 +179,7 @@ public final class OpenSearchConnector {
                 httpBuilder.setDefaultCredentialsProvider(credsProvider);
             }
             return httpBuilder.build();
-        } catch (Exception e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
             throw new OpenSearchClientBuildException(
                     "Failed to build classic OpenSearch HTTP client for " + baseUrl, e);
         }

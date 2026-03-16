@@ -13,7 +13,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Integration test: force fresh creation of all standard indices.
@@ -21,8 +20,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
 class OpenSearchSinkFreshCreateIT {
-
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     private static final List<String> SOURCES = List.of("tool", "settings", "sitemap", "findings", "traffic");
 

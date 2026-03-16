@@ -24,9 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Tag("integration")
 class OpenSearchClientWrapperIT {
 
-    /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
-
     /**
      * Verifies connectivity, index creation, existence check, and cleanup.
      *

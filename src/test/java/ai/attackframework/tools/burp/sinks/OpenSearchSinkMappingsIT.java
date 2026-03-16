@@ -13,16 +13,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Validates that indices created via the sink expose a non-empty mapping on the server.
  * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
 class OpenSearchSinkMappingsIT {
-
-    /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     @Test
     void mappings_arePresent_andNonEmpty_onServer() throws IOException {

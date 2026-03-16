@@ -4,13 +4,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
 
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.FileUtil.CreateResult;
-import ai.attackframework.tools.burp.utils.FileUtil.Status;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
@@ -61,7 +61,7 @@ public final class ConfigController {
                 try {
                     FileUtil.writeStringCreateDirs(out, json);
                     return "Exported configuration to: " + out;
-                } catch (Exception e) {
+                } catch (java.io.IOException | RuntimeException e) {
                     return "Export failed: " + rootMessage(e);
                 }
             }
@@ -71,7 +71,7 @@ public final class ConfigController {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onControlStatus("Export interrupted.");
-                } catch (Exception ex) {
+                } catch (ExecutionException ex) {
                     ui.onControlStatus("Export failed: " + rootMessage(ex));
                 }
             }
@@ -106,7 +106,7 @@ public final class ConfigController {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onControlStatus("Import interrupted.");
-                } catch (Exception ex) {
+                } catch (ExecutionException ex) {
                     ui.onControlStatus("Import failed: " + rootMessage(ex));
                 }
             }
@@ -140,7 +140,7 @@ public final class ConfigController {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onControlStatus("Save interrupted.");
-                } catch (Exception ex) {
+                } catch (ExecutionException ex) {
                     ui.onControlStatus("Save failed: " + rootMessage(ex));
                 }
             }
@@ -180,7 +180,7 @@ public final class ConfigController {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onFileStatus("Create files interrupted.");
-                } catch (Exception ex) {
+                } catch (ExecutionException ex) {
                     ui.onFileStatus("Create files failed: " + rootMessage(ex));
                 }
             }
@@ -224,7 +224,7 @@ public final class ConfigController {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onOpenSearchStatus(TEST_FAILED + "interrupted.");
-                } catch (Exception ex) {
+                } catch (ExecutionException ex) {
                     ui.onOpenSearchStatus(TEST_FAILED + rootMessage(ex));
                 }
             }
@@ -241,13 +241,15 @@ public final class ConfigController {
 
         for (CreateResult r : results) {
             String p = r.path().toString();
-            if (r.status() == Status.CREATED) {
-                created.add(p);
-            } else if (r.status() == Status.EXISTS) {
-                existed.add(p);
-            } else {
-                failed.add(p);
-                if (firstError == null && r.error() != null) firstError = r.error();
+            switch (r.status()) {
+                case CREATED -> created.add(p);
+                case EXISTS -> existed.add(p);
+                case FAILED -> {
+                    failed.add(p);
+                    if (firstError == null && r.error() != null) {
+                        firstError = r.error();
+                    }
+                }
             }
         }
 

@@ -89,7 +89,7 @@ class BatchSizeControllerTest {
     @Test
     void onChangeListener_invokedWhenSizeChanges() {
         AtomicInteger lastValue = new AtomicInteger(-1);
-        controller.setOnChangeListener(lastValue::set);
+        controller.setOnChangeListener(size -> lastValue.set(size == null ? -1 : size));
         controller.recordFailure(100);
         assertThat(lastValue.get()).isEqualTo(50);
         lastValue.set(-1);

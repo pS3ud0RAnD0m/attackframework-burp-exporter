@@ -20,7 +20,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.plaf.ActionMapUIResource;
-import javax.swing.JToggleButton.ToggleButtonModel;
 
 /**
  * Tri-state checkbox for parent/child selection UIs.
@@ -37,7 +36,7 @@ public final class TriStateCheckBox extends JCheckBox {
         DESELECTED
     }
 
-    public static final class TriStateButtonModel extends ToggleButtonModel {
+    public static final class TriStateButtonModel extends javax.swing.JToggleButton.ToggleButtonModel {
         private State state = State.DESELECTED;
 
         public TriStateButtonModel(State initial) {
@@ -83,6 +82,8 @@ public final class TriStateCheckBox extends JCheckBox {
     }
 
     private transient ChangeListener enableListener;
+    private transient boolean uiBehaviorInstalled;
+    private transient MouseListener triStateMouseListener;
 
     private ChangeListener enableListener() {
         if (enableListener == null) {
@@ -101,23 +102,6 @@ public final class TriStateCheckBox extends JCheckBox {
         if (icon == null) {
             setIcon(new TriStateCheckBoxIcon());
         }
-
-        // Override action behaviour (mouse and keyboard)
-        super.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                toggle();
-            }
-        });
-        ActionMap actions = new ActionMapUIResource();
-        actions.put("pressed", new AbstractAction() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                toggle();
-            }
-        });
-        actions.put("released", null);
-        SwingUtilities.replaceUIActionMap(this, actions);
     }
 
     public void setState(State state) {
@@ -147,9 +131,17 @@ public final class TriStateCheckBox extends JCheckBox {
     @Serial
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
+        uiBehaviorInstalled = false;
+        triStateMouseListener = null;
         if (model instanceof TriStateButtonModel) {
             model.addChangeListener(enableListener());
         }
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        installUiBehavior();
     }
 
     // Prevent external mouse listeners from interfering with tri-state behaviour.
@@ -171,14 +163,38 @@ public final class TriStateCheckBox extends JCheckBox {
 
         int modifiers = 0;
         AWTEvent currentEvent = EventQueue.getCurrentEvent();
-        if (currentEvent instanceof InputEvent ie) {
-            modifiers = ie.getModifiersEx();
-        } else if (currentEvent instanceof ActionEvent ae) {
-            modifiers = ae.getModifiers();
+        switch (currentEvent) {
+            case InputEvent ie -> modifiers = ie.getModifiersEx();
+            case ActionEvent ae -> modifiers = ae.getModifiers();
+            default -> { }
         }
         fireActionPerformed(new ActionEvent(this,
                 ActionEvent.ACTION_PERFORMED, getText(),
                 System.currentTimeMillis(), modifiers));
+    }
+
+    private void installUiBehavior() {
+        if (uiBehaviorInstalled) {
+            return;
+        }
+        triStateMouseListener = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                toggle();
+            }
+        };
+        super.addMouseListener(triStateMouseListener);
+
+        ActionMap actions = new ActionMapUIResource();
+        actions.put("pressed", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                toggle();
+            }
+        });
+        actions.put("released", null);
+        SwingUtilities.replaceUIActionMap(this, actions);
+        uiBehaviorInstalled = true;
     }
 }
 

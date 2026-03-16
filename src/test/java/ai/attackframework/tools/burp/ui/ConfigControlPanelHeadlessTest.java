@@ -16,7 +16,6 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -34,141 +33,166 @@ class ConfigControlPanelHeadlessTest {
     private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
     private static final String MIG_PREF_COL = "[pref!]";
 
-    @AfterEach
-    void resetExportRunning() {
+    private static void resetExportRunning() {
         RuntimeConfig.setExportRunning(false);
     }
 
     @Test
     void control_panel_has_header_and_named_components() throws Exception {
-        RuntimeConfig.setExportRunning(false);
-        JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
+        resetExportRunning();
+        try {
+            JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
 
-        runEdt(() -> {
-            root.setSize(600, 400);
-            root.doLayout();
-        });
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
 
-        JLabel header = findLabelByText(root, "Config Control");
-        assertThat(header).as("Config Control header").isNotNull();
-        assertThat(header.getText()).isEqualTo("Config Control");
+            JLabel header = findLabelByText(root, "Config Control");
+            assertThat(header).as("Config Control header").isNotNull();
+            assertThat(header.getText()).isEqualTo("Config Control");
 
-        JButton save = findByName(root, "control.save", JButton.class);
-        JButton startStop = findByName(root, "control.startStop", JButton.class);
-        JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+            JButton save = findByName(root, "control.save", JButton.class);
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
 
-        assertThat(save).as("control.save").isNotNull();
-        assertThat(save.getText()).isEqualTo("Save");
-        assertThat(save.getToolTipText()).contains("securely").contains("not exported");
-        assertThat(startStop).as("control.startStop").isNotNull();
-        assertThat(startStop.getText()).isEqualTo("Start");
-        assertThat(indicator).as("control.exportIndicator").isNotNull();
+            assertThat(save).as("control.save").isNotNull();
+            assertThat(save.getText()).isEqualTo("Save");
+            assertThat(save.getToolTipText()).contains("securely").contains("not exported");
+            assertThat(startStop).as("control.startStop").isNotNull();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(indicator).as("control.exportIndicator").isNotNull();
+        } finally {
+            resetExportRunning();
+        }
     }
 
     @Test
     void control_panel_buttons_have_expected_labels() throws Exception {
-        RuntimeConfig.setExportRunning(false);
-        JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
-        runEdt(() -> {
-            root.setSize(600, 400);
-            root.doLayout();
-        });
+        resetExportRunning();
+        try {
+            JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
 
-        List<JButton> buttons = collect(root, JButton.class);
-        List<String> texts = buttons.stream().map(JButton::getText).toList();
-        assertThat(texts).contains("Import Config", "Export Config", "Save", "Start");
+            List<JButton> buttons = collect(root, JButton.class);
+            List<String> texts = buttons.stream().map(JButton::getText).toList();
+            assertThat(texts).contains("Import Config", "Export Config", "Save", "Start");
+        } finally {
+            resetExportRunning();
+        }
     }
 
     @Test
     void start_stop_click_invokes_actions_and_updates_button_and_indicator() throws Exception {
-        RuntimeConfig.setExportRunning(false);
-        AtomicInteger startCount = new AtomicInteger(0);
-        AtomicInteger stopCount = new AtomicInteger(0);
-        JPanel root = buildPanel(
-                onStartFailure -> { startCount.incrementAndGet(); RuntimeConfig.setExportRunning(true); },
-                () -> { stopCount.incrementAndGet(); RuntimeConfig.setExportRunning(false); },
-                noOpActionListener()
-        );
+        resetExportRunning();
+        try {
+            AtomicInteger startCount = new AtomicInteger(0);
+            AtomicInteger stopCount = new AtomicInteger(0);
+            JPanel root = buildPanel(
+                    onStartFailure -> { startCount.incrementAndGet(); RuntimeConfig.setExportRunning(true); },
+                    () -> { stopCount.incrementAndGet(); RuntimeConfig.setExportRunning(false); },
+                    noOpActionListener()
+            );
 
-        runEdt(() -> {
-            root.setSize(600, 400);
-            root.doLayout();
-        });
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
 
-        JButton startStop = findByName(root, "control.startStop", JButton.class);
-        JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
 
-        assertThat(startStop.getText()).isEqualTo("Start");
-        assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
 
-        runEdt(() -> startStop.doClick());
-        runEdt(() -> { /* flush EDT so deferred start action runs */ });
-        assertThat(startCount.get()).isEqualTo(1);
-        assertThat(stopCount.get()).isEqualTo(0);
-        assertThat(RuntimeConfig.isExportRunning()).isTrue();
-        assertThat(startStop.getText()).isEqualTo("Stop");
-        assertThat(indicator.getToolTipText()).isEqualTo("Export is running");
+            runEdt(() -> startStop.doClick());
+            runEdt(() -> { /* flush EDT so deferred start action runs */ });
+            assertThat(startCount.get()).isEqualTo(1);
+            assertThat(stopCount.get()).isEqualTo(0);
+            assertThat(RuntimeConfig.isExportRunning()).isTrue();
+            assertThat(startStop.getText()).isEqualTo("Stop");
+            assertThat(indicator.getToolTipText()).isEqualTo("Export is running");
 
-        runEdt(() -> startStop.doClick());
-        assertThat(startCount.get()).isEqualTo(1);
-        assertThat(stopCount.get()).isEqualTo(1);
-        assertThat(RuntimeConfig.isExportRunning()).isFalse();
-        assertThat(startStop.getText()).isEqualTo("Start");
-        assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            runEdt(() -> startStop.doClick());
+            assertThat(startCount.get()).isEqualTo(1);
+            assertThat(stopCount.get()).isEqualTo(1);
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+        } finally {
+            resetExportRunning();
+        }
     }
 
     @Test
     void start_action_calling_onStartFailure_reverts_button_and_indicator_to_stopped() throws Exception {
-        RuntimeConfig.setExportRunning(false);
-        JPanel root = buildPanel(
-                onStartFailure -> onStartFailure.run(),
-                noOpRunnables(),
-                noOpActionListener()
-        );
-        runEdt(() -> {
-            root.setSize(600, 400);
-            root.doLayout();
-        });
-        JButton startStop = findByName(root, "control.startStop", JButton.class);
-        JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+        resetExportRunning();
+        try {
+            JPanel root = buildPanel(
+                    onStartFailure -> onStartFailure.run(),
+                    noOpRunnables(),
+                    noOpActionListener()
+            );
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
 
-        runEdt(() -> startStop.doClick());
-        runEdt(() -> { /* flush EDT so deferred start action runs and calls onStartFailure */ });
-        assertThat(RuntimeConfig.isExportRunning()).isFalse();
-        assertThat(startStop.getText()).isEqualTo("Start");
-        assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            runEdt(() -> startStop.doClick());
+            runEdt(() -> { /* flush EDT so deferred start action runs and calls onStartFailure */ });
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+        } finally {
+            resetExportRunning();
+        }
     }
 
     @Test
     void when_export_running_panel_builds_with_stop_label() throws Exception {
-        RuntimeConfig.setExportRunning(true);
-        JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
-        runEdt(() -> {
-            root.setSize(600, 400);
-            root.doLayout();
-        });
+        resetExportRunning();
+        try {
+            RuntimeConfig.setExportRunning(true);
+            JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
 
-        JButton startStop = findByName(root, "control.startStop", JButton.class);
-        assertThat(startStop.getText()).isEqualTo("Stop");
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            assertThat(startStop.getText()).isEqualTo("Stop");
+        } finally {
+            resetExportRunning();
+        }
     }
 
     @Test
     void control_components_findable_inside_config_panel() throws Exception {
-        ConfigPanel configPanel = new ConfigPanel();
-        runEdt(() -> {
-            configPanel.setSize(1000, 700);
-            configPanel.doLayout();
-        });
+        resetExportRunning();
+        try {
+            ConfigPanel configPanel = new ConfigPanel();
+            runEdt(() -> {
+                configPanel.setSize(1000, 700);
+                configPanel.doLayout();
+            });
 
-        JButton save = findByName(configPanel, "control.save", JButton.class);
-        JButton startStop = findByName(configPanel, "control.startStop", JButton.class);
-        JComponent indicator = findByName(configPanel, "control.exportIndicator", JComponent.class);
-        JLabel header = findLabelByText(configPanel, "Config Control");
+            JButton save = findByName(configPanel, "control.save", JButton.class);
+            JButton startStop = findByName(configPanel, "control.startStop", JButton.class);
+            JComponent indicator = findByName(configPanel, "control.exportIndicator", JComponent.class);
+            JLabel header = findLabelByText(configPanel, "Config Control");
 
-        assertThat(header).isNotNull();
-        assertThat(save.getText()).isEqualTo("Save");
-        assertThat(startStop.getText()).isIn("Start", "Stop");
-        assertThat(indicator).isNotNull();
+            assertThat(header).isNotNull();
+            assertThat(save.getText()).isEqualTo("Save");
+            assertThat(startStop.getText()).isIn("Start", "Stop");
+            assertThat(indicator).isNotNull();
+        } finally {
+            resetExportRunning();
+        }
     }
 
     // ---- helpers ----

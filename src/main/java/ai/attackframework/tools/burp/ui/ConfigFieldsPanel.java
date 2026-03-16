@@ -6,7 +6,6 @@ import java.util.Map;
 import java.util.Objects;
 
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
@@ -24,17 +23,14 @@ public final class ConfigFieldsPanel {
     private static final String EXPAND_EXPANDED = "−";
     private static final String GAPLEFT = "gapleft ";
 
-    private final Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex;
     private final Map<String, JButton> expandButtonsByIndex;
     private final Map<String, JPanel> subPanelsByIndex;
     private final int indentPx;
 
     public ConfigFieldsPanel(
-            Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex,
             Map<String, JButton> expandButtonsByIndex,
             Map<String, JPanel> subPanelsByIndex,
             int indentPx) {
-        this.fieldCheckboxesByIndex = Objects.requireNonNull(fieldCheckboxesByIndex);
         this.expandButtonsByIndex = Objects.requireNonNull(expandButtonsByIndex);
         this.subPanelsByIndex = Objects.requireNonNull(subPanelsByIndex);
         this.indentPx = indentPx;

@@ -12,7 +12,6 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Negative-path validation: creating an index for which no mapping resource exists
@@ -20,9 +19,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 @Tag("integration")
 class OpenSearchSinkMissingMappingIT {
-
-    /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     @Test
     void createIndexFromResource_returnsFailed_whenMappingIsMissing() throws Exception {

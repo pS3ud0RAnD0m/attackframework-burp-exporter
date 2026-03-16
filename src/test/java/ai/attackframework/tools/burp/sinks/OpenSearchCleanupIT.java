@@ -10,7 +10,6 @@ import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Runs last in {@link OpenSearchIntegrationSuite} and deletes the standard
@@ -20,7 +19,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 class OpenSearchCleanupIT {
 
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private static final List<String> STANDARD_SHORT_NAMES =
             List.of("settings", "sitemap", "findings", "traffic", "tool");
 

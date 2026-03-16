@@ -14,15 +14,12 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Integration test: tool-only index creation lifecycle.
  * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
  */
 class OpenSearchSinkToolOnlyIT {
-
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     @Test
     void create_delete_recreate_toolOnly_viaSink() {

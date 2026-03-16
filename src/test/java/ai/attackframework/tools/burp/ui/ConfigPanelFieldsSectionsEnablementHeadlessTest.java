@@ -23,7 +23,6 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
     private ConfigPanel panel;
 
     @BeforeEach
-    @SuppressWarnings("unused") // Invoked by JUnit lifecycle.
     void setup() throws Exception {
         var ref = new java.util.concurrent.atomic.AtomicReference<ConfigPanel>();
         SwingUtilities.invokeAndWait(() -> {

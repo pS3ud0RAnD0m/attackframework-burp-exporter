@@ -1,12 +1,14 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.concurrent.locks.LockSupport;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -32,7 +34,6 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
@@ -68,173 +69,199 @@ class FindingsIndexReporterIT {
     private static final String DEF_REMEDIATION = "Use prepared statements.";
     private static final int DEF_TYPE_INDEX = 42;
 
-    @BeforeEach
-    void assumeOpenSearchReachableAndCleanFindingsIndex() {
+    private void prepareTestEnvironment() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             // Index may not exist; ignore so each test starts with a clean slate
         }
     }
 
-    @AfterEach
-    void cleanup() {
+    private void cleanupAfterTest() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             Logger.logError("[FindingsIndexReporterIT] Failed to delete index during cleanup: " + FINDINGS_INDEX, e);
         }
     }
 
     @Test
     void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() {
-        createFindingsIndex();
-        setRuntimeConfigForFindingsExport();
-        setMockMontoyaApiWithOneIssue();
+        prepareTestEnvironment();
+        try {
+            createFindingsIndex();
+            setRuntimeConfigForFindingsExport();
+            setMockMontoyaApiWithOneIssue();
 
-        FindingsIndexReporter.start();
-        FindingsIndexReporter.pushSnapshotNow();
+            FindingsIndexReporter.start();
+            FindingsIndexReporter.pushSnapshotNow();
 
-        Map<String, Object> doc = awaitFirstDocument();
-        assertThat(doc).isNotNull();
-        assertThat(doc).containsKey("name");
-        assertThat(doc).containsKey("severity");
-        assertThat(doc).containsKey("confidence");
-        assertThat(doc).containsKey("host");
-        assertThat(doc).containsKey("port");
-        assertThat(doc).containsKey("protocol_transport");
-        assertThat(doc).containsKey("url");
-        assertThat(doc).containsKey("request_responses");
-        assertThat(doc).containsKey("request_responses_missing");
-        assertThat(doc).containsKey("document_meta");
-        assertThat(doc).containsKey("description");
-        assertThat(doc).containsKey("remediation_detail");
-        assertThat(doc).containsKey("issue_type_id");
-        assertThat(doc).containsKey("typical_severity");
-        assertThat(doc).containsKey("background");
-        assertThat(doc).containsKey("remediation_background");
+            Map<String, Object> doc = awaitFirstDocument();
+            assertThat(doc).isNotNull();
+            assertThat(doc).containsKey("name");
+            assertThat(doc).containsKey("severity");
+            assertThat(doc).containsKey("confidence");
+            assertThat(doc).containsKey("host");
+            assertThat(doc).containsKey("port");
+            assertThat(doc).containsKey("protocol_transport");
+            assertThat(doc).containsKey("url");
+            assertThat(doc).containsKey("request_responses");
+            assertThat(doc).containsKey("request_responses_missing");
+            assertThat(doc).containsKey("document_meta");
+            assertThat(doc).containsKey("description");
+            assertThat(doc).containsKey("remediation_detail");
+            assertThat(doc).containsKey("issue_type_id");
+            assertThat(doc).containsKey("typical_severity");
+            assertThat(doc).containsKey("background");
+            assertThat(doc).containsKey("remediation_background");
 
-        assertThat(doc.get("name")).isEqualTo(ISSUE_NAME);
-        assertThat(doc.get("severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
-        assertThat(doc.get("confidence")).isEqualTo(AuditIssueConfidence.CERTAIN.name());
-        assertThat(doc.get("host")).isEqualTo(ISSUE_HOST);
-        assertThat(doc.get("port")).isEqualTo(ISSUE_PORT);
-        assertThat(doc.get("protocol_transport")).isEqualTo("https");
-        assertThat(doc.get("url")).isEqualTo(ISSUE_BASE_URL);
-        assertThat((List<?>) doc.get("request_responses")).isEmpty();
-        assertThat(doc.get("request_responses_missing")).isEqualTo(true);
-        assertThat(doc.get("description")).isEqualTo(ISSUE_DETAIL);
-        assertThat(doc.get("remediation_detail")).isEqualTo(ISSUE_REMEDIATION);
-        assertThat(doc.get("issue_type_id")).isEqualTo(DEF_TYPE_INDEX);
-        assertThat(doc.get("typical_severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
-        assertThat(doc.get("background")).isEqualTo(DEF_BACKGROUND);
-        assertThat(doc.get("remediation_background")).isEqualTo(DEF_REMEDIATION);
+            assertThat(doc.get("name")).isEqualTo(ISSUE_NAME);
+            assertThat(doc.get("severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
+            assertThat(doc.get("confidence")).isEqualTo(AuditIssueConfidence.CERTAIN.name());
+            assertThat(doc.get("host")).isEqualTo(ISSUE_HOST);
+            assertThat(doc.get("port")).isEqualTo(ISSUE_PORT);
+            assertThat(doc.get("protocol_transport")).isEqualTo("https");
+            assertThat(doc.get("url")).isEqualTo(ISSUE_BASE_URL);
+            assertThat((List<?>) doc.get("request_responses")).isEmpty();
+            assertThat(doc.get("request_responses_missing")).isEqualTo(true);
+            assertThat(doc.get("description")).isEqualTo(ISSUE_DETAIL);
+            assertThat(doc.get("remediation_detail")).isEqualTo(ISSUE_REMEDIATION);
+            assertThat(doc.get("issue_type_id")).isEqualTo(DEF_TYPE_INDEX);
+            assertThat(doc.get("typical_severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
+            assertThat(doc.get("background")).isEqualTo(DEF_BACKGROUND);
+            assertThat(doc.get("remediation_background")).isEqualTo(DEF_REMEDIATION);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> documentMeta = (Map<String, Object>) doc.get("document_meta");
-        assertThat(documentMeta).isNotNull()
-                .containsKey("schema_version")
-                .containsKey("extension_version")
-                .containsKey("indexed_at");
+            Map<String, Object> documentMeta = asObjectMap(doc.get("document_meta"));
+            assertThat(documentMeta).isNotNull();
+            assertThat(documentMeta)
+                    .containsKey("schema_version")
+                    .containsKey("extension_version")
+                    .containsKey("indexed_at");
+        } finally {
+            cleanupAfterTest();
+        }
     }
 
     @Test
     void pushSnapshotNow_withOneRequestResponse_indexesRequestResponsesArrayWithFullShape() {
-        createFindingsIndex();
-        setRuntimeConfigForFindingsExport();
-        setMockMontoyaApiWithOneIssueWithRequestResponse();
+        prepareTestEnvironment();
+        try {
+            createFindingsIndex();
+            setRuntimeConfigForFindingsExport();
+            setMockMontoyaApiWithOneIssueWithRequestResponse();
 
-        FindingsIndexReporter.start();
-        FindingsIndexReporter.pushSnapshotNow();
+            FindingsIndexReporter.start();
+            FindingsIndexReporter.pushSnapshotNow();
 
-        Map<String, Object> doc = awaitFirstDocument();
-        assertThat(doc).isNotNull().containsKey("request_responses");
-        assertThat(doc.get("request_responses_missing")).isEqualTo(false);
+            Map<String, Object> doc = awaitFirstDocument();
+            assertThat(doc).isNotNull().containsKey("request_responses");
+            assertThat(doc.get("request_responses_missing")).isEqualTo(false);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> requestResponses = (List<Map<String, Object>>) doc.get("request_responses");
-        assertThat(requestResponses).hasSize(1);
-        Map<String, Object> pair = requestResponses.get(0);
-        assertThat(pair).containsKey("request").containsKey("response");
+            List<?> requestResponses = asObjectList(doc.get("request_responses"));
+            assertThat(requestResponses).hasSize(1);
+            Map<String, Object> pair = asObjectMap(requestResponses.get(0));
+            assertThat(pair).isNotNull();
+            assertThat(pair).containsKey("request").containsKey("response");
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> req = (Map<String, Object>) pair.get("request");
-        assertThat(req).containsKeys("method", "path", "headers", "parameters", "markers", "body");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> reqBody = (Map<String, Object>) req.get("body");
-        assertThat(reqBody).containsKeys("length", "offset");
-        assertThat(req.get("method")).isEqualTo("POST");
+            Map<String, Object> req = asObjectMap(pair.get("request"));
+            assertThat(req).isNotNull();
+            assertThat(req).containsKeys("method", "path", "headers", "parameters", "markers", "body");
+            Map<String, Object> reqBody = asObjectMap(req.get("body"));
+            assertThat(reqBody).isNotNull();
+            assertThat(reqBody).containsKeys("length", "offset");
+            assertThat(req.get("method")).isEqualTo("POST");
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) pair.get("response");
-        assertThat(resp).containsKeys("status", "reason_phrase", "headers", "markers", "body");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
-        assertThat(respBody).containsKeys("length", "offset");
-        assertThat(resp.get("status")).isEqualTo(200);
+            Map<String, Object> resp = asObjectMap(pair.get("response"));
+            assertThat(resp).isNotNull();
+            assertThat(resp).containsKeys("status", "reason_phrase", "headers", "markers", "body");
+            Map<String, Object> respBody = asObjectMap(resp.get("body"));
+            assertThat(respBody).isNotNull();
+            assertThat(respBody).containsKeys("length", "offset");
+            assertThat(resp.get("status")).isEqualTo(200);
+        } finally {
+            cleanupAfterTest();
+        }
     }
 
     @Test
     void pushSnapshotNow_withTwoRequestResponsePairs_indexesBothInRequestResponsesArray() {
-        createFindingsIndex();
-        setRuntimeConfigForFindingsExport();
-        setMockMontoyaApiWithOneIssueWithTwoRequestResponsePairs();
+        prepareTestEnvironment();
+        try {
+            createFindingsIndex();
+            setRuntimeConfigForFindingsExport();
+            setMockMontoyaApiWithOneIssueWithTwoRequestResponsePairs();
 
-        FindingsIndexReporter.start();
-        FindingsIndexReporter.pushSnapshotNow();
+            FindingsIndexReporter.start();
+            FindingsIndexReporter.pushSnapshotNow();
 
-        Map<String, Object> doc = awaitFirstDocument();
-        assertThat(doc).isNotNull().containsKey("request_responses");
-        assertThat(doc.get("request_responses_missing")).isEqualTo(false);
+            Map<String, Object> doc = awaitFirstDocument();
+            assertThat(doc).isNotNull().containsKey("request_responses");
+            assertThat(doc.get("request_responses_missing")).isEqualTo(false);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> requestResponses = (List<Map<String, Object>>) doc.get("request_responses");
-        assertThat(requestResponses).hasSize(2);
-        assertThat(((Map<String, Object>) requestResponses.get(0).get("request")).get("method")).isEqualTo("GET");
-        assertThat(((Map<String, Object>) requestResponses.get(1).get("request")).get("method")).isEqualTo("POST");
+            List<?> requestResponses = asObjectList(doc.get("request_responses"));
+            assertThat(requestResponses).hasSize(2);
+            Map<String, Object> pair0 = asObjectMap(requestResponses.get(0));
+            Map<String, Object> pair1 = asObjectMap(requestResponses.get(1));
+            Map<String, Object> req0 = pair0 == null ? null : asObjectMap(pair0.get("request"));
+            Map<String, Object> req1 = pair1 == null ? null : asObjectMap(pair1.get("request"));
+            assertThat(req0).isNotNull();
+            assertThat(req1).isNotNull();
+            Map<String, Object> req0Checked = Objects.requireNonNull(req0);
+            Map<String, Object> req1Checked = Objects.requireNonNull(req1);
+            assertThat(req0Checked.get("method")).isEqualTo("GET");
+            assertThat(req1Checked.get("method")).isEqualTo("POST");
+        } finally {
+            cleanupAfterTest();
+        }
     }
 
     @Test
     void pushSnapshotNow_withRequestResponseWithNoResponse_usesEmptyResponseDoc() {
-        createFindingsIndex();
-        setRuntimeConfigForFindingsExport();
-        setMockMontoyaApiWithOneIssueWithRequestResponseNoResponse();
+        prepareTestEnvironment();
+        try {
+            createFindingsIndex();
+            setRuntimeConfigForFindingsExport();
+            setMockMontoyaApiWithOneIssueWithRequestResponseNoResponse();
 
-        FindingsIndexReporter.start();
-        FindingsIndexReporter.pushSnapshotNow();
+            FindingsIndexReporter.start();
+            FindingsIndexReporter.pushSnapshotNow();
 
-        // Wait for this test's document (path /no-response, empty response): scheduler is shared, so first doc may be from another test
-        Map<String, Object> doc = awaitDocumentMatching(d -> {
-            if (Boolean.TRUE.equals(d.get("request_responses_missing"))) return false;
-            List<?> rr = (List<?>) d.get("request_responses");
-            if (rr == null || rr.size() != 1) return false;
-            Object pairObj = rr.get(0);
-            if (!(pairObj instanceof Map)) return false;
-            Map<String, Object> pair = (Map<String, Object>) pairObj;
-            Object reqObj = pair.get("request");
-            Object respObj = pair.get("response");
-            if (!(reqObj instanceof Map) || !(respObj instanceof Map)) return false;
-            Map<String, Object> req = (Map<String, Object>) reqObj;
-            Map<String, Object> resp = (Map<String, Object>) respObj;
-            Object status = resp.get("status");
-            boolean statusZero = status instanceof Number && ((Number) status).intValue() == 0;
-            return "/no-response".equals(req.get("path")) && statusZero;
-        });
-        assertThat(doc.get("request_responses_missing")).as("document should have request/response evidence").isEqualTo(false);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> requestResponses = (List<Map<String, Object>>) doc.get("request_responses");
-        assertThat(requestResponses).as("request_responses").hasSize(1);
-        Map<String, Object> resp = (Map<String, Object>) requestResponses.get(0).get("response");
-        assertThat(resp.get("status")).isEqualTo(0);
-        assertThat((List<?>) resp.get("markers")).isEmpty();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> headers = (Map<String, Object>) resp.get("headers");
-        assertThat((List<?>) headers.get("full")).isEmpty();
+            // Wait for this test's document (path /no-response, empty response): scheduler is shared, so first doc may be from another test
+            Map<String, Object> doc = awaitDocumentMatching(d -> {
+                if (Boolean.TRUE.equals(d.get("request_responses_missing"))) return false;
+                List<?> rr = asObjectList(d.get("request_responses"));
+                if (rr == null || rr.size() != 1) return false;
+                Map<String, Object> pair = asObjectMap(rr.get(0));
+                if (pair == null) return false;
+                Map<String, Object> req = asObjectMap(pair.get("request"));
+                Map<String, Object> resp = asObjectMap(pair.get("response"));
+                if (req == null || resp == null) return false;
+                Object status = resp.get("status");
+                boolean statusZero = status instanceof Number && ((Number) status).intValue() == 0;
+                return "/no-response".equals(req.get("path")) && statusZero;
+            });
+            assertThat(doc.get("request_responses_missing"))
+                    .as("document should have request/response evidence")
+                    .isEqualTo(false);
+            List<?> requestResponses = asObjectList(doc.get("request_responses"));
+            assertThat(requestResponses).as("request_responses").hasSize(1);
+            Map<String, Object> firstPair = asObjectMap(requestResponses.get(0));
+            Map<String, Object> resp = firstPair == null ? null : asObjectMap(firstPair.get("response"));
+            assertThat(resp).isNotNull();
+            Map<String, Object> respChecked = Objects.requireNonNull(resp);
+            assertThat(respChecked.get("status")).isEqualTo(0);
+            assertThat(asObjectList(respChecked.get("markers"))).isEmpty();
+            Map<String, Object> headers = asObjectMap(respChecked.get("headers"));
+            assertThat(headers).isNotNull();
+            assertThat(asObjectList(headers.get("full"))).isEmpty();
+        } finally {
+            cleanupAfterTest();
+        }
     }
 
     private void createFindingsIndex() {
@@ -467,13 +494,11 @@ class FindingsIndexReporterIT {
         when(resp.markers()).thenReturn(List.of());
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> awaitFirstDocument() {
         return awaitDocumentMatching(d -> true);
     }
 
     /** Polls until a document matching the predicate appears (avoids taking a doc from another test's late task). */
-    @SuppressWarnings("unchecked")
     private Map<String, Object> awaitDocumentMatching(Predicate<Map<String, Object>> predicate) {
         OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
@@ -484,26 +509,24 @@ class FindingsIndexReporterIT {
         for (int i = 0; i < maxAttempts; i++) {
             try {
                 client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
-            } catch (Exception ignored) {
+            } catch (IOException | RuntimeException ignored) {
                 // best-effort refresh
             }
             try {
-                SearchResponse<Map<String, Object>> resp = client.search(req, (Class<Map<String, Object>>) (Class<?>) Map.class);
+                SearchResponse<?> resp = client.search(req, Map.class);
                 for (var hit : resp.hits().hits()) {
-                    Map<String, Object> source = (Map<String, Object>) hit.source();
+                    Map<String, Object> source = asObjectMap(hit.source());
                     if (source != null && predicate.test(source)) {
                         return source;
                     }
                 }
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 throw new AssertionError("Search failed: " + e.getMessage(), e);
             }
             if (i < maxAttempts - 1) {
-                try {
-                    Thread.sleep(300);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new AssertionError("Interrupted while awaiting document", e);
+                LockSupport.parkNanos(300_000_000L);
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new AssertionError("Interrupted while awaiting document");
                 }
             }
         }
@@ -511,35 +534,61 @@ class FindingsIndexReporterIT {
         throw new AssertionError("no matching document indexed (after " + maxAttempts + " attempts). " + diag);
     }
 
-    @SuppressWarnings("unchecked")
     private String buildDocumentMatchDiagnostic(OpenSearchClient client) {
         try {
             client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
-        } catch (Exception ignored) { }
+        } catch (IOException | RuntimeException ignored) { }
         try {
-            SearchResponse<Map<String, Object>> resp = client.search(
+            SearchResponse<?> resp = client.search(
                     new SearchRequest.Builder().index(FINDINGS_INDEX).size(20).build(),
-                    (Class<Map<String, Object>>) (Class<?>) Map.class);
+                    Map.class);
             var hits = resp.hits().hits();
             if (hits.isEmpty()) return "Index had 0 documents.";
             StringBuilder sb = new StringBuilder("Index had ").append(hits.size()).append(" doc(s): ");
             for (int j = 0; j < hits.size(); j++) {
-                Map<String, Object> src = (Map<String, Object>) hits.get(j).source();
+                Map<String, Object> src = asObjectMap(hits.get(j).source());
                 if (j > 0) sb.append("; ");
+                if (src == null) {
+                    sb.append("doc").append(j).append(" source=null");
+                    continue;
+                }
                 sb.append("doc").append(j).append(" request_responses_missing=").append(src.get("request_responses_missing"));
-                List<?> rr = (List<?>) src.get("request_responses");
+                List<?> rr = asObjectList(src.get("request_responses"));
                 sb.append(" request_responses.size=").append(rr != null ? rr.size() : "null");
                 if (rr != null && !rr.isEmpty() && rr.get(0) instanceof Map) {
-                    Map<String, Object> pair = (Map<String, Object>) rr.get(0);
-                    Map<String, Object> req = (Map<String, Object>) pair.get("request");
+                    Map<String, Object> pair = asObjectMap(rr.get(0));
+                    if (pair == null) {
+                        continue;
+                    }
+                    Map<String, Object> req = asObjectMap(pair.get("request"));
                     sb.append(" first.path=").append(req != null ? req.get("path") : "n/a");
-                    Map<String, Object> respDoc = (Map<String, Object>) pair.get("response");
+                    Map<String, Object> respDoc = asObjectMap(pair.get("response"));
                     sb.append(" first.response.status=").append(respDoc != null ? respDoc.get("status") : "n/a");
                 }
             }
             return sb.toString();
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             return "Diagnostic search failed: " + e.getMessage();
         }
+    }
+
+    private static Map<String, Object> asObjectMap(Object value) {
+        if (!(value instanceof Map<?, ?> raw)) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                out.put(key, entry.getValue());
+            }
+        }
+        return out;
+    }
+
+    private static List<?> asObjectList(Object value) {
+        if (value instanceof List<?> list) {
+            return list;
+        }
+        return null;
     }
 }

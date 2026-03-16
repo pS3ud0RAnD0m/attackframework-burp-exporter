@@ -15,7 +15,6 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Verifies sink behavior when an unknown source name is supplied.
@@ -23,9 +22,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 @Tag("integration")
 class OpenSearchSinkUnsupportedSourceIT {
-
-    /** Base URL for the OpenSearch development instance. */
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     private static final Set<String> ALLOWED_SHORT_NAMES = Set.of(
             "tool", "settings", "sitemap", "findings", "traffic"

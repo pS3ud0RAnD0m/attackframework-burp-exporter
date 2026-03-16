@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serial;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -171,9 +172,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JPanel    controlStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
     private transient Timer controlStatusHideTimer;
+    private transient boolean scopeGridListenerRegistered;
+    private transient boolean buttonStylesNormalized;
 
     /** Action controller (transient; rebuilt on deserialization). */
-    private transient ConfigController controller = new ConfigController(this);
+    private transient ConfigController controller;
 
     /** Fields panel: index -> (fieldKey -> checkbox). Populated in constructor when building Fields section. */
     private java.util.Map<String, java.util.Map<String, JCheckBox>> fieldCheckboxesByIndex;
@@ -189,7 +192,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     /** Dependency-injected constructor (tests). */
     public ConfigPanel(ConfigController injectedController) {
-        if (injectedController != null) this.controller = injectedController;
+        this.controller = injectedController;
 
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
@@ -261,7 +264,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 cb.addActionListener(fieldsRuntimeUpdater);
             }
         }
-        JPanel fieldsPanel = new ConfigFieldsPanel(fieldCheckboxesByIndex, fieldsExpandButtons, fieldsSubPanels, INDENT).build(fieldsSectionHeaderRows);
+        JPanel fieldsPanel = new ConfigFieldsPanel(fieldsExpandButtons, fieldsSubPanels, INDENT).build(fieldsSectionHeaderRows);
 
         // Scope
         add(new ConfigScopePanel(allRadio, burpSuiteRadio, customRadio, scopeGrid, INDENT).build(),
@@ -323,11 +326,22 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         assignComponentNames();
         wireTextFieldEnhancements();
-        scopeGrid.setOnContentChange(this::updateRuntimeConfig);
-        ButtonStyles.normalizeTree(this);
         loadSecureOpenSearchCredentials();
         refreshEnabledStates();
         applyEditionRestrictions();
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        if (!scopeGridListenerRegistered) {
+            scopeGrid.setOnContentChange(this::updateRuntimeConfig);
+            scopeGridListenerRegistered = true;
+        }
+        if (!buttonStylesNormalized) {
+            ButtonStyles.normalizeTree(this);
+            buttonStylesNormalized = true;
+        }
     }
 
     /** Loads persisted auth type and per-type secrets from Montoya secure storage. */
@@ -469,7 +483,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         else {
             try { SwingUtilities.invokeAndWait(r); }
             catch (InterruptedException ie) { Thread.currentThread().interrupt(); SwingUtilities.invokeLater(r); }
-            catch (Exception ex) { SwingUtilities.invokeLater(r); }
+            catch (InvocationTargetException ex) { SwingUtilities.invokeLater(r); }
         }
     }
 
@@ -668,7 +682,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             updateRuntimeConfig();
             String root = filePathField.getText().trim();
             if (root.isEmpty()) { onFileStatus("✖ Path required"); return; }
-            controller.createFilesAsync(root, getSelectedSources());
+            controller().createFilesAsync(root, getSelectedSources());
         });
 
         testConnectionButton.addActionListener(e -> {
@@ -676,7 +690,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) { onOpenSearchStatus("✖ URL required"); return; }
             onOpenSearchStatus("Testing ...");
-            controller.testConnectionAsync(url);
+            controller().testConnectionAsync(url);
         });
 
         DocumentListener relayout = Doc.onChange(() -> {
@@ -928,21 +942,22 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     private void wireTriStateParentChild(TriStateCheckBox parent, java.util.List<JCheckBox> children) {
+        List<JCheckBox> safeChildren = children == null ? List.of() : children;
         java.util.concurrent.atomic.AtomicBoolean syncing = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         Runnable syncParentFromChildren = () -> {
-            if (children == null || children.isEmpty()) {
+            if (safeChildren.isEmpty()) {
                 return;
             }
             int selected = 0;
-            for (JCheckBox c : children) {
+            for (JCheckBox c : safeChildren) {
                 if (c.isSelected()) {
                     selected++;
                 }
             }
             if (selected == 0) {
                 parent.setState(TriStateCheckBox.State.DESELECTED);
-            } else if (selected == children.size()) {
+            } else if (selected == safeChildren.size()) {
                 parent.setState(TriStateCheckBox.State.SELECTED);
             } else {
                 parent.setState(TriStateCheckBox.State.INDETERMINATE);
@@ -950,7 +965,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         };
 
         // Children -> parent state
-        for (JCheckBox child : children) {
+        for (JCheckBox child : safeChildren) {
             child.addActionListener(e -> {
                 if (syncing.get()) {
                     return;
@@ -972,7 +987,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             syncing.set(true);
             try {
                 boolean selectAll = parent.getState() != TriStateCheckBox.State.DESELECTED;
-                for (JCheckBox child : children) {
+                for (JCheckBox child : safeChildren) {
                     child.setSelected(selectAll);
                 }
                 syncParentFromChildren.run();
@@ -1163,7 +1178,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         int result = chooser.showSaveDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) { onControlStatus("Export cancelled."); return; }
         Path out = FileUtil.ensureJsonExtension(chooser.getSelectedFile()).toPath();
-        controller.exportConfigAsync(out, json);
+        controller().exportConfigAsync(out, json);
     }
 
     /**
@@ -1178,7 +1193,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
         int result = chooser.showOpenDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) { onControlStatus("Import cancelled."); return; }
-        controller.importConfigAsync(chooser.getSelectedFile().toPath());
+        controller().importConfigAsync(chooser.getSelectedFile().toPath());
     }
 
     /** Assign stable names used by headless tests. */
@@ -1275,7 +1290,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 ToolIndexConfigReporter.pushConfigSnapshot();
                 ToolIndexStatsReporter.pushSnapshotNow();
             }
-            controller.saveAsync(buildCurrentState());
+            controller().saveAsync(buildCurrentState());
         }
     }
 
@@ -1295,6 +1310,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return "";
         }
         return new String(field.getPassword());
+    }
+
+    private ConfigController controller() {
+        if (controller == null) {
+            controller = new ConfigController(this);
+        }
+        return controller;
     }
 
     /** Rebuild transient collaborators after deserialization. */

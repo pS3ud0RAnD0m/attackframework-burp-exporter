@@ -1,7 +1,6 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
 import ai.attackframework.tools.burp.utils.Logger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
@@ -9,7 +8,6 @@ import javax.swing.SwingUtilities;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,8 +25,7 @@ class OpenSearchClientWrapperLoggingTest {
         latch.countDown();
     };
 
-    @AfterEach
-    void tearDown() {
+    private void cleanUp() {
         Logger.unregisterListener(listener);
         events.clear();
         while (latch.getCount() > 0) {
@@ -39,18 +36,21 @@ class OpenSearchClientWrapperLoggingTest {
     @Test
     void testConnection_withInvalidUrl_emitsLogEvent() throws Exception {
         Logger.registerListener(listener);
+        try {
+            // Run on EDT so Logger listener is invoked synchronously (Logger dispatches to EDT when off it).
+            SwingUtilities.invokeAndWait(() ->
+                    OpenSearchClientWrapper.testConnection("http://127.0.0.1:1"));
 
-        // Run on EDT so Logger listener is invoked synchronously (Logger dispatches to EDT when off it).
-        SwingUtilities.invokeAndWait(() ->
-                OpenSearchClientWrapper.testConnection("http://127.0.0.1:1"));
-
-        // Client-side failure (connection refused): we log the error only, no fake request/response.
-        assertThat(events)
-                .anySatisfy(e -> {
-                    assertThat(e.level()).isNotEmpty();
-                    assertThat(e.message()).contains("[OpenSearch]").contains("Connection failed");
-                });
-        assertThat(events).noneMatch(e -> e.message().contains("Request:"));
+            // Client-side failure (connection refused): we log the error only, no fake request/response.
+            assertThat(events)
+                    .anySatisfy(e -> {
+                        assertThat(e.level()).isNotEmpty();
+                        assertThat(e.message()).contains("[OpenSearch]").contains("Connection failed");
+                    });
+            assertThat(events).noneMatch(e -> e.message().contains("Request:"));
+        } finally {
+            cleanUp();
+        }
     }
 
     private record LoggerEvent(String level, String message) {

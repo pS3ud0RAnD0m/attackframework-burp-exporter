@@ -15,7 +15,6 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Integration test: create/delete/recreate subset of indices.
@@ -23,7 +22,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
  */
 class OpenSearchSinkSubsetIT {
 
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private static final int WAIT_AFTER_DELETE_MS = 500;
     private static final int POLL_EXISTS_MAX_MS = 5_000;
     private static final int POLL_INTERVAL_MS = 100;

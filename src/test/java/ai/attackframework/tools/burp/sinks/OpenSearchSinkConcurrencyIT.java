@@ -22,8 +22,6 @@ import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
  */
 class OpenSearchSinkConcurrencyIT {
 
-    private static final String BASE_URL = OpenSearchReachable.BASE_URL;
-
     // Standard short names
     private static final List<String> SOURCES = List.of("sitemap", "findings", "traffic", "settings", "tool");
 

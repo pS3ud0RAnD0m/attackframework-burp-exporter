@@ -153,11 +153,12 @@ public final class FindingsIndexReporter {
 
             var severities = state.findingsSeverities();
             boolean filterBySeverity = severities != null && !severities.isEmpty();
+            Set<String> selectedSeverities = filterBySeverity ? Set.copyOf(severities) : Set.of();
 
             for (AuditIssue issue : issues) {
                 if (filterBySeverity) {
                     AuditIssueSeverity sev = issue.severity();
-                    if (sev == null || !severities.contains(sev.name())) {
+                    if (sev == null || !selectedSeverities.contains(sev.name())) {
                         continue;
                     }
                 }
