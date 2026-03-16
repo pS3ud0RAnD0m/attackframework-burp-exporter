@@ -117,10 +117,18 @@ public final class ProxyHistoryIndexReporter {
             boolean sizeCapReached = !chunk.isEmpty() && (estBytes + docBytes) > BULK_MAX_BYTES;
             boolean countCapReached = !chunk.isEmpty() && chunk.size() >= chunkTarget;
             if (sizeCapReached || countCapReached) {
+                int attemptedChunk = chunk.size();
                 int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
                 success += sent;
-                attempted += chunk.size();
-                chunkTarget = adjustSnapshotBatchTarget(chunkTarget, chunk.size(), sent);
+                attempted += attemptedChunk;
+                ExportStats.recordSuccess("traffic", sent);
+                ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
+                if (sent < attemptedChunk) {
+                    int failureChunk = attemptedChunk - sent;
+                    ExportStats.recordFailure("traffic", failureChunk);
+                    ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
+                }
+                chunkTarget = adjustSnapshotBatchTarget(chunkTarget, attemptedChunk, sent);
                 chunk.clear();
                 estBytes = 0;
             }
@@ -128,20 +136,21 @@ public final class ProxyHistoryIndexReporter {
             estBytes += docBytes;
         }
         if (!chunk.isEmpty()) {
+            int attemptedChunk = chunk.size();
             int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
             success += sent;
-            attempted += chunk.size();
+            attempted += attemptedChunk;
+            ExportStats.recordSuccess("traffic", sent);
+            ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
+            if (sent < attemptedChunk) {
+                int failureChunk = attemptedChunk - sent;
+                ExportStats.recordFailure("traffic", failureChunk);
+                ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
+            }
         }
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
         ExportStats.recordLastPush("traffic", durationMs);
-        ExportStats.recordSuccess("traffic", success);
-        ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", success);
-        if (success < attempted) {
-            int failure = attempted - success;
-            ExportStats.recordFailure("traffic", failure);
-            ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failure);
-        }
         ExportStats.recordProxyHistorySnapshot(attempted, success, durationMs, chunkTarget);
         Logger.logTrace("[ProxyHistory] pushed " + success + " of " + attempted);
     }

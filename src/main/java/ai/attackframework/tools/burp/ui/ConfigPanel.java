@@ -725,10 +725,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param onAuthenticate run when Authenticate is clicked (applies form credentials to runtime config)
      */
     private JPanel buildAuthFormPanel(Runnable onAuthenticate) {
-        String[] authTypes = { "None", "Basic", "API Key", "JWT", "Certificate" };
+        String[] authTypes = { "API Key", "Basic", "Certificate", "JWT", "None" };
         JComboBox<String> authTypeCombo = new JComboBox<>(authTypes);
         openSearchAuthTypeCombo = authTypeCombo;
         authTypeCombo.setName("os.authType");
+        authTypeCombo.setSelectedItem("None");
         String longest = java.util.Arrays.stream(authTypes).max(java.util.Comparator.comparingInt(String::length)).orElse("Certificate");
         authTypeCombo.setPrototypeDisplayValue(longest);
 
@@ -783,14 +784,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         clientCertCard.setVisible(false);
 
         java.util.function.Consumer<Object> updateAuthenticateEnabled = ignore -> {
-            int i = authTypeCombo.getSelectedIndex();
-            boolean enable = switch (i) {
-                case 1 -> openSearchUserField.getText() != null && !openSearchUserField.getText().isBlank()
+            String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
+            boolean enable = switch (selectedType) {
+                case "Basic" -> openSearchUserField.getText() != null && !openSearchUserField.getText().isBlank()
                         && openSearchPasswordField.getPassword() != null && openSearchPasswordField.getPassword().length > 0;
-                case 2 -> openSearchApiKeyIdField.getText() != null && !openSearchApiKeyIdField.getText().isBlank()
+                case "API Key" -> openSearchApiKeyIdField.getText() != null && !openSearchApiKeyIdField.getText().isBlank()
                         && openSearchApiKeySecretField.getPassword() != null && openSearchApiKeySecretField.getPassword().length > 0;
-                case 3 -> openSearchJwtTokenField.getText() != null && !openSearchJwtTokenField.getText().isBlank();
-                case 4 -> openSearchCertPathField.getText() != null && !openSearchCertPathField.getText().isBlank()
+                case "JWT" -> openSearchJwtTokenField.getText() != null && !openSearchJwtTokenField.getText().isBlank();
+                case "Certificate" -> openSearchCertPathField.getText() != null && !openSearchCertPathField.getText().isBlank()
                         && openSearchCertKeyPathField.getText() != null && !openSearchCertKeyPathField.getText().isBlank();
                 default -> false;
             };
@@ -798,15 +799,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         };
 
         authTypeCombo.addActionListener(e -> {
-            int i = authTypeCombo.getSelectedIndex();
             String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
-            noneCard.setVisible(i == 0);
-            basicCard.setVisible(i == 1);
-            apiKeyCard.setVisible(i == 2);
-            jwtCard.setVisible(i == 3);
-            clientCertCard.setVisible(i == 4);
+            noneCard.setVisible("None".equals(selectedType));
+            basicCard.setVisible("Basic".equals(selectedType));
+            apiKeyCard.setVisible("API Key".equals(selectedType));
+            jwtCard.setVisible("JWT".equals(selectedType));
+            clientCertCard.setVisible("Certificate".equals(selectedType));
             loadAuthFieldsForSelectedType(selectedType);
-            if (i == 0) {
+            if ("None".equals(selectedType)) {
                 updateRuntimeConfig();
                 onOpenSearchStatus("Authentication cleared.");
             }
@@ -1122,8 +1122,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (issuesLowCheckbox.isSelected()) findingsSeverities.add("LOW");
         if (issuesInformationalCheckbox.isSelected()) findingsSeverities.add("INFORMATIONAL");
 
-        int authTypeIndex = openSearchAuthTypeCombo != null ? openSearchAuthTypeCombo.getSelectedIndex() : 0;
-        boolean authBasic = authTypeIndex == 1;
+        String authType = openSearchAuthTypeCombo != null
+                ? String.valueOf(openSearchAuthTypeCombo.getSelectedItem())
+                : "None";
+        boolean authBasic = "Basic".equals(authType);
         String osUser = authBasic ? nonBlankOr(openSearchUserField.getText(), "") : "";
         String osPass = authBasic ? nonBlankOr(passwordText(openSearchPasswordField), "") : "";
         return new ConfigState.State(

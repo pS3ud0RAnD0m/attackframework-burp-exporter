@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
-import javax.swing.BorderFactory;
 import javax.swing.JPanel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
@@ -105,7 +104,6 @@ public class StatsPanel extends JPanel {
                 kibPerSecondDataset);
 
         JPanel chartsPanel = new JPanel(new GridLayout(2, 1, 0, 6));
-        chartsPanel.setBorder(BorderFactory.createTitledBorder("Export Histograms (rate over time)"));
         chartsPanel.add(createRateChartPanel(docsChart));
         chartsPanel.add(createRateChartPanel(kibChart));
         chartsPanel.setPreferredSize(new Dimension(1200, CHART_PANEL_HEIGHT));
