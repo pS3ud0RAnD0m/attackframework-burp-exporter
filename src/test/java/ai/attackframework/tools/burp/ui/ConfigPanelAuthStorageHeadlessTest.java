@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import ai.attackframework.tools.burp.testutils.SecureStoreMontoyaMock;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 
 class ConfigPanelAuthStorageHeadlessTest {
@@ -55,6 +56,106 @@ class ConfigPanelAuthStorageHeadlessTest {
                 assertThat(user.getText()).isEqualTo("alice");
                 assertThat(new String(pass.getPassword())).isEqualTo("secret");
             });
+        } finally {
+            teardownStore();
+        }
+    }
+
+    @Test
+    void defaultBasicAuth_appliesLoadedCredentialsWithoutAuthenticateClick() throws Exception {
+        setupStore();
+        try {
+            SecureCredentialStore.saveOpenSearchCredentials("carol", "pw123");
+            newPanelOnEdt();
+            assertThat(RuntimeConfig.openSearchUser()).isEqualTo("carol");
+            assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw123");
+        } finally {
+            teardownStore();
+        }
+    }
+
+    @Test
+    void defaultBasicAuth_showsBasicCredentialFormOnInitialLoad() throws Exception {
+        setupStore();
+        try {
+            ConfigPanel panel = newPanelOnEdt();
+            JPanel authForm = get(panel, "openSearchAuthFormPanel");
+            Component basicCard = findByName(authForm, "os.authCard.basic");
+            Component noneCard = findByName(authForm, "os.authCard.none");
+            runEdt(() -> {
+                assertThat(isEffectivelyVisible(basicCard)).isTrue();
+                assertThat(isEffectivelyVisible(noneCard)).isFalse();
+            });
+        } finally {
+            teardownStore();
+        }
+    }
+
+    @Test
+    void selectingApiKeyJwtAndCertificate_showsCorrectFormAndLoadsStoredValues() throws Exception {
+        setupStore();
+        try {
+            SecureCredentialStore.saveApiKeyCredentials("kid-1", "ksecret-1");
+            SecureCredentialStore.saveJwtCredentials("jwt-token-1");
+            SecureCredentialStore.saveCertificateCredentials("cert.pem", "cert.key", "passphrase-1");
+
+            ConfigPanel panel = newPanelOnEdt();
+            JPanel authForm = get(panel, "openSearchAuthFormPanel");
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+
+            JTextField apiKeyId = get(panel, "openSearchApiKeyIdField");
+            JPasswordField apiKeySecret = get(panel, "openSearchApiKeySecretField");
+            JTextField jwtToken = get(panel, "openSearchJwtTokenField");
+            JTextField certPath = get(panel, "openSearchCertPathField");
+            JTextField certKeyPath = get(panel, "openSearchCertKeyPathField");
+            JPasswordField certPassphrase = get(panel, "openSearchCertPassphraseField");
+
+            Component apiKeyCard = findByName(authForm, "os.authCard.apikey");
+            Component jwtCard = findByName(authForm, "os.authCard.jwt");
+            Component certCard = findByName(authForm, "os.authCard.certificate");
+
+            runEdt(() -> authType.setSelectedItem("API Key"));
+            runEdt(() -> {
+                assertThat(isEffectivelyVisible(apiKeyCard)).isTrue();
+                assertThat(apiKeyId.getText()).isEqualTo("kid-1");
+                assertThat(new String(apiKeySecret.getPassword())).isEqualTo("ksecret-1");
+            });
+
+            runEdt(() -> authType.setSelectedItem("JWT"));
+            runEdt(() -> {
+                assertThat(isEffectivelyVisible(jwtCard)).isTrue();
+                assertThat(jwtToken.getText()).isEqualTo("jwt-token-1");
+            });
+
+            runEdt(() -> authType.setSelectedItem("Certificate"));
+            runEdt(() -> {
+                assertThat(isEffectivelyVisible(certCard)).isTrue();
+                assertThat(certPath.getText()).isEqualTo("cert.pem");
+                assertThat(certKeyPath.getText()).isEqualTo("cert.key");
+                assertThat(new String(certPassphrase.getPassword())).isEqualTo("passphrase-1");
+            });
+        } finally {
+            teardownStore();
+        }
+    }
+
+    @Test
+    void defaultBasicAuth_withEmptyStore_keepsVisibleFormAndClearsRuntimeCredentials() throws Exception {
+        setupStore();
+        try {
+            ConfigPanel panel = newPanelOnEdt();
+            JPanel authForm = get(panel, "openSearchAuthFormPanel");
+            JTextField user = get(panel, "openSearchUserField");
+            JPasswordField pass = get(panel, "openSearchPasswordField");
+            Component basicCard = findByName(authForm, "os.authCard.basic");
+
+            runEdt(() -> {
+                assertThat(isEffectivelyVisible(basicCard)).isTrue();
+                assertThat(user.getText()).isEmpty();
+                assertThat(new String(pass.getPassword())).isEmpty();
+            });
+            assertThat(RuntimeConfig.openSearchUser()).isEmpty();
+            assertThat(RuntimeConfig.openSearchPassword()).isEmpty();
         } finally {
             teardownStore();
         }
@@ -153,5 +254,16 @@ class ConfigPanelAuthStorageHeadlessTest {
             }
         }
         return null;
+    }
+
+    private static boolean isEffectivelyVisible(Component component) {
+        Component current = component;
+        while (current != null) {
+            if (!current.isVisible()) {
+                return false;
+            }
+            current = current.getParent();
+        }
+        return true;
     }
 }

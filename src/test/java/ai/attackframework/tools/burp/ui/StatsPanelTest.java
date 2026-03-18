@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import org.junit.jupiter.api.Test;
 
@@ -8,10 +9,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.text.SimpleDateFormat;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.awt.Component;
+import java.awt.FlowLayout;
 
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.RowSorter;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.JTable;
+import javax.swing.SortOrder;
+import javax.swing.table.DefaultTableModel;
 
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
@@ -22,6 +35,7 @@ import org.jfree.data.RangeType;
 import org.jfree.data.time.TimeSeries;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.Logger;
 
 class StatsPanelTest {
 
@@ -123,6 +137,125 @@ class StatsPanelTest {
             return traffic == null ? 0 : traffic.getItemCount();
         });
         assertThat(after).isGreaterThan(before);
+    }
+
+    @Test
+    void trafficBySourceTable_matchesIndexTableColumns_andCardsOnlyShowExportState() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+        JPanel cardsRow = get(panel, "cardsRow");
+
+        assertThat(sourceModel.getColumnCount()).isEqualTo(indexModel.getColumnCount());
+        assertThat(sourceModel.getColumnName(0)).isEqualTo("Source");
+        assertThat(indexModel.getColumnName(0)).isEqualTo("Index");
+        for (int i = 1; i < indexModel.getColumnCount(); i++) {
+            assertThat(sourceModel.getColumnName(i)).isEqualTo(indexModel.getColumnName(i));
+        }
+        assertThat(cardsRow.getComponentCount()).isEqualTo(1);
+    }
+
+    @Test
+    void byIndexTable_defaultsToAscendingIndexSort() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JTable byIndexTable = get(panel, "byIndexTable");
+        RowSorter<? extends javax.swing.table.TableModel> sorter = byIndexTable.getRowSorter();
+        assertThat(sorter).isNotNull();
+        assertThat(sorter.getSortKeys()).isNotEmpty();
+        RowSorter.SortKey firstKey = sorter.getSortKeys().get(0);
+        assertThat(firstKey.getColumn()).isEqualTo(0);
+        assertThat(firstKey.getSortOrder()).isEqualTo(SortOrder.ASCENDING);
+    }
+
+    @Test
+    void byIndexTable_remainsAlphabeticallySortedAfterRefresh() throws Exception {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JTable byIndexTable = get(panel, "byIndexTable");
+
+        ExportStats.recordSuccess("traffic", 11);
+        onEdt(() -> call(panel, "refreshVisibleStats"));
+
+        List<String> visibleIndexes = onEdt(() -> {
+            List<String> rows = new ArrayList<>();
+            for (int row = 0; row < byIndexTable.getRowCount(); row++) {
+                rows.add(String.valueOf(byIndexTable.getValueAt(row, 0)));
+            }
+            return rows;
+        });
+        List<String> sorted = new ArrayList<>(visibleIndexes);
+        Collections.sort(sorted);
+        assertThat(visibleIndexes).isEqualTo(sorted);
+    }
+
+    @Test
+    void refreshVisibleStats_logsFallbackHitsOnlyWhenValueIncreases() throws Exception {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        List<String> seenFallbackErrors = new ArrayList<>();
+        Logger.LogListener listener = (level, message) -> {
+            if ("ERROR".equals(level) && message.contains("Traffic tool/source fallback hits observed:")) {
+                seenFallbackErrors.add(message);
+            }
+        };
+        Logger.registerListener(listener);
+        try {
+            onEdt(() -> call(panel, "refreshVisibleStats"));
+            seenFallbackErrors.clear();
+
+            ExportStats.recordTrafficToolSourceFallback();
+            onEdt(() -> call(panel, "refreshVisibleStats"));
+            int afterIncrease = seenFallbackErrors.size();
+            assertThat(afterIncrease).isEqualTo(1);
+
+            onEdt(() -> call(panel, "refreshVisibleStats"));
+            assertThat(seenFallbackErrors).hasSize(afterIncrease);
+
+            ExportStats.recordTrafficToolSourceFallback();
+            onEdt(() -> call(panel, "refreshVisibleStats"));
+            assertThat(seenFallbackErrors).hasSize(afterIncrease + 1);
+        } finally {
+            Logger.unregisterListener(listener);
+        }
+    }
+
+    @Test
+    void sharedLegendPanel_isLeftAlignedWithExpectedSeriesLabels() {
+        JPanel legendPanel = (JPanel) callStatic(StatsPanel.class, "createSharedLegendPanel");
+        assertThat(legendPanel.getLayout()).isInstanceOf(FlowLayout.class);
+        FlowLayout layout = (FlowLayout) legendPanel.getLayout();
+        assertThat(layout.getAlignment()).isEqualTo(FlowLayout.LEFT);
+
+        List<String> labels = new ArrayList<>();
+        for (Component component : legendPanel.getComponents()) {
+            if (component instanceof JLabel label) {
+                labels.add(label.getText());
+                assertThat(label.getHorizontalAlignment()).isEqualTo(SwingConstants.LEFT);
+            }
+        }
+        assertThat(labels).containsExactly(
+                "\u2014 Traffic",
+                "\u2014 Tool",
+                "\u2014 Settings",
+                "\u2014 Sitemap",
+                "\u2014 Findings");
+    }
+
+    @Test
+    void miscStatsCard_doesNotIncludeProxyHistoryAttemptedSuccess() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel cardsRow = get(panel, "cardsRow");
+        assertThat(cardsRow.getComponentCount()).isEqualTo(1);
+        JPanel miscCard = (JPanel) cardsRow.getComponent(0);
+
+        List<String> labels = new ArrayList<>();
+        for (Component component : miscCard.getComponents()) {
+            if (component instanceof JLabel label) {
+                labels.add(label.getText());
+            }
+        }
+        assertThat(labels).contains("Throughput (Last 10s)");
+        assertThat(labels).contains("Total Docs Pushed");
+        assertThat(labels).contains("Total Failures");
+        assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
     }
 
     private static void onEdt(Runnable runnable) {

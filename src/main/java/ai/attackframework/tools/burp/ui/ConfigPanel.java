@@ -349,7 +349,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (openSearchAuthTypeCombo == null) {
             return;
         }
-        openSearchAuthTypeCombo.setSelectedItem("Basic");
+        String selectedType = String.valueOf(openSearchAuthTypeCombo.getSelectedItem());
+        if (selectedType == null || selectedType.isBlank()) {
+            selectedType = "Basic";
+            openSearchAuthTypeCombo.setSelectedItem(selectedType);
+        }
+        loadAuthFieldsForSelectedType(selectedType);
         updateRuntimeConfig();
     }
 
@@ -735,6 +740,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         contentCards.setName("os.authContent");
 
         JPanel noneCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
+        noneCard.setName("os.authCard.none");
         // No label when None is selected
 
         JButton authenticateButton = new JButton("Authenticate");
@@ -746,22 +752,26 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
 
         JPanel basicCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref][pref][pref]", "[]"));
+        basicCard.setName("os.authCard.basic");
         basicCard.add(new JLabel("Username:"));
         basicCard.add(openSearchUserField, "gapright 15");
         basicCard.add(new JLabel("Password:"));
         basicCard.add(openSearchPasswordField, "gapright 15");
 
         JPanel apiKeyCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref][pref][pref]", "[]"));
+        apiKeyCard.setName("os.authCard.apikey");
         apiKeyCard.add(new JLabel("Key ID:"));
         apiKeyCard.add(openSearchApiKeyIdField, "gapright 15");
         apiKeyCard.add(new JLabel("Key Secret:"));
         apiKeyCard.add(openSearchApiKeySecretField, "gapright 15");
 
         JPanel jwtCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref]", "[]"));
+        jwtCard.setName("os.authCard.jwt");
         jwtCard.add(new JLabel("JWT Token:"));
         jwtCard.add(openSearchJwtTokenField, "w 360!");
 
         JPanel clientCertCard = new JPanel(new MigLayout("insets 0, wrap 2", "[pref][pref]", "[][][]"));
+        clientCertCard.setName("os.authCard.certificate");
         clientCertCard.add(new JLabel("Cert Path:"));
         clientCertCard.add(openSearchCertPathField, "w 360!");
         clientCertCard.add(new JLabel("Key Path:"));
@@ -775,11 +785,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         contentCards.add(jwtCard, "hidemode 3");
         contentCards.add(clientCertCard, "hidemode 3");
 
-        noneCard.setVisible(true);
-        basicCard.setVisible(false);
-        apiKeyCard.setVisible(false);
-        jwtCard.setVisible(false);
-        clientCertCard.setVisible(false);
+        java.util.function.Consumer<String> applyAuthTypeCardVisibility = selectedType -> {
+            noneCard.setVisible("None".equals(selectedType));
+            basicCard.setVisible("Basic".equals(selectedType));
+            apiKeyCard.setVisible("API Key".equals(selectedType));
+            jwtCard.setVisible("JWT".equals(selectedType));
+            clientCertCard.setVisible("Certificate".equals(selectedType));
+        };
 
         java.util.function.Consumer<Object> updateAuthenticateEnabled = ignore -> {
             String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
@@ -798,11 +810,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         authTypeCombo.addActionListener(e -> {
             String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
-            noneCard.setVisible("None".equals(selectedType));
-            basicCard.setVisible("Basic".equals(selectedType));
-            apiKeyCard.setVisible("API Key".equals(selectedType));
-            jwtCard.setVisible("JWT".equals(selectedType));
-            clientCertCard.setVisible("Certificate".equals(selectedType));
+            applyAuthTypeCardVisibility.accept(selectedType);
             loadAuthFieldsForSelectedType(selectedType);
             if ("None".equals(selectedType)) {
                 updateRuntimeConfig();
@@ -812,6 +820,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             contentCards.revalidate();
             contentCards.repaint();
         });
+        String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
+        applyAuthTypeCardVisibility.accept(selectedType);
+        loadAuthFieldsForSelectedType(selectedType);
+        updateAuthenticateEnabled.accept(null);
         JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow][pref]", "[]"));
         form.setAlignmentX(Component.LEFT_ALIGNMENT);
         form.add(new JLabel("Auth type:"));

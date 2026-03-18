@@ -4,21 +4,32 @@ import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Insets;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import javax.swing.BorderFactory;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JScrollBar;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.SwingUtilities;
+import javax.swing.RowSorter;
+import javax.swing.SortOrder;
+import javax.swing.JTable;
+import javax.swing.SwingConstants;
 import javax.swing.Timer;
-import javax.swing.text.DefaultCaret;
+import javax.swing.UIManager;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
 
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
@@ -31,14 +42,15 @@ import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.chart.title.TextTitle;
+import org.jfree.chart.ui.RectangleInsets;
 import org.jfree.chart.ui.VerticalAlignment;
 import org.jfree.data.RangeType;
 import org.jfree.data.time.Millisecond;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 
-import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 
@@ -54,7 +66,7 @@ public class StatsPanel extends JPanel {
     private static final int REFRESH_INTERVAL_MS = 3000;
     private static final int ERROR_COL_MAX = 50;
     private static final int CHART_MAX_POINTS = 240;
-    private static final int CHART_PANEL_HEIGHT = 520;
+    private static final int CHART_PANEL_HEIGHT = 460;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
     private static final double DEFAULT_RATE_RANGE_MAX = 10.0;
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
@@ -64,11 +76,15 @@ public class StatsPanel extends JPanel {
     private static final Font CHART_AXIS_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 15);
     private static final Font CHART_TICK_FONT = new Font("SansSerif", Font.PLAIN, 11);
     private static final Font CHART_LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 14);
+    private static final Font CARD_KEY_FONT = new Font("SansSerif", Font.PLAIN, 13);
+    private static final Font CARD_VALUE_FONT = new Font("SansSerif", Font.BOLD, 13);
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
     private static final Color CHART_BG = new Color(38, 38, 38);
     private static final Color PLOT_BG = new Color(48, 48, 48);
     private static final Color TEXT_FG = new Color(235, 235, 235);
     private static final Color GRID_FG = new Color(95, 95, 95);
+    private static final DecimalFormat DECIMAL_ONE =
+            new DecimalFormat("0.0", DecimalFormatSymbols.getInstance(Locale.ROOT));
     private static final Color[] SERIES_COLORS = new Color[] {
             new Color(86, 156, 214),   // blue
             new Color(57, 255, 20),    // neon green
@@ -77,16 +93,29 @@ public class StatsPanel extends JPanel {
             new Color(244, 71, 71)     // red
     };
 
-    private final JTextArea statsArea;
     private final Timer refreshTimer;
     private final TimeSeriesCollection docsPerSecondDataset;
     private final TimeSeriesCollection kibPerSecondDataset;
     private final JFreeChart docsChart;
     private final JFreeChart kibChart;
+    private final JLabel exportRunningValue;
+    private final JLabel currentBatchSizeValue;
+    private final JLabel trafficQueueValue;
+    private final JLabel queueDropsValue;
+    private final JLabel throughputValue;
+    private final JLabel totalDocsPushedValue;
+    private final JLabel totalFailuresValue;
+    private final DefaultTableModel trafficBySourceModel;
+    private final DefaultTableModel byIndexModel;
+    private final JTable trafficBySourceTable;
+    private final JTable byIndexTable;
+    private final JPanel tablesRow;
+    private final JPanel cardsRow;
     private final Map<String, TimeSeries> docsSeriesByIndex = new HashMap<>();
     private final Map<String, TimeSeries> kibSeriesByIndex = new HashMap<>();
     private final Map<String, Long> previousSuccessByIndex = new HashMap<>();
     private final Map<String, Long> previousBytesByIndex = new HashMap<>();
+    private long lastLoggedToolSourceFallbacks = -1;
     private long firstSampleAtMs = -1;
     private long previousSampleAtMs = -1;
 
@@ -97,79 +126,268 @@ public class StatsPanel extends JPanel {
      */
     public StatsPanel() {
         setLayout(new BorderLayout());
-        setPreferredSize(new Dimension(1200, 600));
+        setPreferredSize(new Dimension(1200, 900));
 
         docsPerSecondDataset = new TimeSeriesCollection();
         kibPerSecondDataset = new TimeSeriesCollection();
         docsChart = createRateChart(
                 "Export - Docs/sec",
                 "Docs per second",
-                docsPerSecondDataset);
+                docsPerSecondDataset,
+                false,
+                false);
         kibChart = createRateChart(
                 "Export - KiB/sec",
                 "KiB per second",
-                kibPerSecondDataset);
+                kibPerSecondDataset,
+                false,
+                true);
 
-        JPanel chartsPanel = new JPanel(new GridLayout(2, 1, 0, 6));
-        chartsPanel.add(createRateChartPanel(docsChart));
-        chartsPanel.add(createRateChartPanel(kibChart));
+        JPanel chartsPanel = new JPanel(new BorderLayout(0, 4));
+        JPanel chartGrid = new JPanel(new GridLayout(2, 1, 0, 12));
+        chartGrid.add(createRateChartPanel(docsChart));
+        chartGrid.add(createRateChartPanel(kibChart));
+        chartsPanel.add(chartGrid, BorderLayout.CENTER);
+        chartsPanel.add(createSharedLegendPanel(), BorderLayout.SOUTH);
         chartsPanel.setPreferredSize(new Dimension(1200, CHART_PANEL_HEIGHT));
-        add(chartsPanel, BorderLayout.NORTH);
+        JPanel contentPanel = new JPanel(new BorderLayout(0, 10));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
+        contentPanel.setBackground(UIManager.getColor("Panel.background"));
+        contentPanel.add(chartsPanel, BorderLayout.NORTH);
 
-        statsArea = new JTextArea();
-        statsArea.setEditable(false);
-        statsArea.setLineWrap(false);
-        statsArea.setWrapStyleWord(false);
-        statsArea.setFont(new Font("Monospaced", Font.PLAIN, 14));
-        if (statsArea.getCaret() instanceof DefaultCaret caret) {
-            caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+        cardsRow = new JPanel(new GridLayout(1, 1, 10, 0));
+        cardsRow.setOpaque(false);
+
+        JLabel[] exportStateValues = addMetricCard(cardsRow, "Misc Stats", new String[] {
+                "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
+                "Throughput (Last 10s)", "Total Docs Pushed", "Total Failures"
+        });
+        exportRunningValue = exportStateValues[0];
+        currentBatchSizeValue = exportStateValues[1];
+        trafficQueueValue = exportStateValues[2];
+        queueDropsValue = exportStateValues[3];
+        throughputValue = exportStateValues[4];
+        totalDocsPushedValue = exportStateValues[5];
+        totalFailuresValue = exportStateValues[6];
+
+        tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
+        tablesRow.setOpaque(false);
+
+        trafficBySourceModel = new DefaultTableModel(
+                new String[] { "Source", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+        trafficBySourceTable = createStatsTable(trafficBySourceModel);
+        tablesRow.add(createTableCard("Traffic by Source", trafficBySourceTable));
+
+        byIndexModel = new DefaultTableModel(
+                new String[] { "Index", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+        byIndexTable = createStatsTable(byIndexModel);
+        if (byIndexTable.getRowSorter() != null) {
+            byIndexTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
         }
+        tablesRow.add(createTableCard("Traffic by Index", byIndexTable));
 
-        add(ScrollPanes.wrap(statsArea), BorderLayout.CENTER);
+        JPanel lowerPanel = new JPanel();
+        lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
+        lowerPanel.setOpaque(false);
+        lowerPanel.add(tablesRow);
+        lowerPanel.add(javax.swing.Box.createVerticalStrut(10));
+        lowerPanel.add(cardsRow);
+        contentPanel.add(lowerPanel, BorderLayout.CENTER);
+        add(contentPanel, BorderLayout.CENTER);
 
         refreshTimer = new Timer(REFRESH_INTERVAL_MS, e -> refreshVisibleStats());
         refreshTimer.setRepeats(true);
 
         refreshVisibleStats();
+        updateDashboardSectionSizing();
     }
 
     private void refreshVisibleStats() {
         sampleRateSeries();
-        setStatsTextPreservingScroll(buildStatsText());
+        refreshDashboard();
     }
 
-    /**
-     * Replaces stats text while preserving user's vertical scroll position.
-     *
-     * <p>When users scroll up to inspect previous lines, periodic refresh should not jump the
-     * viewport. If the user is at bottom, keep anchored to bottom after refresh.</p>
-     */
-    private void setStatsTextPreservingScroll(String text) {
-        JScrollPane scrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, statsArea);
-        if (scrollPane == null) {
-            statsArea.setText(text);
-            return;
-        }
-        JScrollBar bar = scrollPane.getVerticalScrollBar();
-        int oldValue = bar.getValue();
-        int oldMaxWithoutExtent = Math.max(0, bar.getMaximum() - bar.getVisibleAmount());
-        boolean wasAtBottom = oldValue >= Math.max(0, oldMaxWithoutExtent - 2);
+    private void refreshDashboard() {
+        boolean exportRunning = RuntimeConfig.isExportRunning();
+        long totalSuccess = ExportStats.getTotalSuccessCount();
+        long totalFailure = ExportStats.getTotalFailureCount();
 
-        statsArea.setText(text);
-        SwingUtilities.invokeLater(() -> {
-            int newMaxWithoutExtent = Math.max(0, bar.getMaximum() - bar.getVisibleAmount());
-            if (wasAtBottom) {
-                bar.setValue(newMaxWithoutExtent);
-                return;
+        exportRunningValue.setText(exportRunning ? "Yes" : "No");
+        currentBatchSizeValue.setText(formatWhole(BatchSizeController.getInstance().getCurrentBatchSize()));
+        trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
+        queueDropsValue.setText(formatWhole(ExportStats.getTrafficQueueDrops()));
+        throughputValue.setText(DECIMAL_ONE.format(ExportStats.getThroughputDocsPerSecLast10s()) + " docs/s");
+        long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
+        if (fallbackHits > 0 && fallbackHits != lastLoggedToolSourceFallbacks) {
+            Logger.logError("Traffic tool/source fallback hits observed: " + fallbackHits);
+            lastLoggedToolSourceFallbacks = fallbackHits;
+        }
+
+        totalDocsPushedValue.setText(formatWhole(totalSuccess));
+        totalFailuresValue.setText(formatWhole(totalFailure));
+
+        rebuildTrafficBySourceTable();
+        rebuildByIndexTable();
+        updateTablePreferredHeight(trafficBySourceTable);
+        updateTablePreferredHeight(byIndexTable);
+        updateDashboardSectionSizing();
+        revalidate();
+    }
+
+    private void rebuildTrafficBySourceTable() {
+        trafficBySourceModel.setRowCount(0);
+        long sourceTotalSuccess = 0;
+        long sourceTotalFailure = 0;
+        for (String sourceKey : ExportStats.getTrafficToolTypeKeys()) {
+            if ("UNKNOWN".equals(sourceKey)) {
+                continue;
             }
-            if (oldMaxWithoutExtent <= 0) {
-                bar.setValue(0);
-                return;
+            long sourceSuccess = resolveSourceSuccess(sourceKey);
+            long sourceFailure = resolveSourceFailure(sourceKey);
+            sourceTotalSuccess += sourceSuccess;
+            sourceTotalFailure += sourceFailure;
+            trafficBySourceModel.addRow(new Object[] {
+                    formatKeyLabel(sourceKey),
+                    sourceSuccess,
+                    "-",
+                    "-",
+                    sourceFailure,
+                    "-",
+                    "-"
+            });
+        }
+        trafficBySourceModel.addRow(new Object[] { "Total", sourceTotalSuccess, "-", "-", sourceTotalFailure, "-", "-" });
+    }
+
+    private void rebuildByIndexTable() {
+        byIndexModel.setRowCount(0);
+        for (String indexKey : ExportStats.getIndexKeys()) {
+            long success = ExportStats.getSuccessCount(indexKey);
+            int queued = ExportStats.getQueueSize(indexKey);
+            long retryDrops = ExportStats.getRetryQueueDrops(indexKey);
+            long failure = ExportStats.getFailureCount(indexKey);
+            long lastPushMs = ExportStats.getLastPushDurationMs(indexKey);
+            String lastPushStr = lastPushMs >= 0 ? String.valueOf(lastPushMs) : "-";
+            String lastError = ExportStats.getLastError(indexKey);
+            String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
+            byIndexModel.addRow(new Object[] {
+                    formatKeyLabel(indexKey), success, queued, retryDrops, failure, lastPushStr, errStr
+            });
+        }
+    }
+
+    private static JPanel createTableCard(String title, JTable table) {
+        JPanel card = new JPanel(new BorderLayout(0, 6));
+        card.setBorder(BorderFactory.createTitledBorder(title));
+        card.add(table.getTableHeader(), BorderLayout.NORTH);
+        card.add(table, BorderLayout.CENTER);
+        return card;
+    }
+
+    private static JTable createStatsTable(DefaultTableModel model) {
+        model.setRowCount(0);
+        JTable table = new JTable(model) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
             }
-            double ratio = oldValue / (double) oldMaxWithoutExtent;
-            int target = (int) Math.round(ratio * newMaxWithoutExtent);
-            bar.setValue(Math.max(0, Math.min(newMaxWithoutExtent, target)));
-        });
+        };
+        table.setFillsViewportHeight(true);
+        table.setAutoCreateRowSorter(true);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        table.setRowHeight(22);
+        DefaultTableCellRenderer leftAligned = new DefaultTableCellRenderer();
+        leftAligned.setHorizontalAlignment(SwingConstants.LEFT);
+        for (int columnIndex = 0; columnIndex < table.getColumnCount(); columnIndex++) {
+            table.getColumnModel().getColumn(columnIndex).setCellRenderer(leftAligned);
+        }
+        updateTablePreferredHeight(table);
+        return table;
+    }
+
+    private static JLabel[] addMetricCard(JPanel parent, String title, String[] keys) {
+        JPanel card = new JPanel(new GridBagLayout());
+        card.setBorder(BorderFactory.createTitledBorder(title));
+        card.setPreferredSize(new Dimension(420, Math.max(180, keys.length * 22)));
+        card.setMinimumSize(new Dimension(360, Math.max(160, keys.length * 20)));
+        int maxKeyWidth = 0;
+        for (String key : keys) {
+            JLabel probe = new JLabel(key);
+            probe.setFont(CARD_KEY_FONT);
+            maxKeyWidth = Math.max(maxKeyWidth, probe.getPreferredSize().width);
+        }
+        JLabel[] values = new JLabel[keys.length];
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridy = 0;
+        gbc.insets = new Insets(1, 0, 1, 8);
+        gbc.anchor = GridBagConstraints.WEST;
+        for (int i = 0; i < keys.length; i++) {
+            JLabel keyLabel = new JLabel(keys[i]);
+            keyLabel.setForeground(UIManager.getColor("Label.foreground"));
+            keyLabel.setFont(CARD_KEY_FONT);
+            keyLabel.setPreferredSize(new Dimension(maxKeyWidth, keyLabel.getPreferredSize().height));
+            JLabel valueLabel = new JLabel("-");
+            valueLabel.setHorizontalAlignment(SwingConstants.LEFT);
+            valueLabel.setForeground(UIManager.getColor("Label.foreground"));
+            valueLabel.setFont(CARD_VALUE_FONT);
+            values[i] = valueLabel;
+            gbc.gridx = 0;
+            gbc.weightx = 0;
+            card.add(keyLabel, gbc);
+            gbc.gridx = 1;
+            gbc.weightx = 1.0;
+            gbc.insets = new Insets(1, 0, 1, 0);
+            card.add(valueLabel, gbc);
+            gbc.gridy++;
+            gbc.insets = new Insets(1, 0, 1, 8);
+        }
+        parent.add(card);
+        return values;
+    }
+
+    private void updateDashboardSectionSizing() {
+        int leftTableHeight = trafficBySourceTable.getPreferredSize().height
+                + trafficBySourceTable.getTableHeader().getPreferredSize().height + 28;
+        int rightTableHeight = byIndexTable.getPreferredSize().height
+                + byIndexTable.getTableHeader().getPreferredSize().height + 28;
+        int tablesHeight = Math.max(leftTableHeight, rightTableHeight);
+        tablesRow.setPreferredSize(new Dimension(1200, tablesHeight));
+        tablesRow.setMinimumSize(new Dimension(800, tablesHeight));
+
+        int cardsHeight = 220;
+        cardsRow.setPreferredSize(new Dimension(1200, cardsHeight));
+        cardsRow.setMinimumSize(new Dimension(800, cardsHeight));
+    }
+
+    private static String formatWhole(long value) {
+        return String.format(Locale.ROOT, "%,d", value);
+    }
+
+    private static void updateTablePreferredHeight(JTable table) {
+        int rows = Math.max(1, table.getRowCount());
+        int headerHeight = table.getTableHeader() != null ? table.getTableHeader().getPreferredSize().height : 24;
+        int totalHeight = headerHeight + (rows * table.getRowHeight()) + 6;
+        int preferredWidth = Math.max(700, table.getPreferredSize().width);
+        table.setPreferredScrollableViewportSize(new Dimension(preferredWidth, totalHeight));
+        table.setPreferredSize(new Dimension(preferredWidth, Math.max(1, totalHeight - headerHeight)));
+    }
+
+    private static String formatKeyLabel(String key) {
+        if (key == null || key.isBlank()) {
+            return "";
+        }
+        String[] parts = key.toLowerCase(Locale.ROOT).replace('_', ' ').split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return sb.toString();
     }
 
     private void sampleRateSeries() {
@@ -229,14 +447,24 @@ public class StatsPanel extends JPanel {
         return Character.toUpperCase(indexKey.charAt(0)) + indexKey.substring(1);
     }
 
-    private static JFreeChart createRateChart(String title, String yLabel, TimeSeriesCollection dataset) {
-        JFreeChart chart = ChartFactory.createTimeSeriesChart(title, "Time", yLabel, dataset, true, false, false);
+    private static JFreeChart createRateChart(
+            String title,
+            String yLabel,
+            TimeSeriesCollection dataset,
+            boolean showLegend,
+            boolean showDomainLabel) {
+        JFreeChart chart = ChartFactory.createTimeSeriesChart(title, "Time", yLabel, dataset, showLegend, false, false);
         chart.setBackgroundPaint(CHART_BG);
+        chart.setPadding(RectangleInsets.ZERO_INSETS);
         TextTitle titleNode = chart.getTitle();
         titleNode.setPaint(TEXT_FG);
         titleNode.setFont(CHART_TITLE_FONT);
         titleNode.setVerticalAlignment(VerticalAlignment.BOTTOM);
+        // Keep title visually attached to the chart area.
+        titleNode.setMargin(RectangleInsets.ZERO_INSETS);
+        titleNode.setPadding(RectangleInsets.ZERO_INSETS);
         XYPlot plot = chart.getXYPlot();
+        plot.setInsets(new RectangleInsets(1, 2, 2, 2));
         plot.setBackgroundPaint(PLOT_BG);
         plot.setDomainGridlinePaint(GRID_FG);
         plot.setRangeGridlinePaint(GRID_FG);
@@ -258,6 +486,9 @@ public class StatsPanel extends JPanel {
             domain.setLabelFont(CHART_AXIS_LABEL_FONT);
             domain.setTickLabelFont(CHART_TICK_FONT);
             domain.setTickLabelsVisible(true);
+            if (!showDomainLabel) {
+                domain.setLabel(null);
+            }
             if (domain instanceof DateAxis dateAxis) {
                 // Keep x-axis labels human-readable as local wall-clock time.
                 dateAxis.setDateFormatOverride(new SimpleDateFormat(DOMAIN_TIME_PATTERN));
@@ -289,6 +520,20 @@ public class StatsPanel extends JPanel {
         panel.setMouseWheelEnabled(false);
         panel.setPopupMenu(null);
         return panel;
+    }
+
+    private static JPanel createSharedLegendPanel() {
+        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        legendPanel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+        legendPanel.setOpaque(false);
+        String[] labels = { "Traffic", "Tool", "Settings", "Sitemap", "Findings" };
+        for (int i = 0; i < labels.length; i++) {
+            JLabel legendItem = new JLabel("\u2014 " + labels[i], SwingConstants.LEFT);
+            legendItem.setForeground(SERIES_COLORS[i]);
+            legendItem.setFont(CHART_TICK_FONT);
+            legendPanel.add(legendItem);
+        }
+        return legendPanel;
     }
 
     private void updateChartWindow(long nowMs) {
