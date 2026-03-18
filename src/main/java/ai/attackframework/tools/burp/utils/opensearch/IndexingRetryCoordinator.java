@@ -3,13 +3,16 @@ package ai.attackframework.tools.burp.utils.opensearch;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Coordinates retries and a bounded per-index queue for OpenSearch indexing.
@@ -27,13 +30,13 @@ public final class IndexingRetryCoordinator {
     private static final long BACKOFF_BASE_MS = 1_000;
     private static final int BACKOFF_MULTIPLIER = 2;
     private static final int OUTAGE_LOG_THROTTLE_MS = 30_000;
-    private static volatile IndexingRetryCoordinator instance;
 
     private final RetryQueue queue;
     private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
     private final AtomicBoolean outageMode = new AtomicBoolean(false);
     private volatile long lastOutageLogTime = 0;
     private volatile Thread drainThread;
+    private volatile String lastDrainBaseUrl = "";
     private final Object drainThreadLock = new Object();
 
     public IndexingRetryCoordinator() {
@@ -41,14 +44,11 @@ public final class IndexingRetryCoordinator {
     }
 
     public static IndexingRetryCoordinator getInstance() {
-        if (instance == null) {
-            synchronized (IndexingRetryCoordinator.class) {
-                if (instance == null) {
-                    instance = new IndexingRetryCoordinator();
-                }
-            }
-        }
-        return instance;
+        return Holder.INSTANCE;
+    }
+
+    private static final class Holder {
+        private static final IndexingRetryCoordinator INSTANCE = new IndexingRetryCoordinator();
     }
 
     /**
@@ -64,19 +64,20 @@ public final class IndexingRetryCoordinator {
      * @return {@code true} if indexed successfully, {@code false} otherwise
      */
     public boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document, String indexKey) {
-        ensureDrainThreadStarted(baseUrl);
+        ensureDrainThreadStarted();
+        String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
 
         if (!outageMode.get()) {
-            boolean success = OpenSearchClientWrapper.doPushDocument(baseUrl, indexName, document);
+            boolean success = OpenSearchClientWrapper.doPushDocument(activeBaseUrl, indexName, document);
             if (success) {
             consecutiveFailures.set(0);
             if (outageMode.get()) {
-                checkRecoveryAndLog(baseUrl);
+                checkRecoveryAndLog(activeBaseUrl);
             }
             return true;
             }
             int fails = consecutiveFailures.incrementAndGet();
-            maybeEnterOutageMode(baseUrl, fails);
+            maybeEnterOutageMode(activeBaseUrl, fails);
         }
 
         boolean offered = queue.offer(indexName, document);
@@ -103,19 +104,20 @@ public final class IndexingRetryCoordinator {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
-        ensureDrainThreadStarted(baseUrl);
+        ensureDrainThreadStarted();
+        String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
 
         int successCount = 0;
         List<Map<String, Object>> toQueue = new ArrayList<>();
         boolean inOutage = outageMode.get();
         int maxAttempts = inOutage ? 1 : BULK_RETRY_ATTEMPTS;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            OpenSearchClientWrapper.BulkResult result = OpenSearchClientWrapper.doPushBulkWithDetails(baseUrl, indexName, documents);
+            OpenSearchClientWrapper.BulkResult result = OpenSearchClientWrapper.doPushBulkWithDetails(activeBaseUrl, indexName, documents);
             if (result.successCount == documents.size()) {
                 consecutiveFailures.set(0);
                 BatchSizeController.getInstance().recordSuccess(result.successCount);
                 if (outageMode.get()) {
-                    checkRecoveryAndLog(baseUrl);
+                    checkRecoveryAndLog(activeBaseUrl);
                 }
                 return result.successCount;
             }
@@ -123,7 +125,7 @@ public final class IndexingRetryCoordinator {
                 BatchSizeController.getInstance().recordPartialSuccess(result.successCount, documents.size());
                 consecutiveFailures.set(0);
                 if (outageMode.get()) {
-                    checkRecoveryAndLog(baseUrl);
+                    checkRecoveryAndLog(activeBaseUrl);
                 }
                 for (int i : result.failedIndices) {
                     if (i >= 0 && i < documents.size()) {
@@ -139,10 +141,7 @@ public final class IndexingRetryCoordinator {
                 successCount = 0;
                 break;
             }
-            try {
-                Thread.sleep(BACKOFF_BASE_MS * (long) Math.pow(BACKOFF_MULTIPLIER, attempt - 1));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            if (!waitBackoffDelay(attempt)) {
                 toQueue = new ArrayList<>(documents);
                 successCount = 0;
                 break;
@@ -150,7 +149,7 @@ public final class IndexingRetryCoordinator {
         }
 
         int fails = consecutiveFailures.incrementAndGet();
-        maybeEnterOutageMode(baseUrl, fails);
+        maybeEnterOutageMode(activeBaseUrl, fails);
 
         if (!toQueue.isEmpty()) {
             if (toQueue.size() <= MAX_QUEUE_SIZE_PER_INDEX) {
@@ -172,7 +171,7 @@ public final class IndexingRetryCoordinator {
         if (consecutiveFails != CONSECUTIVE_FAILURES_BEFORE_CHECK) {
             return;
         }
-        OpenSearchClientWrapper.OpenSearchStatus status = OpenSearchClientWrapper.testConnection(baseUrl);
+        OpenSearchClientWrapper.OpenSearchStatus status = testConnectionWithRuntimeConfig(baseUrl);
         if (!status.success()) {
             outageMode.set(true);
             logOutageOnce();
@@ -198,7 +197,7 @@ public final class IndexingRetryCoordinator {
     }
 
     private void checkRecoveryAndLog(String baseUrl) {
-        OpenSearchClientWrapper.OpenSearchStatus status = OpenSearchClientWrapper.testConnection(baseUrl);
+        OpenSearchClientWrapper.OpenSearchStatus status = testConnectionWithRuntimeConfig(baseUrl);
         if (status.success() && queue.allEmpty()) {
             outageMode.set(false);
             consecutiveFailures.set(0);
@@ -213,7 +212,7 @@ public final class IndexingRetryCoordinator {
         return IndexNaming.INDEX_PREFIX + "-" + indexKey;
     }
 
-    private void ensureDrainThreadStarted(String baseUrl) {
+    private void ensureDrainThreadStarted() {
         if (drainThread != null && drainThread.isAlive()) {
             return;
         }
@@ -221,19 +220,16 @@ public final class IndexingRetryCoordinator {
             if (drainThread != null && drainThread.isAlive()) {
                 return;
             }
-            drainThread = new Thread(() -> drainLoop(baseUrl), "OpenSearchRetryDrain");
+            drainThread = new Thread(this::drainLoop, "OpenSearchRetryDrain");
             drainThread.setDaemon(true);
             drainThread.start();
         }
     }
 
-    private void drainLoop(String baseUrl) {
+    private void drainLoop() {
         while (true) {
-            try {
-                long interval = outageMode.get() ? DRAIN_INTERVAL_MS_OUTAGE : DRAIN_INTERVAL_MS_NORMAL;
-                Thread.sleep(interval);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            long interval = outageMode.get() ? DRAIN_INTERVAL_MS_OUTAGE : DRAIN_INTERVAL_MS_NORMAL;
+            if (!waitInterval(interval)) {
                 break;
             }
 
@@ -243,6 +239,12 @@ public final class IndexingRetryCoordinator {
                     Logger.logError("[OpenSearch] Still unreachable. Queued: " + queue.totalSize() + ". Will retry.");
                 }
             }
+
+            String baseUrl = resolveBaseUrlForOperation("");
+            if (baseUrl.isBlank()) {
+                continue;
+            }
+            maybeLogDestinationChange(baseUrl);
 
             for (String indexKey : ExportStats.getIndexKeys()) {
                 String indexName = indexNameFromKey(indexKey);
@@ -272,8 +274,66 @@ public final class IndexingRetryCoordinator {
         }
     }
 
+    /**
+     * Returns the currently effective destination URL for retries.
+     *
+     * <p>Retry and drain paths should honor live runtime destination changes. This method
+     * prefers runtime config and falls back to call-site URL when runtime has not been set.</p>
+     */
+    static String resolveBaseUrlForOperation(String fallbackBaseUrl) {
+        String runtimeBaseUrl = RuntimeConfig.openSearchUrl();
+        if (runtimeBaseUrl != null && !runtimeBaseUrl.isBlank()) {
+            return runtimeBaseUrl.trim();
+        }
+        if (fallbackBaseUrl == null) {
+            return "";
+        }
+        return fallbackBaseUrl.trim();
+    }
+
+    private static OpenSearchClientWrapper.OpenSearchStatus testConnectionWithRuntimeConfig(String baseUrl) {
+        return OpenSearchClientWrapper.testConnection(
+                baseUrl,
+                RuntimeConfig.openSearchUser(),
+                RuntimeConfig.openSearchPassword());
+    }
+
+    private void maybeLogDestinationChange(String baseUrl) {
+        String previous = lastDrainBaseUrl;
+        if (baseUrl.equals(previous)) {
+            return;
+        }
+        lastDrainBaseUrl = baseUrl;
+        if (previous != null && !previous.isBlank() && queue.totalSize() > 0) {
+            Logger.logInfoPanelOnly("[OpenSearch] Retry drain destination updated while backlog exists: "
+                    + previous + " -> " + baseUrl);
+        }
+    }
+
     public int getQueueSize(String indexName) {
         return queue.size(indexName);
+    }
+
+    private static boolean waitBackoffDelay(int attempt) {
+        long delayMs = BACKOFF_BASE_MS * (long) Math.pow(BACKOFF_MULTIPLIER, attempt - 1);
+        return waitInterval(delayMs);
+    }
+
+    private static boolean waitInterval(long delayMs) {
+        if (delayMs <= 0) {
+            return !Thread.currentThread().isInterrupted();
+        }
+        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(delayMs);
+        long deadline = System.nanoTime() + remainingNanos;
+        while (remainingNanos > 0) {
+            LockSupport.parkNanos(remainingNanos);
+            if (Thread.currentThread().isInterrupted()) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            remainingNanos = deadline - System.nanoTime();
+        }
+        return true;
     }
 
     private static long estimateSuccessfulBytes(List<Map<String, Object>> batch, int successCount) {

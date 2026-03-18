@@ -253,6 +253,11 @@ class StatsPanelTest {
             }
         }
         assertThat(labels).contains("Throughput (Last 10s)");
+        assertThat(labels).contains("Spill Queue Docs");
+        assertThat(labels).contains("Spill Oldest Age (s)");
+        assertThat(labels).contains("Spill Enq/Deq/Drops");
+        assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
+        assertThat(labels).contains("Spill Directory");
         assertThat(labels).contains("Total Docs Pushed");
         assertThat(labels).contains("Total Failures");
         assertThat(labels).doesNotContain("Proxy-History Attempted/Success");

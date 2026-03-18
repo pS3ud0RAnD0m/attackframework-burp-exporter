@@ -102,6 +102,13 @@ public class StatsPanel extends JPanel {
     private final JLabel currentBatchSizeValue;
     private final JLabel trafficQueueValue;
     private final JLabel queueDropsValue;
+    private final JLabel spillQueueDocsValue;
+    private final JLabel spillQueueMibValue;
+    private final JLabel spillOldestAgeValue;
+    private final JLabel spillFlowValue;
+    private final JLabel dropReasonValue;
+    private final JLabel spillRecoveredValue;
+    private final JLabel spillDirectoryValue;
     private final JLabel throughputValue;
     private final JLabel totalDocsPushedValue;
     private final JLabel totalFailuresValue;
@@ -160,15 +167,24 @@ public class StatsPanel extends JPanel {
 
         JLabel[] exportStateValues = addMetricCard(cardsRow, "Misc Stats", new String[] {
                 "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
-                "Throughput (Last 10s)", "Total Docs Pushed", "Total Failures"
+                "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
+                "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)",
+                "Spill Directory", "Throughput (Last 10s)", "Total Docs Pushed", "Total Failures"
         });
         exportRunningValue = exportStateValues[0];
         currentBatchSizeValue = exportStateValues[1];
         trafficQueueValue = exportStateValues[2];
         queueDropsValue = exportStateValues[3];
-        throughputValue = exportStateValues[4];
-        totalDocsPushedValue = exportStateValues[5];
-        totalFailuresValue = exportStateValues[6];
+        spillQueueDocsValue = exportStateValues[4];
+        spillQueueMibValue = exportStateValues[5];
+        spillOldestAgeValue = exportStateValues[6];
+        spillFlowValue = exportStateValues[7];
+        dropReasonValue = exportStateValues[8];
+        spillRecoveredValue = exportStateValues[9];
+        spillDirectoryValue = exportStateValues[10];
+        throughputValue = exportStateValues[11];
+        totalDocsPushedValue = exportStateValues[12];
+        totalFailuresValue = exportStateValues[13];
 
         tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
         tablesRow.setOpaque(false);
@@ -216,6 +232,24 @@ public class StatsPanel extends JPanel {
         currentBatchSizeValue.setText(formatWhole(BatchSizeController.getInstance().getCurrentBatchSize()));
         trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
         queueDropsValue.setText(formatWhole(ExportStats.getTrafficQueueDrops()));
+        spillQueueDocsValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillSize()));
+        long spillBytes = ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillBytes();
+        spillQueueMibValue.setText(DECIMAL_ONE.format(spillBytes / (1024.0 * 1024.0)));
+        spillOldestAgeValue.setText(
+                DECIMAL_ONE.format(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillOldestAgeMs() / 1000.0));
+        spillFlowValue.setText(
+                formatWhole(ExportStats.getTrafficSpillEnqueued()) + " / "
+                        + formatWhole(ExportStats.getTrafficSpillDequeued()) + " / "
+                        + formatWhole(ExportStats.getTrafficSpillDrops()));
+        dropReasonValue.setText(
+                formatWhole(ExportStats.getTrafficDropReasonCount("spill_rejected_drop_oldest")) + " / "
+                        + formatWhole(ExportStats.getTrafficDropReasonCount("queue_contention_drop")) + " / "
+                        + formatWhole(ExportStats.getTrafficDropReasonCount("spill_requeue_failed_drop")) + " / "
+                        + formatWhole(ExportStats.getTrafficSpillExpiredPruned()));
+        spillRecoveredValue.setText(
+                formatWhole(ExportStats.getTrafficSpillRecovered()) + " (live: "
+                        + formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getRecoveredSpillCount()) + ")");
+        spillDirectoryValue.setText(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getSpillDirectoryPath());
         throughputValue.setText(DECIMAL_ONE.format(ExportStats.getThroughputDocsPerSecLast10s()) + " docs/s");
         long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
         if (fallbackHits > 0 && fallbackHits != lastLoggedToolSourceFallbacks) {
@@ -355,6 +389,9 @@ public class StatsPanel extends JPanel {
         tablesRow.setMinimumSize(new Dimension(800, tablesHeight));
 
         int cardsHeight = 220;
+        for (java.awt.Component component : cardsRow.getComponents()) {
+            cardsHeight = Math.max(cardsHeight, component.getPreferredSize().height + 22);
+        }
         cardsRow.setPreferredSize(new Dimension(1200, cardsHeight));
         cardsRow.setMinimumSize(new Dimension(800, cardsHeight));
     }
@@ -659,6 +696,27 @@ public class StatsPanel extends JPanel {
         long trafficQueueDrops = ExportStats.getTrafficQueueDrops();
         sb.append("  traffic queue: size=").append(trafficQueueSize).append(" drops=").append(trafficQueueDrops).append("\n");
         sb.append("  null tool/source hits: ").append(ExportStats.getTrafficToolSourceFallbacks()).append("\n");
+        sb.append("  spill queue: docs=")
+                .append(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillSize())
+                .append(" bytes=")
+                .append(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillBytes())
+                .append(" oldestAgeMs=")
+                .append(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillOldestAgeMs())
+                .append(" enq/deq/drops=")
+                .append(ExportStats.getTrafficSpillEnqueued()).append("/")
+                .append(ExportStats.getTrafficSpillDequeued()).append("/")
+                .append(ExportStats.getTrafficSpillDrops()).append("\n");
+        sb.append("  traffic drop reasons: spill_rejected_drop_oldest=")
+                .append(ExportStats.getTrafficDropReasonCount("spill_rejected_drop_oldest"))
+                .append(" queue_contention_drop=")
+                .append(ExportStats.getTrafficDropReasonCount("queue_contention_drop"))
+                .append(" spill_requeue_failed_drop=")
+                .append(ExportStats.getTrafficDropReasonCount("spill_requeue_failed_drop"))
+                .append(" spill_retention_prune=")
+                .append(ExportStats.getTrafficSpillExpiredPruned())
+                .append("\n");
+        sb.append("  spill recovered (startup): ").append(ExportStats.getTrafficSpillRecovered()).append("\n");
+        sb.append("  spill directory: ").append(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getSpillDirectoryPath()).append("\n");
         double throughput = ExportStats.getThroughputDocsPerSecLast10s();
         sb.append("  throughput (last 10s): ").append(String.format("%.1f", throughput)).append(" docs/s\n\n");
 

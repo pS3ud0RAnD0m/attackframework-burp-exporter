@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
@@ -30,11 +31,23 @@ public final class TrafficExportQueue {
     private static final long STARTUP_GRACE_MAX_MS = 2_000;
     private static final long STARTUP_POLL_MS = 25;
     private static final int START_DRAIN_BACKLOG_DOCS = 64;
+    private static final int SPILL_REFILL_TARGET_DOCS = 256;
 
     private static final LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>(CAPACITY);
+    private static final TrafficSpillFileQueue spillQueue = new TrafficSpillFileQueue();
     private static final AtomicBoolean workerStarted = new AtomicBoolean(false);
 
     private TrafficExportQueue() {}
+
+    static {
+        long recoveredDocs = spillQueue.recoveredCount();
+        if (recoveredDocs > 0) {
+            long recoveredBytes = spillQueue.recoveredBytes();
+            ExportStats.recordTrafficSpillRecovered(recoveredDocs);
+            Logger.logInfoPanelOnly("[TrafficExportQueue] Recovered " + recoveredDocs
+                    + " spill docs (" + recoveredBytes + " bytes) from " + spillQueue.directoryPath());
+        }
+    }
 
     /**
      * Returns the current number of documents in the traffic export queue.
@@ -45,20 +58,60 @@ public final class TrafficExportQueue {
         return queue.size();
     }
 
+    /** Returns current spill queue depth for StatsPanel observability. */
+    public static int getCurrentSpillSize() {
+        return spillQueue.size();
+    }
+
+    /** Returns current spill queue bytes for StatsPanel observability. */
+    public static long getCurrentSpillBytes() {
+        return spillQueue.bytes();
+    }
+
+    /** Returns oldest spill age in milliseconds (0 when no spilled docs). */
+    public static long getCurrentSpillOldestAgeMs() {
+        return spillQueue.oldestAgeMs();
+    }
+
+    /** Returns startup-recovered spill document count. */
+    public static long getRecoveredSpillCount() {
+        return spillQueue.recoveredCount();
+    }
+
+    /** Returns spill directory path for diagnostics. */
+    public static String getSpillDirectoryPath() {
+        return spillQueue.directoryPath();
+    }
+
     /**
      * Offers a traffic document to the queue. Non-blocking.
      *
-     * <p>If the queue is full, the oldest document is removed and this one is added; a drop is
-     * recorded in {@link ExportStats}. Starts the drain worker on first use. Thread-safe.</p>
+     * <p>If the queue is full, the document is first spilled to disk. Only when spill rejects it
+     * does this path fall back to drop-oldest behavior and record a drop in {@link ExportStats}.
+     * Starts the drain worker on first use. Thread-safe.</p>
      *
      * @param document the document to enqueue; {@code null} is ignored
      */
     public static void offer(Map<String, Object> document) {
         if (document == null) return;
         if (!queue.offer(document)) {
-            queue.poll();
-            ExportStats.recordTrafficQueueDrop(1);
-            queue.offer(document);
+            if (spillQueue.offer(document)) {
+                ExportStats.recordTrafficSpillEnqueued(1);
+            } else {
+                queue.poll();
+                ExportStats.recordTrafficQueueDrop(1);
+                ExportStats.recordTrafficSpillDrop(1);
+                ExportStats.recordTrafficDropReason("spill_rejected_drop_oldest", 1);
+                if (!queue.offer(document)) {
+                    // Queue remained full under contention; count as dropped.
+                    ExportStats.recordTrafficQueueDrop(1);
+                    ExportStats.recordTrafficSpillDrop(1);
+                    ExportStats.recordTrafficDropReason("queue_contention_drop", 1);
+                    Logger.logError("[TrafficExportQueue] Queue and spill full; dropping traffic document.");
+                } else {
+                    Logger.logError("[TrafficExportQueue] Spill full; used drop-oldest fallback.");
+                }
+            }
         }
         startWorkerIfNeeded();
     }
@@ -92,6 +145,7 @@ public final class TrafficExportQueue {
             }
 
             int maxBatch = batchController.getCurrentBatchSize();
+            refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
             long startNs = System.nanoTime();
             ChunkedBulkSender.Result result = ChunkedBulkSender.push(
                     baseUrl, TRAFFIC_INDEX, queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
@@ -114,6 +168,33 @@ public final class TrafficExportQueue {
             } else {
                 batchController.recordFailure(result.attemptedCount);
             }
+        }
+    }
+
+    /**
+     * Moves a bounded number of spilled docs back to memory queue before sending.
+     *
+     * <p>Drains only while memory queue has room and stops on first enqueue failure to avoid
+     * spinning under contention.</p>
+     *
+     * @param targetDocs desired minimum queued docs before bulk send
+     */
+    private static void refillFromSpill(int targetDocs) {
+        while (queue.size() < targetDocs) {
+            Map<String, Object> spilled = spillQueue.poll();
+            if (spilled == null) {
+                return;
+            }
+            if (!queue.offer(spilled)) {
+                if (!spillQueue.offer(spilled)) {
+                    ExportStats.recordTrafficQueueDrop(1);
+                    ExportStats.recordTrafficSpillDrop(1);
+                    ExportStats.recordTrafficDropReason("spill_requeue_failed_drop", 1);
+                    Logger.logError("[TrafficExportQueue] Failed to re-queue drained spill document; dropping.");
+                }
+                return;
+            }
+            ExportStats.recordTrafficSpillDequeued(1);
         }
     }
 

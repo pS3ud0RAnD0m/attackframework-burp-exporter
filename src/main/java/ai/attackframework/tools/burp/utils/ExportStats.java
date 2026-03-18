@@ -252,6 +252,18 @@ public final class ExportStats {
 
     /** Traffic export queue backpressure: count of documents dropped when the queue is full (oldest dropped). */
     private static final AtomicLong trafficQueueDrops = new AtomicLong(0);
+    /** Count of traffic documents persisted to spill storage when memory queue is full. */
+    private static final AtomicLong trafficSpillEnqueued = new AtomicLong(0);
+    /** Count of traffic documents read back from spill storage into memory queue. */
+    private static final AtomicLong trafficSpillDequeued = new AtomicLong(0);
+    /** Count of traffic documents dropped because spill storage rejected them. */
+    private static final AtomicLong trafficSpillDrops = new AtomicLong(0);
+    /** Count of spill documents discovered on startup and available for replay. */
+    private static final AtomicLong trafficSpillRecovered = new AtomicLong(0);
+    /** Count of spill files pruned by retention policy before replay. */
+    private static final AtomicLong trafficSpillExpiredPruned = new AtomicLong(0);
+    /** Reason-coded drop counters for extreme traffic handling diagnostics. */
+    private static final Map<String, AtomicLong> trafficDropReasons = new ConcurrentHashMap<>();
     /** Count of response-path exports that required request-side tool-type fallback. */
     private static final AtomicLong trafficToolSourceFallbacks = new AtomicLong(0);
 
@@ -271,6 +283,108 @@ public final class ExportStats {
      */
     public static long getTrafficQueueDrops() {
         return trafficQueueDrops.get();
+    }
+
+    /**
+     * Records one or more traffic documents persisted to spill storage.
+     *
+     * @param count number of spilled documents; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSpillEnqueued(long count) {
+        if (count > 0) {
+            trafficSpillEnqueued.addAndGet(count);
+        }
+    }
+
+    /** Returns total spilled traffic documents persisted this session. */
+    public static long getTrafficSpillEnqueued() {
+        return trafficSpillEnqueued.get();
+    }
+
+    /**
+     * Records one or more traffic documents drained from spill storage.
+     *
+     * @param count number of drained spilled documents; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSpillDequeued(long count) {
+        if (count > 0) {
+            trafficSpillDequeued.addAndGet(count);
+        }
+    }
+
+    /** Returns total spilled traffic documents drained back into memory this session. */
+    public static long getTrafficSpillDequeued() {
+        return trafficSpillDequeued.get();
+    }
+
+    /**
+     * Records one or more traffic documents dropped because spill storage was unavailable/full.
+     *
+     * @param count number of dropped spill documents; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSpillDrop(long count) {
+        if (count > 0) {
+            trafficSpillDrops.addAndGet(count);
+        }
+    }
+
+    /** Returns total traffic documents dropped due to spill rejection this session. */
+    public static long getTrafficSpillDrops() {
+        return trafficSpillDrops.get();
+    }
+
+    /**
+     * Records one or more spill documents recovered on startup.
+     *
+     * @param count recovered spill document count; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSpillRecovered(long count) {
+        if (count > 0) {
+            trafficSpillRecovered.addAndGet(count);
+        }
+    }
+
+    /** Returns total spill documents recovered on startup this session. */
+    public static long getTrafficSpillRecovered() {
+        return trafficSpillRecovered.get();
+    }
+
+    /**
+     * Records one or more spill files removed by retention cleanup.
+     *
+     * @param count pruned spill file count; ignored if {@code <= 0}
+     */
+    public static void recordTrafficSpillExpiredPruned(long count) {
+        if (count > 0) {
+            trafficSpillExpiredPruned.addAndGet(count);
+        }
+    }
+
+    /** Returns total spill files pruned by retention this session. */
+    public static long getTrafficSpillExpiredPruned() {
+        return trafficSpillExpiredPruned.get();
+    }
+
+    /**
+     * Records a reason-coded traffic drop event.
+     *
+     * @param reason non-blank reason key
+     * @param count number of dropped documents for that reason
+     */
+    public static void recordTrafficDropReason(String reason, long count) {
+        if (reason == null || reason.isBlank() || count <= 0) {
+            return;
+        }
+        trafficDropReasons.computeIfAbsent(reason, k -> new AtomicLong(0)).addAndGet(count);
+    }
+
+    /** Returns the total for one reason-coded traffic drop key (0 when absent). */
+    public static long getTrafficDropReasonCount(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return 0;
+        }
+        AtomicLong counter = trafficDropReasons.get(reason);
+        return counter == null ? 0 : counter.get();
     }
 
     /**

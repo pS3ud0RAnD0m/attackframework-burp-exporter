@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
@@ -35,12 +34,13 @@ public final class ProxyHistoryIndexReporter {
 
     private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
-    /** Delay (seconds) before one-time history push so startup UI/other reporters can settle. */
-    private static final long START_DELAY_SECONDS = 2;
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024;
     private static final int SNAPSHOT_BATCH_INITIAL = 250;
     private static final int SNAPSHOT_BATCH_MIN = 100;
     private static final int SNAPSHOT_BATCH_MAX = 1500;
+    private static final int LIVE_QUEUE_BACKPRESSURE_DOCS = 10_000;
+    private static final int LIVE_SPILL_BACKPRESSURE_DOCS = 2_000;
+    private static final long BACKPRESSURE_PAUSE_MS = 75;
 
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "attackframework-proxy-history-scheduler");
@@ -74,11 +74,12 @@ public final class ProxyHistoryIndexReporter {
                 return;
             }
             MontoyaApi apiRef = api;
-            String baseUrlRef = baseUrl;
-            scheduler.schedule(() -> {
+            scheduler.execute(() -> {
                 if (!RuntimeConfig.isExportRunning()) return;
-                pushItems(apiRef, baseUrlRef);
-            }, START_DELAY_SECONDS, TimeUnit.SECONDS);
+                String activeBaseUrl = RuntimeConfig.openSearchUrl();
+                if (activeBaseUrl == null || activeBaseUrl.isBlank()) return;
+                pushItems(apiRef, activeBaseUrl);
+            });
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logDebug("Proxy History index: push failed: " + msg);
@@ -117,6 +118,7 @@ public final class ProxyHistoryIndexReporter {
             boolean sizeCapReached = !chunk.isEmpty() && (estBytes + docBytes) > BULK_MAX_BYTES;
             boolean countCapReached = !chunk.isEmpty() && chunk.size() >= chunkTarget;
             if (sizeCapReached || countCapReached) {
+                chunkTarget = applyLiveBackpressure(chunkTarget);
                 int attemptedChunk = chunk.size();
                 int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
                 success += sent;
@@ -136,6 +138,7 @@ public final class ProxyHistoryIndexReporter {
             estBytes += docBytes;
         }
         if (!chunk.isEmpty()) {
+            chunkTarget = applyLiveBackpressure(chunkTarget);
             int attemptedChunk = chunk.size();
             int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
             success += sent;
@@ -190,6 +193,21 @@ public final class ProxyHistoryIndexReporter {
         }
         int reduced = Math.max(SNAPSHOT_BATCH_MIN, current / 2);
         return Math.min(reduced, Math.max(SNAPSHOT_BATCH_MIN, succeeded));
+    }
+
+    private static int applyLiveBackpressure(int currentTarget) {
+        int liveQueueDocs = TrafficExportQueue.getCurrentSize();
+        int spillDocs = TrafficExportQueue.getCurrentSpillSize();
+        if (liveQueueDocs < LIVE_QUEUE_BACKPRESSURE_DOCS && spillDocs < LIVE_SPILL_BACKPRESSURE_DOCS) {
+            return currentTarget;
+        }
+        try {
+            Thread.sleep(BACKPRESSURE_PAUSE_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Math.max(SNAPSHOT_BATCH_MIN, currentTarget / 2);
+        }
+        return Math.max(SNAPSHOT_BATCH_MIN, currentTarget / 2);
     }
 
     private static Map<String, Object> buildDocument(MontoyaApi api, ProxyHttpRequestResponse item) {
