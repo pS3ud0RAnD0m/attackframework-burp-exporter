@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.ui;
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -261,6 +262,19 @@ class StatsPanelTest {
         assertThat(labels).contains("Total Docs Pushed");
         assertThat(labels).contains("Total Failures");
         assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
+    }
+
+    @Test
+    void preferredSize_growsToFitCardsAndTablesSoBottomDoesNotClip() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel tablesRow = get(panel, "tablesRow");
+        JPanel cardsRow = get(panel, "cardsRow");
+        int chartHeight = getStatic(StatsPanel.class, "CHART_PANEL_HEIGHT");
+        int padding = getStatic(StatsPanel.class, "CONTENT_VERTICAL_PADDING");
+
+        java.awt.Dimension preferred = onEdt(panel::getPreferredSize);
+        int requiredMinHeight = chartHeight + tablesRow.getPreferredSize().height + cardsRow.getPreferredSize().height + padding;
+        assertThat(preferred.height).isGreaterThanOrEqualTo(requiredMinHeight);
     }
 
     private static void onEdt(Runnable runnable) {

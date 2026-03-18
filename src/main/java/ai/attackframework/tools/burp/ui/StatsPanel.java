@@ -63,6 +63,9 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
  */
 public class StatsPanel extends JPanel {
 
+    private static final int PANEL_BASE_WIDTH = 1200;
+    private static final int PANEL_BASE_HEIGHT = 900;
+    private static final int CONTENT_VERTICAL_PADDING = 56;
     private static final int REFRESH_INTERVAL_MS = 3000;
     private static final int ERROR_COL_MAX = 50;
     private static final int CHART_MAX_POINTS = 240;
@@ -133,7 +136,7 @@ public class StatsPanel extends JPanel {
      */
     public StatsPanel() {
         setLayout(new BorderLayout());
-        setPreferredSize(new Dimension(1200, 900));
+        setPreferredSize(new Dimension(PANEL_BASE_WIDTH, PANEL_BASE_HEIGHT));
 
         docsPerSecondDataset = new TimeSeriesCollection();
         kibPerSecondDataset = new TimeSeriesCollection();
@@ -385,15 +388,19 @@ public class StatsPanel extends JPanel {
         int rightTableHeight = byIndexTable.getPreferredSize().height
                 + byIndexTable.getTableHeader().getPreferredSize().height + 28;
         int tablesHeight = Math.max(leftTableHeight, rightTableHeight);
-        tablesRow.setPreferredSize(new Dimension(1200, tablesHeight));
+        tablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, tablesHeight));
         tablesRow.setMinimumSize(new Dimension(800, tablesHeight));
 
         int cardsHeight = 220;
         for (java.awt.Component component : cardsRow.getComponents()) {
             cardsHeight = Math.max(cardsHeight, component.getPreferredSize().height + 22);
         }
-        cardsRow.setPreferredSize(new Dimension(1200, cardsHeight));
+        cardsRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, cardsHeight));
         cardsRow.setMinimumSize(new Dimension(800, cardsHeight));
+
+        int requiredHeight = CHART_PANEL_HEIGHT + tablesHeight + cardsHeight + CONTENT_VERTICAL_PADDING;
+        int dynamicPanelHeight = Math.max(PANEL_BASE_HEIGHT, requiredHeight);
+        setPreferredSize(new Dimension(PANEL_BASE_WIDTH, dynamicPanelHeight));
     }
 
     private static String formatWhole(long value) {
