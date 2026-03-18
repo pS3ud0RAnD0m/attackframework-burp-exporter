@@ -277,6 +277,47 @@ class StatsPanelTest {
         assertThat(preferred.height).isGreaterThanOrEqualTo(requiredMinHeight);
     }
 
+    @Test
+    void sourceAndIndexTables_sortNumericColumnsNumerically() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JTable sourceTable = get(panel, "trafficBySourceTable");
+        JTable indexTable = get(panel, "byIndexTable");
+        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+
+        onEdt(() -> {
+            sourceModel.setRowCount(0);
+            sourceModel.addRow(new Object[] { "Proxy", "58", "-", "-", "0", "-", "-" });
+            sourceModel.addRow(new Object[] { "Total", "4616", "-", "-", "0", "-", "-" });
+            sourceModel.addRow(new Object[] { "Scanner", "1316", "-", "-", "0", "-", "-" });
+            sourceTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.DESCENDING)));
+
+            indexModel.setRowCount(0);
+            indexModel.addRow(new Object[] { "Traffic", 3242L, 0, 0L, 0L, "154083", "-" });
+            indexModel.addRow(new Object[] { "Sitemap", 423L, 0, 0L, 0L, "-", "-" });
+            indexModel.addRow(new Object[] { "Findings", 505L, 0, 0L, 0L, "-", "-" });
+            indexTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.DESCENDING)));
+        });
+
+        List<String> sourceOrder = onEdt(() -> {
+            List<String> rows = new ArrayList<>();
+            for (int i = 0; i < sourceTable.getRowCount(); i++) {
+                rows.add(String.valueOf(sourceTable.getValueAt(i, 0)));
+            }
+            return rows;
+        });
+        assertThat(sourceOrder).containsExactly("Total", "Scanner", "Proxy");
+
+        List<String> indexOrder = onEdt(() -> {
+            List<String> rows = new ArrayList<>();
+            for (int i = 0; i < indexTable.getRowCount(); i++) {
+                rows.add(String.valueOf(indexTable.getValueAt(i, 0)));
+            }
+            return rows;
+        });
+        assertThat(indexOrder).containsExactly("Traffic", "Findings", "Sitemap");
+    }
+
     private static void onEdt(Runnable runnable) {
         if (SwingUtilities.isEventDispatchThread()) {
             runnable.run();

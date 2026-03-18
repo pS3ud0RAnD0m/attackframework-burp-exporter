@@ -30,6 +30,7 @@ import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
@@ -331,6 +332,11 @@ public class StatsPanel extends JPanel {
         };
         table.setFillsViewportHeight(true);
         table.setAutoCreateRowSorter(true);
+        if (table.getRowSorter() instanceof TableRowSorter<?> sorter) {
+            for (int columnIndex = 1; columnIndex <= 5 && columnIndex < table.getColumnCount(); columnIndex++) {
+                sorter.setComparator(columnIndex, StatsPanel::compareNumericCell);
+            }
+        }
         table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         table.setRowHeight(22);
         DefaultTableCellRenderer leftAligned = new DefaultTableCellRenderer();
@@ -414,6 +420,41 @@ public class StatsPanel extends JPanel {
         int preferredWidth = Math.max(700, table.getPreferredSize().width);
         table.setPreferredScrollableViewportSize(new Dimension(preferredWidth, totalHeight));
         table.setPreferredSize(new Dimension(preferredWidth, Math.max(1, totalHeight - headerHeight)));
+    }
+
+    private static int compareNumericCell(Object left, Object right) {
+        Long leftValue = toSortableLong(left);
+        Long rightValue = toSortableLong(right);
+        if (leftValue == null && rightValue == null) {
+            return 0;
+        }
+        if (leftValue == null) {
+            return -1;
+        }
+        if (rightValue == null) {
+            return 1;
+        }
+        return Long.compare(leftValue, rightValue);
+    }
+
+    private static Long toSortableLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        String text = value instanceof String stringValue
+                ? stringValue.trim()
+                : value.toString().trim();
+        if (text.isEmpty() || "-".equals(text)) {
+            return null;
+        }
+        try {
+            return Long.valueOf(text.indexOf(',') >= 0 ? text.replace(",", "") : text);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static String formatKeyLabel(String key) {
