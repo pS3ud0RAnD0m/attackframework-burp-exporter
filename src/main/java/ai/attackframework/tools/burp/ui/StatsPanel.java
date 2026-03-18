@@ -69,9 +69,9 @@ public class StatsPanel extends JPanel {
     private static final int CONTENT_VERTICAL_PADDING = 56;
     private static final int REFRESH_INTERVAL_MS = 3000;
     private static final int ERROR_COL_MAX = 50;
-    private static final int CHART_MAX_POINTS = 240;
-    private static final int CHART_PANEL_HEIGHT = 460;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
+    private static final int CHART_MAX_POINTS = (int) (CHART_WINDOW_MAX_MS / REFRESH_INTERVAL_MS) + 5;
+    private static final int CHART_PANEL_HEIGHT = 460;
     private static final double DEFAULT_RATE_RANGE_MAX = 10.0;
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
     private static final int DOMAIN_TARGET_LABELS = 14;

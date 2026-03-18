@@ -278,6 +278,15 @@ class StatsPanelTest {
     }
 
     @Test
+    void chartMaxPoints_coversConfiguredRollingWindowAtRefreshCadence() {
+        int chartMaxPoints = getStatic(StatsPanel.class, "CHART_MAX_POINTS");
+        long chartWindowMs = getStatic(StatsPanel.class, "CHART_WINDOW_MAX_MS");
+        int refreshIntervalMs = getStatic(StatsPanel.class, "REFRESH_INTERVAL_MS");
+        int requiredPoints = (int) (chartWindowMs / refreshIntervalMs);
+        assertThat(chartMaxPoints).isGreaterThanOrEqualTo(requiredPoints);
+    }
+
+    @Test
     void sourceAndIndexTables_sortNumericColumnsNumerically() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JTable sourceTable = get(panel, "trafficBySourceTable");
