@@ -174,13 +174,16 @@ class ConfigPanelAuthStorageHeadlessTest {
     }
 
     @Test
-    void authenticateAndSaveTooltips_explainSecureHandling() throws Exception {
+    void testConnectionTooltip_explainsAuthApplyAndSecureHandling() throws Exception {
         setupStore();
         try {
             ConfigPanel panel = newPanelOnEdt();
+            JButton testButton = get(panel, "testConnectionButton");
             JPanel authForm = get(panel, "openSearchAuthFormPanel");
-            JButton authBtn = (JButton) findByName(authForm, "os.authenticate");
-            assertThat(authBtn.getToolTipText()).contains("securely").contains("never exported");
+            runEdt(() -> {
+                assertThat(testButton.getToolTipText()).contains("Apply auth settings").contains("securely in Burp");
+                assertThat(findByNameOrNull(authForm, "os.authenticate")).isNull();
+            });
         } finally {
             teardownStore();
         }
@@ -205,6 +208,33 @@ class ConfigPanelAuthStorageHeadlessTest {
             SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
             assertThat(creds.username()).isEqualTo("bob");
             assertThat(creds.password()).isEqualTo("s3cret");
+        } finally {
+            teardownStore();
+        }
+    }
+
+    @Test
+    void testConnection_appliesAndPersistsSelectedBasicAuthBeforeConnectivityCheck() throws Exception {
+        setupStore();
+        try {
+            ConfigPanel panel = newPanelOnEdt();
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+            JTextField user = get(panel, "openSearchUserField");
+            JPasswordField pass = get(panel, "openSearchPasswordField");
+            JButton testConnection = get(panel, "testConnectionButton");
+
+            runEdt(() -> {
+                authType.setSelectedItem("Basic");
+                user.setText("dana");
+                pass.setText("pw-conn");
+                testConnection.doClick();
+            });
+
+            SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
+            assertThat(creds.username()).isEqualTo("dana");
+            assertThat(creds.password()).isEqualTo("pw-conn");
+            assertThat(RuntimeConfig.openSearchUser()).isEqualTo("dana");
+            assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw-conn");
         } finally {
             teardownStore();
         }

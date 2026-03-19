@@ -209,7 +209,7 @@ public final class ConfigController {
                     Logger.logDebug("[ConfigPanel] testConnection result: success=" + s.success()
                             + ", message=" + s.message());
                     if (s.success()) {
-                        return "Connected to OpenSearch: " + s.distribution() + " " + s.version();
+                        return "Connected to: " + s.distribution() + " " + s.version();
                     } else {
                         return TEST_FAILED + (s.message() == null ? "Unknown error" : s.message());
                     }

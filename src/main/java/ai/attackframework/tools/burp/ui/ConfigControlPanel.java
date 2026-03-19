@@ -49,6 +49,7 @@ public final class ConfigControlPanel {
     private static final Color INDICATOR_BORDER = Color.BLACK;
     /** Inset so the border is not clipped by the component bounds. */
     private static final int INDICATOR_INSET   = 2;
+    private static final int BUTTON_ROWS_EXTRA_GAP = 8;
 
     /** Paints a 3D-style circle: red/green fill with top-left gloss and a thin black border; transparent background. */
     private static final class IndicatorDot extends JComponent {
@@ -186,7 +187,6 @@ public final class ConfigControlPanel {
                 updateStartStopButton(startStopBtn, false);
                 indicator.setRunning(false);
             } else {
-                // 1) Paint button green immediately; 2) then create indexes and push (startAction may call revert if index creation fails)
                 updateStartStopButton(startStopBtn, true);
                 indicator.setRunning(true);
                 Runnable revertUi = () -> {
@@ -197,13 +197,11 @@ public final class ConfigControlPanel {
             }
         });
 
-        // Row 1: Import Config, Export Config
         JPanel row1 = new JPanel(new MigLayout("insets 0, gapx 10", "[left][left]", "[]"));
         row1.setAlignmentX(Component.LEFT_ALIGNMENT);
         row1.add(importBtn, "gapleft " + indent);
         row1.add(exportBtn);
 
-        // Row 2: Save, Start/Stop, indicator. Indicator is a painted circle same height as buttons; aligny center.
         JPanel row2 = new JPanel(new MigLayout("insets 0, gapx 10", "[left][left][left]", "[]"));
         row2.setAlignmentX(Component.LEFT_ALIGNMENT);
         row2.add(saveBtn, "gapleft " + indent + ", aligny center");
@@ -213,11 +211,10 @@ public final class ConfigControlPanel {
         JPanel buttons = new JPanel(new MigLayout("insets 0, gapy " + rowGap, "[left]", "[]" + rowGap + " []"));
         buttons.setAlignmentX(Component.LEFT_ALIGNMENT);
         buttons.add(row1, "wrap");
-        buttons.add(row2);
+        buttons.add(row2, "gaptop " + BUTTON_ROWS_EXTRA_GAP);
 
         root.add(buttons);
 
-        // Status rows (mirror ConfigDestinationPanel styling: compact, bordered, pref-width areas)
         statusConfigurator.accept(importExportStatus);
         statusConfigurator.accept(controlStatus);
 

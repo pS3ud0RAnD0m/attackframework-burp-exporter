@@ -72,7 +72,7 @@ public final class ConfigScopePanel {
         customRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         customRow.add(customRadio, GAPLEFT + indentPx + ", " + ALIGN_LEFT_TOP);
         customRow.add(grid.component(), "growx");
-        panel.add(customRow, "growx, gapbottom 4");
+        panel.add(customRow, "growx");
 
         // All radio (indented)
         panel.add(allRadio, GAPLEFT + indentPx + ", " + ALIGN_LEFT_TOP);

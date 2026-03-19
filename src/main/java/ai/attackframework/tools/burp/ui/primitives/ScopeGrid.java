@@ -48,9 +48,6 @@ public class ScopeGrid implements Serializable {
         @Serial private static final long serialVersionUID = 1L;
     }
 
-    // Single grid containing all rows (no forced wrap-per-component).
-    // Parent composite (ConfigScopePanel) provides the [150!,left]20[...] columns; this
-    // grid starts at the "fields" column and keeps Sink alignment stable.
     private final JPanel grid = new JPanel(
             new MigLayout(
                     "insets 0, gapx 20, gapy 6",
