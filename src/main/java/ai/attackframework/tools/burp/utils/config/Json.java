@@ -433,22 +433,9 @@ public final class Json {
             if (!v.isBlank()) os = v;
         }
 
-        String osUser = null;
-        JsonNode osUserNode = sinks.path("openSearchUser");
-        if (osUserNode.isTextual()) {
-            String v = osUserNode.asText();
-            if (!v.isBlank()) osUser = v;
-        }
-        String osPass = null;
-        JsonNode osPassNode = sinks.path("openSearchPassword");
-        if (osPassNode.isTextual()) {
-            String v = osPassNode.asText();
-            if (!v.isBlank()) osPass = v;
-        }
-
         boolean insecureSsl = sinks.path("openSearchInsecureSsl").asBoolean(false);
 
-        return new SinksParts(files, os, osUser, osPass, insecureSsl);
+        return new SinksParts(files, os, "", "", insecureSsl);
     }
 
     /** Returns null when absent or empty (all fields enabled). */

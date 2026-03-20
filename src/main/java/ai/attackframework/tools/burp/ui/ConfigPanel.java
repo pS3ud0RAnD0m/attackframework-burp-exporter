@@ -49,10 +49,10 @@ import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
 import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.ui.text.Doc;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -306,7 +306,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         assignComponentNames();
         wireTextFieldEnhancements();
-        loadSecureOpenSearchCredentials();
+        loadSessionOpenSearchCredentials();
         refreshEnabledStates();
         applyEditionRestrictions();
     }
@@ -324,18 +324,36 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
     }
 
-    /** Loads persisted auth type and per-type secrets from Montoya secure storage. */
-    private void loadSecureOpenSearchCredentials() {
+    /** Loads in-memory auth values for the current Burp session. */
+    private void loadSessionOpenSearchCredentials() {
         if (openSearchAuthTypeCombo == null) {
             return;
         }
-        String selectedType = String.valueOf(openSearchAuthTypeCombo.getSelectedItem());
-        if (selectedType == null || selectedType.isBlank()) {
+        String selectedType = SecureCredentialStore.loadSelectedAuthType();
+        if (selectedType == null || selectedType.isBlank() || "None".equals(selectedType)) {
             selectedType = "Basic";
-            openSearchAuthTypeCombo.setSelectedItem(selectedType);
         }
-        loadAuthFieldsForSelectedType(selectedType);
+        openSearchAuthTypeCombo.setSelectedItem(selectedType);
+        loadSessionAuthFields();
         updateRuntimeConfig();
+    }
+
+    private void loadSessionAuthFields() {
+        SecureCredentialStore.BasicCredentials basic = SecureCredentialStore.loadOpenSearchCredentials();
+        openSearchUserField.setText(basic.username());
+        openSearchPasswordField.setText(basic.password());
+
+        SecureCredentialStore.ApiKeyCredentials apiKey = SecureCredentialStore.loadApiKeyCredentials();
+        openSearchApiKeyIdField.setText(apiKey.keyId());
+        openSearchApiKeySecretField.setText(apiKey.keySecret());
+
+        SecureCredentialStore.JwtCredentials jwt = SecureCredentialStore.loadJwtCredentials();
+        openSearchJwtTokenField.setText(jwt.token());
+
+        SecureCredentialStore.CertificateCredentials cert = SecureCredentialStore.loadCertificateCredentials();
+        openSearchCertPathField.setText(cert.certPath());
+        openSearchCertKeyPathField.setText(cert.keyPath());
+        openSearchCertPassphraseField.setText(cert.passphrase());
     }
 
     /**
@@ -348,6 +366,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param onStartFailure callback from {@link ConfigControlPanel} to revert Start UI state
      */
     private void startExportAsync(Runnable onStartFailure) {
+        persistSelectedAuthSecrets();
         updateRuntimeConfig();
         String url = openSearchUrlField.getText().trim();
         List<String> sources = List.copyOf(getSelectedSources());
@@ -515,11 +534,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 openSearchSinkCheckbox.setSelected(sinks.osEnabled());
                 openSearchUrlField.setText(sinks.openSearchUrl() != null ? sinks.openSearchUrl() : "");
                 openSearchInsecureSslCheckbox.setSelected(sinks.openSearchInsecureSsl());
-                openSearchUserField.setText(sinks.openSearchUser() != null ? sinks.openSearchUser() : "");
-                openSearchPasswordField.setText(sinks.openSearchPassword() != null ? sinks.openSearchPassword() : "");
-                if (openSearchAuthTypeCombo != null) {
-                    openSearchAuthTypeCombo.setSelectedItem("Basic");
-                }
             }
 
             switch (state.scopeType()) {
@@ -676,6 +690,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             onOpenSearchStatus("Testing ...");
             controller().testConnectionAsync(url);
         });
+        openSearchPasswordField.addActionListener(e -> {
+            String selectedType = openSearchAuthTypeCombo == null
+                    ? "None"
+                    : String.valueOf(openSearchAuthTypeCombo.getSelectedItem());
+            if ("Basic".equals(selectedType) && openSearchPasswordField.isEnabled() && testConnectionButton.isEnabled()) {
+                testConnectionButton.doClick();
+            }
+        });
 
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
@@ -763,10 +785,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         authTypeCombo.addActionListener(e -> {
             String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
+            SecureCredentialStore.saveSelectedAuthType(selectedType);
             applyAuthTypeCardVisibility.accept(selectedType);
-            loadAuthFieldsForSelectedType(selectedType);
+            updateRuntimeConfig();
             if ("None".equals(selectedType)) {
-                updateRuntimeConfig();
                 onOpenSearchStatus("Authentication cleared.");
             }
             contentCards.revalidate();
@@ -774,7 +796,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         });
         String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
         applyAuthTypeCardVisibility.accept(selectedType);
-        loadAuthFieldsForSelectedType(selectedType);
         JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow]", "[]"));
         form.setAlignmentX(Component.LEFT_ALIGNMENT);
         form.add(new JLabel("Auth type:"));
@@ -784,43 +805,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         return form;
     }
 
-    private void loadAuthFieldsForSelectedType(String authType) {
-        if (authType == null) {
-            return;
-        }
-        switch (authType) {
-            case "Basic" -> {
-                SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
-                openSearchUserField.setText(creds.username());
-                openSearchPasswordField.setText(creds.password());
-            }
-            case "API Key" -> {
-                SecureCredentialStore.ApiKeyCredentials creds = SecureCredentialStore.loadApiKeyCredentials();
-                openSearchApiKeyIdField.setText(creds.keyId());
-                openSearchApiKeySecretField.setText(creds.keySecret());
-            }
-            case "JWT" -> {
-                SecureCredentialStore.JwtCredentials creds = SecureCredentialStore.loadJwtCredentials();
-                openSearchJwtTokenField.setText(creds.token());
-            }
-            case "Certificate" -> {
-                SecureCredentialStore.CertificateCredentials creds = SecureCredentialStore.loadCertificateCredentials();
-                openSearchCertPathField.setText(creds.certPath());
-                openSearchCertKeyPathField.setText(creds.keyPath());
-                openSearchCertPassphraseField.setText(creds.passphrase());
-            }
-            default -> { }
-        }
-    }
-
     /**
-     * Persists secrets for the selected auth type to {@link SecureCredentialStore}.
-     * When auth type is {@code None}, existing stored credentials are not cleared.
+     * Caches auth values in memory for the current Burp session.
      */
     private void persistSelectedAuthSecrets() {
         String selectedType = openSearchAuthTypeCombo == null
                 ? "None"
                 : String.valueOf(openSearchAuthTypeCombo.getSelectedItem());
+        SecureCredentialStore.saveSelectedAuthType(selectedType);
         switch (selectedType) {
             case "Basic" -> SecureCredentialStore.saveOpenSearchCredentials(
                     openSearchUserField.getText(),
@@ -1191,7 +1183,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.setToolTipText("Base URL of the OpenSearch cluster");
         openSearchInsecureSslCheckbox.setName("os.insecureSsl");
         openSearchInsecureSslCheckbox.setToolTipText("Skip TLS certificate verification (e.g. for self-signed certs)");
-        testConnectionButton.setToolTipText("Apply auth settings, store credentials securely in Burp, then test connectivity to OpenSearch");
+        testConnectionButton.setToolTipText("Test connectivity. Secrets are only stored within in-process memory.");
     }
 
     /**

@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
 import java.awt.Container;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
@@ -19,65 +17,42 @@ import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.Test;
 
-import ai.attackframework.tools.burp.testutils.SecureStoreMontoyaMock;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 
 class ConfigPanelAuthStorageHeadlessTest {
 
-    private final Map<String, String> backing = new ConcurrentHashMap<>();
-
-    private void setupStore() {
-        MontoyaApiProvider.set(SecureStoreMontoyaMock.create(backing));
-    }
-
-    private void teardownStore() {
-        MontoyaApiProvider.set(null);
-        backing.clear();
-    }
-
     @Test
-    void authDefaultsToBasic_andLoadsSecureBasicValues() throws Exception {
-        setupStore();
-        try {
+    void authDefaultsToBasic_andLoadsSessionBasicValues() throws Exception {
+        withCleanSession(() -> {
             SecureCredentialStore.saveOpenSearchCredentials("alice", "secret");
             ConfigPanel panel = newPanelOnEdt();
             JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
             JTextField user = get(panel, "openSearchUserField");
             JPasswordField pass = get(panel, "openSearchPasswordField");
 
-            runEdt(() -> {
-                assertThat(authType.getSelectedItem()).isEqualTo("Basic");
-            });
-
+            runEdt(() -> assertThat(authType.getSelectedItem()).isEqualTo("Basic"));
             runEdt(() -> {
                 assertThat(user.getText()).isEqualTo("alice");
                 assertThat(new String(pass.getPassword())).isEqualTo("secret");
             });
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
-    void defaultBasicAuth_appliesLoadedCredentialsWithoutAuthenticateClick() throws Exception {
-        setupStore();
-        try {
+    void defaultBasicAuth_appliesLoadedSessionCredentialsWithoutAdditionalAction() throws Exception {
+        withCleanSession(() -> {
             SecureCredentialStore.saveOpenSearchCredentials("carol", "pw123");
             newPanelOnEdt();
             assertThat(RuntimeConfig.openSearchUser()).isEqualTo("carol");
             assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw123");
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
     void defaultBasicAuth_showsBasicCredentialFormOnInitialLoad() throws Exception {
-        setupStore();
-        try {
+        withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JPanel authForm = get(panel, "openSearchAuthFormPanel");
             Component basicCard = findByName(authForm, "os.authCard.basic");
@@ -86,15 +61,12 @@ class ConfigPanelAuthStorageHeadlessTest {
                 assertThat(isEffectivelyVisible(basicCard)).isTrue();
                 assertThat(isEffectivelyVisible(noneCard)).isFalse();
             });
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
-    void selectingApiKeyJwtAndCertificate_showsCorrectFormAndLoadsStoredValues() throws Exception {
-        setupStore();
-        try {
+    void selectingApiKeyJwtAndCertificate_showsCorrectFormAndLoadsSessionValues() throws Exception {
+        withCleanSession(() -> {
             SecureCredentialStore.saveApiKeyCredentials("kid-1", "ksecret-1");
             SecureCredentialStore.saveJwtCredentials("jwt-token-1");
             SecureCredentialStore.saveCertificateCredentials("cert.pem", "cert.key", "passphrase-1");
@@ -134,15 +106,12 @@ class ConfigPanelAuthStorageHeadlessTest {
                 assertThat(certKeyPath.getText()).isEqualTo("cert.key");
                 assertThat(new String(certPassphrase.getPassword())).isEqualTo("passphrase-1");
             });
-        } finally {
-            teardownStore();
-        }
-    }
+        });
+   }
 
     @Test
-    void defaultBasicAuth_withEmptyStore_keepsVisibleFormAndClearsRuntimeCredentials() throws Exception {
-        setupStore();
-        try {
+    void defaultBasicAuth_withEmptySessionStore_keepsVisibleFormAndClearsRuntimeCredentials() throws Exception {
+        withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JPanel authForm = get(panel, "openSearchAuthFormPanel");
             JTextField user = get(panel, "openSearchUserField");
@@ -156,43 +125,54 @@ class ConfigPanelAuthStorageHeadlessTest {
             });
             assertThat(RuntimeConfig.openSearchUser()).isEmpty();
             assertThat(RuntimeConfig.openSearchPassword()).isEmpty();
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
     void insecureSsl_defaultsToChecked() throws Exception {
-        setupStore();
-        try {
+        withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JCheckBox insecureSsl = get(panel, "openSearchInsecureSslCheckbox");
             runEdt(() -> assertThat(insecureSsl.isSelected()).isTrue());
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
-    void testConnectionTooltip_explainsAuthApplyAndSecureHandling() throws Exception {
-        setupStore();
-        try {
+    void testConnectionTooltip_explainsSessionOnlyHandling() throws Exception {
+        withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JButton testButton = get(panel, "testConnectionButton");
             JPanel authForm = get(panel, "openSearchAuthFormPanel");
             runEdt(() -> {
-                assertThat(testButton.getToolTipText()).contains("Apply auth settings").contains("securely in Burp");
+                assertThat(testButton.getToolTipText())
+                        .isEqualTo("Test connectivity. Secrets are only stored within in-process memory.");
                 assertThat(findByNameOrNull(authForm, "os.authenticate")).isNull();
             });
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
-    void persistSelectedAuthSecrets_persistsBasicCredentialsToSecureStore() throws Exception {
-        setupStore();
-        try {
+    void saveTooltip_describesSavingCurrentConfiguration() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JButton save = (JButton) findByName(panel, "control.save");
+            runEdt(() -> assertThat(save.getToolTipText())
+                    .isEqualTo("Save and apply the current configuration. Secrets are only stored within in-process memory."));
+        });
+    }
+
+    @Test
+    void startTooltip_describesStartingExportToConfiguredDestinations() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JButton start = (JButton) findByName(panel, "control.startStop");
+            runEdt(() -> assertThat(start.getToolTipText()).isEqualTo("Start exporting to configured destination(s)"));
+        });
+    }
+
+    @Test
+    void persistSelectedAuthSecrets_cachesBasicCredentialsForCurrentSession() throws Exception {
+        withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
             JTextField user = get(panel, "openSearchUserField");
@@ -208,15 +188,12 @@ class ConfigPanelAuthStorageHeadlessTest {
             SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
             assertThat(creds.username()).isEqualTo("bob");
             assertThat(creds.password()).isEqualTo("s3cret");
-        } finally {
-            teardownStore();
-        }
+        });
     }
 
     @Test
-    void testConnection_appliesAndPersistsSelectedBasicAuthBeforeConnectivityCheck() throws Exception {
-        setupStore();
-        try {
+    void testConnection_appliesAndCachesSelectedBasicAuthForCurrentSession() throws Exception {
+        withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
             JTextField user = get(panel, "openSearchUserField");
@@ -235,9 +212,30 @@ class ConfigPanelAuthStorageHeadlessTest {
             assertThat(creds.password()).isEqualTo("pw-conn");
             assertThat(RuntimeConfig.openSearchUser()).isEqualTo("dana");
             assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw-conn");
-        } finally {
-            teardownStore();
-        }
+        });
+    }
+
+    @Test
+    void enterOnBasicPasswordField_triggersTestConnectionBehavior() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+            JTextField user = get(panel, "openSearchUserField");
+            JPasswordField pass = get(panel, "openSearchPasswordField");
+
+            runEdt(() -> {
+                authType.setSelectedItem("Basic");
+                user.setText("erin");
+                pass.setText("pw-enter");
+                pass.postActionEvent();
+            });
+
+            SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
+            assertThat(creds.username()).isEqualTo("erin");
+            assertThat(creds.password()).isEqualTo("pw-enter");
+            assertThat(RuntimeConfig.openSearchUser()).isEqualTo("erin");
+            assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw-enter");
+        });
     }
 
     private static ConfigPanel newPanelOnEdt() throws Exception {
@@ -260,6 +258,17 @@ class ConfigPanelAuthStorageHeadlessTest {
             r.run();
         } else {
             SwingUtilities.invokeAndWait(r);
+        }
+    }
+
+    private static void withCleanSession(CheckedRunnable action) throws Exception {
+        SecureCredentialStore.clearAll();
+        RuntimeConfig.updateState(null);
+        try {
+            action.run();
+        } finally {
+            SecureCredentialStore.clearAll();
+            RuntimeConfig.updateState(null);
         }
     }
 
@@ -295,5 +304,10 @@ class ConfigPanelAuthStorageHeadlessTest {
             current = current.getParent();
         }
         return true;
+    }
+
+    @FunctionalInterface
+    private interface CheckedRunnable {
+        void run() throws Exception;
     }
 }

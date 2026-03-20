@@ -62,4 +62,22 @@ class JsonSinksOmissionTest {
         assertThat(cfg.filesPath()).isNull();
         assertThat(cfg.openSearchUrl()).isNull();
     }
+
+    @Test
+    void parse_legacy_openSearch_credentials_are_ignored() throws IOException {
+        String json = """
+            {
+              "sinks": {
+                "openSearch": "https://opensearch.url:9200",
+                "openSearchUser": "admin",
+                "openSearchPassword": "secret"
+              }
+            }
+            """;
+
+        Json.ImportedConfig cfg = Json.parseConfigJson(json);
+        assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
+        assertThat(cfg.openSearchUser()).isBlank();
+        assertThat(cfg.openSearchPassword()).isBlank();
+    }
 }

@@ -58,9 +58,11 @@ class ConfigControlPanelHeadlessTest {
 
             assertThat(save).as("control.save").isNotNull();
             assertThat(save.getText()).isEqualTo("Save");
-            assertThat(save.getToolTipText()).contains("securely").contains("not exported");
+            assertThat(save.getToolTipText())
+                    .isEqualTo("Save and apply the current configuration. Secrets are only stored within in-process memory.");
             assertThat(startStop).as("control.startStop").isNotNull();
             assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(startStop.getToolTipText()).isEqualTo("Start exporting to configured destination(s)");
             assertThat(indicator).as("control.exportIndicator").isNotNull();
         } finally {
             resetExportRunning();

@@ -194,7 +194,7 @@ public final class ConfigController {
      * <p>
      * The result message is sent to {@link Ui#onOpenSearchStatus} on the EDT.
      * Uses current RuntimeConfig for credentials and insecure-SSL (caller should call
-     * updateRuntimeConfig / buildCurrentState before this so the checkbox and saved creds apply).
+     * updateRuntimeConfig / buildCurrentState before this so the checkbox and current session auth apply).
      *
      * @param url base URL of the OpenSearch cluster
      */
