@@ -15,8 +15,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.FlowLayout;
+import java.awt.Font;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -37,6 +39,7 @@ import org.jfree.data.time.TimeSeries;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 class StatsPanelTest {
 
@@ -262,6 +265,35 @@ class StatsPanelTest {
         assertThat(labels).contains("Total Docs Pushed");
         assertThat(labels).contains("Total Failures");
         assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
+    }
+
+    @Test
+    void exportRunningValue_usesGreenForYesAndRedForNo() {
+        boolean original = RuntimeConfig.isExportRunning();
+        try {
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JLabel exportRunningValue = get(panel, "exportRunningValue");
+            Color[] seriesColors = getStatic(StatsPanel.class, "SERIES_COLORS");
+
+            onEdt(() -> {
+                RuntimeConfig.setExportRunning(true);
+                call(panel, "refreshDashboard");
+            });
+            assertThat(exportRunningValue.getText()).isEqualTo("Yes");
+            assertThat(exportRunningValue.getForeground()).isEqualTo(seriesColors[1]);
+            assertThat(exportRunningValue.getFont().isBold()).isTrue();
+
+            onEdt(() -> {
+                RuntimeConfig.setExportRunning(false);
+                call(panel, "refreshDashboard");
+            });
+            assertThat(exportRunningValue.getText()).isEqualTo("No");
+            assertThat(exportRunningValue.getForeground()).isEqualTo(seriesColors[4]);
+            assertThat(exportRunningValue.getFont().isBold()).isTrue();
+            assertThat(exportRunningValue.getFont().getStyle()).isEqualTo(Font.BOLD);
+        } finally {
+            onEdt(() -> RuntimeConfig.setExportRunning(original));
+        }
     }
 
     @Test

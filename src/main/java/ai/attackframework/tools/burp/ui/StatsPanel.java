@@ -96,6 +96,8 @@ public class StatsPanel extends JPanel {
             new Color(120, 70, 160),   // darker purple
             new Color(244, 71, 71)     // red
     };
+    private static final Color EXPORT_RUNNING_YES_FG = SERIES_COLORS[1];
+    private static final Color EXPORT_RUNNING_NO_FG = SERIES_COLORS[4];
 
     private final Timer refreshTimer;
     private final TimeSeriesCollection docsPerSecondDataset;
@@ -233,6 +235,7 @@ public class StatsPanel extends JPanel {
         long totalFailure = ExportStats.getTotalFailureCount();
 
         exportRunningValue.setText(exportRunning ? "Yes" : "No");
+        exportRunningValue.setForeground(exportRunning ? EXPORT_RUNNING_YES_FG : EXPORT_RUNNING_NO_FG);
         currentBatchSizeValue.setText(formatWhole(BatchSizeController.getInstance().getCurrentBatchSize()));
         trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
         queueDropsValue.setText(formatWhole(ExportStats.getTrafficQueueDrops()));
