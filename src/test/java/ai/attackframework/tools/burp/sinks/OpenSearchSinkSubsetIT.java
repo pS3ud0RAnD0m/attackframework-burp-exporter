@@ -42,9 +42,7 @@ class OpenSearchSinkSubsetIT {
 
         // Validate full index naming
         for (IndexResult r : first) {
-            String expectedFull = r.shortName().equals("tool")
-                    ? IndexNaming.INDEX_PREFIX
-                    : IndexNaming.INDEX_PREFIX + "-" + r.shortName();
+            String expectedFull = IndexNaming.indexNameForShortName(r.shortName());
             assertThat(r.fullName()).isEqualTo(expectedFull);
         }
 

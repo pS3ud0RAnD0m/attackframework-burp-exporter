@@ -9,23 +9,43 @@ public final class IndexNaming {
 
     private IndexNaming() {}
 
+    public static String indexNameForShortName(String shortName) {
+        if (shortName == null || shortName.isBlank() || "tool".equalsIgnoreCase(shortName)) {
+            return INDEX_PREFIX;
+        }
+        return INDEX_PREFIX + "-" + shortName;
+    }
+
+    public static String shortNameForIndexName(String indexName) {
+        if (indexName == null || indexName.isBlank()) {
+            return "tool";
+        }
+        if (indexName.equals(INDEX_PREFIX)) {
+            return "tool";
+        }
+        if (indexName.startsWith(INDEX_PREFIX + "-")) {
+            return indexName.substring(INDEX_PREFIX.length() + 1);
+        }
+        return "tool";
+    }
+
     public static List<String> computeIndexBaseNames(List<String> selectedSources) {
         LinkedHashSet<String> names = new LinkedHashSet<>();
         if (selectedSources != null) {
             for (String s : selectedSources) {
                 if (s == null) continue;
                 switch (s.toLowerCase()) {
-                    case "settings" -> names.add(INDEX_PREFIX + "-settings");
-                    case "sitemap"  -> names.add(INDEX_PREFIX + "-sitemap");
-                    case "issues", "findings" -> names.add(INDEX_PREFIX + "-findings");
-                    case "traffic"  -> names.add(INDEX_PREFIX + "-traffic");
+                    case "settings" -> names.add(indexNameForShortName("settings"));
+                    case "sitemap"  -> names.add(indexNameForShortName("sitemap"));
+                    case "issues", "findings" -> names.add(indexNameForShortName("findings"));
+                    case "traffic"  -> names.add(indexNameForShortName("traffic"));
                     default -> {
                         // Ignore unsupported source names; no index will be created for them.
                     }
                 }
             }
         }
-        names.add(INDEX_PREFIX);
+        names.add(indexNameForShortName("tool"));
         return new ArrayList<>(names);
     }
 

@@ -32,7 +32,6 @@ import burp.api.montoya.proxy.ProxyHttpRequestResponse;
  */
 public final class ProxyHistoryIndexReporter {
 
-    private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024;
     private static final int SNAPSHOT_BATCH_INITIAL = 250;
@@ -49,6 +48,10 @@ public final class ProxyHistoryIndexReporter {
     });
 
     private ProxyHistoryIndexReporter() {}
+
+    private static String trafficIndexName() {
+        return IndexNaming.indexNameForShortName("traffic");
+    }
 
     /**
      * Schedules a one-time push of all current proxy history items (on Start), after a short delay.
@@ -123,7 +126,7 @@ public final class ProxyHistoryIndexReporter {
             if (sizeCapReached || countCapReached) {
                 chunkTarget = applyLiveBackpressure(chunkTarget);
                 int attemptedChunk = chunk.size();
-                int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
+                int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), chunk);
                 success += sent;
                 attempted += attemptedChunk;
                 ExportStats.recordSuccess("traffic", sent);
@@ -143,7 +146,7 @@ public final class ProxyHistoryIndexReporter {
         if (RuntimeConfig.isExportRunning() && !chunk.isEmpty()) {
             chunkTarget = applyLiveBackpressure(chunkTarget);
             int attemptedChunk = chunk.size();
-            int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);
+            int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), chunk);
             success += sent;
             attempted += attemptedChunk;
             ExportStats.recordSuccess("traffic", sent);

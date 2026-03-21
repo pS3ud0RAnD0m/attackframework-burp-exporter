@@ -35,9 +35,7 @@ class OpenSearchSinkFreshCreateIT {
 
         // Delete all first (best effort)
         for (String s : SOURCES) {
-            String fullName = "tool".equals(s)
-                    ? IndexNaming.INDEX_PREFIX
-                    : IndexNaming.INDEX_PREFIX + "-" + s;
+            String fullName = IndexNaming.indexNameForShortName(s);
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(fullName).build());
             } catch (Exception ignored) {
@@ -48,9 +46,7 @@ class OpenSearchSinkFreshCreateIT {
         // Wait for deletes to be visible so create sees indices as missing
         Thread.sleep(WAIT_AFTER_DELETE_MS);
         for (String s : SOURCES) {
-            String fullName = "tool".equals(s)
-                    ? IndexNaming.INDEX_PREFIX
-                    : IndexNaming.INDEX_PREFIX + "-" + s;
+            String fullName = IndexNaming.indexNameForShortName(s);
             long deadline = System.currentTimeMillis() + POLL_EXISTS_MAX_MS;
             while (client.indices().exists(b -> b.index(fullName)).value() && System.currentTimeMillis() < deadline) {
                 Thread.sleep(POLL_INTERVAL_MS);
@@ -62,9 +58,7 @@ class OpenSearchSinkFreshCreateIT {
         assertThat(results).isNotEmpty();
 
         for (IndexResult r : results) {
-            String expectedFull = "tool".equals(r.shortName())
-                    ? IndexNaming.INDEX_PREFIX
-                    : IndexNaming.INDEX_PREFIX + "-" + r.shortName();
+            String expectedFull = IndexNaming.indexNameForShortName(r.shortName());
 
             assertThat(r.fullName()).isEqualTo(expectedFull);
             assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED);

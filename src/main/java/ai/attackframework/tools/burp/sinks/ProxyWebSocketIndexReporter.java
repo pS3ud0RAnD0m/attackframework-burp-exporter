@@ -39,7 +39,6 @@ import burp.api.montoya.proxy.ProxyWebSocketMessage;
  */
 public final class ProxyWebSocketIndexReporter {
 
-    private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
     private static final int INTERVAL_SECONDS = 30;
     private static volatile ScheduledExecutorService scheduler;
@@ -47,6 +46,10 @@ public final class ProxyWebSocketIndexReporter {
     private static volatile boolean runInProgress;
 
     private ProxyWebSocketIndexReporter() {}
+
+    private static String trafficIndexName() {
+        return IndexNaming.indexNameForShortName("traffic");
+    }
 
     public static void start() {
         if (scheduler != null) {
@@ -68,6 +71,22 @@ public final class ProxyWebSocketIndexReporter {
                     TimeUnit.SECONDS);
             scheduler = exec;
         }
+    }
+
+    /**
+     * Stops the periodic scheduler and clears per-session reporter state.
+     *
+     * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
+     */
+    public static void stop() {
+        ScheduledExecutorService exec;
+        synchronized (ProxyWebSocketIndexReporter.class) {
+            exec = scheduler;
+            scheduler = null;
+        }
+        ReporterExecutors.shutdownNowAndAwait(exec);
+        pushedKeys.clear();
+        runInProgress = false;
     }
 
     public static void pushSnapshotNow() {
@@ -183,7 +202,7 @@ public final class ProxyWebSocketIndexReporter {
     }
 
     private static void flushBatch(String baseUrl, List<String> keys, List<Map<String, Object>> docs) {
-        int success = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, docs);
+        int success = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), docs);
         int failure = docs.size() - success;
         ExportStats.recordSuccess("traffic", success);
         ExportStats.recordTrafficSourceSuccess("proxy_websocket", success);

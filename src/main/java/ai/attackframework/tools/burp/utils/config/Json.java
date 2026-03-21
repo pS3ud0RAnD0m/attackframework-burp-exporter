@@ -20,12 +20,12 @@ import ai.attackframework.tools.burp.utils.Version;
 
 /**
  * JSON marshaling for config import/export.
- * Produces compact JSON with deterministic field order (stable insertion order).
+ * Produces pretty JSON with deterministic field order (stable insertion order).
  */
 public final class Json {
 
     static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(SerializationFeature.INDENT_OUTPUT, false); // compact output
+            .configure(SerializationFeature.INDENT_OUTPUT, true);
 
     // Version is obtained strictly from the JAR manifest's Implementation-Version.
     private static final String VERSION = Version.get();

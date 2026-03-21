@@ -62,7 +62,6 @@ import static org.mockito.Mockito.when;
 class ConfigPanelStartCreatesIndexesBeforePushIT {
 
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
-    private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
 
     private static final class TestUi implements ConfigController.Ui {
         @Override public void onFileStatus(String m) { }
@@ -71,6 +70,10 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
     }
 
     private ConfigPanel panel;
+
+    private static String findingsIndexName() {
+        return IndexNaming.indexNameForShortName("findings");
+    }
 
     @BeforeEach
     void setup() throws Exception {
@@ -137,10 +140,10 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
 
         OpenSearchClient client = OpenSearchReachable.getClient();
         GetMappingResponse mappingResp = client.indices()
-                .getMapping(new GetMappingRequest.Builder().index(FINDINGS_INDEX).build());
-        assertThat(mappingResp.result()).containsKey(FINDINGS_INDEX);
+                .getMapping(new GetMappingRequest.Builder().index(findingsIndexName()).build());
+        assertThat(mappingResp.result()).containsKey(findingsIndexName());
 
-        var indexMapping = mappingResp.result().get(FINDINGS_INDEX);
+        var indexMapping = mappingResp.result().get(findingsIndexName());
         assertThat(indexMapping).isNotNull();
         assertThat(indexMapping.mappings()).isNotNull();
         var properties = indexMapping.mappings().properties();
@@ -194,9 +197,9 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
         long deadline = System.currentTimeMillis() + 30_000;
         while (System.currentTimeMillis() < deadline) {
             try {
-                client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
+                client.indices().refresh(new RefreshRequest.Builder().index(findingsIndexName()).build());
                 SearchResponse<?> resp = client.search(
-                        new SearchRequest.Builder().index(FINDINGS_INDEX).size(1).build(),
+                        new SearchRequest.Builder().index(findingsIndexName()).size(1).build(),
                         Object.class);
                 if (resp.hits().hits().size() >= 1) {
                     return;
@@ -212,7 +215,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
     private static void deleteFindingsIndex() {
         try {
             OpenSearchClient client = OpenSearchReachable.getClient();
-            client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
+            client.indices().delete(new DeleteIndexRequest.Builder().index(findingsIndexName()).build());
         } catch (Exception ignored) {
             // index may not exist
         }

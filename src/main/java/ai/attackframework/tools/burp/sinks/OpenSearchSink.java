@@ -59,9 +59,7 @@ public class OpenSearchSink {
                 ? defaultRoot
                 : mappingsResourceRoot;
 
-        final String fullIndexName = shortName.equals("tool")
-                ? IndexNaming.INDEX_PREFIX
-                : IndexNaming.INDEX_PREFIX + "-" + shortName;
+        final String fullIndexName = IndexNaming.indexNameForShortName(shortName);
 
         final String mappingFile = resourceRoot + shortName + ".json";
 
@@ -168,11 +166,7 @@ public class OpenSearchSink {
         List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
         LinkedHashSet<String> shortNames = new LinkedHashSet<>();
         for (String base : baseNames) {
-            if (base.equals(IndexNaming.INDEX_PREFIX)) {
-                shortNames.add("tool");
-            } else if (base.startsWith(IndexNaming.INDEX_PREFIX + "-")) {
-                shortNames.add(base.substring(IndexNaming.INDEX_PREFIX.length() + 1));
-            }
+            shortNames.add(IndexNaming.shortNameForIndexName(base));
         }
 
         List<IndexResult> results = new ArrayList<>();

@@ -9,10 +9,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -42,6 +42,17 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
 
     public ToolIndexLogForwarder() {
         worker.submit(this::drainLoop);
+    }
+
+    /**
+     * Stops the background drain worker and clears any queued log documents.
+     *
+     * <p>Safe to call multiple times. Used during extension unload so hot reload does
+     * not leave a stale forwarder thread behind.</p>
+     */
+    public void stop() {
+        queue.clear();
+        worker.shutdownNow();
     }
 
     @Override
@@ -83,7 +94,7 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                 String baseUrl = RuntimeConfig.openSearchUrl();
                 if (baseUrl == null || baseUrl.isBlank()) continue;
 
-                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
                 if (ok) {
                     ExportStats.recordSuccess("tool", 1);
                 } else {
@@ -100,35 +111,10 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
     }
 
     private static String burpVersion() {
-        try {
-            var api = MontoyaApiProvider.get();
-            if (api == null) {
-                return null;
-            }
-            var burpSuite = api.burpSuite();
-            if (burpSuite == null) {
-                return null;
-            }
-            var version = burpSuite.version();
-            return version != null ? String.valueOf(version) : null;
-        } catch (Throwable e) {
-            return null;
-        }
+        return BurpRuntimeMetadata.burpVersion();
     }
 
     private static String projectId() {
-        try {
-            var api = MontoyaApiProvider.get();
-            if (api == null) {
-                return null;
-            }
-            var project = api.project();
-            if (project == null) {
-                return null;
-            }
-            return project.id();
-        } catch (Throwable e) {
-            return null;
-        }
+        return BurpRuntimeMetadata.projectId();
     }
 }

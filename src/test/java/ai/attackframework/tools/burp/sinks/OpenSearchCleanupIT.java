@@ -1,6 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.util.List;
+import java.io.IOException;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -12,38 +12,56 @@ import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 
 /**
- * Runs last in {@link OpenSearchIntegrationSuite} and deletes the standard
- * OpenSearch indexes in @AfterAll so no indexes are left after the suite.
- * The suite engine does not run lifecycle on the suite class itself, so
- * cleanup must live in a real test class.
+ * Runs last in {@link OpenSearchIntegrationSuite} and deletes all test-created exporter indexes.
+ *
+ * <p>Cleanup is broad by design for the dedicated test OpenSearch instance: quiesce recurring
+ * reporters first, then delete every {@code attackframework-*} index so no exporter state is
+ * left behind after the suite.</p>
  */
-class OpenSearchCleanupIT {
-
-    private static final List<String> STANDARD_SHORT_NAMES =
-            List.of("settings", "sitemap", "findings", "traffic", "tool");
+public class OpenSearchCleanupIT {
 
     @Test
-    void placeholder_soAfterAllRuns() {
+    void cleanupHelper_deletesAttackFrameworkIndexesFromDedicatedCluster() throws IOException {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-        // No-op; ensures this class is executed so @AfterAll runs.
+
+        deleteAttackFrameworkIndexesNow();
+
+        OpenSearchReachable.createSelectedIndexes(java.util.List.of("tool", "settings", "traffic"));
+
+        OpenSearchClient client = OpenSearchReachable.getClient();
+        assertIndexExists(client, IndexNaming.INDEX_PREFIX);
+        assertIndexExists(client, IndexNaming.indexNameForShortName("settings"));
+        assertIndexExists(client, IndexNaming.indexNameForShortName("traffic"));
+
+        deleteAttackFrameworkIndexesNow();
+
+        assertIndexMissing(client, IndexNaming.INDEX_PREFIX);
+        assertIndexMissing(client, IndexNaming.indexNameForShortName("settings"));
+        assertIndexMissing(client, IndexNaming.indexNameForShortName("traffic"));
     }
 
     @AfterAll
-    static void deleteCreatedIndices() {
+    public static void deleteAttackFrameworkIndexesNow() {
         try {
+            ExportReporterLifecycle.resetForTests();
             OpenSearchClient client = OpenSearchReachable.getClient();
-            for (String s : STANDARD_SHORT_NAMES) {
-                String fullName = "tool".equals(s)
-                        ? IndexNaming.INDEX_PREFIX
-                        : IndexNaming.INDEX_PREFIX + "-" + s;
-                try {
-                    client.indices().delete(new DeleteIndexRequest.Builder().index(fullName).build());
-                } catch (Exception ignored) {
-                    // Index may not exist or cluster unreachable; best-effort only.
-                }
-            }
-        } catch (Exception ignored) {
-            // Cluster not reachable; do not fail the suite.
+            client.indices().delete(new DeleteIndexRequest.Builder()
+                    .index(IndexNaming.INDEX_PREFIX + "*")
+                    .allowNoIndices(true)
+                    .ignoreUnavailable(true)
+                    .build());
+        } catch (IOException | RuntimeException ignored) {
+            // Best-effort suite cleanup for the dedicated test cluster.
         }
+    }
+
+    private static void assertIndexExists(OpenSearchClient client, String indexName) throws IOException {
+        boolean exists = client.indices().exists(b -> b.index(indexName)).value();
+        org.assertj.core.api.Assertions.assertThat(exists).isTrue();
+    }
+
+    private static void assertIndexMissing(OpenSearchClient client, String indexName) throws IOException {
+        boolean exists = client.indices().exists(b -> b.index(indexName)).value();
+        org.assertj.core.api.Assertions.assertThat(exists).isFalse();
     }
 }

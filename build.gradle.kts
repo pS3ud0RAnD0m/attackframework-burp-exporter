@@ -90,27 +90,38 @@ tasks.test {
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 
-    if (verboseTests) {
-        val green = "\u001B[32m"
-        val red = "\u001B[31m"
-        val yellow = "\u001B[33m"
-        val reset = "\u001B[0m"
+    val green = "\u001B[32m"
+    val red = "\u001B[31m"
+    val yellow = "\u001B[33m"
+    val reset = "\u001B[0m"
 
-        addTestListener(object : TestListener {
-            override fun beforeTest(descriptor: TestDescriptor) {}
-            override fun beforeSuite(suite: TestDescriptor) {}
-            override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+    addTestListener(object : TestListener {
+        override fun beforeTest(descriptor: TestDescriptor) {}
+        override fun beforeSuite(suite: TestDescriptor) {}
 
-            override fun afterTest(descriptor: TestDescriptor, result: TestResult) {
-                val status = when (result.resultType) {
-                    TestResult.ResultType.SUCCESS -> "${green}PASSED${reset}"
-                    TestResult.ResultType.FAILURE -> "${red}FAILED${reset}"
-                    TestResult.ResultType.SKIPPED -> "${yellow}SKIPPED${reset}"
-                }
-                println("${descriptor.className} > ${descriptor.displayName} $status")
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {
+            if (suite.parent != null) {
+                return
             }
-        })
-    }
+            val total = result.testCount
+            val failed = result.failedTestCount
+            val skipped = result.skippedTestCount
+            val passed = total - failed - skipped
+            println("Test summary: total=$total, passed=$passed, failed=$failed, skipped=$skipped")
+        }
+
+        override fun afterTest(descriptor: TestDescriptor, result: TestResult) {
+            if (!verboseTests) {
+                return
+            }
+            val status = when (result.resultType) {
+                TestResult.ResultType.SUCCESS -> "${green}PASSED${reset}"
+                TestResult.ResultType.FAILURE -> "${red}FAILED${reset}"
+                TestResult.ResultType.SKIPPED -> "${yellow}SKIPPED${reset}"
+            }
+            println("${descriptor.className} > ${descriptor.displayName} $status")
+        }
+    })
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {

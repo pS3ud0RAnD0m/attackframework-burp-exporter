@@ -57,7 +57,6 @@ import burp.api.montoya.sitemap.SiteMap;
 class FindingsIndexReporterIT {
 
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
-    private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
 
     private static final String ISSUE_NAME = "SQL injection";
     private static final String ISSUE_BASE_URL = "https://example.com/page";
@@ -69,11 +68,15 @@ class FindingsIndexReporterIT {
     private static final String DEF_REMEDIATION = "Use prepared statements.";
     private static final int DEF_TYPE_INDEX = 42;
 
+    private static String findingsIndexName() {
+        return IndexNaming.indexNameForShortName("findings");
+    }
+
     private void prepareTestEnvironment() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
-            client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
+            client.indices().delete(new DeleteIndexRequest.Builder().index(findingsIndexName()).build());
         } catch (IOException | RuntimeException e) {
             // Index may not exist; ignore so each test starts with a clean slate
         }
@@ -84,9 +87,9 @@ class FindingsIndexReporterIT {
         RuntimeConfig.setExportRunning(false);
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
-            client.indices().delete(new DeleteIndexRequest.Builder().index(FINDINGS_INDEX).build());
+            client.indices().delete(new DeleteIndexRequest.Builder().index(findingsIndexName()).build());
         } catch (IOException | RuntimeException e) {
-            Logger.logError("[FindingsIndexReporterIT] Failed to delete index during cleanup: " + FINDINGS_INDEX, e);
+            Logger.logError("[FindingsIndexReporterIT] Failed to delete index during cleanup: " + findingsIndexName(), e);
         }
     }
 
@@ -502,13 +505,13 @@ class FindingsIndexReporterIT {
     private Map<String, Object> awaitDocumentMatching(Predicate<Map<String, Object>> predicate) {
         OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
-                .index(FINDINGS_INDEX)
+                .index(findingsIndexName())
                 .size(20)
                 .build();
         int maxAttempts = 120;
         for (int i = 0; i < maxAttempts; i++) {
             try {
-                client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
+                client.indices().refresh(new RefreshRequest.Builder().index(findingsIndexName()).build());
             } catch (IOException | RuntimeException ignored) {
                 // best-effort refresh
             }
@@ -536,11 +539,11 @@ class FindingsIndexReporterIT {
 
     private String buildDocumentMatchDiagnostic(OpenSearchClient client) {
         try {
-            client.indices().refresh(new RefreshRequest.Builder().index(FINDINGS_INDEX).build());
+            client.indices().refresh(new RefreshRequest.Builder().index(findingsIndexName()).build());
         } catch (IOException | RuntimeException ignored) { }
         try {
             SearchResponse<?> resp = client.search(
-                    new SearchRequest.Builder().index(FINDINGS_INDEX).size(20).build(),
+                    new SearchRequest.Builder().index(findingsIndexName()).size(20).build(),
                     Map.class);
             var hits = resp.hits().hits();
             if (hits.isEmpty()) return "Index had 0 documents.";

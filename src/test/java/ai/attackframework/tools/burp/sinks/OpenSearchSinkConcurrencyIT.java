@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.sinks.OpenSearchSink.IndexResult;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
+import ai.attackframework.tools.burp.utils.IndexNaming;
 
 /**
  * Concurrency smoke test: creating multiple indices in parallel should not deadlock or throw.
@@ -26,13 +27,15 @@ class OpenSearchSinkConcurrencyIT {
     private static final List<String> SOURCES = List.of("sitemap", "findings", "traffic", "settings", "tool");
 
     // Expected full names for each short name
-    private static final Map<String, String> EXPECTED_NAMES = Map.of(
-            "tool", "attackframework-tool-burp",
-            "sitemap", "attackframework-tool-burp-sitemap",
-            "findings", "attackframework-tool-burp-findings",
-            "settings", "attackframework-tool-burp-settings",
-            "traffic", "attackframework-tool-burp-traffic"
-    );
+    private static Map<String, String> expectedNames() {
+        return Map.of(
+                "tool", IndexNaming.indexNameForShortName("tool"),
+                "sitemap", IndexNaming.indexNameForShortName("sitemap"),
+                "findings", IndexNaming.indexNameForShortName("findings"),
+                "settings", IndexNaming.indexNameForShortName("settings"),
+                "traffic", IndexNaming.indexNameForShortName("traffic")
+        );
+    }
 
     @Test
     void createIndexes_concurrently_completes_withoutDeadlock() throws Exception {
@@ -53,7 +56,7 @@ class OpenSearchSinkConcurrencyIT {
                 } catch (ExecutionException e) {
                     throw new AssertionError("Task threw exception", e.getCause());
                 }
-                String expectedFull = EXPECTED_NAMES.get(res.shortName());
+                String expectedFull = expectedNames().get(res.shortName());
                 assertThat(res.fullName()).isEqualTo(expectedFull);
                 assertThat(res.status()).isIn(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
             }

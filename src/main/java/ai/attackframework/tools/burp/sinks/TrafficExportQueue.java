@@ -23,7 +23,6 @@ import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
  */
 public final class TrafficExportQueue {
 
-    private static final String TRAFFIC_INDEX = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final int CAPACITY = 50_000;
     private static final long POLL_TIMEOUT_MS = 50;
     private static final long BATCH_MAX_WAIT_MS = 100;
@@ -38,6 +37,10 @@ public final class TrafficExportQueue {
     private static final AtomicBoolean workerStarted = new AtomicBoolean(false);
 
     private TrafficExportQueue() {}
+
+    private static String trafficIndexName() {
+        return IndexNaming.indexNameForShortName("traffic");
+    }
 
     static {
         long recoveredDocs = spillQueue.recoveredCount();
@@ -148,7 +151,7 @@ public final class TrafficExportQueue {
             refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
             long startNs = System.nanoTime();
             ChunkedBulkSender.Result result = ChunkedBulkSender.push(
-                    baseUrl, TRAFFIC_INDEX, queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
+                    baseUrl, trafficIndexName(), queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
 
             if (result.attemptedCount == 0) {

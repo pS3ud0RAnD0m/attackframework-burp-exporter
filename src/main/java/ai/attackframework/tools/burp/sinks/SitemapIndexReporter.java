@@ -43,7 +43,6 @@ public final class SitemapIndexReporter {
     private static final int INTERVAL_SECONDS = 30;
     /** Flush when batch exceeds this approximate payload size (bytes) so large bodies don't produce huge bulk requests. */
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
-    private static final String SITEMAP_INDEX = IndexNaming.INDEX_PREFIX + "-sitemap";
     private static final String SCHEMA_VERSION = "1";
     private static final String SOURCE_VALUE = "burp-exporter";
 
@@ -53,6 +52,10 @@ public final class SitemapIndexReporter {
     private static volatile boolean runInProgress;
 
     private SitemapIndexReporter() {}
+
+    private static String sitemapIndexName() {
+        return IndexNaming.indexNameForShortName("sitemap");
+    }
 
     /**
      * Pushes all current sitemap items once (e.g. initial push on Start). Safe to call
@@ -116,6 +119,22 @@ public final class SitemapIndexReporter {
                     TimeUnit.SECONDS);
             scheduler = exec;
         }
+    }
+
+    /**
+     * Stops the periodic scheduler and clears per-session reporter state.
+     *
+     * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
+     */
+    public static void stop() {
+        ScheduledExecutorService exec;
+        synchronized (SitemapIndexReporter.class) {
+            exec = scheduler;
+            scheduler = null;
+        }
+        ReporterExecutors.shutdownNowAndAwait(exec);
+        pushedItemKeys.clear();
+        runInProgress = false;
     }
 
     static void pushNewItemsOnly() {
@@ -234,7 +253,7 @@ public final class SitemapIndexReporter {
     }
 
     private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
-        int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, SITEMAP_INDEX, batchDocs);
+        int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, sitemapIndexName(), batchDocs);
         int failureCount = batchDocs.size() - successCount;
         ExportStats.recordSuccess("sitemap", successCount);
         ExportStats.recordFailure("sitemap", failureCount);

@@ -43,7 +43,6 @@ import burp.api.montoya.http.message.requests.HttpRequest;
  */
 public final class OpenSearchTrafficHandler implements HttpHandler {
 
-    private static final String INDEX_NAME = IndexNaming.INDEX_PREFIX + "-traffic";
     private static final String SCHEMA_VERSION = "1";
 
     /** Delay after which a request with no response is exported as an orphan (Chromium-aligned). */
@@ -54,6 +53,10 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
     private static final String ORPHAN_REASON_PHRASE = "Timeout";
 
     private static final ConcurrentHashMap<Integer, PendingOrphan> pendingOrphans = new ConcurrentHashMap<>();
+
+    private static String trafficIndexName() {
+        return IndexNaming.indexNameForShortName("traffic");
+    }
 
     static {
         ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -418,7 +421,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             doc.put("response_start_latency_ms", durationMs(po.timestamp, nowMs));
             doc.put("response", buildOrphanResponse());
             long startNs = System.nanoTime();
-            boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, INDEX_NAME, doc);
+            boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, trafficIndexName(), doc);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
             ExportStats.recordLastPush("traffic", durationMs);
             if (success) {
@@ -427,7 +430,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             } else {
                 ExportStats.recordFailure("traffic", 1);
                 ExportStats.recordTrafficSourceFailure("proxy_live_http", 1);
-                String errMsg = "Failed to index orphan traffic document to " + INDEX_NAME;
+                String errMsg = "Failed to index orphan traffic document to " + trafficIndexName();
                 ExportStats.recordLastError("traffic", errMsg);
                 Logger.logError("[OpenSearch] " + errMsg);
             }

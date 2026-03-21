@@ -206,10 +206,7 @@ public final class IndexingRetryCoordinator {
     }
 
     private static String indexNameFromKey(String indexKey) {
-        if ("tool".equals(indexKey)) {
-            return IndexNaming.INDEX_PREFIX;
-        }
-        return IndexNaming.INDEX_PREFIX + "-" + indexKey;
+        return IndexNaming.indexNameForShortName(indexKey);
     }
 
     private void ensureDrainThreadStarted() {

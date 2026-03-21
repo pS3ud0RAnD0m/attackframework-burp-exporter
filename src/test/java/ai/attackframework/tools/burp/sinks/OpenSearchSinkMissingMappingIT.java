@@ -26,7 +26,7 @@ class OpenSearchSinkMissingMappingIT {
 
         // Choose a short name with no corresponding mapping file.
         String shortName = "nonexistent";
-        String expectedFull = IndexNaming.INDEX_PREFIX + "-" + shortName;
+        String expectedFull = IndexNaming.indexNameForShortName(shortName);
 
         OpenSearchClient client = OpenSearchReachable.getClient();
 

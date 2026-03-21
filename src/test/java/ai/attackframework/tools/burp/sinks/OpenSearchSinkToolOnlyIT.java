@@ -34,7 +34,7 @@ class OpenSearchSinkToolOnlyIT {
         // Validate full name
         for (IndexResult r : first) {
             assertThat(r.shortName()).isEqualTo("tool");
-            assertThat(r.fullName()).isEqualTo(IndexNaming.INDEX_PREFIX);
+            assertThat(r.fullName()).isEqualTo(IndexNaming.indexNameForShortName("tool"));
         }
 
         // Delete reported index (best-effort cleanup of dev cluster)
@@ -53,6 +53,6 @@ class OpenSearchSinkToolOnlyIT {
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r)
                         .extracting(IndexResult::shortName, IndexResult::fullName, IndexResult::status)
-                        .containsExactly("tool", IndexNaming.INDEX_PREFIX, IndexResult.Status.CREATED));
+                        .containsExactly("tool", IndexNaming.indexNameForShortName("tool"), IndexResult.Status.CREATED));
     }
 }

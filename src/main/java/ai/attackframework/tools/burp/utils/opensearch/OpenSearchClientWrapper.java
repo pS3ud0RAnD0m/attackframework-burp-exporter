@@ -140,12 +140,7 @@ public class OpenSearchClientWrapper {
     }
 
     static String indexKeyFromIndexName(String indexName) {
-        if (indexName == null) return "tool";
-        if (indexName.equals(IndexNaming.INDEX_PREFIX)) return "tool";
-        if (indexName.startsWith(IndexNaming.INDEX_PREFIX + "-")) {
-            return indexName.substring(IndexNaming.INDEX_PREFIX.length() + 1);
-        }
-        return "tool";
+        return IndexNaming.shortNameForIndexName(indexName);
     }
 
     /**

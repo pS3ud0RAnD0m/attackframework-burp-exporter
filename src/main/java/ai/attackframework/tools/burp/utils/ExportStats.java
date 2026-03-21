@@ -244,9 +244,7 @@ public final class ExportStats {
      * (0 when no retry coordinator or queue empty).
      */
     public static int getQueueSize(String indexKey) {
-        String indexName = "tool".equals(indexKey)
-                ? IndexNaming.INDEX_PREFIX
-                : IndexNaming.INDEX_PREFIX + "-" + indexKey;
+        String indexName = IndexNaming.indexNameForShortName(indexKey);
         return IndexingRetryCoordinator.getInstance().getQueueSize(indexName);
     }
 

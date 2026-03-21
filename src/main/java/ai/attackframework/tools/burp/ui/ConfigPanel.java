@@ -37,6 +37,7 @@ import ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
+import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ToolIndexConfigReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
@@ -298,6 +299,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::startExportAsync,
                 () -> {
                     RuntimeConfig.setExportRunning(false);
+                    ExportReporterLifecycle.stopBackgroundReporters();
                     Logger.logInfoPanelOnly("Export stopped.");
                 }
         ).build(), MIG_FILL_WRAP);

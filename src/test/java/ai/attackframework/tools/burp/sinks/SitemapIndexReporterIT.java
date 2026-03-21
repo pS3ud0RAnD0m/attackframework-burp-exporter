@@ -45,7 +45,6 @@ import burp.api.montoya.sitemap.SiteMap;
 class SitemapIndexReporterIT {
 
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
-    private static final String SITEMAP_INDEX = IndexNaming.INDEX_PREFIX + "-sitemap";
 
     private static final String ITEM_URL = "https://example.com/path?q=1";
     private static final String ITEM_HOST = "example.com";
@@ -61,15 +60,19 @@ class SitemapIndexReporterIT {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
     }
 
+    private static String sitemapIndexName() {
+        return IndexNaming.indexNameForShortName("sitemap");
+    }
+
     @AfterEach
     void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
-            client.indices().delete(new DeleteIndexRequest.Builder().index(SITEMAP_INDEX).build());
+            client.indices().delete(new DeleteIndexRequest.Builder().index(sitemapIndexName()).build());
         } catch (Exception e) {
-            Logger.logError("[SitemapIndexReporterIT] Failed to delete index during cleanup: " + SITEMAP_INDEX, e);
+            Logger.logError("[SitemapIndexReporterIT] Failed to delete index during cleanup: " + sitemapIndexName(), e);
         }
     }
 
@@ -178,13 +181,13 @@ class SitemapIndexReporterIT {
     private Map<String, Object> awaitFirstDocument() {
         OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
-                .index(SITEMAP_INDEX)
+                .index(sitemapIndexName())
                 .size(1)
                 .build();
         int maxAttempts = 5;
         for (int i = 0; i < maxAttempts; i++) {
             try {
-                client.indices().refresh(new RefreshRequest.Builder().index(SITEMAP_INDEX).build());
+                client.indices().refresh(new RefreshRequest.Builder().index(sitemapIndexName()).build());
             } catch (Exception ignored) {
                 // best-effort refresh
             }

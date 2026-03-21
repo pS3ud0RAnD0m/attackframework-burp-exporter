@@ -39,9 +39,7 @@ class OpenSearchSinkUnsupportedSourceIT {
         // Any produced results must be from the allowed set and use correct full-name derivation.
         for (IndexResult r : results) {
             assertThat(r.shortName()).isIn(ALLOWED_SHORT_NAMES);
-            String expectedFull = r.shortName().equals("tool")
-                    ? IndexNaming.INDEX_PREFIX
-                    : IndexNaming.INDEX_PREFIX + "-" + r.shortName();
+            String expectedFull = IndexNaming.indexNameForShortName(r.shortName());
             assertThat(r.fullName()).isEqualTo(expectedFull);
         }
 

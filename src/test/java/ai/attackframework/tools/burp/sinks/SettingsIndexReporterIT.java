@@ -41,7 +41,6 @@ import burp.api.montoya.project.Project;
 class SettingsIndexReporterIT {
 
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
-    private static final String SETTINGS_INDEX = IndexNaming.INDEX_PREFIX + "-settings";
 
     private static final String PROJECT_JSON = "{\"project_options\":{\"test_key\":\"project_value\"}}";
     private static final String USER_JSON = "{\"user_options\":{\"test_key\":\"user_value\"}}";
@@ -52,15 +51,19 @@ class SettingsIndexReporterIT {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
     }
 
+    private static String settingsIndexName() {
+        return IndexNaming.indexNameForShortName("settings");
+    }
+
     @AfterEach
     void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
-            client.indices().delete(new DeleteIndexRequest.Builder().index(SETTINGS_INDEX).build());
+            client.indices().delete(new DeleteIndexRequest.Builder().index(settingsIndexName()).build());
         } catch (Exception e) {
-            Logger.logError("[SettingsIndexReporterIT] Failed to delete index during cleanup: " + SETTINGS_INDEX, e);
+            Logger.logError("[SettingsIndexReporterIT] Failed to delete index during cleanup: " + settingsIndexName(), e);
         }
     }
 
@@ -142,13 +145,13 @@ class SettingsIndexReporterIT {
     private Map<String, Object> awaitFirstDocument() {
         OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
-                .index(SETTINGS_INDEX)
+                .index(settingsIndexName())
                 .size(1)
                 .build();
         int maxAttempts = 5;
         for (int i = 0; i < maxAttempts; i++) {
             try {
-                client.indices().refresh(new RefreshRequest.Builder().index(SETTINGS_INDEX).build());
+                client.indices().refresh(new RefreshRequest.Builder().index(settingsIndexName()).build());
             } catch (Exception ignored) {
                 // best-effort refresh
             }

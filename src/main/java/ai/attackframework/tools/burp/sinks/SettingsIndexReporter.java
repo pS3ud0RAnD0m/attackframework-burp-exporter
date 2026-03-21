@@ -36,7 +36,6 @@ import burp.api.montoya.MontoyaApi;
 public final class SettingsIndexReporter {
 
     private static final int INTERVAL_SECONDS = 30;
-    private static final String SETTINGS_INDEX = IndexNaming.INDEX_PREFIX + "-settings";
     private static final String SCHEMA_VERSION = "1";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -45,6 +44,10 @@ public final class SettingsIndexReporter {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private SettingsIndexReporter() {}
+
+    private static String settingsIndexName() {
+        return IndexNaming.indexNameForShortName("settings");
+    }
 
     /**
      * Pushes one settings snapshot immediately (e.g. initial push on Start).
@@ -76,7 +79,7 @@ public final class SettingsIndexReporter {
             if (doc == null) {
                 return;
             }
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, SETTINGS_INDEX, doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
             if (ok) {
                 ExportStats.recordSuccess("settings", 1);
                 lastPushedHash = hashSettingsForEnabled(state, projectJson, userJson);
@@ -122,6 +125,21 @@ public final class SettingsIndexReporter {
     }
 
     /**
+     * Stops the periodic scheduler and clears the last pushed hash.
+     *
+     * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
+     */
+    public static void stop() {
+        ScheduledExecutorService exec;
+        synchronized (SettingsIndexReporter.class) {
+            exec = scheduler;
+            scheduler = null;
+        }
+        ReporterExecutors.shutdownNowAndAwait(exec);
+        lastPushedHash = null;
+    }
+
+    /**
      * Called by the scheduler. Pushes only when current settings hash differs
      * from last pushed; logs at info level when a push is performed.
      */
@@ -153,7 +171,7 @@ public final class SettingsIndexReporter {
             if (doc == null) {
                 return;
             }
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, SETTINGS_INDEX, doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
             if (ok) {
                 ExportStats.recordSuccess("settings", 1);
                 lastPushedHash = currentHash;
@@ -220,7 +238,7 @@ public final class SettingsIndexReporter {
         try {
             Map<String, Object> map = JSON.readValue(json, MAP_TYPE);
             return map != null ? map : Map.of();
-        } catch (Exception e) {
+        } catch (java.io.IOException | RuntimeException e) {
             return Map.of();
         }
     }

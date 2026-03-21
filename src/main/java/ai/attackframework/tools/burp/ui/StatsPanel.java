@@ -201,8 +201,8 @@ public class StatsPanel extends JPanel {
         byIndexModel = new DefaultTableModel(
                 new String[] { "Index", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
         byIndexTable = createStatsTable(byIndexModel);
-        tablesRow.add(createTableCard("Document Counts by Index", byIndexTable));
-        tablesRow.add(createTableCard("Document Counts by Source", trafficBySourceTable));
+        tablesRow.add(createTableCard("Index Counts", byIndexTable));
+        tablesRow.add(createTableCard("Traffic Counts", trafficBySourceTable));
 
         JPanel lowerPanel = new JPanel();
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));

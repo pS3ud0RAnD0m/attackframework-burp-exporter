@@ -90,6 +90,22 @@ public final class Logger {
      */
     public static void unregisterListener(LogListener listener) { LISTENERS.remove(listener); }
 
+    /**
+     * Clears listener registrations, replay state, and the Montoya logging sink.
+     *
+     * <p>Intended for extension unload and test isolation so stale listeners do not
+     * survive a reload or leak state across tests.</p>
+     */
+    public static void resetState() {
+        LISTENERS.clear();
+        BURP_LOGGER.set(null);
+        LAST_SEEN.clear();
+        synchronized (REPLAY_BUFFER_LOCK) {
+            REPLAY_BUFFER.clear();
+        }
+        REPLAY_SEQ.set(0);
+    }
+
     // -------- Public API (mirrored to UI listener bus) --------
 
     /**

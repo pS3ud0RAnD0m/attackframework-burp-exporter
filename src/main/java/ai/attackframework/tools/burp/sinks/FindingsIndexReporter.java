@@ -44,7 +44,6 @@ public final class FindingsIndexReporter {
     private static final int INTERVAL_SECONDS = 30;
     /** Flush when batch exceeds this approximate payload size (bytes) so large request/response bodies don't produce huge bulk requests. */
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
-    private static final String FINDINGS_INDEX = IndexNaming.INDEX_PREFIX + "-findings";
     private static final String SCHEMA_VERSION = "1";
 
     private static volatile ScheduledExecutorService scheduler;
@@ -53,6 +52,10 @@ public final class FindingsIndexReporter {
     private static volatile boolean runInProgress;
 
     private FindingsIndexReporter() {}
+
+    private static String findingsIndexName() {
+        return IndexNaming.indexNameForShortName("findings");
+    }
 
     /**
      * Pushes all current issues once (e.g. initial push on Start). Safe to call
@@ -111,6 +114,22 @@ public final class FindingsIndexReporter {
         }
     }
 
+    /**
+     * Stops the periodic scheduler and clears per-session reporter state.
+     *
+     * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
+     */
+    public static void stop() {
+        ScheduledExecutorService exec;
+        synchronized (FindingsIndexReporter.class) {
+            exec = scheduler;
+            scheduler = null;
+        }
+        ReporterExecutors.shutdownNowAndAwait(exec);
+        pushedIssueKeys.clear();
+        runInProgress = false;
+    }
+
     static void pushNewIssuesOnly() {
         try {
             if (!RuntimeConfig.isExportRunning()) {
@@ -141,7 +160,7 @@ public final class FindingsIndexReporter {
         }
         runInProgress = true;
         try {
-            List<AuditIssue> issues = api.siteMap().issues();
+            List<AuditIssue> issues = safeIssues(api);
             if (issues == null) {
                 return;
             }
@@ -166,7 +185,7 @@ public final class FindingsIndexReporter {
                     }
                 }
                 String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
-                boolean burpInScope = api.scope().isInScope(issueUrl);
+                boolean burpInScope = safeBurpInScope(api, issueUrl);
                 if (!ScopeFilter.shouldExport(state, issueUrl, burpInScope)) {
                     continue;
                 }
@@ -197,8 +216,39 @@ public final class FindingsIndexReporter {
         }
     }
 
+    /** Returns current Burp issues, tolerating transient lifecycle nulls. */
+    private static List<AuditIssue> safeIssues(MontoyaApi api) {
+        try {
+            if (api == null) {
+                return null;
+            }
+            var siteMap = api.siteMap();
+            if (siteMap == null) {
+                return null;
+            }
+            return siteMap.issues();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean safeBurpInScope(MontoyaApi api, String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            if (api == null) {
+                return false;
+            }
+            var scope = api.scope();
+            return scope != null && scope.isInScope(url);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
-        int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, FINDINGS_INDEX, batchDocs);
+        int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, findingsIndexName(), batchDocs);
         int failureCount = batchDocs.size() - successCount;
         ExportStats.recordSuccess("findings", successCount);
         ExportStats.recordFailure("findings", failureCount);

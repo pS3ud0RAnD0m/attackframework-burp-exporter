@@ -12,9 +12,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -23,9 +23,9 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  * Periodically pushes a stats snapshot document to the tool index
  * ({@link IndexNaming#INDEX_PREFIX}) for resource and export metrics in OpenSearch.
  *
- * <p>Started from extension load; runs on a daemon thread. Only pushes when
- * {@link RuntimeConfig#openSearchUrl()} is set. Fire-and-forget; failures are
- * not pushed back to the tool index to avoid feedback loops.</p>
+ * <p>Started when export startup reaches the tool-stats phase; runs on a daemon thread.
+ * Only pushes when export is running and {@link RuntimeConfig#openSearchUrl()} is set.
+ * Fire-and-forget; failures are not pushed back to the tool index to avoid feedback loops.</p>
  *
  * <p>Set {@link #ENABLED} to {@code false} to disable the reporter (e.g. to test
  * whether periodic OpenSearch pushes contribute to memory growth).</p>
@@ -82,6 +82,20 @@ public final class ToolIndexStatsReporter {
         }
     }
 
+    /**
+     * Stops the periodic stats scheduler.
+     *
+     * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
+     */
+    public static void stop() {
+        ScheduledExecutorService exec;
+        synchronized (ToolIndexStatsReporter.class) {
+            exec = scheduler;
+            scheduler = null;
+        }
+        ReporterExecutors.shutdownNowAndAwait(exec);
+    }
+
     private static void pushSnapshot() {
         try {
             if (!RuntimeConfig.isExportRunning()) {
@@ -92,7 +106,7 @@ public final class ToolIndexStatsReporter {
                 return;
             }
             Map<String, Object> doc = buildSnapshotDoc();
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.INDEX_PREFIX, doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
             if (ok) {
                 ExportStats.recordSuccess("tool", 1);
             } else {
@@ -206,35 +220,10 @@ public final class ToolIndexStatsReporter {
     }
 
     private static String burpVersion() {
-        try {
-            var api = MontoyaApiProvider.get();
-            if (api == null) {
-                return null;
-            }
-            var burpSuite = api.burpSuite();
-            if (burpSuite == null) {
-                return null;
-            }
-            var version = burpSuite.version();
-            return version != null ? String.valueOf(version) : null;
-        } catch (Throwable e) {
-            return null;
-        }
+        return BurpRuntimeMetadata.burpVersion();
     }
 
     private static String projectId() {
-        try {
-            var api = MontoyaApiProvider.get();
-            if (api == null) {
-                return null;
-            }
-            var project = api.project();
-            if (project == null) {
-                return null;
-            }
-            return project.id();
-        } catch (Throwable e) {
-            return null;
-        }
+        return BurpRuntimeMetadata.projectId();
     }
 }
