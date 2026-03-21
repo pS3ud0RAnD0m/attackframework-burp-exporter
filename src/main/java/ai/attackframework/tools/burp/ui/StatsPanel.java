@@ -13,6 +13,7 @@ import java.awt.Insets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -22,8 +23,6 @@ import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.RowSorter;
-import javax.swing.SortOrder;
 import javax.swing.JTable;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
@@ -79,7 +78,7 @@ public class StatsPanel extends JPanel {
     private static final Font CHART_TITLE_FONT = new Font("SansSerif", Font.PLAIN, 14);
     private static final Font CHART_AXIS_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 15);
     private static final Font CHART_TICK_FONT = new Font("SansSerif", Font.PLAIN, 11);
-    private static final Font CHART_LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 14);
+    private static final Font CHART_LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 15);
     private static final Font CARD_KEY_FONT = new Font("SansSerif", Font.PLAIN, 13);
     private static final Font CARD_VALUE_FONT = new Font("SansSerif", Font.BOLD, 13);
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
@@ -198,15 +197,12 @@ public class StatsPanel extends JPanel {
         trafficBySourceModel = new DefaultTableModel(
                 new String[] { "Source", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
         trafficBySourceTable = createStatsTable(trafficBySourceModel);
-        tablesRow.add(createTableCard("Traffic by Source", trafficBySourceTable));
 
         byIndexModel = new DefaultTableModel(
                 new String[] { "Index", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
         byIndexTable = createStatsTable(byIndexModel);
-        if (byIndexTable.getRowSorter() != null) {
-            byIndexTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
-        }
-        tablesRow.add(createTableCard("Traffic by Index", byIndexTable));
+        tablesRow.add(createTableCard("Document Counts by Index", byIndexTable));
+        tablesRow.add(createTableCard("Document Counts by Source", trafficBySourceTable));
 
         JPanel lowerPanel = new JPanel();
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
@@ -302,7 +298,9 @@ public class StatsPanel extends JPanel {
 
     private void rebuildByIndexTable() {
         byIndexModel.setRowCount(0);
-        for (String indexKey : ExportStats.getIndexKeys()) {
+        List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
+        sortedKeys.sort(String::compareToIgnoreCase);
+        for (String indexKey : sortedKeys) {
             long success = ExportStats.getSuccessCount(indexKey);
             int queued = ExportStats.getQueueSize(indexKey);
             long retryDrops = ExportStats.getRetryQueueDrops(indexKey);
@@ -618,7 +616,7 @@ public class StatsPanel extends JPanel {
         for (int i = 0; i < labels.length; i++) {
             JLabel legendItem = new JLabel("\u2014 " + labels[i], SwingConstants.LEFT);
             legendItem.setForeground(SERIES_COLORS[i]);
-            legendItem.setFont(CHART_TICK_FONT);
+            legendItem.setFont(CHART_LEGEND_FONT);
             legendPanel.add(legendItem);
         }
         return legendPanel;

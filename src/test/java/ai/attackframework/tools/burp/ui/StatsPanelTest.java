@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.FlowLayout;
 import java.awt.Font;
 
@@ -160,15 +161,12 @@ class StatsPanelTest {
     }
 
     @Test
-    void byIndexTable_defaultsToAscendingIndexSort() {
+    void byIndexTable_hasNoDefaultActiveSortKey() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JTable byIndexTable = get(panel, "byIndexTable");
         RowSorter<? extends javax.swing.table.TableModel> sorter = byIndexTable.getRowSorter();
         assertThat(sorter).isNotNull();
-        assertThat(sorter.getSortKeys()).isNotEmpty();
-        RowSorter.SortKey firstKey = sorter.getSortKeys().get(0);
-        assertThat(firstKey.getColumn()).isEqualTo(0);
-        assertThat(firstKey.getSortOrder()).isEqualTo(SortOrder.ASCENDING);
+        assertThat(sorter.getSortKeys()).isEmpty();
     }
 
     @Test
@@ -227,12 +225,14 @@ class StatsPanelTest {
         assertThat(legendPanel.getLayout()).isInstanceOf(FlowLayout.class);
         FlowLayout layout = (FlowLayout) legendPanel.getLayout();
         assertThat(layout.getAlignment()).isEqualTo(FlowLayout.LEFT);
+        Font expectedLegendFont = getStatic(StatsPanel.class, "CHART_LEGEND_FONT");
 
         List<String> labels = new ArrayList<>();
         for (Component component : legendPanel.getComponents()) {
             if (component instanceof JLabel label) {
                 labels.add(label.getText());
                 assertThat(label.getHorizontalAlignment()).isEqualTo(SwingConstants.LEFT);
+                assertThat(label.getFont()).isEqualTo(expectedLegendFont);
             }
         }
         assertThat(labels).containsExactly(
@@ -241,6 +241,17 @@ class StatsPanelTest {
                 "\u2014 Settings",
                 "\u2014 Sitemap",
                 "\u2014 Findings");
+    }
+
+    @Test
+    void tablesRow_placesTrafficByIndexBeforeTrafficBySource() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel tablesRow = get(panel, "tablesRow");
+        JTable byIndexTable = get(panel, "byIndexTable");
+        JTable trafficBySourceTable = get(panel, "trafficBySourceTable");
+
+        assertThat(findDescendant((Container) tablesRow.getComponent(0), JTable.class)).isSameAs(byIndexTable);
+        assertThat(findDescendant((Container) tablesRow.getComponent(1), JTable.class)).isSameAs(trafficBySourceTable);
     }
 
     @Test
@@ -393,5 +404,22 @@ class StatsPanelTest {
         @SuppressWarnings("unchecked")
         T value = (T) box[0];
         return value;
+    }
+
+    private static <T extends Component> T findDescendant(Container root, Class<T> type) {
+        if (type.isInstance(root)) {
+            return type.cast(root);
+        }
+        for (Component component : root.getComponents()) {
+            if (component instanceof Container child) {
+                T found = findDescendant(child, type);
+                if (found != null) {
+                    return found;
+                }
+            } else if (type.isInstance(component)) {
+                return type.cast(component);
+            }
+        }
+        return null;
     }
 }
