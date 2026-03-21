@@ -156,6 +156,54 @@ class ConfigControlPanelHeadlessTest {
     }
 
     @Test
+    void stop_clicked_before_deferred_start_runs_keeps_control_stopped() throws Exception {
+        resetExportRunning();
+        try {
+            AtomicInteger startAcceptedCount = new AtomicInteger(0);
+            AtomicInteger stopCount = new AtomicInteger(0);
+            JPanel root = buildPanel(
+                    onStartFailure -> {
+                        if (!RuntimeConfig.isExportRunning()) {
+                            return;
+                        }
+                        startAcceptedCount.incrementAndGet();
+                    },
+                    () -> {
+                        stopCount.incrementAndGet();
+                        RuntimeConfig.setExportRunning(false);
+                    },
+                    noOpActionListener()
+            );
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+
+            runEdt(() -> {
+                startStop.doClick();
+                assertThat(RuntimeConfig.isExportRunning()).isTrue();
+                assertThat(startStop.getText()).isEqualTo("Stop");
+                assertThat(indicator.getToolTipText()).isEqualTo("Export is running");
+                startStop.doClick();
+            });
+            assertThat(stopCount.get()).isEqualTo(1);
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+
+            runEdt(() -> { /* flush deferred start callback */ });
+            assertThat(startAcceptedCount.get()).isEqualTo(0);
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+        } finally {
+            resetExportRunning();
+        }
+    }
+
+    @Test
     void when_export_running_panel_builds_with_stop_label() throws Exception {
         resetExportRunning();
         try {

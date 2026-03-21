@@ -138,6 +138,9 @@ public final class ProxyWebSocketIndexReporter {
             List<String> batchKeys = new ArrayList<>(batchSize);
             List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
             for (ProxyWebSocketMessage msg : history) {
+                if (!RuntimeConfig.isExportRunning()) {
+                    break;
+                }
                 String key = messageKey(msg);
                 if (!pushAll && pushedKeys.contains(key)) {
                     continue;
@@ -154,7 +157,7 @@ public final class ProxyWebSocketIndexReporter {
                     batchDocs.clear();
                 }
             }
-            if (!batchDocs.isEmpty()) {
+            if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
                 flushBatch(baseUrl, batchKeys, batchDocs);
             }
         } finally {

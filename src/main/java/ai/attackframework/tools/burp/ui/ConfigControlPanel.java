@@ -187,9 +187,11 @@ public final class ConfigControlPanel {
                 updateStartStopButton(startStopBtn, false);
                 indicator.setRunning(false);
             } else {
+                RuntimeConfig.setExportRunning(true);
                 updateStartStopButton(startStopBtn, true);
                 indicator.setRunning(true);
                 Runnable revertUi = () -> {
+                    RuntimeConfig.setExportRunning(false);
                     updateStartStopButton(startStopBtn, false);
                     indicator.setRunning(false);
                 };

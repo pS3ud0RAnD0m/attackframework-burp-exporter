@@ -110,6 +110,9 @@ public final class ProxyHistoryIndexReporter {
         List<Map<String, Object>> chunk = new ArrayList<>(chunkTarget);
 
         for (ProxyHttpRequestResponse item : history) {
+            if (!RuntimeConfig.isExportRunning()) {
+                break;
+            }
             Map<String, Object> doc = buildDocument(api, item);
             if (doc == null) {
                 continue;
@@ -137,7 +140,7 @@ public final class ProxyHistoryIndexReporter {
             chunk.add(doc);
             estBytes += docBytes;
         }
-        if (!chunk.isEmpty()) {
+        if (RuntimeConfig.isExportRunning() && !chunk.isEmpty()) {
             chunkTarget = applyLiveBackpressure(chunkTarget);
             int attemptedChunk = chunk.size();
             int sent = OpenSearchClientWrapper.pushBulk(baseUrl, TRAFFIC_INDEX, chunk);

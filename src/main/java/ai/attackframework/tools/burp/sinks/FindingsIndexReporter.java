@@ -156,6 +156,9 @@ public final class FindingsIndexReporter {
             Set<String> selectedSeverities = filterBySeverity ? Set.copyOf(severities) : Set.of();
 
             for (AuditIssue issue : issues) {
+                if (!RuntimeConfig.isExportRunning()) {
+                    break;
+                }
                 if (filterBySeverity) {
                     AuditIssueSeverity sev = issue.severity();
                     if (sev == null || !selectedSeverities.contains(sev.name())) {
@@ -186,7 +189,7 @@ public final class FindingsIndexReporter {
                     runningBatchBytes = 0;
                 }
             }
-            if (!batchDocs.isEmpty()) {
+            if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
                 flushBatch(baseUrl, batchKeys, batchDocs);
             }
         } finally {

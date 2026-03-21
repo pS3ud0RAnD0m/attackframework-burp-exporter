@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringReader;
@@ -8,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 import jakarta.json.Json;
 import jakarta.json.JsonReader;
@@ -130,7 +132,7 @@ public class OpenSearchSink {
                     response.acknowledged() ? null : "Create not acknowledged"
             );
 
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             Logger.logError("Exception while creating index: " + fullIndexName);
             if (jsonBody != null) Logger.logError("Mapping JSON: " + compactJson(jsonBody));
             StringWriter sw = new StringWriter();
@@ -152,6 +154,15 @@ public class OpenSearchSink {
      */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources,
             String username, String password) {
+        return createSelectedIndexes(baseUrl, selectedSources, username, password, () -> true);
+    }
+
+    /**
+     * Creates all indices required by the selected sources with optional basic auth.
+     * Caller may provide a stop signal to cancel between index creations.
+     */
+    public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources,
+            String username, String password, BooleanSupplier shouldContinue) {
         Logger.logDebug("Entered createSelectedIndexes with sources: " + selectedSources);
 
         List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
@@ -166,6 +177,9 @@ public class OpenSearchSink {
 
         List<IndexResult> results = new ArrayList<>();
         for (String shortName : shortNames) {
+            if (shouldContinue != null && !shouldContinue.getAsBoolean()) {
+                break;
+            }
             Logger.logInfoPanelOnly("Creating index for: " + shortName);
             IndexResult result = createIndexFromResource(baseUrl, shortName, null, username, password);
             Logger.logInfoPanelOnly("Result for " + shortName + ": " + result.status());

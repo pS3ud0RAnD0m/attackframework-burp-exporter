@@ -159,6 +159,9 @@ public final class SitemapIndexReporter {
             long runningBatchBytes = 0;
 
             for (HttpRequestResponse item : items) {
+                if (!RuntimeConfig.isExportRunning()) {
+                    break;
+                }
                 HttpRequest request = item.request();
                 if (request == null) {
                     continue;
@@ -191,7 +194,7 @@ public final class SitemapIndexReporter {
                     runningBatchBytes = 0;
                 }
             }
-            if (!batchDocs.isEmpty()) {
+            if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
                 flushBatch(baseUrl, batchKeys, batchDocs);
             }
         } finally {

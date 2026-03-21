@@ -366,6 +366,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param onStartFailure callback from {@link ConfigControlPanel} to revert Start UI state
      */
     private void startExportAsync(Runnable onStartFailure) {
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         persistSelectedAuthSecrets();
         updateRuntimeConfig();
         String url = openSearchUrlField.getText().trim();
@@ -386,13 +389,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param onStartFailure callback to revert Start button/indicator state
      */
     private void runStartupPipeline(String url, List<String> sources, Runnable onStartFailure) {
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         if (!url.isEmpty()) {
             Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
             List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
-                    RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
+                    RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword(), RuntimeConfig::isExportRunning);
             for (OpenSearchSink.IndexResult r : results) {
                 Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
                         + (r.error() != null ? " (" + r.error() + ")" : ""));
+            }
+            if (!RuntimeConfig.isExportRunning()) {
+                return;
             }
             if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
                 Logger.logError("[Start] Ensure indexes: one or more failed; see log above.");
@@ -404,17 +413,53 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
         }
 
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         ToolIndexConfigReporter.pushConfigSnapshot();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         ToolIndexStatsReporter.start();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         SettingsIndexReporter.pushSnapshotNow();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         SettingsIndexReporter.start();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         FindingsIndexReporter.start();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         FindingsIndexReporter.pushSnapshotNow();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         SitemapIndexReporter.start();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         SitemapIndexReporter.pushSnapshotNow();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         ProxyHistoryIndexReporter.pushSnapshotNow();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         ProxyWebSocketIndexReporter.start();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         ProxyWebSocketIndexReporter.pushSnapshotNow();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
         Logger.logInfoPanelOnly("Export started.");
     }
 
