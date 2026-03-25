@@ -13,7 +13,7 @@
       "http_version": { "type": "keyword" },
       "tool": { "type": "keyword" },
       "tool_type": { "type": "keyword" },
-      "in_scope": { "type": "boolean" },
+      "burp_in_scope": { "type": "boolean" },
       "message_id": { "type": "integer" },
       "time_start": { "type": "date" },
       "time_end": { "type": "date" },

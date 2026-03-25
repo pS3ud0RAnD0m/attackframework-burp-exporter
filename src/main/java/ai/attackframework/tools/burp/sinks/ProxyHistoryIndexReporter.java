@@ -14,7 +14,6 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -225,7 +224,6 @@ public final class ProxyHistoryIndexReporter {
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         String url = request.url();
         boolean burpInScope = url != null && api.scope().isInScope(url);
-        boolean inScope = ScopeFilter.shouldExport(RuntimeConfig.getState(), url, burpInScope);
 
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("url", request.url());
@@ -238,7 +236,7 @@ public final class ProxyHistoryIndexReporter {
         document.put("http_version", request.httpVersion());
         document.put("tool", "Proxy History");
         document.put("tool_type", "PROXY_HISTORY");
-        document.put("in_scope", inScope);
+        document.put("burp_in_scope", burpInScope);
         document.put("message_id", item.id());
         document.put("proxy_history_id", item.id());
         document.put("listener_port", item.listenerPort());

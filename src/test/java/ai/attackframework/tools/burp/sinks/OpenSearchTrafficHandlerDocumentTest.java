@@ -83,7 +83,7 @@ class OpenSearchTrafficHandlerDocumentTest {
     void buildDocument_hasRequiredTopLevelKeys() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        assertThat(doc).containsKeys("url", "host", "port", "scheme", "http_version", "tool", "in_scope",
+        assertThat(doc).containsKeys("url", "host", "port", "scheme", "http_version", "tool", "burp_in_scope",
                 "message_id", "path", "method", "status", "mime_type", "request", "response", "document_meta");
     }
 

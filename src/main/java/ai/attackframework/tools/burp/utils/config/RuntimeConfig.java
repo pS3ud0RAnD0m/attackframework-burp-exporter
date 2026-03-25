@@ -13,6 +13,7 @@ import java.util.Map;
 public final class RuntimeConfig {
     private static volatile ConfigState.State state = defaultState();
     private static volatile boolean exportRunning = false;
+    private static volatile boolean exportStarting = false;
 
     private RuntimeConfig() { }
 
@@ -33,6 +34,17 @@ public final class RuntimeConfig {
     }
 
     /**
+     * Returns whether export is fully active and allowed to emit runtime documents.
+     *
+     * <p>This stays {@code false} during Start/bootstrap work so background listeners do not
+     * begin pushing traffic or tool-log documents before OpenSearch preflight and index
+     * bootstrap have succeeded.</p>
+     */
+    public static boolean isExportReady() {
+        return exportRunning && !exportStarting;
+    }
+
+    /**
      * Sets the export-running flag.
      *
      * <p>Start button sets {@code true}; Stop button sets {@code false}.</p>
@@ -41,6 +53,19 @@ public final class RuntimeConfig {
      */
     public static void setExportRunning(boolean running) {
         exportRunning = running;
+        if (!running) {
+            exportStarting = false;
+        }
+    }
+
+    /**
+     * Sets whether export startup/bootstrap is still in progress.
+     *
+     * <p>When {@code true}, the UI may show a running state while runtime exporters remain
+     * gated until startup succeeds.</p>
+     */
+    public static void setExportStarting(boolean starting) {
+        exportStarting = exportRunning && starting;
     }
 
     /** Updates the runtime config state with a normalized, non-null value. */

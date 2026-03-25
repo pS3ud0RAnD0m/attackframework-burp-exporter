@@ -64,6 +64,9 @@ public final class IndexingRetryCoordinator {
      * @return {@code true} if indexed successfully, {@code false} otherwise
      */
     public boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document, String indexKey) {
+        if (!RuntimeConfig.isExportReady()) {
+            return false;
+        }
         ensureDrainThreadStarted();
         String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
 
@@ -80,10 +83,14 @@ public final class IndexingRetryCoordinator {
             maybeEnterOutageMode(activeBaseUrl, fails);
         }
 
+        if (!RuntimeConfig.isExportReady()) {
+            return false;
+        }
+
         boolean offered = queue.offer(indexName, document);
         if (!offered) {
             ExportStats.recordRetryQueueDrop(indexKey, 1);
-            Logger.logError("[OpenSearch] Retry queue full for index " + indexName + "; dropping document.");
+            Logger.logErrorPanelOnly("[OpenSearch] Retry queue full for index " + indexName + "; dropping document.");
         }
         return false;
     }
@@ -102,6 +109,9 @@ public final class IndexingRetryCoordinator {
      */
     public int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents, String indexKey) {
         if (documents == null || documents.isEmpty()) {
+            return 0;
+        }
+        if (!RuntimeConfig.isExportReady()) {
             return 0;
         }
         ensureDrainThreadStarted();
@@ -151,20 +161,38 @@ public final class IndexingRetryCoordinator {
         int fails = consecutiveFailures.incrementAndGet();
         maybeEnterOutageMode(activeBaseUrl, fails);
 
+        if (!RuntimeConfig.isExportReady()) {
+            return successCount;
+        }
+
         if (!toQueue.isEmpty()) {
             if (toQueue.size() <= MAX_QUEUE_SIZE_PER_INDEX) {
                 int added = queue.offerAll(indexName, toQueue);
                 if (added < toQueue.size()) {
                     int dropped = toQueue.size() - added;
                     ExportStats.recordRetryQueueDrop(indexKey, dropped);
-                    Logger.logError("[OpenSearch] Retry queue full for index " + indexName + "; dropping " + dropped + " documents.");
+                    Logger.logErrorPanelOnly("[OpenSearch] Retry queue full for index " + indexName + "; dropping " + dropped + " documents.");
                 }
             } else {
                 ExportStats.recordRetryQueueDrop(indexKey, toQueue.size());
-                Logger.logError("[OpenSearch] Bulk failure batch too large to queue (" + toQueue.size() + "); dropping.");
+                Logger.logErrorPanelOnly("[OpenSearch] Bulk failure batch too large to queue (" + toQueue.size() + "); dropping.");
             }
         }
         return successCount;
+    }
+
+    /**
+     * Clears queued retry state and resets outage/failure tracking without touching successful stats.
+     *
+     * <p>Used when export is intentionally stopped or a Start attempt fails, so queued retries do
+     * not continue behind a stopped UI.</p>
+     */
+    public void clearPendingWork() {
+        queue.clearAll();
+        consecutiveFailures.set(0);
+        outageMode.set(false);
+        lastOutageLogTime = 0;
+        lastDrainBaseUrl = "";
     }
 
     private void maybeEnterOutageMode(String baseUrl, int consecutiveFails) {
@@ -181,6 +209,9 @@ public final class IndexingRetryCoordinator {
     }
 
     private void logOutageOnce() {
+        if (queue.totalSize() == 0) {
+            return;
+        }
         if (System.currentTimeMillis() - lastOutageLogTime < OUTAGE_LOG_THROTTLE_MS) {
             return;
         }
@@ -193,7 +224,7 @@ public final class IndexingRetryCoordinator {
                 sb.append(key).append("=").append(size).append(", ");
             }
         }
-        Logger.logError(sb.toString().replaceAll(", $", ""));
+        Logger.logErrorPanelOnly(sb.toString().replaceAll(", $", ""));
     }
 
     private void checkRecoveryAndLog(String baseUrl) {
@@ -201,7 +232,7 @@ public final class IndexingRetryCoordinator {
         if (status.success() && queue.allEmpty()) {
             outageMode.set(false);
             consecutiveFailures.set(0);
-            Logger.logError("[OpenSearch] Reachable again; retry queue drained.");
+            Logger.logErrorPanelOnly("[OpenSearch] Reachable again; retry queue drained.");
         }
     }
 
@@ -230,10 +261,14 @@ public final class IndexingRetryCoordinator {
                 break;
             }
 
+            if (!RuntimeConfig.isExportReady()) {
+                continue;
+            }
+
             if (outageMode.get() && queue.totalSize() > 0) {
                 if (System.currentTimeMillis() - lastOutageLogTime >= OUTAGE_LOG_THROTTLE_MS) {
                     lastOutageLogTime = System.currentTimeMillis();
-                    Logger.logError("[OpenSearch] Still unreachable. Queued: " + queue.totalSize() + ". Will retry.");
+                    Logger.logErrorPanelOnly("[OpenSearch] Still unreachable. Queued: " + queue.totalSize() + ". Will retry.");
                 }
             }
 

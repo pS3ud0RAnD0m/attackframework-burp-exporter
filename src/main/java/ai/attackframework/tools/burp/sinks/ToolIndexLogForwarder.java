@@ -57,7 +57,7 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
 
     @Override
     public void onLog(String level, String message) {
-        if (!RuntimeConfig.isExportRunning()) {
+        if (!RuntimeConfig.isExportReady()) {
             return;
         }
         String baseUrl = RuntimeConfig.openSearchUrl();
@@ -88,6 +88,17 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
     private void drainLoop() {
         while (true) {
             try {
+                if (!RuntimeConfig.isExportRunning()) {
+                    queue.clear();
+                    TimeUnit.SECONDS.sleep(1);
+                    continue;
+                }
+                if (!RuntimeConfig.isExportReady()) {
+                    queue.clear();
+                    TimeUnit.SECONDS.sleep(1);
+                    continue;
+                }
+
                 Map<String, Object> doc = queue.poll(1, TimeUnit.SECONDS);
                 if (doc == null) continue;
 

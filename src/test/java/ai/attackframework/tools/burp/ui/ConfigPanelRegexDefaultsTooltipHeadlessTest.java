@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Verifies each newly added row has regex toggle selected by default,
- * and the regex toggle includes the concise plain-text tooltip.
+ * and the regex toggle includes the expected HTML tooltip.
  */
 class ConfigPanelRegexDefaultsTooltipHeadlessTest {
 
@@ -31,7 +31,7 @@ class ConfigPanelRegexDefaultsTooltipHeadlessTest {
         assertThat(toggles).hasSize(3);
         for (JCheckBox cb : toggles) {
             assertThat(cb.isSelected()).isTrue();
-            assertThat(cb.getToolTipText()).isEqualTo("Interpret value as a regular expression.");
+            assertThat(cb.getToolTipText()).isEqualTo("<html>Interpret value as a regular expression.</html>");
         }
     }
 

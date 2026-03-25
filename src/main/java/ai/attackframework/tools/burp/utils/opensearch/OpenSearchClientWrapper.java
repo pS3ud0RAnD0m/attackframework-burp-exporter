@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.utils.opensearch;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +59,7 @@ public class OpenSearchClientWrapper {
                     JsonNode ver = root.path("version");
                     version = ver.path("number").asText("");
                     distribution = ver.path("distribution").asText("");
-                } catch (Exception ignored) {
+                } catch (IOException | RuntimeException ignored) {
                     // keep empty version/distribution
                 }
             }
@@ -68,7 +69,7 @@ public class OpenSearchClientWrapper {
         String msg = result.statusCode() == 0
                 ? (result.reasonPhrase() != null ? result.reasonPhrase() : "Connection failed")
                 : "HTTP " + result.statusCode() + (result.reasonPhrase() != null && !result.reasonPhrase().isBlank() ? " " + result.reasonPhrase() : "");
-        Logger.logError("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
+        Logger.logErrorPanelOnly("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
         return new OpenSearchStatus(false, "", "", msg);
     }
 
@@ -79,12 +80,12 @@ public class OpenSearchClientWrapper {
     public static OpenSearchStatus safeTestConnection(String baseUrl, String username, String password) {
         try {
             return testConnection(baseUrl, username, password);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            Logger.logError("[OpenSearch] safeTestConnection threw for " + baseUrl + ": " + msg);
+            Logger.logErrorPanelOnly("[OpenSearch] safeTestConnection threw for " + baseUrl + ": " + msg);
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
-            Logger.logError(sw.toString().stripTrailing());
+            Logger.logErrorPanelOnly(sw.toString().stripTrailing());
             return new OpenSearchStatus(false, "", "", msg);
         }
     }
@@ -157,7 +158,7 @@ public class OpenSearchClientWrapper {
             IndexResponse response = client.index(request);
             String result = response.result().jsonValue();
             return result != null && (result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated"));
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             Logger.logDebug("doPushDocument failed for " + indexName + ": " + e.getMessage());
             return false;
         }
@@ -208,7 +209,7 @@ public class OpenSearchClientWrapper {
                 Logger.logDebug("Bulk index " + indexName + ": " + (failedIndices.size() - maxLoggedPerBulk) + " more item errors in this batch (total failed: " + failedIndices.size() + ")");
             }
             return new BulkResult(successCount, failedIndices);
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             Logger.logDebug("doPushBulk failed for " + indexName + ": " + e.getMessage());
             return new BulkResult(0, List.of());
         }

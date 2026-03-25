@@ -4,6 +4,7 @@ import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
+import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 
 /**
  * Coordinates intentional shutdown and reset of long-lived export reporters.
@@ -31,14 +32,26 @@ public final class ExportReporterLifecycle {
     }
 
     /**
+     * Stops recurring reporters and clears queued export work that would otherwise keep retrying.
+     *
+     * <p>Use when the UI transitions to a stopped state, including failed Start attempts, so the
+     * runtime matches what the Start/Stop controls show.</p>
+     */
+    public static void stopAndClearPendingExportWork() {
+        RuntimeConfig.setExportRunning(false);
+        stopBackgroundReporters();
+        TrafficExportQueue.clearPendingWork();
+        IndexingRetryCoordinator.getInstance().clearPendingWork();
+    }
+
+    /**
      * Stops recurring reporters and clears process-local exporter session state.
      *
      * <p>Used by extension unload and test teardown so reloads start from a clean
      * in-memory baseline.</p>
      */
     public static void stopAndClearSessionState() {
-        RuntimeConfig.setExportRunning(false);
-        stopBackgroundReporters();
+        stopAndClearPendingExportWork();
         BurpRuntimeMetadata.clear();
         MontoyaApiProvider.set(null);
         SecureCredentialStore.clearAll();

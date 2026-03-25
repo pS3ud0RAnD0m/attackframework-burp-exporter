@@ -30,4 +30,23 @@ class ToolIndexLogForwarderTest {
             MontoyaApiProvider.set(null);
         }
     }
+
+    @Test
+    void onLog_noops_duringStartupBootstrap_and_doesNotQueueWork() {
+        ToolIndexLogForwarder forwarder = new ToolIndexLogForwarder();
+        try {
+            RuntimeConfig.setExportRunning(true);
+            RuntimeConfig.setExportStarting(true);
+
+            forwarder.onLog("INFO", "startup log");
+
+            BlockingQueue<?> queue = get(forwarder, "queue");
+            assertThat(queue).isEmpty();
+        } finally {
+            forwarder.stop();
+            RuntimeConfig.setExportRunning(false);
+            BurpRuntimeMetadata.clear();
+            MontoyaApiProvider.set(null);
+        }
+    }
 }

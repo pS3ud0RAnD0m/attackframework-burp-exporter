@@ -10,6 +10,7 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
 import ai.attackframework.tools.burp.ui.primitives.ScopeGrid;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import net.miginfocom.swing.MigLayout;
 
 /**
@@ -53,9 +54,9 @@ public final class ConfigScopePanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[left]", ""));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel title = new JLabel("Export Scope");
+        JLabel title = Tooltips.label("Export Scope",
+                Tooltips.html("Configure the export scope."));
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
-        title.setToolTipText("Configure the export scope.");
         panel.add(title, "gapbottom 6");
 
         // Group radios

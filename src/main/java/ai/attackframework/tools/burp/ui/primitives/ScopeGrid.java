@@ -15,6 +15,7 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.Logger;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.miginfocom.swing.MigLayout;
@@ -36,10 +37,10 @@ public class ScopeGrid implements Serializable {
      */
     private static final int MAX_ROWS = 100;
 
-    private static final String TIP_ADD_ROW     = "Add new row";
-    private static final String TIP_SCOPE_ENTRY = "Scope entry (string or regex)";
-    private static final String TIP_REGEX_TOGGLE = "Interpret value as a regular expression.";
-    private static final String TIP_DELETE_ROW  = "Delete this row";
+    private static final String TIP_ADD_ROW     = Tooltips.html("Add new row.");
+    private static final String TIP_SCOPE_ENTRY = Tooltips.html("Scope entry.", "Enter a plain string or regular expression.");
+    private static final String TIP_REGEX_TOGGLE = Tooltips.html("Interpret value as a regular expression.");
+    private static final String TIP_DELETE_ROW  = Tooltips.html("Delete this row.");
 
     /**
      * Initial row seed for a custom entry.
@@ -56,7 +57,7 @@ public class ScopeGrid implements Serializable {
     );
 
     private final List<Row> rows = new ArrayList<>();
-    private final JButton addButton = new JButton("Add");
+    private final JButton addButton = new Tooltips.HtmlButton("Add");
 
     /**
      * Tracks external enable/disable state to combine with the MAX_ROWS rule.
@@ -85,7 +86,7 @@ public class ScopeGrid implements Serializable {
 
         addButton.setName("scope.custom.add");
         ButtonStyles.normalize(addButton);
-        addButton.setToolTipText(TIP_ADD_ROW);
+        Tooltips.apply(addButton, TIP_ADD_ROW);
         addButton.addActionListener(e -> {
             if (rows.size() < MAX_ROWS) {
                 rows.add(new Row("", true)); // new rows default to regex ON
@@ -226,9 +227,9 @@ public class ScopeGrid implements Serializable {
      * @param r row to update
      */
     private static void assignRowToolTips(Row r) {
-        r.field.setToolTipText(TIP_SCOPE_ENTRY);
+        Tooltips.apply(r.field, TIP_SCOPE_ENTRY);
         ensureToggleTextAndTip(r);
-        r.delete.setToolTipText(TIP_DELETE_ROW);
+        Tooltips.apply(r.delete, TIP_DELETE_ROW);
     }
 
     /**
@@ -252,17 +253,17 @@ public class ScopeGrid implements Serializable {
      */
     private static void ensureToggleTextAndTip(Row r) {
         if (!".*".equals(r.toggle.getText())) r.toggle.setText(".*");
-        r.toggle.setToolTipText(TIP_REGEX_TOGGLE);
+        Tooltips.apply(r.toggle, TIP_REGEX_TOGGLE);
     }
 
     /** Row model: text field, toggle, indicator, and (rows &gt; 1) a Delete button. */
     private static final class Row implements Serializable {
         @Serial private static final long serialVersionUID = 1L;
 
-        private final JTextField field = new JTextField();
-        private final JCheckBox  toggle = new JCheckBox(".*");
-        private final JLabel     indicator = new JLabel(); // ✓ / ✖ glyph
-        private final JButton    delete = new JButton("Delete");
+        private final JTextField field = new Tooltips.HtmlTextField();
+        private final JCheckBox  toggle = new Tooltips.HtmlCheckBox(".*");
+        private final JLabel     indicator = new Tooltips.HtmlLabel(""); // ✓ / ✖ glyph
+        private final JButton    delete = new Tooltips.HtmlButton("Delete");
         private final transient AutoCloseable binding;
         private boolean deleteBound;
         private boolean contentChangeListenerAttached;

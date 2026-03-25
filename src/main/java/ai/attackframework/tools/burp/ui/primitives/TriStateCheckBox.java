@@ -16,10 +16,13 @@ import javax.swing.ActionMap;
 import javax.swing.ButtonModel;
 import javax.swing.Icon;
 import javax.swing.JCheckBox;
+import javax.swing.JToolTip;
 import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.plaf.ActionMapUIResource;
+
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 
 /**
  * Tri-state checkbox for parent/child selection UIs.
@@ -98,10 +101,16 @@ public final class TriStateCheckBox extends JCheckBox {
 
     public TriStateCheckBox(String text, Icon icon, State initial) {
         super(text, icon);
+        putClientProperty("html.disable", Boolean.FALSE);
         setModel(new TriStateButtonModel(initial));
         if (icon == null) {
             setIcon(new TriStateCheckBoxIcon());
         }
+    }
+
+    @Override
+    public JToolTip createToolTip() {
+        return Tooltips.createHtmlToolTip(this);
     }
 
     public void setState(State state) {

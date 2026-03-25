@@ -52,6 +52,7 @@ import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.ui.text.HighlighterManager;
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.text.TextQuery;
@@ -153,46 +154,47 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         JPanel toolbar = new JPanel(new MigLayout(MIG_TOOLBAR_INSETS, "", "[]"));
         toolbar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Separator.foreground")));
 
-        levelCombo = new JComboBox<>(new String[]{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"});
+        levelCombo = new Tooltips.HtmlComboBox<>(new String[]{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"});
         levelCombo.setName("log.filter.level");
         levelCombo.setSelectedItem(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL));
 
-        pauseAutoscroll = new JCheckBox("Pause autoscroll");
+        pauseAutoscroll = new Tooltips.HtmlCheckBox("Pause autoscroll");
         pauseAutoscroll.setName("log.pause");
         pauseAutoscroll.setSelected(PREFS.getBoolean(PREF_PAUSE, false));
 
         // Filter group (restore persisted)
         filterField = new AutoSizingTextField(PREFS.get(PREF_FILTER_TEXT, ""));
         filterField.setName("log.filter.text");
-        filterCaseToggle = new JCheckBox("Aa");
+        filterCaseToggle = new Tooltips.HtmlCheckBox("Aa");
         filterCaseToggle.setName("log.filter.case");
         filterCaseToggle.setSelected(PREFS.getBoolean(PREF_FILTER_CASE, false));
-        filterRegexToggle = new JCheckBox(".*");
+        filterRegexToggle = new Tooltips.HtmlCheckBox(".*");
         filterRegexToggle.setName("log.filter.regex");
-        final JLabel filterRegexIndicator = new JLabel();
+        final JLabel filterRegexIndicator = new Tooltips.HtmlLabel("");
         filterRegexIndicator.setName("log.filter.regex.indicator");
 
         // Search group (restore last search text only)
         searchField = new AutoSizingTextField(PREFS.get(PREF_LAST_SEARCH, ""));
         searchField.setName("log.search.field");
-        searchCaseToggle = new JCheckBox("Aa");
+        searchCaseToggle = new Tooltips.HtmlCheckBox("Aa");
         searchCaseToggle.setName("log.search.case");
-        searchRegexToggle = new JCheckBox(".*");
+        searchRegexToggle = new Tooltips.HtmlCheckBox(".*");
         searchRegexToggle.setName("log.search.regex");
-        JButton searchPrevBtn = new JButton("Prev");
+        JButton searchPrevBtn = new Tooltips.HtmlButton("Prev");
         searchPrevBtn.setName("log.search.prev");
-        JButton searchNextBtn = new JButton("Next");
+        JButton searchNextBtn = new Tooltips.HtmlButton("Next");
         searchNextBtn.setName(ACTION_SEARCH_NEXT);
-        searchCountLabel = new JLabel("0/0");
+        searchCountLabel = new Tooltips.HtmlLabel("0/0");
         searchCountLabel.setName("log.search.count");
-        final JLabel searchRegexIndicator = new JLabel();
+        Tooltips.apply(searchCountLabel, Tooltips.html("Current match and total matches for the active Find query."));
+        final JLabel searchRegexIndicator = new Tooltips.HtmlLabel("");
         searchRegexIndicator.setName("log.search.regex.indicator");
 
-        JButton clearBtn = new JButton("Clear");
+        JButton clearBtn = new Tooltips.HtmlButton("Clear");
         clearBtn.setName("log.clear");
-        JButton copyBtn = new JButton("Copy");
+        JButton copyBtn = new Tooltips.HtmlButton("Copy");
         copyBtn.setName("log.copy");
-        JButton saveBtn = new JButton("Save");
+        JButton saveBtn = new Tooltips.HtmlButton("Save");
         saveBtn.setName("log.save");
         ButtonStyles.normalize(searchPrevBtn);
         ButtonStyles.normalize(searchNextBtn);
@@ -209,12 +211,16 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         );
 
         // Build toolbar
-        toolbar.add(new JLabel("Min level:"));
+        JLabel minLevelLabel = Tooltips.label("Min level:",
+                Tooltips.html("Choose the minimum log level shown in the pane."));
+        toolbar.add(minLevelLabel);
         toolbar.add(levelCombo, "w 110!");
         toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
         toolbar.add(new JLabel(), SECTION_SPACER);
 
-        toolbar.add(new JLabel("Filter:"), GAP0);
+        JLabel filterLabel = Tooltips.label("Filter:",
+                Tooltips.html("Filter visible log entries by plain text or regex."));
+        toolbar.add(filterLabel, GAP0);
         toolbar.add(filterField, GAP0);
         toolbar.add(filterCaseToggle, GAP4);
         toolbar.add(filterRegexToggle, GAP4);
@@ -223,7 +229,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
         toolbar.add(new JLabel(), SECTION_SPACER);
 
-        toolbar.add(new JLabel("Find:"), GAP0);
+        JLabel findLabel = Tooltips.label("Find:",
+                Tooltips.html("Search within the visible log entries."));
+        toolbar.add(findLabel, GAP0);
         toolbar.add(searchField, GAP0);
         toolbar.add(searchCaseToggle, GAP4);
         toolbar.add(searchRegexToggle, GAP4);
@@ -355,23 +363,23 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             JButton copyBtn,
             JButton saveBtn
     ) {
-        levelCombo.setToolTipText("Minimum level to display");
-        pauseAutoscroll.setToolTipText("Stop auto-scrolling when new entries arrive");
+        Tooltips.apply(levelCombo, Tooltips.html("Minimum level to display."));
+        Tooltips.apply(pauseAutoscroll, Tooltips.html("Stop auto-scrolling when new entries arrive."));
 
-        filterField.setToolTipText("Filter by string or regex");
-        filterCaseToggle.setToolTipText("Case-sensitive filter");
-        filterRegexToggle.setToolTipText("Regex filter");
+        Tooltips.apply(filterField, Tooltips.html("Filter by string or regex."));
+        Tooltips.apply(filterCaseToggle, Tooltips.html("Case-sensitive filter."));
+        Tooltips.apply(filterRegexToggle, Tooltips.html("Regex filter."));
 
-        searchField.setToolTipText("Find string or regex");
-        searchCaseToggle.setToolTipText("Case-sensitive search");
-        searchRegexToggle.setToolTipText("Regex search");
+        Tooltips.apply(searchField, Tooltips.html("Find string or regex."));
+        Tooltips.apply(searchCaseToggle, Tooltips.html("Case-sensitive search."));
+        Tooltips.apply(searchRegexToggle, Tooltips.html("Regex search."));
 
-        searchPrevBtn.setToolTipText("Jump to previous match");
-        searchNextBtn.setToolTipText("Jump to next match");
+        Tooltips.apply(searchPrevBtn, Tooltips.html("Jump to previous match."));
+        Tooltips.apply(searchNextBtn, Tooltips.html("Jump to next match."));
 
-        clearBtn.setToolTipText("Clear log pane");
-        copyBtn.setToolTipText("Copy log to clipboard");
-        saveBtn.setToolTipText("Save log to file");
+        Tooltips.apply(clearBtn, Tooltips.html("Clear log pane."));
+        Tooltips.apply(copyBtn, Tooltips.html("Copy log to clipboard."));
+        Tooltips.apply(saveBtn, Tooltips.html("Save log to file."));
     }
 
     /**

@@ -6,6 +6,7 @@ import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import javax.swing.JButton;
@@ -13,6 +14,7 @@ import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
+import javax.swing.JToolTip;
 import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,6 +53,8 @@ class ConfigControlPanelHeadlessTest {
             JLabel header = findLabelByText(root, "Config Control");
             assertThat(header).as("Config Control header").isNotNull();
             assertThat(header.getText()).isEqualTo("Config Control");
+            assertThat(header.getToolTipText())
+                    .isEqualTo("<html>Import, export, save and apply the configuration.<br>Start or stop Burp Exporter.</html>");
 
             JButton save = findByName(root, "control.save", JButton.class);
             JButton startStop = findByName(root, "control.startStop", JButton.class);
@@ -59,11 +63,38 @@ class ConfigControlPanelHeadlessTest {
             assertThat(save).as("control.save").isNotNull();
             assertThat(save.getText()).isEqualTo("Save");
             assertThat(save.getToolTipText())
-                    .isEqualTo("Save and apply the current configuration. Secrets are only stored within in-process memory.");
+                    .isEqualTo("<html>Save and apply the current configuration.<br>Secrets are only stored within in-process memory.</html>");
             assertThat(startStop).as("control.startStop").isNotNull();
             assertThat(startStop.getText()).isEqualTo("Start");
-            assertThat(startStop.getToolTipText()).isEqualTo("Start exporting to configured destination(s)");
+            assertThat(startStop.getToolTipText()).isEqualTo("<html>Start exporting to the configured destination(s).</html>");
             assertThat(indicator).as("control.exportIndicator").isNotNull();
+        } finally {
+            resetExportRunning();
+        }
+    }
+
+    @Test
+    void control_tooltip_owners_create_html_enabled_tooltips() throws Exception {
+        resetExportRunning();
+        try {
+            JPanel root = buildPanel(noOpStartAction(), noOpRunnables(), noOpActionListener());
+
+            JButton save = findByName(root, "control.save", JButton.class);
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+
+            runEdt(() -> {
+                JToolTip saveToolTip = save.createToolTip();
+                JToolTip startStopToolTip = startStop.createToolTip();
+                JToolTip indicatorToolTip = indicator.createToolTip();
+
+                assertThat(saveToolTip.getComponent()).isSameAs(save);
+                assertThat(startStopToolTip.getComponent()).isSameAs(startStop);
+                assertThat(indicatorToolTip.getComponent()).isSameAs(indicator);
+                assertThat(saveToolTip.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
+                assertThat(startStopToolTip.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
+                assertThat(indicatorToolTip.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
+            });
         } finally {
             resetExportRunning();
         }
@@ -108,7 +139,7 @@ class ConfigControlPanelHeadlessTest {
             JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
 
             assertThat(startStop.getText()).isEqualTo("Start");
-            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
 
             runEdt(() -> startStop.doClick());
             runEdt(() -> { /* flush EDT so deferred start action runs */ });
@@ -116,14 +147,14 @@ class ConfigControlPanelHeadlessTest {
             assertThat(stopCount.get()).isEqualTo(0);
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
-            assertThat(indicator.getToolTipText()).isEqualTo("Export is running");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is starting</html>");
 
             runEdt(() -> startStop.doClick());
             assertThat(startCount.get()).isEqualTo(1);
             assertThat(stopCount.get()).isEqualTo(1);
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
-            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
         } finally {
             resetExportRunning();
         }
@@ -134,7 +165,7 @@ class ConfigControlPanelHeadlessTest {
         resetExportRunning();
         try {
             JPanel root = buildPanel(
-                    onStartFailure -> onStartFailure.run(),
+                    callbacks -> callbacks.onStartFailure().run(),
                     noOpRunnables(),
                     noOpActionListener()
             );
@@ -149,7 +180,37 @@ class ConfigControlPanelHeadlessTest {
             runEdt(() -> { /* flush EDT so deferred start action runs and calls onStartFailure */ });
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
-            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
+        } finally {
+            resetExportRunning();
+        }
+    }
+
+    @Test
+    void start_action_calling_onStartSuccess_marks_indicator_running_and_sets_started_status() throws Exception {
+        resetExportRunning();
+        try {
+            AtomicReference<JTextArea> controlStatusRef = new AtomicReference<>();
+            JPanel root = buildPanel(
+                    callbacks -> callbacks.onStartSuccess().run(),
+                    noOpRunnables(),
+                    noOpActionListener(),
+                    controlStatusRef
+            );
+            runEdt(() -> {
+                root.setSize(600, 400);
+                root.doLayout();
+            });
+            JButton startStop = findByName(root, "control.startStop", JButton.class);
+            JComponent indicator = findByName(root, "control.exportIndicator", JComponent.class);
+
+            runEdt(() -> startStop.doClick());
+            runEdt(() -> { });
+
+            assertThat(RuntimeConfig.isExportRunning()).isTrue();
+            assertThat(startStop.getText()).isEqualTo("Stop");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is running</html>");
+            assertThat(controlStatusRef.get().getText()).isEqualTo("Started");
         } finally {
             resetExportRunning();
         }
@@ -185,19 +246,19 @@ class ConfigControlPanelHeadlessTest {
                 startStop.doClick();
                 assertThat(RuntimeConfig.isExportRunning()).isTrue();
                 assertThat(startStop.getText()).isEqualTo("Stop");
-                assertThat(indicator.getToolTipText()).isEqualTo("Export is running");
+                assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is starting</html>");
                 startStop.doClick();
             });
             assertThat(stopCount.get()).isEqualTo(1);
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
-            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
 
             runEdt(() -> { /* flush deferred start callback */ });
             assertThat(startAcceptedCount.get()).isEqualTo(0);
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
-            assertThat(indicator.getToolTipText()).isEqualTo("Export is stopped");
+            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
         } finally {
             resetExportRunning();
         }
@@ -248,13 +309,23 @@ class ConfigControlPanelHeadlessTest {
     // ---- helpers ----
 
     private static JPanel buildPanel(
-            Consumer<Runnable> startAction,
+            Consumer<ConfigControlPanel.StartUiCallbacks> startAction,
             Runnable stopAction,
             ActionListener saveAction
+    ) {
+        return buildPanel(startAction, stopAction, saveAction, new AtomicReference<>());
+    }
+
+    private static JPanel buildPanel(
+            Consumer<ConfigControlPanel.StartUiCallbacks> startAction,
+            Runnable stopAction,
+            ActionListener saveAction,
+            AtomicReference<JTextArea> controlStatusRef
     ) {
         JTextArea importExportStatus = new JTextArea();
         JPanel importExportStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
         JTextArea controlStatus = new JTextArea();
+        controlStatusRef.set(controlStatus);
         JPanel controlStatusWrapper = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
         ConfigControlPanel panel = new ConfigControlPanel(
@@ -274,8 +345,8 @@ class ConfigControlPanelHeadlessTest {
         return panel.build();
     }
 
-    private static Consumer<Runnable> noOpStartAction() {
-        return r -> { };
+    private static Consumer<ConfigControlPanel.StartUiCallbacks> noOpStartAction() {
+        return callbacks -> { };
     }
 
     private static Runnable noOpRunnables() {

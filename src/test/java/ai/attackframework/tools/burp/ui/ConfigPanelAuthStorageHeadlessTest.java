@@ -145,7 +145,7 @@ class ConfigPanelAuthStorageHeadlessTest {
             JPanel authForm = get(panel, "openSearchAuthFormPanel");
             runEdt(() -> {
                 assertThat(testButton.getToolTipText())
-                        .isEqualTo("Test connectivity. Secrets are only stored within in-process memory.");
+                        .isEqualTo("<html>Test connectivity.<br>Secrets are only stored within in-process memory.</html>");
                 assertThat(findByNameOrNull(authForm, "os.authenticate")).isNull();
             });
         });
@@ -157,7 +157,7 @@ class ConfigPanelAuthStorageHeadlessTest {
             ConfigPanel panel = newPanelOnEdt();
             JButton save = (JButton) findByName(panel, "control.save");
             runEdt(() -> assertThat(save.getToolTipText())
-                    .isEqualTo("Save and apply the current configuration. Secrets are only stored within in-process memory."));
+                    .isEqualTo("<html>Save and apply the current configuration.<br>Secrets are only stored within in-process memory.</html>"));
         });
     }
 
@@ -166,7 +166,84 @@ class ConfigPanelAuthStorageHeadlessTest {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
             JButton start = (JButton) findByName(panel, "control.startStop");
-            runEdt(() -> assertThat(start.getToolTipText()).isEqualTo("Start exporting to configured destination(s)"));
+            runEdt(() -> assertThat(start.getToolTipText()).isEqualTo("<html>Start exporting to the configured destination(s).</html>"));
+        });
+    }
+
+    @Test
+    void sourceAndDestinationTooltips_matchSpreadsheetDecisions() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JCheckBox settings = get(panel, "settingsCheckbox");
+            JCheckBox issues = get(panel, "issuesCheckbox");
+            Component destinationsHeader = findLabelByText(panel, "Destinations");
+
+            runEdt(() -> {
+                assertThat(settings.getToolTipText()).isEqualTo("<html>All settings.</html>");
+                assertThat(issues.getToolTipText()).isEqualTo("<html>All findings (aka issues).</html>");
+                assertThat(((javax.swing.JLabel) destinationsHeader).getToolTipText())
+                        .isEqualTo("<html>Configure export destination(s).</html>");
+            });
+        });
+    }
+
+    @Test
+    void authControls_have_expected_tooltips() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+            JTextField user = get(panel, "openSearchUserField");
+            JPasswordField pass = get(panel, "openSearchPasswordField");
+            JTextField apiKeyId = get(panel, "openSearchApiKeyIdField");
+            JPasswordField apiKeySecret = get(panel, "openSearchApiKeySecretField");
+            JTextField jwtToken = get(panel, "openSearchJwtTokenField");
+            JTextField certPath = get(panel, "openSearchCertPathField");
+            JTextField certKeyPath = get(panel, "openSearchCertKeyPathField");
+            JPasswordField certPassphrase = get(panel, "openSearchCertPassphraseField");
+
+            runEdt(() -> {
+                assertThat(authType.getToolTipText()).isEqualTo("<html>Select how requests to OpenSearch authenticate.</html>");
+                assertThat(user.getToolTipText()).isEqualTo("<html>OpenSearch Basic auth username.<br>Stored only within in-process memory.</html>");
+                assertThat(pass.getToolTipText()).isEqualTo("<html>OpenSearch Basic auth password.<br>Stored only within in-process memory.</html>");
+                assertThat(apiKeyId.getToolTipText()).isEqualTo("<html>OpenSearch API key ID.<br>Stored only within in-process memory.</html>");
+                assertThat(apiKeySecret.getToolTipText()).isEqualTo("<html>OpenSearch API key secret.<br>Stored only within in-process memory.</html>");
+                assertThat(jwtToken.getToolTipText()).isEqualTo("<html>OpenSearch JWT bearer token.<br>Stored only within in-process memory.</html>");
+                assertThat(certPath.getToolTipText()).isEqualTo("<html>Path to the client certificate file used for OpenSearch authentication.</html>");
+                assertThat(certKeyPath.getToolTipText()).isEqualTo("<html>Path to the client private key file used for OpenSearch authentication.</html>");
+                assertThat(certPassphrase.getToolTipText()).isEqualTo("<html>Client key passphrase.<br>Stored only within in-process memory.</html>");
+
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Auth type:")).getToolTipText())
+                        .isEqualTo("<html>Select how requests to OpenSearch authenticate.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Username:")).getToolTipText())
+                        .isEqualTo("<html>OpenSearch Basic auth username.<br>Stored only within in-process memory.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Password:")).getToolTipText())
+                        .isEqualTo("<html>OpenSearch Basic auth password.<br>Stored only within in-process memory.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Key ID:")).getToolTipText())
+                        .isEqualTo("<html>OpenSearch API key ID.<br>Stored only within in-process memory.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Key Secret:")).getToolTipText())
+                        .isEqualTo("<html>OpenSearch API key secret.<br>Stored only within in-process memory.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "JWT Token:")).getToolTipText())
+                        .isEqualTo("<html>OpenSearch JWT bearer token.<br>Stored only within in-process memory.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Cert Path:")).getToolTipText())
+                        .isEqualTo("<html>Path to the client certificate file used for OpenSearch authentication.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Key Path:")).getToolTipText())
+                        .isEqualTo("<html>Path to the client private key file used for OpenSearch authentication.</html>");
+                assertThat(((javax.swing.JLabel) findLabelByText(panel, "Passphrase:")).getToolTipText())
+                        .isEqualTo("<html>Client key passphrase.<br>Stored only within in-process memory.</html>");
+            });
+        });
+    }
+
+    @Test
+    void selectingNone_doesNotEmitAuthenticationClearedStatus() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+            javax.swing.JTextArea status = get(panel, "openSearchStatus");
+
+            runEdt(() -> authType.setSelectedItem("None"));
+
+            assertThat(status.getText()).isEmpty();
         });
     }
 
@@ -287,6 +364,21 @@ class ConfigPanelAuthStorageHeadlessTest {
             }
             if (component instanceof Container child) {
                 Component nested = findByNameOrNull(child, name);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Component findLabelByText(Container root, String text) {
+        for (Component component : root.getComponents()) {
+            if (component instanceof javax.swing.JLabel label && text.equals(label.getText())) {
+                return label;
+            }
+            if (component instanceof Container child) {
+                Component nested = findLabelByText(child, text);
                 if (nested != null) {
                     return nested;
                 }

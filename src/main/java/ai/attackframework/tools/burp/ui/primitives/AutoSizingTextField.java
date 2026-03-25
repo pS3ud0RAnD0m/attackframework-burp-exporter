@@ -3,6 +3,9 @@ package ai.attackframework.tools.burp.ui.primitives;
 import javax.swing.JTextField;
 import java.awt.Dimension;
 import java.awt.FontMetrics;
+import javax.swing.JToolTip;
+
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 
 /**
  * Text field whose preferred width tracks its content length within clamped bounds.
@@ -22,6 +25,7 @@ public final class AutoSizingTextField extends JTextField {
      */
     public AutoSizingTextField(String text) {
         super(text);
+        putClientProperty("html.disable", Boolean.FALSE);
     }
 
     /**
@@ -37,5 +41,10 @@ public final class AutoSizingTextField extends JTextField {
         int height = super.getPreferredSize().height;
         int w = Math.clamp(textWidth, MIN_W, MAX_W);
         return new Dimension(w, height);
+    }
+
+    @Override
+    public JToolTip createToolTip() {
+        return Tooltips.createHtmlToolTip(this);
     }
 }

@@ -80,7 +80,7 @@ public class OpenSearchSink {
             try (InputStream is = OpenSearchSink.class.getResourceAsStream(mappingFile)) {
                 if (is == null) {
                     String reason = "Mapping file not found: " + mappingFile;
-                    Logger.logError(reason);
+                    Logger.logErrorPanelOnly(reason);
                     return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
                 }
                 jsonBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
@@ -96,7 +96,7 @@ public class OpenSearchSink {
 
             if (settingsJson == null || mappingsJson == null) {
                 String reason = "Mapping JSON must contain both 'settings' and 'mappings'.";
-                Logger.logError(reason);
+                Logger.logErrorPanelOnly(reason);
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
             }
 
@@ -131,11 +131,11 @@ public class OpenSearchSink {
             );
 
         } catch (IOException | RuntimeException e) {
-            Logger.logError("Exception while creating index: " + fullIndexName);
-            if (jsonBody != null) Logger.logError("Mapping JSON: " + compactJson(jsonBody));
+            Logger.logErrorPanelOnly("Exception while creating index: " + fullIndexName);
+            if (jsonBody != null) Logger.logErrorPanelOnly("Mapping JSON: " + compactJson(jsonBody));
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
-            Logger.logError(sw.toString().stripTrailing());
+            Logger.logErrorPanelOnly(sw.toString().stripTrailing());
             String reason = conciseRootCause(e);
             return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
         }

@@ -1,10 +1,13 @@
 package ai.attackframework.tools.burp.ui.primitives;
 
 import javax.swing.JPasswordField;
+import javax.swing.JToolTip;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.Dimension;
 import java.awt.FontMetrics;
+
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 
 /**
  * Password field whose preferred width tracks its content length within clamped bounds.
@@ -23,6 +26,7 @@ public final class AutoSizingPasswordField extends JPasswordField {
      */
     public AutoSizingPasswordField() {
         super();
+        putClientProperty("html.disable", Boolean.FALSE);
         getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) { revalidate(); }
@@ -50,5 +54,10 @@ public final class AutoSizingPasswordField extends JPasswordField {
         int height = super.getPreferredSize().height;
         int w = Math.clamp(textWidth, MIN_W, MAX_W);
         return new Dimension(w, height);
+    }
+
+    @Override
+    public JToolTip createToolTip() {
+        return Tooltips.createHtmlToolTip(this);
     }
 }

@@ -134,6 +134,17 @@ public final class Logger {
     }
 
     /**
+     * Logs at ERROR to SLF4J and UI listeners only; does not send to Burp's error console.
+     *
+     * @param msg message to log
+     */
+    public static void logErrorPanelOnly(String msg) {
+        final String m = safe(msg);
+        LOG.error(m);
+        notifyListeners("ERROR", m);
+    }
+
+    /**
      * Logs at WARN and mirrors to Burp and UI listeners.
      * <p>
      * @param msg message to log

@@ -223,6 +223,22 @@ final class TrafficSpillFileQueue {
         return directory.toAbsolutePath().toString();
     }
 
+    /**
+     * Clears all currently queued spill files owned by this queue instance.
+     */
+    void clear() {
+        lock.lock();
+        try {
+            for (Path path : files) {
+                deleteSpillFile(path);
+            }
+            files.clear();
+            totalBytes = 0;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private void initializeFromDisk() {
         lock.lock();
         try {

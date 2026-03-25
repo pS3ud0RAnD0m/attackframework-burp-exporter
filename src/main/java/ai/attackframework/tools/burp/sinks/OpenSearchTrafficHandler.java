@@ -118,7 +118,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
 
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent request) {
-        if (!RuntimeConfig.isExportRunning()
+        if (!RuntimeConfig.isExportReady()
                 || !RuntimeConfig.isOpenSearchTrafficEnabled()
                 || RuntimeConfig.openSearchUrl().isBlank()) {
             return RequestToBeSentAction.continueWith(request);
@@ -150,7 +150,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
 
     @Override
     public ResponseReceivedAction handleHttpResponseReceived(HttpResponseReceived response) {
-        if (!RuntimeConfig.isExportRunning()) {
+        if (!RuntimeConfig.isExportReady()) {
             return ResponseReceivedAction.continueWith(response);
         }
         if (!RuntimeConfig.isOpenSearchTrafficEnabled()) {
@@ -167,8 +167,9 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             return ResponseReceivedAction.continueWith(response);
         }
 
+        boolean burpInScope = request.isInScope();
         boolean inScope = ScopeFilter.shouldExport(
-                RuntimeConfig.getState(), request.url(), request.isInScope());
+                RuntimeConfig.getState(), request.url(), burpInScope);
         if (!inScope) {
             return ResponseReceivedAction.continueWith(response);
         }
@@ -181,7 +182,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             ExportStats.recordTrafficToolSourceFallback();
         }
         // Prefer selected response source, then selected request-correlated source.
-        ToolType toolType = null;
+        ToolType toolType;
         if (shouldExportTrafficByToolSource(responseType)) {
             toolType = responseType;
         } else if (shouldExportTrafficByToolSource(requestFallbackType)) {
@@ -204,7 +205,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         long responseReceivedMs = System.currentTimeMillis();
         Long requestSentMs = pending == null ? null : pending.timestamp;
 
-        Map<String, Object> document = buildDocument(response, request, inScope, requestSentMs, responseReceivedMs, toolType);
+        Map<String, Object> document = buildDocument(response, request, burpInScope, requestSentMs, responseReceivedMs, toolType);
         ExportStats.recordTrafficToolTypeCaptured(toolType == null ? "UNKNOWN" : toolType.name(), 1);
         TrafficExportQueue.offer(document);
 
@@ -229,17 +230,17 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      *
      * @param response the received response (with initiating request)
      * @param request  the initiating request
-     * @param inScope  whether the request passed scope filter
+     * @param burpInScope raw Burp scope state for the request
      * @return map matching traffic index mapping (never null)
      */
-    Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean inScope) {
-        return buildDocument(response, request, inScope, null, null, null);
+    Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean burpInScope) {
+        return buildDocument(response, request, burpInScope, null, null, null);
     }
 
     Map<String, Object> buildDocument(
             HttpResponseReceived response,
             HttpRequest request,
-            boolean inScope,
+            boolean burpInScope,
             Long requestSentMs,
             Long responseReceivedMs,
             ToolType resolvedToolType) {
@@ -262,7 +263,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("http_version", request.httpVersion());
         document.put("tool", toolType == null ? null : toolType.toolName());
         document.put("tool_type", toolType == null ? null : toolType.name());
-        document.put("in_scope", inScope);
+        document.put("burp_in_scope", burpInScope);
         document.put("message_id", response.messageId());
         document.put("time_start", toIsoInstant(requestSentMs));
         document.put("time_end", toIsoInstant(responseReceivedMs));
@@ -325,8 +326,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         ToolSource toolSource = request.toolSource();
         ToolType toolType = toolSource == null ? null : toolSource.toolType();
-        boolean inScope = ScopeFilter.shouldExport(
-                RuntimeConfig.getState(), request.url(), request.isInScope());
+        boolean burpInScope = request.isInScope();
 
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("url", request.url());
@@ -339,7 +339,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("http_version", request.httpVersion());
         document.put("tool", toolType == null ? null : toolType.toolName());
         document.put("tool_type", toolType == null ? null : toolType.name());
-        document.put("in_scope", inScope);
+        document.put("burp_in_scope", burpInScope);
         document.put("message_id", request.messageId());
         document.put("time_start", toIsoInstant(requestSentMs));
         document.put("time_end", null);
@@ -394,7 +394,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * {@code response.status = 0} and {@code response.reason_phrase = "Timeout"}.
      */
     private static void flushOrphanedRequests() {
-        if (!RuntimeConfig.isExportRunning()
+        if (!RuntimeConfig.isExportReady()
                 || !RuntimeConfig.isOpenSearchTrafficEnabled()) {
             return;
         }

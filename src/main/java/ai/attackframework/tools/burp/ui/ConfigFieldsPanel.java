@@ -10,6 +10,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 
 import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.config.ExportFieldRegistry;
 import net.miginfocom.swing.MigLayout;
 
@@ -45,9 +46,12 @@ public final class ConfigFieldsPanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[grow,left]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Index Fields");
+        JLabel header = Tooltips.label("Index Fields",
+                Tooltips.html(
+                        "Configure which mapped fields each exported document includes.",
+                        "These toggles affect document contents, not index creation."
+                ));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Configure the index fields to export for each document.");
         panel.add(header, "gapbottom 6, wrap");
 
         int subIndent = indentPx * 2;
@@ -58,8 +62,8 @@ public final class ConfigFieldsPanel {
             if (expandBtn == null || subPanel == null) continue;
 
             String displayName = indexDisplayName(indexName);
-            JLabel indexLabel = new JLabel(displayName);
-            indexLabel.setToolTipText(indexTooltip(indexName));
+            JLabel indexLabel = Tooltips.label(displayName, indexTooltip(indexName));
+            Tooltips.apply(expandBtn, indexExpandTooltip(indexName));
 
             JPanel parentRow = new JPanel(new MigLayout("insets 0, aligny center", "[left]6[pref!]"));
             parentRow.setOpaque(false);
@@ -89,10 +93,36 @@ public final class ConfigFieldsPanel {
 
     private static String indexTooltip(String indexShortName) {
         return switch (indexShortName) {
-            case "settings" -> "Configure settings fields exported to the attackframework-tool-burp-settings index.";
-            case "sitemap" -> "Configure sitemap fields exported to the attackframework-tool-burp-sitemap index.";
-            case "findings" -> "Configure findings (aka issues) fields exported to the attackframework-tool-burp-findings index.";
-            case "traffic" -> "Configure traffic fields exported to the attackframework-tool-burp-traffic index.";
+            case "settings" -> Tooltips.htmlRaw(
+                    "<b>Settings fields</b>",
+                    "Configure fields exported to <code>attackframework-tool-burp-settings</code>.",
+                    "Use these toggles to trim the settings document payload."
+            );
+            case "sitemap" -> Tooltips.htmlRaw(
+                    "<b>Sitemap fields</b>",
+                    "Configure fields exported to <code>attackframework-tool-burp-sitemap</code>.",
+                    "Field names follow the request/response document shape."
+            );
+            case "findings" -> Tooltips.htmlRaw(
+                    "<b>Findings fields</b>",
+                    "Configure fields exported to <code>attackframework-tool-burp-findings</code>.",
+                    "Tooltips below trace each value back to the producing code path."
+            );
+            case "traffic" -> Tooltips.htmlRaw(
+                    "<b>Traffic fields</b>",
+                    "Configure fields exported to <code>attackframework-tool-burp-traffic</code>.",
+                    "Traffic field labels are shown hierarchically to match the mapped document shape."
+            );
+            default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
+        };
+    }
+
+    private static String indexExpandTooltip(String indexShortName) {
+        return switch (indexShortName) {
+            case "settings" -> Tooltips.html("Show or hide Settings field options.");
+            case "sitemap" -> Tooltips.html("Show or hide Sitemap field options.");
+            case "findings" -> Tooltips.html("Show or hide Findings field options.");
+            case "traffic" -> Tooltips.html("Show or hide Traffic field options.");
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }

@@ -119,6 +119,17 @@ public final class TrafficExportQueue {
         startWorkerIfNeeded();
     }
 
+    /**
+     * Clears in-memory and spilled traffic backlog.
+     *
+     * <p>Used when export is intentionally stopped or a Start attempt fails, so queued traffic
+     * does not resume behind a stopped UI.</p>
+     */
+    public static void clearPendingWork() {
+        queue.clear();
+        spillQueue.clear();
+    }
+
     private static void startWorkerIfNeeded() {
         if (workerStarted.compareAndSet(false, true)) {
             Thread t = new Thread(TrafficExportQueue::drainLoop, "attackframework-traffic-export");
@@ -134,10 +145,20 @@ public final class TrafficExportQueue {
         BatchSizeController batchController = BatchSizeController.getInstance();
         while (true) {
             String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank() || !RuntimeConfig.isExportRunning()) {
+            if (!RuntimeConfig.isExportRunning()) {
+                clearPendingWork();
+                try {
+                    TimeUnit.MILLISECONDS.sleep(POLL_TIMEOUT_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                continue;
+            }
+            if (baseUrl == null || baseUrl.isBlank()) {
                 try {
                     Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                    if (doc != null) {
+                    if (doc != null && RuntimeConfig.isExportRunning()) {
                         queue.offer(doc);
                     }
                 } catch (InterruptedException e) {
@@ -213,13 +234,17 @@ public final class TrafficExportQueue {
     private static boolean awaitInitialWarmup() {
         long deadline = System.currentTimeMillis() + STARTUP_GRACE_MAX_MS;
         while (System.currentTimeMillis() < deadline) {
+            if (!RuntimeConfig.isExportRunning()) {
+                clearPendingWork();
+                return true;
+            }
             if (queue.size() >= START_DRAIN_BACKLOG_DOCS) {
                 return true;
             }
             try {
                 long remaining = Math.max(1, deadline - System.currentTimeMillis());
                 Map<String, Object> observed = queue.poll(Math.min(STARTUP_POLL_MS, remaining), TimeUnit.MILLISECONDS);
-                if (observed != null) {
+                if (observed != null && RuntimeConfig.isExportRunning()) {
                     queue.offer(observed);
                 }
             } catch (InterruptedException e) {

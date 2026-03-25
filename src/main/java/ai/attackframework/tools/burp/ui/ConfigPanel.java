@@ -27,7 +27,6 @@ import javax.swing.JRadioButton;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import javax.swing.Timer;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
@@ -50,6 +49,8 @@ import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
 import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.ui.text.Doc;
+import ai.attackframework.tools.burp.ui.text.ExportFieldTooltips;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -82,7 +83,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final String MIG_FILL_WRAP = "growx, wrap";
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
-    private static final int CONTROL_HIDE_DELAY_MS = 3000;
     /** Background executor for Start-path OpenSearch bootstrap work. */
     private static final ExecutorService STARTUP_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "attackframework-startup");
@@ -91,54 +91,54 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     });
 
     private final TriStateCheckBox settingsCheckbox = new TriStateCheckBox("Settings", TriStateCheckBox.State.SELECTED);
-    private final JCheckBox sitemapCheckbox  = new JCheckBox("Sitemap",  true);
+    private final JCheckBox sitemapCheckbox  = new Tooltips.HtmlCheckBox("Sitemap",  true);
     private final TriStateCheckBox issuesCheckbox   = new TriStateCheckBox("Issues",   TriStateCheckBox.State.SELECTED);
     private final TriStateCheckBox trafficCheckbox  = new TriStateCheckBox("Traffic",  TriStateCheckBox.State.DESELECTED);
 
-    private final JCheckBox settingsProjectCheckbox = new JCheckBox("Project", true);
-    private final JCheckBox settingsUserCheckbox    = new JCheckBox("User", true);
+    private final JCheckBox settingsProjectCheckbox = new Tooltips.HtmlCheckBox("Project", true);
+    private final JCheckBox settingsUserCheckbox    = new Tooltips.HtmlCheckBox("User", true);
 
-    private final JCheckBox trafficBurpAiCheckbox       = new JCheckBox("Burp AI", false);
-    private final JCheckBox trafficExtensionsCheckbox   = new JCheckBox("Extensions", false);
-    private final JCheckBox trafficIntruderCheckbox    = new JCheckBox("Intruder", false);
-    private final JCheckBox trafficProxyCheckbox        = new JCheckBox("Proxy", false);
-    private final JCheckBox trafficProxyHistoryCheckbox  = new JCheckBox("Proxy History", false);
-    private final JCheckBox trafficRepeaterCheckbox    = new JCheckBox("Repeater", false);
-    private final JCheckBox trafficScannerCheckbox      = new JCheckBox("Scanner", false);
-    private final JCheckBox trafficSequencerCheckbox     = new JCheckBox("Sequencer", false);
+    private final JCheckBox trafficBurpAiCheckbox       = new Tooltips.HtmlCheckBox("Burp AI", false);
+    private final JCheckBox trafficExtensionsCheckbox   = new Tooltips.HtmlCheckBox("Extensions", false);
+    private final JCheckBox trafficIntruderCheckbox    = new Tooltips.HtmlCheckBox("Intruder", false);
+    private final JCheckBox trafficProxyCheckbox        = new Tooltips.HtmlCheckBox("Proxy", false);
+    private final JCheckBox trafficProxyHistoryCheckbox  = new Tooltips.HtmlCheckBox("Proxy History", false);
+    private final JCheckBox trafficRepeaterCheckbox    = new Tooltips.HtmlCheckBox("Repeater", false);
+    private final JCheckBox trafficScannerCheckbox      = new Tooltips.HtmlCheckBox("Scanner", false);
+    private final JCheckBox trafficSequencerCheckbox     = new Tooltips.HtmlCheckBox("Sequencer", false);
 
-    private final JCheckBox issuesCriticalCheckbox      = new JCheckBox("Critical", true);
-    private final JCheckBox issuesHighCheckbox          = new JCheckBox("High", true);
-    private final JCheckBox issuesMediumCheckbox        = new JCheckBox("Medium", true);
-    private final JCheckBox issuesLowCheckbox           = new JCheckBox("Low", true);
-    private final JCheckBox issuesInformationalCheckbox = new JCheckBox("Informational", true);
+    private final JCheckBox issuesCriticalCheckbox      = new Tooltips.HtmlCheckBox("Critical", true);
+    private final JCheckBox issuesHighCheckbox          = new Tooltips.HtmlCheckBox("High", true);
+    private final JCheckBox issuesMediumCheckbox        = new Tooltips.HtmlCheckBox("Medium", true);
+    private final JCheckBox issuesLowCheckbox           = new Tooltips.HtmlCheckBox("Low", true);
+    private final JCheckBox issuesInformationalCheckbox = new Tooltips.HtmlCheckBox("Informational", true);
 
     private static final String EXPAND_COLLAPSED = "+";
     private static final String EXPAND_EXPANDED = "−";
-    private final JButton settingsExpandButton = new JButton(EXPAND_COLLAPSED);
-    private final JButton issuesExpandButton   = new JButton(EXPAND_COLLAPSED);
-    private final JButton trafficExpandButton  = new JButton(EXPAND_COLLAPSED);
+    private final JButton settingsExpandButton = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
+    private final JButton issuesExpandButton   = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
+    private final JButton trafficExpandButton  = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
 
-    private final JRadioButton allRadio       = new JRadioButton("All");
-    private final JRadioButton burpSuiteRadio = new JRadioButton("Burp Suite's", true);
-    private final JRadioButton customRadio    = new JRadioButton("Custom");
+    private final JRadioButton allRadio       = new Tooltips.HtmlRadioButton("All");
+    private final JRadioButton burpSuiteRadio = new Tooltips.HtmlRadioButton("Burp Suite's", true);
+    private final JRadioButton customRadio    = new Tooltips.HtmlRadioButton("Custom");
 
     /** Pure grid of custom rows (field, regex toggle+indicator, add/delete). */
     private final ScopeGrid scopeGrid = new ScopeGrid(
             List.of(new ScopeGrid.ScopeEntryInit("^.*acme\\.com$", true))
     );
 
-    private final JCheckBox fileSinkCheckbox = new JCheckBox("Files", false);
+    private final JCheckBox fileSinkCheckbox = new Tooltips.HtmlCheckBox("Files", false);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
-    private final JButton    createFilesButton = new JButton("Create Files");
+    private final JButton    createFilesButton = new Tooltips.HtmlButton("Create Files");
     private final JTextArea  fileStatus = new JTextArea();
     private final JPanel     fileStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
 
-    private final JCheckBox  openSearchSinkCheckbox = new JCheckBox("OpenSearch", true);
+    private final JCheckBox  openSearchSinkCheckbox = new Tooltips.HtmlCheckBox("OpenSearch", true);
     private final JTextField openSearchUrlField     = new AutoSizingTextField("https://opensearch.url:9200");
-    private final JCheckBox  openSearchInsecureSslCheckbox = new JCheckBox("Accept self-signed cert", true);
-    private final JButton    testConnectionButton   = new JButton("Test Connection");
+    private final JCheckBox  openSearchInsecureSslCheckbox = new Tooltips.HtmlCheckBox("Accept self-signed cert", true);
+    private final JButton    testConnectionButton   = new Tooltips.HtmlButton("Test Connection");
     /** OpenSearch auth controls panel (inline on the OpenSearch row). Built in {@link #buildAuthFormPanel()}. */
     private JPanel           openSearchAuthFormPanel;
     /** Auth type dropdown (used in buildCurrentState to clear creds when None). Set in buildAuthFormPanel. */
@@ -162,7 +162,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JTextArea controlStatus = new JTextArea();
     private final JPanel    controlStatusWrapper
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
-    private transient Timer controlStatusHideTimer;
     private transient boolean scopeGridListenerRegistered;
     private transient boolean buttonStylesNormalized;
 
@@ -227,13 +226,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         for (String indexName : fieldsPanelIndexOrder) {
             java.util.Map<String, JCheckBox> perIndex = new java.util.LinkedHashMap<>();
             List<String> toggleable = new java.util.ArrayList<>(ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.getToggleableFields(indexName));
-            java.util.Collections.sort(toggleable);
             for (String fieldKey : toggleable) {
-                JCheckBox cb = new JCheckBox(fieldKey, true);
+                JCheckBox cb = new Tooltips.HtmlCheckBox(ExportFieldTooltips.displayNameFor(indexName, fieldKey), true);
+                cb.setName("fields." + indexName + "." + fieldKey);
+                Tooltips.apply(cb, ExportFieldTooltips.tooltipFor(indexName, fieldKey));
                 perIndex.put(fieldKey, cb);
             }
             fieldCheckboxesByIndex.put(indexName, perIndex);
-            JButton expBtn = new JButton("+");
+            JButton expBtn = new Tooltips.HtmlButton("+");
+            expBtn.setName("fields." + indexName + ".expand");
             ConfigFieldsPanel.configureExpandButton(expBtn);
             fieldsExpandButtons.put(indexName, expBtn);
             JPanel sub = new JPanel(new MigLayout("insets 0, wrap 3", "[left][left][left]"));
@@ -298,8 +299,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 new ControlSaveButtonListener(),
                 this::startExportAsync,
                 () -> {
-                    RuntimeConfig.setExportRunning(false);
-                    ExportReporterLifecycle.stopBackgroundReporters();
+                    ExportReporterLifecycle.stopAndClearPendingExportWork();
                     Logger.logInfoPanelOnly("Export stopped.");
                 }
         ).build(), MIG_FILL_WRAP);
@@ -365,19 +365,20 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * immediately, then performs OpenSearch bootstrap and initial snapshot pushes on a background
      * executor. If bootstrap fails, runtime state and UI start/stop controls are reverted on EDT.</p>
      *
-     * @param onStartFailure callback from {@link ConfigControlPanel} to revert Start UI state
+     * @param uiCallbacks callbacks from {@link ConfigControlPanel} to revert or complete Start UI state
      */
-    private void startExportAsync(Runnable onStartFailure) {
+    private void startExportAsync(ConfigControlPanel.StartUiCallbacks uiCallbacks) {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
+        RuntimeConfig.setExportStarting(true);
         persistSelectedAuthSecrets();
         updateRuntimeConfig();
         String url = openSearchUrlField.getText().trim();
         List<String> sources = List.copyOf(getSelectedSources());
         ExportStats.recordExportStartRequested();
         RuntimeConfig.setExportRunning(true);
-        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, onStartFailure));
+        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, uiCallbacks));
     }
 
     /**
@@ -388,13 +389,36 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      *
      * @param url OpenSearch base URL from UI
      * @param sources selected source keys at Start time
-     * @param onStartFailure callback to revert Start button/indicator state
+     * @param uiCallbacks callbacks to revert or complete Start button/indicator state
      */
-    private void runStartupPipeline(String url, List<String> sources, Runnable onStartFailure) {
+    private void runStartupPipeline(String url, List<String> sources, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
         if (!url.isEmpty()) {
+            Logger.logDebug("[Start] OpenSearch preflight test for " + url);
+            var preflight = ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper.safeTestConnection(
+                    url,
+                    RuntimeConfig.openSearchUser(),
+                    RuntimeConfig.openSearchPassword());
+            Logger.logDebug("[Start] OpenSearch preflight result: success=" + preflight.success()
+                    + ", message=" + preflight.message());
+            if (!RuntimeConfig.isExportRunning()) {
+                return;
+            }
+            if (!preflight.success()) {
+                String reason = preflight.message() == null || preflight.message().isBlank()
+                        ? "OpenSearch preflight failed."
+                        : "OpenSearch preflight failed: " + preflight.message();
+                ExportReporterLifecycle.stopAndClearPendingExportWork();
+                SwingUtilities.invokeLater(() -> {
+                    onOpenSearchStatus(reason);
+                    onControlStatus("Start aborted: " + reason);
+                    uiCallbacks.onStartFailure().run();
+                });
+                return;
+            }
+
             Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
             List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
                     RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword(), RuntimeConfig::isExportRunning);
@@ -406,10 +430,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 return;
             }
             if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
-                Logger.logError("[Start] Ensure indexes: one or more failed; see log above.");
+                Logger.logErrorPanelOnly("[Start] Ensure indexes: one or more failed; see log above.");
+                ExportReporterLifecycle.stopAndClearPendingExportWork();
                 SwingUtilities.invokeLater(() -> {
-                    RuntimeConfig.setExportRunning(false);
-                    onStartFailure.run();
+                    onControlStatus("Start aborted: one or more indexes failed to initialize.");
+                    uiCallbacks.onStartFailure().run();
                 });
                 return;
             }
@@ -418,6 +443,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
+        RuntimeConfig.setExportStarting(false);
+        SwingUtilities.invokeLater(() -> uiCallbacks.onStartSuccess().run());
         ToolIndexConfigReporter.pushConfigSnapshot();
         if (!RuntimeConfig.isExportRunning()) {
             return;
@@ -476,7 +503,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
         if (api.burpSuite().version().edition() == BurpSuiteEdition.COMMUNITY_EDITION) {
             issuesCheckbox.setEnabled(false);
-            issuesCheckbox.setToolTipText("Not available with Community license");
+            Tooltips.apply(issuesCheckbox, Tooltips.html("Not available with Community license."));
+        } else {
+            issuesCheckbox.setEnabled(true);
+            Tooltips.apply(issuesCheckbox, Tooltips.html("All findings (aka issues)."));
         }
     }
 
@@ -512,7 +542,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Updates the Control status area on the EDT and auto-hides after a delay.
+     * Updates the Control status area on the EDT.
      *
      * <p>
      * @param message status text to display (nullable)
@@ -521,14 +551,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Runnable r = () -> {
             StatusViews.setStatus(
                     controlStatus, controlStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
-            if (controlStatusHideTimer != null && controlStatusHideTimer.isRunning()) controlStatusHideTimer.stop();
-            controlStatusHideTimer = new Timer(CONTROL_HIDE_DELAY_MS, evt -> {
-                controlStatusWrapper.setVisible(false);
-                controlStatusWrapper.revalidate();
-                controlStatusWrapper.repaint();
-            });
-            controlStatusHideTimer.setRepeats(false);
-            controlStatusHideTimer.start();
         };
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else {
@@ -775,7 +797,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /** Builds inline OpenSearch authentication controls (auth type + type-specific credential fields). */
     private JPanel buildAuthFormPanel() {
         String[] authTypes = { "API Key", "Basic", "Certificate", "JWT", "None" };
-        JComboBox<String> authTypeCombo = new JComboBox<>(authTypes);
+        JComboBox<String> authTypeCombo = new Tooltips.HtmlComboBox<>(authTypes);
         openSearchAuthTypeCombo = authTypeCombo;
         authTypeCombo.setName("os.authType");
         authTypeCombo.setSelectedItem("Basic");
@@ -835,9 +857,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             SecureCredentialStore.saveSelectedAuthType(selectedType);
             applyAuthTypeCardVisibility.accept(selectedType);
             updateRuntimeConfig();
-            if ("None".equals(selectedType)) {
-                onOpenSearchStatus("Authentication cleared.");
-            }
             contentCards.revalidate();
             contentCards.repaint();
         });
@@ -845,7 +864,52 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         applyAuthTypeCardVisibility.accept(selectedType);
         JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow]", "[]"));
         form.setAlignmentX(Component.LEFT_ALIGNMENT);
-        form.add(new JLabel("Auth type:"));
+
+        String authTypeTip = Tooltips.html("Select how requests to OpenSearch authenticate.");
+        String basicUserTip = Tooltips.html("OpenSearch Basic auth username.", "Stored only within in-process memory.");
+        String basicPasswordTip = Tooltips.html("OpenSearch Basic auth password.", "Stored only within in-process memory.");
+        String apiKeyIdTip = Tooltips.html("OpenSearch API key ID.", "Stored only within in-process memory.");
+        String apiKeySecretTip = Tooltips.html("OpenSearch API key secret.", "Stored only within in-process memory.");
+        String jwtTip = Tooltips.html("OpenSearch JWT bearer token.", "Stored only within in-process memory.");
+        String certPathTip = Tooltips.html("Path to the client certificate file used for OpenSearch authentication.");
+        String keyPathTip = Tooltips.html("Path to the client private key file used for OpenSearch authentication.");
+        String passphraseTip = Tooltips.html("Client key passphrase.", "Stored only within in-process memory.");
+
+        Tooltips.apply(authTypeCombo, authTypeTip);
+        Tooltips.apply(openSearchUserField, basicUserTip);
+        Tooltips.apply(openSearchPasswordField, basicPasswordTip);
+        Tooltips.apply(openSearchApiKeyIdField, apiKeyIdTip);
+        Tooltips.apply(openSearchApiKeySecretField, apiKeySecretTip);
+        Tooltips.apply(openSearchJwtTokenField, jwtTip);
+        Tooltips.apply(openSearchCertPathField, certPathTip);
+        Tooltips.apply(openSearchCertKeyPathField, keyPathTip);
+        Tooltips.apply(openSearchCertPassphraseField, passphraseTip);
+
+        basicCard.removeAll();
+        basicCard.add(Tooltips.label("Username:", basicUserTip));
+        basicCard.add(openSearchUserField, "gapright 15");
+        basicCard.add(Tooltips.label("Password:", basicPasswordTip));
+        basicCard.add(openSearchPasswordField, "gapright 15");
+
+        apiKeyCard.removeAll();
+        apiKeyCard.add(Tooltips.label("Key ID:", apiKeyIdTip));
+        apiKeyCard.add(openSearchApiKeyIdField, "gapright 15");
+        apiKeyCard.add(Tooltips.label("Key Secret:", apiKeySecretTip));
+        apiKeyCard.add(openSearchApiKeySecretField, "gapright 15");
+
+        jwtCard.removeAll();
+        jwtCard.add(Tooltips.label("JWT Token:", jwtTip));
+        jwtCard.add(openSearchJwtTokenField, "w 360!");
+
+        clientCertCard.removeAll();
+        clientCertCard.add(Tooltips.label("Cert Path:", certPathTip));
+        clientCertCard.add(openSearchCertPathField, "w 360!");
+        clientCertCard.add(Tooltips.label("Key Path:", keyPathTip));
+        clientCertCard.add(openSearchCertKeyPathField, "w 360!");
+        clientCertCard.add(Tooltips.label("Passphrase:", passphraseTip));
+        clientCertCard.add(openSearchCertPassphraseField, "w 360!");
+
+        form.add(Tooltips.label("Auth type:", authTypeTip));
         form.add(authTypeCombo);
         form.add(contentCards, "gapleft 15");
 
@@ -1200,37 +1264,47 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * <p>EDT only. Consolidated here to keep tooltip text consistent and discoverable.</p>
      */
     private void assignToolTips() {
-        settingsCheckbox.setToolTipText("All in-scope settings");
-        sitemapCheckbox.setToolTipText("All in-scope sitemaps");
-        issuesCheckbox.setToolTipText("All in-scope findings (aka issues)");
-        trafficCheckbox.setToolTipText("All in-scope traffic");
-        settingsExpandButton.setToolTipText("Settings sub-options");
-        issuesExpandButton.setToolTipText("Issues sub-options");
-        trafficExpandButton.setToolTipText("Traffic sub-options");
-        settingsProjectCheckbox.setToolTipText("Project settings");
-        settingsUserCheckbox.setToolTipText("User settings");
-        trafficBurpAiCheckbox.setToolTipText("All in-scope traffic sent from Burp AI");
-        trafficExtensionsCheckbox.setToolTipText("All in-scope traffic sent from all other extensions");
-        trafficIntruderCheckbox.setToolTipText("All in-scope traffic sent from Intruder");
-        trafficProxyCheckbox.setToolTipText("All in-scope traffic sent from Proxy");
-        trafficProxyHistoryCheckbox.setToolTipText("All in-scope traffic from Proxy History. This exports smart batches when Start is clicked. For ongoing/future traffic, select Proxy.");
-        trafficRepeaterCheckbox.setToolTipText("All in-scope traffic sent from Repeater");
-        trafficScannerCheckbox.setToolTipText("All in-scope traffic sent from Scanner");
-        trafficSequencerCheckbox.setToolTipText("All in-scope traffic sent from Sequencer");
+        Tooltips.apply(settingsCheckbox, Tooltips.html("All settings."));
+        Tooltips.apply(sitemapCheckbox, Tooltips.html("All in-scope sitemaps."));
+        Tooltips.apply(issuesCheckbox, Tooltips.html("All findings (aka issues)."));
+        Tooltips.apply(trafficCheckbox, Tooltips.html("All in-scope traffic."));
+        Tooltips.apply(settingsExpandButton, Tooltips.html("Settings sub-options."));
+        Tooltips.apply(issuesExpandButton, Tooltips.html("Issues sub-options."));
+        Tooltips.apply(trafficExpandButton, Tooltips.html("Traffic sub-options."));
+        Tooltips.apply(settingsProjectCheckbox, Tooltips.html("Project settings."));
+        Tooltips.apply(settingsUserCheckbox, Tooltips.html("User settings."));
+        Tooltips.apply(trafficBurpAiCheckbox, Tooltips.html("All in-scope traffic sent from Burp AI."));
+        Tooltips.apply(trafficExtensionsCheckbox, Tooltips.html("All in-scope traffic sent from all other extensions."));
+        Tooltips.apply(trafficIntruderCheckbox, Tooltips.html("All in-scope traffic sent from Intruder."));
+        Tooltips.apply(trafficProxyCheckbox, Tooltips.html("All in-scope traffic sent from Proxy."));
+        Tooltips.apply(trafficProxyHistoryCheckbox, Tooltips.html(
+                "All in-scope traffic from Proxy History.",
+                "This exports smart batches when Start is clicked.",
+                "For ongoing or future traffic, select Proxy."
+        ));
+        Tooltips.apply(trafficRepeaterCheckbox, Tooltips.html("All in-scope traffic sent from Repeater."));
+        Tooltips.apply(trafficScannerCheckbox, Tooltips.html("All in-scope traffic sent from Scanner."));
+        Tooltips.apply(trafficSequencerCheckbox, Tooltips.html("All in-scope traffic sent from Sequencer."));
 
-        allRadio.setToolTipText("Export all observed");
-        burpSuiteRadio.setToolTipText("Export Burp Suite's project scope");
-        customRadio.setToolTipText("Export custom scope");
+        Tooltips.apply(allRadio, Tooltips.html("Export all observed."));
+        Tooltips.apply(burpSuiteRadio, Tooltips.html("Export Burp Suite's project scope."));
+        Tooltips.apply(customRadio, Tooltips.html("Export custom scope."));
 
-        fileSinkCheckbox.setToolTipText("Enable file-based export");
-        filePathField.setToolTipText("Root directory for generated files");
-        createFilesButton.setToolTipText("Test file creation. Not required.");
+        Tooltips.apply(fileSinkCheckbox, Tooltips.html("Enable file-based export."));
+        Tooltips.apply(filePathField, Tooltips.html("Root directory for generated files."));
+        Tooltips.apply(createFilesButton, Tooltips.html("Test file creation.", "Not required."));
 
-        openSearchSinkCheckbox.setToolTipText("Enable OpenSearch export");
-        openSearchUrlField.setToolTipText("Base URL of the OpenSearch cluster");
+        Tooltips.apply(openSearchSinkCheckbox, Tooltips.html("Enable OpenSearch export."));
+        Tooltips.apply(openSearchUrlField, Tooltips.html("Base URL of the OpenSearch cluster."));
         openSearchInsecureSslCheckbox.setName("os.insecureSsl");
-        openSearchInsecureSslCheckbox.setToolTipText("Skip TLS certificate verification (e.g. for self-signed certs)");
-        testConnectionButton.setToolTipText("Test connectivity. Secrets are only stored within in-process memory.");
+        Tooltips.apply(openSearchInsecureSslCheckbox, Tooltips.html(
+                "Skip TLS certificate verification.",
+                "Useful for self-signed certificates."
+        ));
+        Tooltips.apply(testConnectionButton, Tooltips.html(
+                "Test connectivity.",
+                "Secrets are only stored within in-process memory."
+        ));
     }
 
     /**

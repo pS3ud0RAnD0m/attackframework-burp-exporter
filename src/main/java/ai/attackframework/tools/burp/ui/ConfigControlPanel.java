@@ -24,6 +24,7 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
@@ -34,8 +35,8 @@ import net.miginfocom.swing.MigLayout;
  * <p><strong>Responsibilities:</strong> render control panel and expose the assembled panel.
  * Callers supply actions and a status configurator for consistent text-area setup. A single
  * Start/Stop button toggles {@link RuntimeConfig#setExportRunning(boolean)}; its label and
- * tooltip show "Start" when stopped and "Stop" when running. The indicator shows running
- * (green) or stopped (red).</p>
+ * tooltip show "Start" when stopped and "Stop" when running. The indicator shows starting
+ * (yellow), running (green), or stopped (red).</p>
  *
  * <p><strong>Threading:</strong> created/used on the EDT. {@link #build()} mounts status text areas
  * into their wrapper panels so callers can update them via
@@ -45,6 +46,7 @@ import net.miginfocom.swing.MigLayout;
 public final class ConfigControlPanel {
 
     private static final Color INDICATOR_GREEN = new Color(0x00_88_00);
+    private static final Color INDICATOR_YELLOW = new Color(0xCC_AA_00);
     private static final Color INDICATOR_RED   = new Color(0x99_00_00);
     private static final Color INDICATOR_BORDER = Color.BLACK;
     /** Inset so the border is not clipped by the component bounds. */
@@ -54,7 +56,13 @@ public final class ConfigControlPanel {
     /** Paints a 3D-style circle: red/green fill with top-left gloss and a thin black border; transparent background. */
     private static final class IndicatorDot extends JComponent {
         private final int size;
-        private boolean running;
+        private State state = State.STOPPED;
+
+        private enum State {
+            STOPPED,
+            STARTING,
+            RUNNING
+        }
 
         IndicatorDot(int sizePx) {
             this.size = sizePx;
@@ -63,15 +71,25 @@ public final class ConfigControlPanel {
             setMaximumSize(new Dimension(sizePx, sizePx));
             setName("control.exportIndicator");
             setOpaque(false);
+            putClientProperty("html.disable", Boolean.FALSE);
         }
 
-        void setRunning(boolean running) {
-            if (this.running != running) {
-                Logger.logTrace("[Control] indicator running=" + running);
-                this.running = running;
+        @Override
+        public javax.swing.JToolTip createToolTip() {
+            return Tooltips.createHtmlToolTip(this);
+        }
+
+        void setState(State state) {
+            if (this.state != state) {
+                Logger.logTrace("[Control] indicator state=" + state.name().toLowerCase());
+                this.state = state;
                 repaint();
             }
-            setToolTipText(running ? "Export is running" : "Export is stopped");
+            Tooltips.apply(this, Tooltips.html(switch (state) {
+                case STOPPED -> "Export is stopped";
+                case STARTING -> "Export is starting";
+                case RUNNING -> "Export is running";
+            }));
         }
 
         @Override
@@ -83,7 +101,11 @@ public final class ConfigControlPanel {
             double d = size - 2.0 * inset;
             Ellipse2D.Double circle = new Ellipse2D.Double(inset, inset, d, d);
 
-            Color base = running ? INDICATOR_GREEN : INDICATOR_RED;
+            Color base = switch (state) {
+                case STOPPED -> INDICATOR_RED;
+                case STARTING -> INDICATOR_YELLOW;
+                case RUNNING -> INDICATOR_GREEN;
+            };
             g2.setColor(base);
             g2.fill(circle);
 
@@ -114,9 +136,11 @@ public final class ConfigControlPanel {
     private final Runnable importAction;
     private final Runnable exportAction;
     private final ActionListener saveAction;
-    /** Receives a revert-UI runnable to call if start fails (e.g. index creation). */
-    private final Consumer<Runnable> startAction;
+    /** Receives UI callbacks to complete or revert startup state after bootstrap. */
+    private final Consumer<StartUiCallbacks> startAction;
     private final Runnable stopAction;
+
+    public record StartUiCallbacks(Runnable onStartFailure, Runnable onStartSuccess) {}
 
     /** Canonical constructor with null checks. */
     public ConfigControlPanel(
@@ -130,7 +154,7 @@ public final class ConfigControlPanel {
             Runnable importAction,
             Runnable exportAction,
             ActionListener saveAction,
-            Consumer<Runnable> startAction,
+            Consumer<StartUiCallbacks> startAction,
             Runnable stopAction
     ) {
         this.importExportStatus = Objects.requireNonNull(importExportStatus, "importExportStatus");
@@ -152,17 +176,17 @@ public final class ConfigControlPanel {
         JPanel root = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Config Control");
+        JLabel header = Tooltips.label("Config Control",
+                Tooltips.html("Import, export, save and apply the configuration.", "Start or stop Burp Exporter."));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Control the configuration and export status.");
         root.add(header, "gapbottom 6");
 
-        JButton importBtn = new JButton("Import Config");
-        JButton exportBtn = new JButton("Export Config");
-        JButton saveBtn   = new JButton("Save");
+        JButton importBtn = new Tooltips.HtmlButton("Import Config");
+        JButton exportBtn = new Tooltips.HtmlButton("Export Config");
+        JButton saveBtn = new Tooltips.HtmlButton("Save");
         saveBtn.setName("control.save");
 
-        JButton startStopBtn = new JButton(runningButtonLabel(RuntimeConfig.isExportRunning()));
+        JButton startStopBtn = new Tooltips.HtmlButton(runningButtonLabel(RuntimeConfig.isExportRunning()));
         startStopBtn.setName("control.startStop");
         ButtonStyles.normalize(importBtn);
         ButtonStyles.normalize(exportBtn);
@@ -172,7 +196,7 @@ public final class ConfigControlPanel {
 
         int btnHeight = startStopBtn.getPreferredSize().height;
         IndicatorDot indicator = new IndicatorDot(btnHeight);
-        indicator.setRunning(RuntimeConfig.isExportRunning());
+        indicator.setState(RuntimeConfig.isExportRunning() ? IndicatorDot.State.RUNNING : IndicatorDot.State.STOPPED);
 
         assignToolTips(importBtn, exportBtn, saveBtn);
 
@@ -185,17 +209,25 @@ public final class ConfigControlPanel {
             if (wasRunning) {
                 stopAction.run();
                 updateStartStopButton(startStopBtn, false);
-                indicator.setRunning(false);
+                indicator.setState(IndicatorDot.State.STOPPED);
             } else {
                 RuntimeConfig.setExportRunning(true);
+                RuntimeConfig.setExportStarting(true);
                 updateStartStopButton(startStopBtn, true);
-                indicator.setRunning(true);
+                indicator.setState(IndicatorDot.State.STARTING);
+                updateControlStatus("Starting ...");
                 Runnable revertUi = () -> {
                     RuntimeConfig.setExportRunning(false);
                     updateStartStopButton(startStopBtn, false);
-                    indicator.setRunning(false);
+                    indicator.setState(IndicatorDot.State.STOPPED);
                 };
-                SwingUtilities.invokeLater(() -> startAction.accept(revertUi));
+                Runnable markStartedUi = () -> {
+                    RuntimeConfig.setExportStarting(false);
+                    updateStartStopButton(startStopBtn, true);
+                    indicator.setState(IndicatorDot.State.RUNNING);
+                    updateControlStatus("Started");
+                };
+                SwingUtilities.invokeLater(() -> startAction.accept(new StartUiCallbacks(revertUi, markStartedUi)));
             }
         });
 
@@ -243,15 +275,20 @@ public final class ConfigControlPanel {
         return root;
     }
 
+    private void updateControlStatus(String message) {
+        ai.attackframework.tools.burp.ui.primitives.StatusViews.setStatus(
+                controlStatus, controlStatusWrapper, message, 20, 120);
+    }
+
     private static String runningButtonLabel(boolean running) {
         return running ? "Stop" : "Start";
     }
 
     private static void updateStartStopButton(JButton btn, boolean running) {
         btn.setText(runningButtonLabel(running));
-        btn.setToolTipText(running
-                ? "Stop exporting (configuration unchanged)"
-                : "Start exporting to configured destination(s)");
+        Tooltips.apply(btn, running
+                ? Tooltips.html("Stop exporting.", "The saved configuration remains unchanged.")
+                : Tooltips.html("Start exporting to the configured destination(s)."));
     }
 
     /**
@@ -262,8 +299,11 @@ public final class ConfigControlPanel {
      * @param saveBtn   save action button
      */
     private static void assignToolTips(JButton importBtn, JButton exportBtn, JButton saveBtn) {
-        importBtn.setToolTipText("Import configuration from file");
-        exportBtn.setToolTipText("Export configuration to file");
-        saveBtn.setToolTipText("Save and apply the current configuration. Secrets are only stored within in-process memory.");
+        Tooltips.apply(importBtn, Tooltips.html("Import configuration from file."));
+        Tooltips.apply(exportBtn, Tooltips.html("Export configuration to file."));
+        Tooltips.apply(saveBtn, Tooltips.html(
+                "Save and apply the current configuration.",
+                "Secrets are only stored within in-process memory."
+        ));
     }
 }

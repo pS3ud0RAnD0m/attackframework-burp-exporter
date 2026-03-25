@@ -249,7 +249,7 @@ public final class ProxyWebSocketIndexReporter {
         doc.put("http_version", upgrade == null ? null : upgrade.httpVersion());
         doc.put("tool", "Proxy WebSocket");
         doc.put("tool_type", "PROXY_WEBSOCKET");
-        doc.put("in_scope", inScope);
+        doc.put("burp_in_scope", burpInScope);
         doc.put("message_id", ws.id());
         doc.put("path", upgrade == null ? null : upgrade.path());
         doc.put("method", upgrade == null ? null : upgrade.method());

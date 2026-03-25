@@ -102,6 +102,13 @@ public final class RetryQueue {
         return queues.values().stream().mapToInt(BlockingQueue::size).sum();
     }
 
+    /**
+     * Clears all queued retry documents across all indexes.
+     */
+    public void clearAll() {
+        queues.values().forEach(BlockingQueue::clear);
+    }
+
     private BlockingQueue<Map<String, Object>> queueFor(String indexName) {
         return queues.computeIfAbsent(indexName, k -> new LinkedBlockingQueue<>(maxSizePerIndex));
     }

@@ -192,13 +192,13 @@ public final class RegexIndicatorBinder {
         private static void good(JLabel label) {
             label.setForeground(GREEN);
             label.setText("✓");
-            label.setToolTipText("Valid regex");
+            Tooltips.apply(label, Tooltips.html("Valid regex."));
         }
 
         private static void bad(JLabel label) {
             label.setForeground(RED);
             label.setText("✖");
-            label.setToolTipText("Invalid regex");
+            Tooltips.apply(label, Tooltips.html("Invalid regex."));
         }
 
         private void revalidateAndRepaint() {

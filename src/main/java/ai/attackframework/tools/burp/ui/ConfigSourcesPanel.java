@@ -9,6 +9,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import net.miginfocom.swing.MigLayout;
 
 /**
@@ -68,9 +69,9 @@ public final class ConfigSourcesPanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[left]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Burp Suite Sources");
+        JLabel header = Tooltips.label("Burp Suite Sources",
+                Tooltips.html("Configure the Burp Suite sources of data for export."));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Configure the Burp Suite sources of data for export.");
         panel.add(header, "gapbottom 6");
 
         int subIndent = indentPx * 2;

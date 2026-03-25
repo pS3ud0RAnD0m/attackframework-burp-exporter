@@ -13,6 +13,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
 import ai.attackframework.tools.burp.ui.primitives.StatusViews;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import net.miginfocom.swing.MigLayout;
 
 /**
@@ -95,9 +96,9 @@ public final class ConfigDestinationPanel {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"+rowGap+"[]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel header = new JLabel("Destinations");
+        JLabel header = Tooltips.label("Destinations",
+                Tooltips.html("Configure export destination(s)."));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
-        header.setToolTipText("Configure where to put exported data.");
         panel.add(header, "gapbottom 6, wrap");
 
         // Files row
