@@ -98,19 +98,26 @@ public final class TrafficExportQueue {
     public static void offer(Map<String, Object> document) {
         if (document == null) return;
         if (!queue.offer(document)) {
-            if (spillQueue.offer(document)) {
+            TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(document);
+            if (spillResult == TrafficSpillFileQueue.OfferResult.QUEUED) {
                 ExportStats.recordTrafficSpillEnqueued(1);
             } else {
                 queue.poll();
                 ExportStats.recordTrafficQueueDrop(1);
                 ExportStats.recordTrafficSpillDrop(1);
-                ExportStats.recordTrafficDropReason("spill_rejected_drop_oldest", 1);
+                ExportStats.recordTrafficDropReason(
+                        spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
+                                ? "spill_low_disk_drop_oldest"
+                                : "spill_rejected_drop_oldest",
+                        1);
                 if (!queue.offer(document)) {
                     // Queue remained full under contention; count as dropped.
                     ExportStats.recordTrafficQueueDrop(1);
                     ExportStats.recordTrafficSpillDrop(1);
                     ExportStats.recordTrafficDropReason("queue_contention_drop", 1);
-                    Logger.logError("[TrafficExportQueue] Queue and spill full; dropping traffic document.");
+                    Logger.logError("[TrafficExportQueue] Queue and spill unavailable; dropping traffic document.");
+                } else if (spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK) {
+                    Logger.logError("[TrafficExportQueue] Spill disabled by low disk space; used drop-oldest fallback.");
                 } else {
                     Logger.logError("[TrafficExportQueue] Spill full; used drop-oldest fallback.");
                 }
@@ -210,10 +217,15 @@ public final class TrafficExportQueue {
                 return;
             }
             if (!queue.offer(spilled)) {
-                if (!spillQueue.offer(spilled)) {
+                TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(spilled);
+                if (spillResult != TrafficSpillFileQueue.OfferResult.QUEUED) {
                     ExportStats.recordTrafficQueueDrop(1);
                     ExportStats.recordTrafficSpillDrop(1);
-                    ExportStats.recordTrafficDropReason("spill_requeue_failed_drop", 1);
+                    ExportStats.recordTrafficDropReason(
+                            spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
+                                    ? "spill_requeue_low_disk_drop"
+                                    : "spill_requeue_failed_drop",
+                            1);
                     Logger.logError("[TrafficExportQueue] Failed to re-queue drained spill document; dropping.");
                 }
                 return;

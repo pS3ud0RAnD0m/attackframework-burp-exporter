@@ -1,6 +1,5 @@
 package ai.attackframework.tools.burp.ui;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -9,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 
@@ -32,8 +32,7 @@ class ConfigControllerFilesIT {
 
     @Test
     void createFiles_writesExpectedStatus() throws Exception {
-        Path tmp = Files.createTempDirectory("cc-files");
-        tmp.toFile().deleteOnExit();
+        Path tmp = TestPathSupport.createDirectory("cc-files");
 
         CountDownLatch done = new CountDownLatch(1);
         TestUi ui = new TestUi(done);

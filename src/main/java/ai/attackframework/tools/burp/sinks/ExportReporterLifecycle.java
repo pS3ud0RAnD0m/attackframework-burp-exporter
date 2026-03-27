@@ -1,6 +1,8 @@
 package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
+import ai.attackframework.tools.burp.utils.ControlStatusBridge;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
@@ -66,5 +68,7 @@ public final class ExportReporterLifecycle {
      */
     public static void resetForTests() {
         stopAndClearSessionState();
+        ControlStatusBridge.clear();
+        DiskSpaceGuard.resetForTests();
     }
 }

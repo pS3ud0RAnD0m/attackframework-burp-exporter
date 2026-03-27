@@ -92,6 +92,7 @@ public final class FileUtil {
                 java.nio.file.Files.createDirectories(parent);
             }
 
+            DiskSpaceGuard.ensureWritable(p, 3L, "JSON file creation");
             java.nio.file.Files.createFile(p);
             java.nio.file.Files.writeString(p, "{}\n", StandardCharsets.UTF_8);
             return new CreateResult(p, Status.CREATED, null);
@@ -99,6 +100,8 @@ public final class FileUtil {
         } catch (FileAlreadyExistsException e) {
             // File was created between the existence check and createFile call; treat as EXISTS.
             return new CreateResult(p, Status.EXISTS, null);
+        } catch (DiskSpaceGuard.LowDiskSpaceException e) {
+            return new CreateResult(p, Status.FAILED, e.userMessage());
         } catch (DirectoryNotEmptyException e) {
             return new CreateResult(p, Status.FAILED, "Directory not empty: " + e.getMessage());
         } catch (IOException e) {
@@ -128,7 +131,11 @@ public final class FileUtil {
 
     /**
      * Write UTF-8 text to a file, creating parent directories if necessary.
-     * <p>
+     *
+     * <p>Caller may invoke from any thread. Before writing, this method applies the shared
+     * low-disk guard so exporter code does not keep writing until the destination volume is nearly
+     * full.</p>
+     *
      * @param file    destination path
      * @param content content to write
      * @throws IOException when writing fails
@@ -136,6 +143,7 @@ public final class FileUtil {
     public static void writeStringCreateDirs(Path file, String content) throws IOException {
         Path parent = file.getParent();
         if (parent != null) java.nio.file.Files.createDirectories(parent);
+        DiskSpaceGuard.ensureWritable(file, estimatedUtf8Bytes(content), "file");
         java.nio.file.Files.writeString(file, content, StandardCharsets.UTF_8);
     }
 
@@ -152,7 +160,11 @@ public final class FileUtil {
 
     /**
      * Create a temp file and write UTF-8 content to it.
-     * <p>
+     *
+     * <p>The file is created under {@link ManagedDiskPaths#managedRootDirectory()} so
+     * exporter-managed temporary files remain grouped under one discoverable root. This method also
+     * applies the shared low-disk guard before creating the file.</p>
+     *
      * @param prefix  temp file prefix
      * @param suffix  temp file suffix
      * @param content content to write
@@ -160,8 +172,15 @@ public final class FileUtil {
      * @throws IOException when creation or write fails
      */
     public static Path writeTempFile(String prefix, String suffix, String content) throws IOException {
-        Path p = java.nio.file.Files.createTempFile(prefix, suffix);
+        Path root = ManagedDiskPaths.managedRootDirectory();
+        java.nio.file.Files.createDirectories(root);
+        DiskSpaceGuard.ensureWritable(root, estimatedUtf8Bytes(content), "temporary file");
+        Path p = java.nio.file.Files.createTempFile(root, prefix, suffix);
         java.nio.file.Files.writeString(p, content, StandardCharsets.UTF_8);
         return p;
+    }
+
+    private static long estimatedUtf8Bytes(String content) {
+        return content == null ? 0L : content.getBytes(StandardCharsets.UTF_8).length;
     }
 }

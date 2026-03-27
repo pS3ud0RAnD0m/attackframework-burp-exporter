@@ -1,6 +1,5 @@
 package ai.attackframework.tools.burp.ui;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -9,7 +8,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -61,8 +62,7 @@ class ConfigControllerImportExportIT {
                 null);
 
         String json = ConfigJsonMapper.build(state);
-        Path tmp = Files.createTempFile("cc-export", ".json");
-        tmp.toFile().deleteOnExit();
+        Path tmp = TestPathSupport.createFile("cc-export", ".json");
 
         TestUi ui = new TestUi();
         ConfigController cc = new ConfigController(ui);
@@ -81,5 +81,34 @@ class ConfigControllerImportExportIT {
         cc.importConfigAsync(tmp);
         assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
         assertThat(ui.control).contains("Imported");
+    }
+
+    @Test
+    void export_whenDiskIsLow_reportsFriendlyStatus() throws Exception {
+        ConfigState.State state = new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null);
+        String json = ConfigJsonMapper.build(state);
+        Path tmp = TestPathSupport.createFile("cc-export-low-disk", ".json");
+
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
+        CountDownLatch exportDone = new CountDownLatch(1);
+        ui.setExportLatch(exportDone);
+
+        try {
+            DiskSpaceGuard.resetForTests();
+            DiskSpaceGuard.setUsableSpaceOverride(path -> DiskSpaceGuard.MIN_FREE_BYTES - 1);
+
+            cc.exportConfigAsync(tmp, json);
+            assertThat(exportDone.await(3, TimeUnit.SECONDS)).isTrue();
+            assertThat(ui.control).isEqualTo("Export failed: Write cancelled due to low disk space");
+        } finally {
+            DiskSpaceGuard.resetForTests();
+        }
     }
 }

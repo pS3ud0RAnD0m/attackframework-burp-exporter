@@ -13,6 +13,7 @@ import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.FileUtil.CreateResult;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -62,7 +63,7 @@ public final class ConfigController {
                     FileUtil.writeStringCreateDirs(out, json);
                     return "Exported configuration to: " + out;
                 } catch (java.io.IOException | RuntimeException e) {
-                    return "Export failed: " + rootMessage(e);
+                    return "Export failed: " + userFacingMessage(e);
                 }
             }
             @Override protected void done() {
@@ -131,7 +132,7 @@ public final class ConfigController {
                     return "Saved.";
                 } catch (Exception ex) {
                     Logger.logError("[ConfigPanel] Save failed: " + rootMessage(ex));
-                    return "Save failed: " + rootMessage(ex);
+                    return "Save failed: " + userFacingMessage(ex);
                 }
             }
             @Override protected void done() {
@@ -273,6 +274,15 @@ public final class ConfigController {
     private static String rootMessage(Throwable t) {
         Throwable c = t;
         while (c.getCause() != null) c = c.getCause();
+        return c.getMessage() == null ? c.toString() : c.getMessage();
+    }
+
+    private static String userFacingMessage(Throwable t) {
+        Throwable c = t;
+        while (c.getCause() != null) c = c.getCause();
+        if (c instanceof DiskSpaceGuard.LowDiskSpaceException lowDisk) {
+            return lowDisk.userMessage();
+        }
         return c.getMessage() == null ? c.toString() : c.getMessage();
     }
 }

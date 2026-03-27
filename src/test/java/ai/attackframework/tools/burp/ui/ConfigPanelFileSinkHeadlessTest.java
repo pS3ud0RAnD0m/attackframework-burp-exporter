@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 
 /**
@@ -62,7 +63,7 @@ class ConfigPanelFileSinkHeadlessTest {
         List<String> baseNames = IndexNaming.computeIndexBaseNames(sources);
         List<String> jsonNames = IndexNaming.toJsonFileNames(baseNames);
 
-        Path tmpDir = Files.createTempDirectory("af-burp-filesink-");
+        Path tmpDir = TestPathSupport.createDirectory("af-burp-filesink");
         for (String name : jsonNames) {
             Files.createFile(tmpDir.resolve(name));
         }

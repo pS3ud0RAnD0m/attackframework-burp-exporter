@@ -6,11 +6,13 @@ import java.nio.file.Path;
 import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
+
 class FileUtilTest {
 
     @Test
     void ensureJsonFiles_createsMissingFiles_thenReportsExistsOnSecondRun() throws IOException {
-        Path tmp = java.nio.file.Files.createTempDirectory("af-json-root-");
+        Path tmp = TestPathSupport.createDirectory("af-json-root");
         Path f1 = tmp.resolve("alpha.json");
         Path f2 = tmp.resolve("nested/beta.json");
 
@@ -31,11 +33,27 @@ class FileUtilTest {
     @Test
     void ensureJsonFiles_returnsFailedWhenRootIsNotADirectory() throws IOException {
         // Simulate a root path that's actually a file
-        Path fileAsRoot = java.nio.file.Files.createTempFile("af-not-a-dir-", ".tmp");
+        Path fileAsRoot = TestPathSupport.createFile("af-not-a-dir", ".tmp");
 
         var res = FileUtil.ensureJsonFiles(fileAsRoot, List.of("x.json"));
         assertThat(res).hasSize(1);
         assertThat(res.getFirst().status()).isEqualTo(FileUtil.Status.FAILED);
         assertThat(res.getFirst().error()).isNotBlank();
+    }
+
+    @Test
+    void ensureJsonFiles_returnsLowDiskFailureWhenReserveWouldBeBreached() throws IOException {
+        Path tmp = TestPathSupport.createDirectory("af-json-low-disk");
+        try {
+            DiskSpaceGuard.resetForTests();
+            DiskSpaceGuard.setUsableSpaceOverride(path -> DiskSpaceGuard.MIN_FREE_BYTES - 1);
+
+            var res = FileUtil.ensureJsonFiles(tmp, List.of("x.json"));
+            assertThat(res).hasSize(1);
+            assertThat(res.getFirst().status()).isEqualTo(FileUtil.Status.FAILED);
+            assertThat(res.getFirst().error()).contains("low disk space");
+        } finally {
+            DiskSpaceGuard.resetForTests();
+        }
     }
 }

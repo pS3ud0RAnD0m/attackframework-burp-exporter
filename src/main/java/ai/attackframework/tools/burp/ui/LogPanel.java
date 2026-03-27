@@ -55,6 +55,7 @@ import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.text.TextQuery;
 import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
 
@@ -693,6 +694,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         try {
             String text = logTextPane.getDocument().getText(0, logTextPane.getDocument().getLength());
             FileUtil.writeStringCreateDirs(out.toPath(), text);
+        } catch (DiskSpaceGuard.LowDiskSpaceException ex) {
+            Logger.logError("Save failed: " + ex.userMessage());
         } catch (IOException | javax.swing.text.BadLocationException ex) {
             Logger.logError("Save failed: " + ex.getMessage());
         }

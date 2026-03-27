@@ -12,11 +12,14 @@ import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
+
 class TrafficSpillFileQueueTest {
 
     @Test
     void offerAndPoll_preservesFifoOrder() throws IOException {
-        Path dir = Files.createTempDirectory("traffic-spill-test");
+        Path dir = TestPathSupport.createDirectory("traffic-spill-test");
         try {
             TrafficSpillFileQueue queue = new TrafficSpillFileQueue(dir, 10, 1024 * 1024);
             assertThat(queue.offer(Map.of("id", 1, "url", "https://a"))).isTrue();
@@ -40,7 +43,7 @@ class TrafficSpillFileQueueTest {
 
     @Test
     void offer_rejectsWhenFileLimitReached() throws IOException {
-        Path dir = Files.createTempDirectory("traffic-spill-limit");
+        Path dir = TestPathSupport.createDirectory("traffic-spill-limit");
         try {
             TrafficSpillFileQueue queue = new TrafficSpillFileQueue(dir, 1, 1024 * 1024);
             assertThat(queue.offer(Map.of("id", 1, "url", "https://a"))).isTrue();
@@ -53,7 +56,7 @@ class TrafficSpillFileQueueTest {
 
     @Test
     void offer_rejectsWhenByteLimitReached() throws IOException {
-        Path dir = Files.createTempDirectory("traffic-spill-bytes");
+        Path dir = TestPathSupport.createDirectory("traffic-spill-bytes");
         try {
             TrafficSpillFileQueue queue = new TrafficSpillFileQueue(dir, 100, 400);
             assertThat(queue.offer(Map.of("id", 1, "url", "https://a"))).isTrue();
@@ -66,7 +69,7 @@ class TrafficSpillFileQueueTest {
 
     @Test
     void offer_usesProjectIdPrefixForSpillFileNames() throws IOException {
-        Path dir = Files.createTempDirectory("traffic-spill-project-prefix");
+        Path dir = TestPathSupport.createDirectory("traffic-spill-project-prefix");
         try {
             TrafficSpillFileQueue queue = new TrafficSpillFileQueue(
                     dir, 10, 1024 * 1024, "Burp Project:Alpha", 86_400_000L);
@@ -83,7 +86,7 @@ class TrafficSpillFileQueueTest {
 
     @Test
     void initializeFromDisk_recoversExistingSpillEnvelope() throws IOException {
-        Path dir = Files.createTempDirectory("traffic-spill-recover");
+        Path dir = TestPathSupport.createDirectory("traffic-spill-recover");
         try {
             String payload = "{\"meta\":{\"schema_version\":\"1\"},\"document\":{\"id\":99,\"url\":\"https://r\"}}";
             Files.writeString(
@@ -102,6 +105,23 @@ class TrafficSpillFileQueueTest {
             assertThat(doc.get("id")).isEqualTo(99);
             assertThat(doc.get("url")).isEqualTo("https://r");
         } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
+    void offerDetailed_rejectsWhenLowDiskThresholdWouldBeBreached() throws IOException {
+        Path dir = TestPathSupport.createDirectory("traffic-spill-low-disk");
+        try {
+            DiskSpaceGuard.resetForTests();
+            DiskSpaceGuard.setUsableSpaceOverride(path -> DiskSpaceGuard.MIN_FREE_BYTES - 1);
+
+            TrafficSpillFileQueue queue = new TrafficSpillFileQueue(dir, 10, 1024 * 1024);
+            assertThat(queue.offerDetailed(Map.of("id", 1, "url", "https://a")))
+                    .isEqualTo(TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK);
+            assertThat(queue.size()).isEqualTo(0);
+        } finally {
+            DiskSpaceGuard.resetForTests();
             deleteRecursively(dir);
         }
     }

@@ -55,6 +55,7 @@ import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
+import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -183,6 +184,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /** Dependency-injected constructor (tests). */
     public ConfigPanel(ConfigController injectedController) {
         this.controller = injectedController;
+        ControlStatusBridge.register(this::onControlStatus);
 
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
@@ -1355,6 +1357,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
         this.controller = new ConfigController(this);
+        ControlStatusBridge.register(this::onControlStatus);
     }
 
 }

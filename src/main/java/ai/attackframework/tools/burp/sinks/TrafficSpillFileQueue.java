@@ -22,19 +22,34 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
+import ai.attackframework.tools.burp.utils.ManagedDiskPaths;
 
 /**
  * File-backed FIFO queue used when in-memory traffic queue is full.
  *
- * <p>Each document is written as one JSON file in a dedicated spill directory.
- * This queue is process-local and best-effort: files are cleaned as they are
+ * <p>Each document is written as one JSON file in a dedicated spill directory under the managed
+ * exporter temp root. This queue is process-local and best-effort: files are cleaned as they are
  * drained; malformed spill files are skipped with an error log. Thread-safe.</p>
  */
 final class TrafficSpillFileQueue {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String SPILL_DIR_NAME = "attackframework-burp-exporter-traffic-spill";
     private static final String SCHEMA_VERSION = "1";
+    /**
+     * Outcome of attempting to spill one traffic document.
+     *
+     * <p>{@link #REJECTED_LIMIT} means queue-specific file-count or byte limits prevented the
+     * spill. {@link #REJECTED_LOW_DISK} means the shared disk guard refused the write before the
+     * destination volume would fall below the safety reserve.</p>
+     */
+    enum OfferResult {
+        QUEUED,
+        REJECTED_LIMIT,
+        REJECTED_LOW_DISK,
+        FAILED
+    }
+
     private static final String SPILL_SOURCE = "traffic_overflow";
     private static final long DEFAULT_MAX_AGE_MS = TimeUnit.DAYS.toMillis(3);
     private static final TypeReference<Map<String, Object>> DOC_TYPE = new TypeReference<>() { };
@@ -52,13 +67,16 @@ final class TrafficSpillFileQueue {
     private long recoveredBytes = 0;
 
     /**
-     * Creates a queue with default limits under the system temp directory.
+     * Creates a queue with default limits under the managed exporter temp root.
+     *
+     * <p>The default managed-disk byte cap aligns with {@link DiskSpaceGuard#MAX_MANAGED_BYTES}.
+     * Construction is thread-safe but performs disk initialization immediately.</p>
      */
     TrafficSpillFileQueue() {
         this(
-                Path.of(System.getProperty("java.io.tmpdir"), SPILL_DIR_NAME),
+                ManagedDiskPaths.spillDirectory(),
                 100_000L,
-                512L * 1024L * 1024L,
+                DiskSpaceGuard.MAX_MANAGED_BYTES,
                 resolveProjectId(),
                 DEFAULT_MAX_AGE_MS);
     }
@@ -79,7 +97,8 @@ final class TrafficSpillFileQueue {
     /**
      * Creates a queue with explicit location, limits, and project identity.
      *
-     * <p>Visible for tests.</p>
+     * <p>Visible for tests. Construction initializes on-disk state immediately and recovers any
+     * compatible spill files already present in the directory.</p>
      */
     TrafficSpillFileQueue(Path directory, long maxFiles, long maxBytes, String projectId, long maxAgeMs) {
         this.directory = directory;
@@ -97,23 +116,38 @@ final class TrafficSpillFileQueue {
      * @return {@code true} when queued, {@code false} when limits prevent spill
      */
     boolean offer(Map<String, Object> document) {
+        return offerDetailed(document) == OfferResult.QUEUED;
+    }
+
+    /**
+     * Writes one document to the spill directory and returns the precise outcome.
+     *
+     * <p>Caller may invoke from any thread. This method acquires the queue lock, prunes expired
+     * spill files, checks queue-specific limits, and then enforces the shared low-disk rule before
+     * writing the new spill file.</p>
+     *
+     * @param document traffic document to persist
+     * @return detailed enqueue result
+     */
+    OfferResult offerDetailed(Map<String, Object> document) {
         if (document == null) {
-            return false;
+            return OfferResult.FAILED;
         }
         byte[] payload;
         try {
             payload = JSON.writeValueAsBytes(buildSpillEnvelope(document));
         } catch (IOException e) {
             Logger.logError("Traffic spill serialize failed: " + e.getMessage());
-            return false;
+            return OfferResult.FAILED;
         }
         lock.lock();
         try {
             pruneExpiredLocked(System.currentTimeMillis());
             if (files.size() >= maxFiles || (totalBytes + payload.length) > maxBytes) {
-                return false;
+                return OfferResult.REJECTED_LIMIT;
             }
             ensureDirectoryExists();
+            DiskSpaceGuard.ensureWritable(directory, payload.length, "traffic spill");
             String name = String.format("%s-%020d.json", projectId, nextSequence++);
             Path target = directory.resolve(name);
             Path temp = directory.resolve(name + ".tmp");
@@ -121,10 +155,12 @@ final class TrafficSpillFileQueue {
             Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             files.addLast(target);
             totalBytes += payload.length;
-            return true;
+            return OfferResult.QUEUED;
+        } catch (DiskSpaceGuard.LowDiskSpaceException e) {
+            return OfferResult.REJECTED_LOW_DISK;
         } catch (IOException e) {
             Logger.logError("Traffic spill write failed: " + e.getMessage());
-            return false;
+            return OfferResult.FAILED;
         } finally {
             lock.unlock();
         }
