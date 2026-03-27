@@ -1,35 +1,28 @@
 package ai.attackframework.tools.burp.ui;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.call;
-import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
-import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
-import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
-import java.text.SimpleDateFormat;
-import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Callable;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.lang.reflect.InvocationTargetException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTable;
 import javax.swing.RowSorter;
+import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
-import javax.swing.JTable;
-import javax.swing.SortOrder;
 import javax.swing.table.DefaultTableModel;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.DateTickUnitType;
@@ -37,7 +30,12 @@ import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.data.RangeType;
 import org.jfree.data.time.TimeSeries;
+import org.junit.jupiter.api.Test;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -61,7 +59,7 @@ class StatsPanelTest {
         assertThat(text).doesNotContain("proxy-history recorded at:");
 
         assertThat(text).contains("Session totals (this session)");
-        assertThat(text).contains("total docs pushed:");
+        assertThat(text).contains("total docs exported:");
         assertThat(text).contains("total failures:");
 
         assertThat(text).contains("Traffic by source");
@@ -78,7 +76,7 @@ class StatsPanelTest {
 
         assertThat(text).contains("By index");
         assertThat(text).contains("Index");
-        assertThat(text).contains("Docs pushed");
+        assertThat(text).contains("Docs exported");
         assertThat(text).contains("Queued");
         assertThat(text).contains("Rty drop");
         assertThat(text).contains("Failures");
@@ -273,9 +271,126 @@ class StatsPanelTest {
         assertThat(labels).contains("Spill Enq/Deq/Drops");
         assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
         assertThat(labels).contains("Spill Directory");
-        assertThat(labels).contains("Total Docs Pushed");
+        assertThat(labels).contains("Total Size Exported");
+        assertThat(labels).contains("Total Docs Exported");
         assertThat(labels).contains("Total Failures");
         assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
+    }
+
+    @Test
+    void formatHumanReadableBytes_usesExpectedUnitsAcrossThresholds() {
+        assertThat(callStatic(StatsPanel.class, "formatHumanReadableBytes", 999L)).isEqualTo("999 B");
+        assertThat(callStatic(StatsPanel.class, "formatHumanReadableBytes", 1024L)).isEqualTo("1.0 KB");
+        assertThat(callStatic(StatsPanel.class, "formatHumanReadableBytes", 1024L * 1024L)).isEqualTo("1.0 MB");
+        assertThat(callStatic(StatsPanel.class, "formatHumanReadableBytes", 1024L * 1024L * 1024L)).isEqualTo("1.0 GB");
+    }
+
+    @Test
+    void refreshDashboard_updatesTotalExportedValueWithHumanReadableSize() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JLabel totalExportedValue = get(panel, "totalExportedValue");
+        long beforeTotal = ExportStats.getTotalExportedBytes();
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+        ExportStats.recordExportedBytes("traffic", 1024L * 1024L);
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+        String expected = (String) callStatic(
+                StatsPanel.class,
+                "formatHumanReadableBytes",
+                beforeTotal + (1024L * 1024L));
+        assertThat(totalExportedValue.getText()).isEqualTo(expected);
+    }
+
+    @Test
+    void totalExportedValue_transitionsAcrossUnits_fromRecordedIndexBytes() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JLabel totalExportedValue = get(panel, "totalExportedValue");
+
+        long beforeTotal = ExportStats.getTotalExportedBytes();
+
+        ExportStats.recordExportedBytes("traffic", 1536L);
+        onEdt(() -> call(panel, "refreshDashboard"));
+        long afterKb = beforeTotal + 1536L;
+        assertThat(totalExportedValue.getText())
+                .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterKb));
+
+        long deltaToMb = Math.max(0L, (1024L * 1024L) - afterKb);
+        ExportStats.recordExportedBytes("tool", deltaToMb);
+        onEdt(() -> call(panel, "refreshDashboard"));
+        long afterMb = afterKb + deltaToMb;
+        assertThat(totalExportedValue.getText())
+                .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterMb));
+        assertThat(totalExportedValue.getText()).endsWith("MB");
+
+        long deltaToGb = Math.max(0L, (1024L * 1024L * 1024L) - afterMb);
+        ExportStats.recordExportedBytes("findings", deltaToGb);
+        onEdt(() -> call(panel, "refreshDashboard"));
+        long afterGb = afterMb + deltaToGb;
+        assertThat(totalExportedValue.getText())
+                .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterGb));
+        assertThat(totalExportedValue.getText()).endsWith("GB");
+    }
+
+    @Test
+    void trafficBySourceTable_countsProxyWebSocketsUnderProxyHistoryAndTotal() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        long proxyHistoryBefore = sourceTableLong(sourceModel, "Proxy History", 1);
+        long sourceTotalBefore = sourceTableLong(sourceModel, "Total", 1);
+        long trafficIndexBefore = sourceTableLong(indexModel, "Traffic", 1);
+        long proxyHistoryFailuresBefore = sourceTableLong(sourceModel, "Proxy History", 4);
+        long sourceTotalFailuresBefore = sourceTableLong(sourceModel, "Total", 4);
+        long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 4);
+
+        ExportStats.recordSuccess("traffic", 7);
+        ExportStats.recordTrafficSourceSuccess("proxy_websocket", 7);
+        ExportStats.recordFailure("traffic", 2);
+        ExportStats.recordTrafficSourceFailure("proxy_websocket", 2);
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        assertThat(sourceTableLong(sourceModel, "Proxy History", 1) - proxyHistoryBefore).isEqualTo(7);
+        assertThat(sourceTableLong(sourceModel, "Total", 1) - sourceTotalBefore).isEqualTo(7);
+        assertThat(sourceTableLong(indexModel, "Traffic", 1) - trafficIndexBefore).isEqualTo(7);
+        assertThat(sourceTableLong(sourceModel, "Proxy History", 4) - proxyHistoryFailuresBefore).isEqualTo(2);
+        assertThat(sourceTableLong(sourceModel, "Total", 4) - sourceTotalFailuresBefore).isEqualTo(2);
+        assertThat(sourceTableLong(indexModel, "Traffic", 4) - trafficIndexFailuresBefore).isEqualTo(2);
+    }
+
+    @Test
+    void trafficBySourceTotal_matchesTrafficIndexAfterMixedTrafficSources() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        long sourceTotalBefore = sourceTableLong(sourceModel, "Total", 1);
+        long trafficIndexBefore = sourceTableLong(indexModel, "Traffic", 1);
+        long sourceTotalFailuresBefore = sourceTableLong(sourceModel, "Total", 4);
+        long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 4);
+
+        ExportStats.recordSuccess("traffic", 17);
+        ExportStats.recordTrafficToolTypeCaptured("PROXY", 5);
+        ExportStats.recordTrafficToolTypeCaptured("REPEATER", 3);
+        ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", 4);
+        ExportStats.recordTrafficSourceSuccess("proxy_websocket", 5);
+
+        ExportStats.recordFailure("traffic", 4);
+        ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", 1);
+        ExportStats.recordTrafficSourceFailure("proxy_websocket", 3);
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        assertThat(sourceTableLong(sourceModel, "Total", 1) - sourceTotalBefore).isEqualTo(17);
+        assertThat(sourceTableLong(indexModel, "Traffic", 1) - trafficIndexBefore).isEqualTo(17);
+        assertThat(sourceTableLong(sourceModel, "Total", 4) - sourceTotalFailuresBefore).isEqualTo(4);
+        assertThat(sourceTableLong(indexModel, "Traffic", 4) - trafficIndexFailuresBefore).isEqualTo(4);
     }
 
     @Test
@@ -404,6 +519,19 @@ class StatsPanelTest {
         @SuppressWarnings("unchecked")
         T value = (T) box[0];
         return value;
+    }
+
+    private static long sourceTableLong(DefaultTableModel model, String rowLabel, int columnIndex) {
+        for (int row = 0; row < model.getRowCount(); row++) {
+            if (rowLabel.equals(String.valueOf(model.getValueAt(row, 0)))) {
+                Object value = model.getValueAt(row, columnIndex);
+                if (value instanceof Number number) {
+                    return number.longValue();
+                }
+                return Long.parseLong(String.valueOf(value));
+            }
+        }
+        throw new AssertionError("Row not found: " + rowLabel);
     }
 
     private static <T extends Component> T findDescendant(Container root, Class<T> type) {

@@ -55,11 +55,11 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 
 /**
- * Panel that displays live export and JVM metrics for all indexes.
+ * Panel that displays live export charts and dashboard metrics.
  *
- * <p>Updates every few seconds via a Swing Timer. Shows export state, session
- * totals (all indexes), per-index table (docs pushed, queued, failures, last push ms,
- * last error), and process-wide JVM metrics (Burp + extensions). Caller must construct on the EDT.</p>
+ * <p>Updates every few seconds via a Swing {@link Timer}. The panel shows rolling throughput
+ * charts, per-index and per-source traffic tables, and a compact "Misc Stats" card with the
+ * current export state. Caller must construct on the EDT.</p>
  */
 public class StatsPanel extends JPanel {
 
@@ -115,6 +115,7 @@ public class StatsPanel extends JPanel {
     private final JLabel spillRecoveredValue;
     private final JLabel spillDirectoryValue;
     private final JLabel throughputValue;
+    private final JLabel totalExportedValue;
     private final JLabel totalDocsPushedValue;
     private final JLabel totalFailuresValue;
     private final DefaultTableModel trafficBySourceModel;
@@ -174,7 +175,8 @@ public class StatsPanel extends JPanel {
                 "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
                 "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
                 "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)",
-                "Spill Directory", "Throughput (Last 10s)", "Total Docs Pushed", "Total Failures"
+                "Spill Directory", "Throughput (Last 10s)", "Total Size Exported",
+                "Total Docs Exported", "Total Failures"
         });
         exportRunningValue = exportStateValues[0];
         currentBatchSizeValue = exportStateValues[1];
@@ -188,18 +190,19 @@ public class StatsPanel extends JPanel {
         spillRecoveredValue = exportStateValues[9];
         spillDirectoryValue = exportStateValues[10];
         throughputValue = exportStateValues[11];
-        totalDocsPushedValue = exportStateValues[12];
-        totalFailuresValue = exportStateValues[13];
+        totalExportedValue = exportStateValues[12];
+        totalDocsPushedValue = exportStateValues[13];
+        totalFailuresValue = exportStateValues[14];
 
         tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
         tablesRow.setOpaque(false);
 
         trafficBySourceModel = new DefaultTableModel(
-                new String[] { "Source", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+                new String[] { "Source", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
         trafficBySourceTable = createStatsTable(trafficBySourceModel);
 
         byIndexModel = new DefaultTableModel(
-                new String[] { "Index", "Docs Pushed", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+                new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
         byIndexTable = createStatsTable(byIndexModel);
         tablesRow.add(createTableCard("Index Counts", byIndexTable));
         tablesRow.add(createTableCard("Traffic Counts", trafficBySourceTable));
@@ -254,6 +257,7 @@ public class StatsPanel extends JPanel {
                         + formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getRecoveredSpillCount()) + ")");
         spillDirectoryValue.setText(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getSpillDirectoryPath());
         throughputValue.setText(DECIMAL_ONE.format(ExportStats.getThroughputDocsPerSecLast10s()) + " docs/s");
+        totalExportedValue.setText(formatHumanReadableBytes(ExportStats.getTotalExportedBytes()));
         long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
         if (fallbackHits > 0 && fallbackHits != lastLoggedToolSourceFallbacks) {
             Logger.logError("Traffic tool/source fallback hits observed: " + fallbackHits);
@@ -412,6 +416,32 @@ public class StatsPanel extends JPanel {
 
     private static String formatWhole(long value) {
         return String.format(Locale.ROOT, "%,d", value);
+    }
+
+    /**
+     * Formats exported-byte totals with a human-readable unit.
+     *
+     * <p>Uses binary thresholds for readability while keeping familiar unit labels in the UI.
+     * Values below 1 KB remain in bytes; larger values are shown in KB, MB, or GB.</p>
+     */
+    private static String formatHumanReadableBytes(long bytes) {
+        long safeBytes = Math.max(0L, bytes);
+        double value = safeBytes;
+        String unit = "B";
+        if (safeBytes >= 1024L * 1024L * 1024L) {
+            value = safeBytes / (1024.0 * 1024.0 * 1024.0);
+            unit = "GB";
+        } else if (safeBytes >= 1024L * 1024L) {
+            value = safeBytes / (1024.0 * 1024.0);
+            unit = "MB";
+        } else if (safeBytes >= 1024L) {
+            value = safeBytes / 1024.0;
+            unit = "KB";
+        }
+        if ("B".equals(unit)) {
+            return formatWhole(safeBytes) + " " + unit;
+        }
+        return DECIMAL_ONE.format(value) + " " + unit;
     }
 
     private static void updateTablePreferredHeight(JTable table) {
@@ -800,12 +830,12 @@ public class StatsPanel extends JPanel {
         long totalSuccess = ExportStats.getTotalSuccessCount();
         long totalFailure = ExportStats.getTotalFailureCount();
         sb.append("Session totals (this session)\n");
-        sb.append("  total docs pushed: ").append(totalSuccess).append("\n");
+        sb.append("  total docs exported: ").append(totalSuccess).append("\n");
         sb.append("  total failures: ").append(totalFailure).append("\n\n");
 
         // Traffic by source
         sb.append("Traffic by source\n");
-        sb.append(String.format("  %-22s %-12s %-10s%n", "Source", "Docs pushed", "Failures"));
+        sb.append(String.format("  %-22s %-12s %-10s%n", "Source", "Docs exported", "Failures"));
         sb.append("  ").append("-".repeat(22)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(10)).append("\n");
         long sourceTotalSuccess = 0;
         long sourceTotalFailure = 0;
@@ -824,7 +854,7 @@ public class StatsPanel extends JPanel {
         // By index (table)
         sb.append("By index\n");
         sb.append(String.format("  %-10s %-12s %-8s %-8s %-10s %-14s  %s%n",
-                "Index", "Docs pushed", "Queued", "Rty drop", "Failures", "Last push (ms)", "Last error"));
+                "Index", "Docs exported", "Queued", "Rty drop", "Failures", "Last push (ms)", "Last error"));
         sb.append("  ").append("-".repeat(10)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(10)).append(" ").append("-".repeat(14)).append("  ").append("-".repeat(ERROR_COL_MAX)).append("\n");
         for (String indexKey : ExportStats.getIndexKeys()) {
             long success = ExportStats.getSuccessCount(indexKey);
@@ -844,15 +874,17 @@ public class StatsPanel extends JPanel {
     }
 
     /**
-     * Resolves "Traffic by source" docs pushed count for a source key.
+     * Resolves "Traffic by source" docs exported count for a source key.
      *
-     * <p>Most rows come from live captured tool-type counts. Proxy-history snapshot pushes are
-     * recorded separately, so include those under the proxy_history row.</p>
+     * <p>Most rows come from live captured tool-type counts. Proxy-history snapshot pushes and
+     * proxy WebSocket exports are recorded separately, so include those under the
+     * proxy_history row.</p>
      */
     private static long resolveSourceSuccess(String sourceKey) {
         long captured = ExportStats.getTrafficToolTypeCapturedCount(sourceKey);
         if ("PROXY_HISTORY".equals(sourceKey)) {
             captured += ExportStats.getTrafficSourceSuccessCount("proxy_history_snapshot");
+            captured += ExportStats.getTrafficSourceSuccessCount("proxy_websocket");
         }
         return captured;
     }
@@ -860,7 +892,8 @@ public class StatsPanel extends JPanel {
     /** Resolves "Traffic by source" failure count for a source key. */
     private static long resolveSourceFailure(String sourceKey) {
         if ("PROXY_HISTORY".equals(sourceKey)) {
-            return ExportStats.getTrafficSourceFailureCount("proxy_history_snapshot");
+            return ExportStats.getTrafficSourceFailureCount("proxy_history_snapshot")
+                    + ExportStats.getTrafficSourceFailureCount("proxy_websocket");
         }
         return 0;
     }

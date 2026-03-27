@@ -119,15 +119,17 @@ class ConfigControlPanelHeadlessTest {
     }
 
     @Test
-    void start_stop_click_invokes_actions_and_updates_button_and_indicator() throws Exception {
+    void start_stop_click_invokes_actions_and_updates_button_indicator_and_status() throws Exception {
         resetExportRunning();
         try {
             AtomicInteger startCount = new AtomicInteger(0);
             AtomicInteger stopCount = new AtomicInteger(0);
+            AtomicReference<JTextArea> controlStatusRef = new AtomicReference<>();
             JPanel root = buildPanel(
                     onStartFailure -> { startCount.incrementAndGet(); RuntimeConfig.setExportRunning(true); },
                     () -> { stopCount.incrementAndGet(); RuntimeConfig.setExportRunning(false); },
-                    noOpActionListener()
+                    noOpActionListener(),
+                    controlStatusRef
             );
 
             runEdt(() -> {
@@ -148,6 +150,7 @@ class ConfigControlPanelHeadlessTest {
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
             assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is starting</html>");
+            assertThat(controlStatusRef.get().getText()).isEqualTo("Starting ...");
 
             runEdt(() -> startStop.doClick());
             assertThat(startCount.get()).isEqualTo(1);
@@ -155,6 +158,7 @@ class ConfigControlPanelHeadlessTest {
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
             assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
+            assertThat(controlStatusRef.get().getText()).isEqualTo("Stopped");
         } finally {
             resetExportRunning();
         }
@@ -187,7 +191,7 @@ class ConfigControlPanelHeadlessTest {
     }
 
     @Test
-    void start_action_calling_onStartSuccess_marks_indicator_running_and_sets_started_status() throws Exception {
+    void start_action_calling_onStartSuccess_marks_indicator_running_and_sets_running_status() throws Exception {
         resetExportRunning();
         try {
             AtomicReference<JTextArea> controlStatusRef = new AtomicReference<>();
@@ -210,7 +214,7 @@ class ConfigControlPanelHeadlessTest {
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
             assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is running</html>");
-            assertThat(controlStatusRef.get().getText()).isEqualTo("Started");
+            assertThat(controlStatusRef.get().getText()).isEqualTo("Running");
         } finally {
             resetExportRunning();
         }

@@ -36,7 +36,7 @@ import net.miginfocom.swing.MigLayout;
  * Callers supply actions and a status configurator for consistent text-area setup. A single
  * Start/Stop button toggles {@link RuntimeConfig#setExportRunning(boolean)}; its label and
  * tooltip show "Start" when stopped and "Stop" when running. The indicator shows starting
- * (yellow), running (green), or stopped (red).</p>
+ * (yellow), running (green), or stopped (red), and the control status reflects those states.</p>
  *
  * <p><strong>Threading:</strong> created/used on the EDT. {@link #build()} mounts status text areas
  * into their wrapper panels so callers can update them via
@@ -210,6 +210,7 @@ public final class ConfigControlPanel {
                 stopAction.run();
                 updateStartStopButton(startStopBtn, false);
                 indicator.setState(IndicatorDot.State.STOPPED);
+                updateControlStatus("Stopped");
             } else {
                 RuntimeConfig.setExportRunning(true);
                 RuntimeConfig.setExportStarting(true);
@@ -225,7 +226,7 @@ public final class ConfigControlPanel {
                     RuntimeConfig.setExportStarting(false);
                     updateStartStopButton(startStopBtn, true);
                     indicator.setState(IndicatorDot.State.RUNNING);
-                    updateControlStatus("Started");
+                    updateControlStatus("Running");
                 };
                 SwingUtilities.invokeLater(() -> startAction.accept(new StartUiCallbacks(revertUi, markStartedUi)));
             }
