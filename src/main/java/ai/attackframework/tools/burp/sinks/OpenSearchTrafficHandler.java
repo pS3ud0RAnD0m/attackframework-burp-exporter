@@ -119,8 +119,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent request) {
         if (!RuntimeConfig.isExportReady()
-                || !RuntimeConfig.isOpenSearchTrafficEnabled()
-                || RuntimeConfig.openSearchUrl().isBlank()) {
+                || !RuntimeConfig.isAnyTrafficExportEnabled()) {
             return RequestToBeSentAction.continueWith(request);
         }
         if (!ScopeFilter.shouldExport(
@@ -153,12 +152,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         if (!RuntimeConfig.isExportReady()) {
             return ResponseReceivedAction.continueWith(response);
         }
-        if (!RuntimeConfig.isOpenSearchTrafficEnabled()) {
-            return ResponseReceivedAction.continueWith(response);
-        }
-
-        String baseUrl = RuntimeConfig.openSearchUrl();
-        if (baseUrl.isBlank()) {
+        if (!RuntimeConfig.isAnyTrafficExportEnabled()) {
             return ResponseReceivedAction.continueWith(response);
         }
 
@@ -399,9 +393,6 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             return;
         }
         String baseUrl = RuntimeConfig.openSearchUrl();
-        if (baseUrl == null || baseUrl.isBlank()) {
-            return;
-        }
         long now = System.currentTimeMillis();
         List<Integer> toFlush = new ArrayList<>();
         for (Map.Entry<Integer, PendingOrphan> e : pendingOrphans.entrySet()) {

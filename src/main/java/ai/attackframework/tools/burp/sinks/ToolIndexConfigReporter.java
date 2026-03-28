@@ -27,18 +27,18 @@ public final class ToolIndexConfigReporter {
     private ToolIndexConfigReporter() {}
 
     /**
-     * Pushes one config snapshot to the tool index if export is running and
-     * OpenSearch URL is set. Safe to call from any thread. Fire-and-forget.
+     * Pushes one config snapshot to enabled sinks if export is running.
+     * Safe to call from any thread. Fire-and-forget.
      */
     public static void pushConfigSnapshot() {
         try {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
                 return;
             }
+            String baseUrl = RuntimeConfig.openSearchUrl();
             Map<String, Object> doc = buildConfigDoc(RuntimeConfig.getState());
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
             if (ok) {
@@ -76,6 +76,8 @@ public final class ToolIndexConfigReporter {
             Map<String, Object> sinksMap = new LinkedHashMap<>();
             sinksMap.put("files_enabled", sinks.filesEnabled());
             sinksMap.put("files_path", sinks.filesPath() != null ? sinks.filesPath() : "");
+            sinksMap.put("file_jsonl_enabled", sinks.fileJsonlEnabled());
+            sinksMap.put("file_bulk_ndjson_enabled", sinks.fileBulkNdjsonEnabled());
             sinksMap.put("os_enabled", sinks.osEnabled());
             sinksMap.put("open_search_url", sinks.openSearchUrl() != null ? sinks.openSearchUrl() : "");
             message.put("sinks", sinksMap);

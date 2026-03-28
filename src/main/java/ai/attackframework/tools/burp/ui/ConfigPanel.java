@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serial;
 import java.lang.reflect.InvocationTargetException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.swing.Box;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -30,13 +33,14 @@ import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
+import ai.attackframework.tools.burp.sinks.FileExportService;
 import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.OpenSearchSink;
 import ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
-import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ToolIndexConfigReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
@@ -51,11 +55,11 @@ import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.ui.text.ExportFieldTooltips;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
+import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -84,6 +88,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final String MIG_FILL_WRAP = "growx, wrap";
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
+    private static final long GIB_BYTES = 1024L * 1024L * 1024L;
+    private static final BigDecimal GIB_BYTES_DECIMAL = BigDecimal.valueOf(GIB_BYTES);
     /** Background executor for Start-path OpenSearch bootstrap work. */
     private static final ExecutorService STARTUP_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "attackframework-startup");
@@ -131,10 +137,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private final JCheckBox fileSinkCheckbox = new Tooltips.HtmlCheckBox("Files", false);
     private final JTextField filePathField   = new AutoSizingTextField("/path/to/directory");
-    private final JButton    createFilesButton = new Tooltips.HtmlButton("Create Files");
-    private final JTextArea  fileStatus = new JTextArea();
-    private final JPanel     fileStatusWrapper
-            = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
+    private final JRadioButton fileJsonlCheckbox = new Tooltips.HtmlRadioButton("JSONL");
+    private final JRadioButton fileBulkNdjsonCheckbox = new Tooltips.HtmlRadioButton("NDJSON", true);
+    private final ButtonGroup fileFormatGroup = new ButtonGroup();
+    private final JCheckBox fileTotalCapCheckbox = new Tooltips.HtmlCheckBox("Max total file size:", true);
+    private final JTextField fileTotalCapField = new AutoSizingTextField("10");
+    private final JCheckBox fileDiskUsagePercentCheckbox = new Tooltips.HtmlCheckBox("Disk usage:", true);
+    private final JTextField fileDiskUsagePercentField = new AutoSizingTextField("95");
 
     private final JCheckBox  openSearchSinkCheckbox = new Tooltips.HtmlCheckBox("OpenSearch", true);
     private final JTextField openSearchUrlField     = new AutoSizingTextField("https://opensearch.url:9200");
@@ -189,6 +198,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         setLayout(new MigLayout("fillx, insets 12", "[fill]"));
 
         assignToolTips();
+        configureFileFormatButtons();
 
         ButtonStyles.configureExpandButton(settingsExpandButton);
         ButtonStyles.configureExpandButton(issuesExpandButton);
@@ -270,9 +280,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         add(new ConfigDestinationPanel(
                 fileSinkCheckbox,
                 filePathField,
-                createFilesButton,
-                fileStatus,
-                fileStatusWrapper,
+                fileJsonlCheckbox,
+                fileBulkNdjsonCheckbox,
+                buildFileLimitsPanel(),
                 openSearchSinkCheckbox,
                 openSearchUrlField,
                 openSearchInsecureSslCheckbox,
@@ -342,6 +352,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         updateRuntimeConfig();
     }
 
+    /** Groups file-format radios and keeps one selection active for the UI/runtime state. */
+    private void configureFileFormatButtons() {
+        fileFormatGroup.add(fileJsonlCheckbox);
+        fileFormatGroup.add(fileBulkNdjsonCheckbox);
+        if (!fileJsonlCheckbox.isSelected() && !fileBulkNdjsonCheckbox.isSelected()) {
+            fileBulkNdjsonCheckbox.setSelected(true);
+        }
+    }
+
     private void loadSessionAuthFields() {
         SecureCredentialStore.BasicCredentials basic = SecureCredentialStore.loadOpenSearchCredentials();
         openSearchUserField.setText(basic.username());
@@ -373,6 +392,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
+        if (fileSinkCheckbox.isSelected() && !hasSelectedFileFormat()) {
+            Logger.logErrorPanelOnly("[Start] Files selected but no file format is enabled.");
+            RuntimeConfig.setExportStarting(false);
+            onControlStatus("Start aborted: select at least one file format when Files export is enabled.");
+            uiCallbacks.onStartFailure().run();
+            return;
+        }
         RuntimeConfig.setExportStarting(true);
         persistSelectedAuthSecrets();
         updateRuntimeConfig();
@@ -381,6 +407,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ExportStats.recordExportStartRequested();
         RuntimeConfig.setExportRunning(true);
         STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, uiCallbacks));
+    }
+
+    /** Returns whether at least one file-export format checkbox is selected. */
+    private boolean hasSelectedFileFormat() {
+        return fileJsonlCheckbox.isSelected() || fileBulkNdjsonCheckbox.isSelected();
     }
 
     /**
@@ -397,7 +428,31 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        if (!url.isEmpty()) {
+        boolean openSearchEnabled = RuntimeConfig.getState() != null
+                && RuntimeConfig.getState().sinks() != null
+                && RuntimeConfig.getState().sinks().osEnabled()
+                && !url.isEmpty();
+        if (RuntimeConfig.isAnyFileExportEnabled()) {
+            try {
+                String fileRoot = RuntimeConfig.fileExportRoot();
+                Logger.logDebug("[Start] File export preflight for " + fileRoot);
+                FileUtil.ensureDirectoryWritable(Path.of(fileRoot), "file export root");
+            } catch (IOException | RuntimeException e) {
+                String reason = e.getMessage() == null || e.getMessage().isBlank()
+                        ? "File export preflight failed."
+                        : "File export preflight failed: " + e.getMessage();
+                if (!openSearchEnabled) {
+                    ExportReporterLifecycle.stopAndClearPendingExportWork();
+                    SwingUtilities.invokeLater(() -> {
+                        onControlStatus("Start aborted: " + reason);
+                        uiCallbacks.onStartFailure().run();
+                    });
+                    return;
+                }
+                FileExportService.disableCurrentRoot(reason + " OpenSearch export will continue.");
+            }
+        }
+        if (openSearchEnabled && !url.isEmpty()) {
             Logger.logDebug("[Start] OpenSearch preflight test for " + url);
             var preflight = ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper.safeTestConnection(
                     url,
@@ -414,7 +469,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                         : "OpenSearch preflight failed: " + preflight.message();
                 ExportReporterLifecycle.stopAndClearPendingExportWork();
                 SwingUtilities.invokeLater(() -> {
-                    onOpenSearchStatus(reason);
                     onControlStatus("Start aborted: " + reason);
                     uiCallbacks.onStartFailure().run();
                 });
@@ -521,16 +575,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     /* ----------------------- ConfigController.Ui ----------------------- */
 
-    /**
-     * Updates the Files status area on the EDT with the provided message.
-     *
-     * <p>
-     * @param message status text to display (nullable)
-     */
-    @Override public void onFileStatus(String message) {
-        StatusViews.setStatus(
-                fileStatus, fileStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
-    }
+    /** File-export runtime messages are routed through Config Control instead. */
+    @Override public void onFileStatus(String message) { }
 
     /**
      * Updates the OpenSearch status area on the EDT with the provided message.
@@ -602,6 +648,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             if (sinks != null) {
                 fileSinkCheckbox.setSelected(sinks.filesEnabled());
                 filePathField.setText(sinks.filesPath() != null ? sinks.filesPath() : "");
+                applyFileFormatSelection(sinks.fileJsonlEnabled(), sinks.fileBulkNdjsonEnabled());
+                fileTotalCapCheckbox.setSelected(sinks.fileTotalCapEnabled());
+                fileTotalCapField.setText(formatGiBLimit(sinks.fileTotalCapBytes()));
+                fileDiskUsagePercentCheckbox.setSelected(sinks.fileDiskUsagePercentEnabled());
+                fileDiskUsagePercentField.setText(String.valueOf(sinks.fileDiskUsagePercent()));
                 openSearchSinkCheckbox.setSelected(sinks.osEnabled());
                 openSearchUrlField.setText(sinks.openSearchUrl() != null ? sinks.openSearchUrl() : "");
                 openSearchInsecureSslCheckbox.setSelected(sinks.openSearchInsecureSsl());
@@ -628,6 +679,20 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             updateRuntimeConfig();
         };
         runOnEdt(r);
+    }
+
+    /**
+     * Applies one normalized file-format selection to the UI.
+     *
+     * <p>If both or neither are requested, {@code NDJSON} wins as the default selection.</p>
+     */
+    private void applyFileFormatSelection(boolean jsonlSelected, boolean bulkNdjsonSelected) {
+        if (jsonlSelected == bulkNdjsonSelected) {
+            fileBulkNdjsonCheckbox.setSelected(true);
+            return;
+        }
+        fileJsonlCheckbox.setSelected(jsonlSelected);
+        fileBulkNdjsonCheckbox.setSelected(bulkNdjsonSelected);
     }
 
     /** Applies imported enabled-export-fields state to Fields panel checkboxes; null = all selected. */
@@ -744,14 +809,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         customRadio.addActionListener(runtimeUpdater);
 
         fileSinkCheckbox.addActionListener(sinkUpdater);
+        fileJsonlCheckbox.addActionListener(sinkUpdater);
+        fileBulkNdjsonCheckbox.addActionListener(sinkUpdater);
+        fileTotalCapCheckbox.addActionListener(sinkUpdater);
+        fileDiskUsagePercentCheckbox.addActionListener(sinkUpdater);
         openSearchSinkCheckbox.addActionListener(sinkUpdater);
-
-        createFilesButton.addActionListener(e -> {
-            updateRuntimeConfig();
-            String root = filePathField.getText().trim();
-            if (root.isEmpty()) { onFileStatus("✖ Path required"); return; }
-            controller().createFilesAsync(root, getSelectedSources());
-        });
 
         testConnectionButton.addActionListener(e -> {
             persistSelectedAuthSecrets();
@@ -777,6 +839,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         });
         filePathField.getDocument().addDocumentListener(relayout);
         openSearchUrlField.getDocument().addDocumentListener(relayout);
+        fileTotalCapField.getDocument().addDocumentListener(relayout);
+        fileDiskUsagePercentField.getDocument().addDocumentListener(relayout);
     }
 
     private JPanel buildSettingsSubPanel() {
@@ -1034,7 +1098,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private void refreshEnabledStates() {
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
-        createFilesButton.setEnabled(files);
+        fileJsonlCheckbox.setEnabled(files);
+        fileBulkNdjsonCheckbox.setEnabled(files);
+        fileTotalCapCheckbox.setEnabled(files);
+        fileTotalCapField.setEnabled(files && fileTotalCapCheckbox.isSelected());
+        fileDiskUsagePercentCheckbox.setEnabled(files);
+        fileDiskUsagePercentField.setEnabled(files && fileDiskUsagePercentCheckbox.isSelected());
 
         boolean os = openSearchSinkCheckbox.isSelected();
         openSearchUrlField.setEnabled(os);
@@ -1077,8 +1146,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private void wireTextFieldEnhancements() {
         TextFieldUndo.install(filePathField);
         TextFieldUndo.install(openSearchUrlField);
-        filePathField.addActionListener(e -> createFilesButton.doClick());
+        TextFieldUndo.install(fileTotalCapField);
+        TextFieldUndo.install(fileDiskUsagePercentField);
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
+    }
+
+    private JPanel buildFileLimitsPanel() {
+        JPanel panel = new JPanel(new MigLayout("insets 0, gapx 8, gapy 0, novisualpadding",
+                "[left][40!][left][left][40!][left]", "[]"));
+        panel.setOpaque(false);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(fileTotalCapCheckbox);
+        panel.add(fileTotalCapField, "w 40!");
+        panel.add(new JLabel("GiB"), "gapright 12");
+        panel.add(fileDiskUsagePercentCheckbox);
+        panel.add(fileDiskUsagePercentField, "w 40!");
+        panel.add(new JLabel("%"));
+        return panel;
     }
 
     /** Returns {@code value} if non-null and non-blank, otherwise {@code fallback}. */
@@ -1153,7 +1237,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 selectedSources,
                 scopeType,
                 custom,
-                new ConfigState.Sinks(filesEnabled, filesRoot, osEnabled, osUrl,
+                new ConfigState.Sinks(filesEnabled, filesRoot, fileJsonlCheckbox.isSelected(),
+                        fileBulkNdjsonCheckbox.isSelected(),
+                        fileTotalCapCheckbox.isSelected(), parseGiBLimit(fileTotalCapField.getText(),
+                                ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES),
+                        fileDiskUsagePercentCheckbox.isSelected(), parsePercentLimit(fileDiskUsagePercentField.getText(),
+                                ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT),
+                        osEnabled, osUrl,
                         osUser,
                         osPass,
                         openSearchInsecureSslCheckbox.isSelected()),
@@ -1184,6 +1274,46 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
         if (allSelected) return null;
         return java.util.Collections.unmodifiableMap(out);
+    }
+
+    /**
+     * Parses a GiB limit from the UI, accepting decimal values such as {@code 0.5}.
+     *
+     * <p>Invalid, blank, or non-positive input falls back to {@code defaultBytes}. Fractional GiB
+     * values are converted to bytes using half-up rounding so import/export round-trips remain
+     * stable for user-entered values such as {@code 1.25}.</p>
+     */
+    private static long parseGiBLimit(String raw, long defaultBytes) {
+        try {
+            BigDecimal gib = new BigDecimal(nonBlankOr(raw, "").trim());
+            if (gib.compareTo(BigDecimal.ZERO) <= 0) {
+                return defaultBytes;
+            }
+            BigDecimal bytes = gib.multiply(GIB_BYTES_DECIMAL).setScale(0, RoundingMode.HALF_UP);
+            long asLong = bytes.longValueExact();
+            return asLong > 0 ? asLong : defaultBytes;
+        } catch (RuntimeException e) {
+            return defaultBytes;
+        }
+    }
+
+    /** Formats a byte limit back to a trimmed GiB string suitable for the UI text fields. */
+    private static String formatGiBLimit(long bytes) {
+        if (bytes <= 0) {
+            return "1";
+        }
+        return BigDecimal.valueOf(bytes)
+                .divide(GIB_BYTES_DECIMAL, 3, RoundingMode.HALF_UP)
+                .stripTrailingZeros()
+                .toPlainString();
+    }
+
+    private static int parsePercentLimit(String raw, int defaultPercent) {
+        try {
+            return Math.clamp(Integer.parseInt(nonBlankOr(raw, "")), 1, 100);
+        } catch (NumberFormatException e) {
+            return defaultPercent;
+        }
     }
 
     /**
@@ -1250,7 +1380,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         fileSinkCheckbox.setName("files.enable");
         filePathField.setName("files.path");
-        createFilesButton.setName("files.create");
+        fileJsonlCheckbox.setName("files.format.jsonl");
+        fileBulkNdjsonCheckbox.setName("files.format.bulkNdjson");
+        fileTotalCapCheckbox.setName("files.limit.total.enable");
+        fileTotalCapField.setName("files.limit.total.gib");
+        fileDiskUsagePercentCheckbox.setName("files.limit.diskPercent.enable");
+        fileDiskUsagePercentField.setName("files.limit.diskPercent.value");
 
         openSearchSinkCheckbox.setName("os.enable");
         openSearchUrlField.setName("os.url");
@@ -1294,7 +1429,30 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         Tooltips.apply(fileSinkCheckbox, Tooltips.html("Enable file-based export."));
         Tooltips.apply(filePathField, Tooltips.html("Root directory for generated files."));
-        Tooltips.apply(createFilesButton, Tooltips.html("Test file creation.", "Not required."));
+        Tooltips.apply(fileJsonlCheckbox, Tooltips.html(
+                "JSONL (JSON Lines): write one filtered JSON document per line.",
+                "Each line is a standalone JSON object; there is no OpenSearch bulk action metadata.",
+                "Best for local grep, line-by-line tooling, or simple downstream processing."
+        ));
+        Tooltips.apply(fileBulkNdjsonCheckbox, Tooltips.html(
+                "NDJSON (Newline-Delimited JSON): write OpenSearch bulk-request lines.",
+                "Each exported document is written as two lines: bulk action metadata, then the JSON document body.",
+                "Best for later re-import with the OpenSearch {@code _bulk} API."
+        ));
+        Tooltips.apply(fileTotalCapCheckbox, Tooltips.html(
+                "Stop all file export under the selected root when exporter-managed files reach the configured combined cap."
+        ));
+        Tooltips.apply(fileTotalCapField, Tooltips.html(
+                "GiB cap across exporter-managed files in the selected root.",
+                "OpenSearch export can continue after this cap is hit."
+        ));
+        Tooltips.apply(fileDiskUsagePercentCheckbox, Tooltips.html(
+                "Optional advanced stop condition based on the destination volume's used percent."
+        ));
+        Tooltips.apply(fileDiskUsagePercentField, Tooltips.html(
+                "Stop file export when the destination volume is at or above this used-percent threshold.",
+                "This does not replace the built-in low-disk reserve."
+        ));
 
         Tooltips.apply(openSearchSinkCheckbox, Tooltips.html("Enable OpenSearch export."));
         Tooltips.apply(openSearchUrlField, Tooltips.html("Base URL of the OpenSearch cluster."));

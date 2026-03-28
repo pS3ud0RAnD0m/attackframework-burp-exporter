@@ -1,23 +1,29 @@
 package ai.attackframework.tools.burp.ui;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
-import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JRadioButton;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 
 /**
- * Verifies that the panel delegates to the controller and posts Ui updates.
- * Enables OpenSearch and Files destinations before invoking OS and Files actions.
+ * Verifies that the panel delegates to the controller and posts OpenSearch status updates.
  */
+@SuppressWarnings("unused")
 class ConfigPanelDelegationHeadlessTest {
 
     private static final class TestUi implements ConfigController.Ui {
@@ -32,10 +38,15 @@ class ConfigPanelDelegationHeadlessTest {
 
     private TestUi ui;
     private ConfigPanel panel;
+    private Path defaultFileRoot;
 
     @BeforeEach
     void setup() throws Exception {
         ui = new TestUi();
+        defaultFileRoot = TestPathSupport.defaultUiFileRoot();
+        Assumptions.assumeTrue(TestPathSupport.isWritableDirectory(defaultFileRoot),
+                "Default UI file root is not writable: " + defaultFileRoot);
+        TestPathSupport.cleanupExportArtifacts(defaultFileRoot);
         AtomicReference<ConfigPanel> ref = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             ConfigPanel p = new ConfigPanel(new ConfigController(ui));
@@ -49,27 +60,32 @@ class ConfigPanelDelegationHeadlessTest {
             if (!osEnable.isSelected()) osEnable.doClick();
             JCheckBox filesEnable = get(p, "fileSinkCheckbox");
             if (!filesEnable.isSelected()) filesEnable.doClick();
+            JRadioButton bulkNdjsonEnable = get(p, "fileBulkNdjsonCheckbox");
+            if (!bulkNdjsonEnable.isSelected()) bulkNdjsonEnable.doClick();
+            JTextField filePathField = get(p, "filePathField");
+            filePathField.setText(defaultFileRoot.toString());
 
             ref.set(p);
         });
         panel = ref.get();
     }
 
+    @AfterEach
+    void cleanupDefaultRoot() throws IOException {
+        TestPathSupport.cleanupExportArtifacts(defaultFileRoot);
+    }
+
     @Test
-    void clicking_buttons_invokes_controller_and_posts_status() throws Exception {
-        JButton testConn  = get(panel, "testConnectionButton");
-        JButton createFil = get(panel, "createFilesButton");
+    void clicking_testConnection_invokes_controller_and_posts_status() throws Exception {
+        javax.swing.JButton testConn = get(panel, "testConnectionButton");
 
         onEdtAndWait(() -> {
             testConn.doClick();
-            createFil.doClick();
         });
 
         await(() -> ui.osMsg != null);
-        await(() -> ui.fileMsg != null);
 
         assertThat(ui.osMsg).isNotBlank();
-        assertThat(ui.fileMsg).isNotBlank();
     }
 
     // ---- helpers ----

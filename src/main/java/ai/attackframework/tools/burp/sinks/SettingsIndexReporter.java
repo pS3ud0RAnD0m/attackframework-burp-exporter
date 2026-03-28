@@ -52,7 +52,7 @@ public final class SettingsIndexReporter {
     /**
      * Pushes one settings snapshot immediately (e.g. initial push on Start).
      * Always pushes and logs; does not compare to last pushed hash. Safe to call
-     * from any thread. No-op if export is not running, OpenSearch URL is blank,
+     * from any thread. No-op if export is not running, no sink is enabled,
      * or Settings is not in the selected data sources.
      */
     public static void pushSnapshotNow() {
@@ -60,10 +60,10 @@ public final class SettingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
                 return;
             }
+            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SETTINGS)) {
                 return;
@@ -148,10 +148,10 @@ public final class SettingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
                 return;
             }
+            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SETTINGS)) {
                 return;

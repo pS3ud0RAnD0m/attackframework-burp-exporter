@@ -101,10 +101,10 @@ public final class ToolIndexStatsReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
                 return;
             }
+            String baseUrl = RuntimeConfig.openSearchUrl();
             Map<String, Object> doc = buildSnapshotDoc();
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
             if (ok) {

@@ -26,4 +26,17 @@ class IndexNamingTest {
                 p + "-traffic.json"
         );
     }
+
+    @Test
+    void toExportFileNames_includesSelectedFormatsForEachBase() {
+        String p = IndexNaming.INDEX_PREFIX;
+        List<String> out = IndexNaming.toExportFileNames(List.of(p, p + "-traffic"), true, true);
+
+        assertThat(out).containsExactly(
+                p + ".jsonl",
+                p + ".ndjson",
+                p + "-traffic.jsonl",
+                p + "-traffic.ndjson"
+        );
+    }
 }

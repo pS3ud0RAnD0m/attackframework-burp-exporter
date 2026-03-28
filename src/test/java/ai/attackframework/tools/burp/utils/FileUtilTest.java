@@ -11,6 +11,27 @@ import ai.attackframework.tools.burp.testutils.TestPathSupport;
 class FileUtilTest {
 
     @Test
+    void ensureDirectoryWritable_acceptsWritableDirectory() throws IOException {
+        Path tmp = TestPathSupport.createDirectory("af-json-root-writeable");
+
+        FileUtil.ensureDirectoryWritable(tmp, "file export root");
+
+        assertThat(java.nio.file.Files.isDirectory(tmp)).isTrue();
+    }
+
+    @Test
+    void ensureDirectoryWritable_throwsWhenRootIsAFile() throws IOException {
+        Path fileAsRoot = TestPathSupport.createFile("af-not-a-dir-writeable", ".tmp");
+
+        java.nio.file.FileSystemException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                java.nio.file.FileSystemException.class,
+                () -> FileUtil.ensureDirectoryWritable(fileAsRoot, "file export root")
+        );
+
+        assertThat(ex.getMessage()).isNotBlank();
+    }
+
+    @Test
     void ensureJsonFiles_createsMissingFiles_thenReportsExistsOnSecondRun() throws IOException {
         Path tmp = TestPathSupport.createDirectory("af-json-root");
         Path f1 = tmp.resolve("alpha.json");
@@ -51,7 +72,7 @@ class FileUtilTest {
             var res = FileUtil.ensureJsonFiles(tmp, List.of("x.json"));
             assertThat(res).hasSize(1);
             assertThat(res.getFirst().status()).isEqualTo(FileUtil.Status.FAILED);
-            assertThat(res.getFirst().error()).contains("low disk space");
+            assertThat(res.getFirst().error()).containsIgnoringCase("low disk space");
         } finally {
             DiskSpaceGuard.resetForTests();
         }

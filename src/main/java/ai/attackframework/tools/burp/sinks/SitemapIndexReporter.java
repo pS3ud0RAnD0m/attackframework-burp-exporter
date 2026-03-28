@@ -60,7 +60,7 @@ public final class SitemapIndexReporter {
     /**
      * Pushes all current sitemap items once (e.g. initial push on Start). Safe to call
      * from any thread. Schedules work on the reporter thread and returns immediately so
-     * the UI does not freeze. No-op if export is not running, OpenSearch URL is blank,
+     * the UI does not freeze. No-op if export is not running, no sink is enabled,
      * or Sitemap is not in the selected data sources.
      */
     public static void pushSnapshotNow() {
@@ -68,10 +68,10 @@ public final class SitemapIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
                 return;
             }
+            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SITEMAP)) {
                 return;
@@ -142,10 +142,10 @@ public final class SitemapIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
                 return;
             }
+            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SITEMAP)) {
                 return;

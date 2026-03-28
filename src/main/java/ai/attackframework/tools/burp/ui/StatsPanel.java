@@ -50,6 +50,7 @@ import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
@@ -59,7 +60,8 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
  *
  * <p>Updates every few seconds via a Swing {@link Timer}. The panel shows rolling throughput
  * charts, per-index and per-source traffic tables, and a compact "Misc Stats" card with the
- * current export state. Caller must construct on the EDT.</p>
+ * current export state. Sink-specific chart/table sections are shown only when that destination is
+ * selected at runtime. Caller must construct on the EDT.</p>
  */
 public class StatsPanel extends JPanel {
 
@@ -101,8 +103,21 @@ public class StatsPanel extends JPanel {
     private final Timer refreshTimer;
     private final TimeSeriesCollection docsPerSecondDataset;
     private final TimeSeriesCollection kibPerSecondDataset;
+    private final TimeSeriesCollection fileDocsPerSecondDataset;
+    private final TimeSeriesCollection fileKibPerSecondDataset;
     private final JFreeChart docsChart;
     private final JFreeChart kibChart;
+    private final JFreeChart fileDocsChart;
+    private final JFreeChart fileKibChart;
+    private final JPanel chartsPanel;
+    private final JPanel chartSectionsPanel;
+    private final JPanel fileChartsSectionPanel;
+    private final JPanel openSearchChartsSectionPanel;
+    private final JPanel openSearchDocsChartPanel;
+    private final JPanel openSearchKibChartPanel;
+    private final JPanel fileDocsChartPanel;
+    private final JPanel fileKibChartPanel;
+    private final JPanel sharedLegendPanel;
     private final JLabel exportRunningValue;
     private final JLabel currentBatchSizeValue;
     private final JLabel trafficQueueValue;
@@ -118,16 +133,28 @@ public class StatsPanel extends JPanel {
     private final JLabel totalExportedValue;
     private final JLabel totalDocsPushedValue;
     private final JLabel totalFailuresValue;
+    private final JLabel fileTotalExportedValue;
+    private final JLabel fileTotalDocsPushedValue;
+    private final JLabel fileTotalFailuresValue;
     private final DefaultTableModel trafficBySourceModel;
     private final DefaultTableModel byIndexModel;
+    private final DefaultTableModel fileTrafficBySourceModel;
+    private final DefaultTableModel fileByIndexModel;
     private final JTable trafficBySourceTable;
     private final JTable byIndexTable;
+    private final JTable fileTrafficBySourceTable;
+    private final JTable fileByIndexTable;
     private final JPanel tablesRow;
+    private final JPanel fileTablesRow;
     private final JPanel cardsRow;
     private final Map<String, TimeSeries> docsSeriesByIndex = new HashMap<>();
     private final Map<String, TimeSeries> kibSeriesByIndex = new HashMap<>();
+    private final Map<String, TimeSeries> fileDocsSeriesByIndex = new HashMap<>();
+    private final Map<String, TimeSeries> fileKibSeriesByIndex = new HashMap<>();
     private final Map<String, Long> previousSuccessByIndex = new HashMap<>();
     private final Map<String, Long> previousBytesByIndex = new HashMap<>();
+    private final Map<String, Long> previousFileSuccessByIndex = new HashMap<>();
+    private final Map<String, Long> previousFileBytesByIndex = new HashMap<>();
     private long lastLoggedToolSourceFallbacks = -1;
     private long firstSampleAtMs = -1;
     private long previousSampleAtMs = -1;
@@ -143,26 +170,48 @@ public class StatsPanel extends JPanel {
 
         docsPerSecondDataset = new TimeSeriesCollection();
         kibPerSecondDataset = new TimeSeriesCollection();
+        fileDocsPerSecondDataset = new TimeSeriesCollection();
+        fileKibPerSecondDataset = new TimeSeriesCollection();
         docsChart = createRateChart(
-                "Export - Docs/sec",
+                "OpenSearch Export - Docs/sec",
                 "Docs per second",
                 docsPerSecondDataset,
                 false,
                 false);
         kibChart = createRateChart(
-                "Export - KiB/sec",
+                "OpenSearch Export - KiB/sec",
                 "KiB per second",
                 kibPerSecondDataset,
                 false,
                 true);
+        fileDocsChart = createRateChart(
+                "File Export - Docs/sec",
+                "Docs per second",
+                fileDocsPerSecondDataset,
+                false,
+                false);
+        fileKibChart = createRateChart(
+                "File Export - KiB/sec",
+                "KiB per second",
+                fileKibPerSecondDataset,
+                false,
+                true);
 
-        JPanel chartsPanel = new JPanel(new BorderLayout(0, 4));
-        JPanel chartGrid = new JPanel(new GridLayout(2, 1, 0, 12));
-        chartGrid.add(createRateChartPanel(docsChart));
-        chartGrid.add(createRateChartPanel(kibChart));
-        chartsPanel.add(chartGrid, BorderLayout.CENTER);
-        chartsPanel.add(createSharedLegendPanel(), BorderLayout.SOUTH);
-        chartsPanel.setPreferredSize(new Dimension(1200, CHART_PANEL_HEIGHT));
+        chartsPanel = new JPanel(new BorderLayout(0, 4));
+        chartSectionsPanel = new JPanel();
+        chartSectionsPanel.setLayout(new javax.swing.BoxLayout(chartSectionsPanel, javax.swing.BoxLayout.Y_AXIS));
+        chartSectionsPanel.setOpaque(false);
+        fileDocsChartPanel = createRateChartPanel(fileDocsChart);
+        fileKibChartPanel = createRateChartPanel(fileKibChart);
+        openSearchDocsChartPanel = createRateChartPanel(docsChart);
+        openSearchKibChartPanel = createRateChartPanel(kibChart);
+        fileChartsSectionPanel = buildChartSection(fileDocsChartPanel, fileKibChartPanel, 12);
+        openSearchChartsSectionPanel = buildChartSection(openSearchDocsChartPanel, openSearchKibChartPanel, 0);
+        chartSectionsPanel.add(fileChartsSectionPanel);
+        chartSectionsPanel.add(openSearchChartsSectionPanel);
+        chartsPanel.add(chartSectionsPanel, BorderLayout.CENTER);
+        sharedLegendPanel = createSharedLegendPanel();
+        chartsPanel.add(sharedLegendPanel, BorderLayout.SOUTH);
         JPanel contentPanel = new JPanel(new BorderLayout(0, 10));
         contentPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
         contentPanel.setBackground(UIManager.getColor("Panel.background"));
@@ -174,9 +223,9 @@ public class StatsPanel extends JPanel {
         JLabel[] exportStateValues = addMetricCard(cardsRow, "Misc Stats", new String[] {
                 "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
                 "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
-                "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)",
-                "Spill Directory", "Throughput (Last 10s)", "Total Size Exported",
-                "Total Docs Exported", "Total Failures"
+                "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)", "Spill Directory",
+                "OpenSearch Throughput (Last 10s)", "OpenSearch Total Size Exported", "OpenSearch Total Docs Exported",
+                "OpenSearch Total Failures", "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
         });
         exportRunningValue = exportStateValues[0];
         currentBatchSizeValue = exportStateValues[1];
@@ -193,9 +242,14 @@ public class StatsPanel extends JPanel {
         totalExportedValue = exportStateValues[12];
         totalDocsPushedValue = exportStateValues[13];
         totalFailuresValue = exportStateValues[14];
+        fileTotalExportedValue = exportStateValues[15];
+        fileTotalDocsPushedValue = exportStateValues[16];
+        fileTotalFailuresValue = exportStateValues[17];
 
         tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
         tablesRow.setOpaque(false);
+        fileTablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
+        fileTablesRow.setOpaque(false);
 
         trafficBySourceModel = new DefaultTableModel(
                 new String[] { "Source", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
@@ -204,12 +258,22 @@ public class StatsPanel extends JPanel {
         byIndexModel = new DefaultTableModel(
                 new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
         byIndexTable = createStatsTable(byIndexModel);
-        tablesRow.add(createTableCard("Index Counts", byIndexTable));
-        tablesRow.add(createTableCard("Traffic Counts", trafficBySourceTable));
+        fileTrafficBySourceModel = new DefaultTableModel(
+                new String[] { "Source", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+        fileTrafficBySourceTable = createStatsTable(fileTrafficBySourceModel);
+        fileByIndexModel = new DefaultTableModel(
+                new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+        fileByIndexTable = createStatsTable(fileByIndexModel);
+        tablesRow.add(createTableCard("OpenSearch Index Counts", byIndexTable));
+        tablesRow.add(createTableCard("OpenSearch Traffic Counts", trafficBySourceTable));
+        fileTablesRow.add(createTableCard("File Index Counts", fileByIndexTable));
+        fileTablesRow.add(createTableCard("File Traffic Counts", fileTrafficBySourceTable));
 
         JPanel lowerPanel = new JPanel();
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
         lowerPanel.setOpaque(false);
+        lowerPanel.add(fileTablesRow);
+        lowerPanel.add(javax.swing.Box.createVerticalStrut(10));
         lowerPanel.add(tablesRow);
         lowerPanel.add(javax.swing.Box.createVerticalStrut(10));
         lowerPanel.add(cardsRow);
@@ -258,6 +322,7 @@ public class StatsPanel extends JPanel {
         spillDirectoryValue.setText(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getSpillDirectoryPath());
         throughputValue.setText(DECIMAL_ONE.format(ExportStats.getThroughputDocsPerSecLast10s()) + " docs/s");
         totalExportedValue.setText(formatHumanReadableBytes(ExportStats.getTotalExportedBytes()));
+        fileTotalExportedValue.setText(formatHumanReadableBytes(FileExportStats.getTotalExportedBytes()));
         long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
         if (fallbackHits > 0 && fallbackHits != lastLoggedToolSourceFallbacks) {
             Logger.logError("Traffic tool/source fallback hits observed: " + fallbackHits);
@@ -266,11 +331,18 @@ public class StatsPanel extends JPanel {
 
         totalDocsPushedValue.setText(formatWhole(totalSuccess));
         totalFailuresValue.setText(formatWhole(totalFailure));
+        fileTotalDocsPushedValue.setText(formatWhole(FileExportStats.getTotalSuccessCount()));
+        fileTotalFailuresValue.setText(formatWhole(FileExportStats.getTotalFailureCount()));
 
         rebuildTrafficBySourceTable();
         rebuildByIndexTable();
+        rebuildFileTrafficBySourceTable();
+        rebuildFileByIndexTable();
         updateTablePreferredHeight(trafficBySourceTable);
         updateTablePreferredHeight(byIndexTable);
+        updateTablePreferredHeight(fileTrafficBySourceTable);
+        updateTablePreferredHeight(fileByIndexTable);
+        updateSectionVisibility();
         updateDashboardSectionSizing();
         revalidate();
     }
@@ -315,6 +387,48 @@ public class StatsPanel extends JPanel {
             String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
             byIndexModel.addRow(new Object[] {
                     formatKeyLabel(indexKey), success, queued, retryDrops, failure, lastPushStr, errStr
+            });
+        }
+    }
+
+    private void rebuildFileTrafficBySourceTable() {
+        fileTrafficBySourceModel.setRowCount(0);
+        long sourceTotalSuccess = 0;
+        long sourceTotalFailure = 0;
+        for (String sourceKey : FileExportStats.getTrafficToolTypeKeys()) {
+            if ("UNKNOWN".equals(sourceKey)) {
+                continue;
+            }
+            long sourceSuccess = resolveFileSourceSuccess(sourceKey);
+            long sourceFailure = resolveFileSourceFailure(sourceKey);
+            sourceTotalSuccess += sourceSuccess;
+            sourceTotalFailure += sourceFailure;
+            fileTrafficBySourceModel.addRow(new Object[] {
+                    formatKeyLabel(sourceKey),
+                    sourceSuccess,
+                    0,
+                    0,
+                    sourceFailure,
+                    "-",
+                    "-"
+            });
+        }
+        fileTrafficBySourceModel.addRow(new Object[] { "Total", sourceTotalSuccess, 0, 0, sourceTotalFailure, "-", "-" });
+    }
+
+    private void rebuildFileByIndexTable() {
+        fileByIndexModel.setRowCount(0);
+        List<String> sortedKeys = new ArrayList<>(FileExportStats.getIndexKeys());
+        sortedKeys.sort(String::compareToIgnoreCase);
+        for (String indexKey : sortedKeys) {
+            long success = FileExportStats.getSuccessCount(indexKey);
+            long failure = FileExportStats.getFailureCount(indexKey);
+            long lastWriteMs = FileExportStats.getLastWriteDurationMs(indexKey);
+            String lastWriteStr = lastWriteMs >= 0 ? String.valueOf(lastWriteMs) : "-";
+            String lastError = FileExportStats.getLastError(indexKey);
+            String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
+            fileByIndexModel.addRow(new Object[] {
+                    formatKeyLabel(indexKey), success, 0, 0, failure, lastWriteStr, errStr
             });
         }
     }
@@ -394,13 +508,23 @@ public class StatsPanel extends JPanel {
     }
 
     private void updateDashboardSectionSizing() {
+        int visibleChartCount = visibleChartPanelCount();
+        int visibleChartsHeight = Math.max(0, visibleChartCount * (CHART_PANEL_HEIGHT / 2));
         int leftTableHeight = trafficBySourceTable.getPreferredSize().height
                 + trafficBySourceTable.getTableHeader().getPreferredSize().height + 28;
         int rightTableHeight = byIndexTable.getPreferredSize().height
                 + byIndexTable.getTableHeader().getPreferredSize().height + 28;
         int tablesHeight = Math.max(leftTableHeight, rightTableHeight);
+        int fileLeftTableHeight = fileTrafficBySourceTable.getPreferredSize().height
+                + fileTrafficBySourceTable.getTableHeader().getPreferredSize().height + 28;
+        int fileRightTableHeight = fileByIndexTable.getPreferredSize().height
+                + fileByIndexTable.getTableHeader().getPreferredSize().height + 28;
+        int fileTablesHeight = Math.max(fileLeftTableHeight, fileRightTableHeight);
         tablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, tablesHeight));
         tablesRow.setMinimumSize(new Dimension(800, tablesHeight));
+        fileTablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, fileTablesHeight));
+        fileTablesRow.setMinimumSize(new Dimension(800, fileTablesHeight));
+        chartsPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, visibleChartsHeight));
 
         int cardsHeight = 220;
         for (java.awt.Component component : cardsRow.getComponents()) {
@@ -409,9 +533,70 @@ public class StatsPanel extends JPanel {
         cardsRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, cardsHeight));
         cardsRow.setMinimumSize(new Dimension(800, cardsHeight));
 
-        int requiredHeight = CHART_PANEL_HEIGHT + tablesHeight + cardsHeight + CONTENT_VERTICAL_PADDING;
+        int requiredHeight = visibleChartsHeight
+                + (tablesRow.isVisible() ? tablesHeight : 0)
+                + (fileTablesRow.isVisible() ? fileTablesHeight : 0)
+                + cardsHeight
+                + CONTENT_VERTICAL_PADDING;
         int dynamicPanelHeight = Math.max(PANEL_BASE_HEIGHT, requiredHeight);
         setPreferredSize(new Dimension(PANEL_BASE_WIDTH, dynamicPanelHeight));
+    }
+
+    /**
+     * Shows only the sink-specific chart and table sections enabled by the current runtime config.
+     *
+     * <p>Files sections appear above OpenSearch sections. One sink is always expected to remain
+     * enabled, so the shared legend stays visible whenever at least one chart section is shown.</p>
+     */
+    private void updateSectionVisibility() {
+        boolean fileVisible = isFileSectionEnabled();
+        boolean openSearchVisible = isOpenSearchSectionEnabled();
+
+        fileChartsSectionPanel.setVisible(fileVisible);
+        fileTablesRow.setVisible(fileVisible);
+
+        openSearchChartsSectionPanel.setVisible(openSearchVisible);
+        tablesRow.setVisible(openSearchVisible);
+
+        chartsPanel.setVisible(fileVisible || openSearchVisible);
+        sharedLegendPanel.setVisible(fileVisible || openSearchVisible);
+    }
+
+    /** Returns whether the current runtime config has file export selected. */
+    private static boolean isFileSectionEnabled() {
+        return RuntimeConfig.isAnyFileExportEnabled();
+    }
+
+    /** Returns whether the current runtime config has OpenSearch export selected. */
+    private static boolean isOpenSearchSectionEnabled() {
+        var current = RuntimeConfig.getState();
+        return current != null
+                && current.sinks() != null
+                && current.sinks().osEnabled();
+    }
+
+    private int visibleChartPanelCount() {
+        int count = 0;
+        if (fileChartsSectionPanel.isVisible()) {
+            count++;
+            count++;
+        }
+        if (openSearchChartsSectionPanel.isVisible()) {
+            count++;
+            count++;
+        }
+        return count;
+    }
+
+    private static JPanel buildChartSection(JPanel topChartPanel, JPanel bottomChartPanel, int bottomGap) {
+        JPanel section = new JPanel();
+        section.setLayout(new javax.swing.BoxLayout(section, javax.swing.BoxLayout.Y_AXIS));
+        section.setOpaque(false);
+        section.setBorder(BorderFactory.createEmptyBorder(0, 0, bottomGap, 0));
+        section.add(topChartPanel);
+        section.add(javax.swing.Box.createVerticalStrut(12));
+        section.add(bottomChartPanel);
+        return section;
     }
 
     private static String formatWhole(long value) {
@@ -515,6 +700,9 @@ public class StatsPanel extends JPanel {
                 previousSuccessByIndex.put(indexKey, ExportStats.getSuccessCount(indexKey));
                 previousBytesByIndex.put(indexKey, ExportStats.getExportedBytes(indexKey));
                 ensureSeries(indexKey);
+                previousFileSuccessByIndex.put(indexKey, FileExportStats.getSuccessCount(indexKey));
+                previousFileBytesByIndex.put(indexKey, FileExportStats.getExportedBytes(indexKey));
+                ensureFileSeries(indexKey);
             }
             updateChartWindow(now);
             return;
@@ -536,6 +724,20 @@ public class StatsPanel extends JPanel {
 
             previousSuccessByIndex.put(indexKey, currentSuccess);
             previousBytesByIndex.put(indexKey, currentBytes);
+
+            ensureFileSeries(indexKey);
+            long currentFileSuccess = FileExportStats.getSuccessCount(indexKey);
+            long currentFileBytes = FileExportStats.getExportedBytes(indexKey);
+            long previousFileSuccess = previousFileSuccessByIndex.getOrDefault(indexKey, currentFileSuccess);
+            long previousFileBytes = previousFileBytesByIndex.getOrDefault(indexKey, currentFileBytes);
+
+            double fileDocsPerSec = Math.max(0.0, (currentFileSuccess - previousFileSuccess) / elapsedSec);
+            double fileKibPerSec = Math.max(0.0, (currentFileBytes - previousFileBytes) / 1024.0 / elapsedSec);
+            fileDocsSeriesByIndex.get(indexKey).addOrUpdate(tick, fileDocsPerSec);
+            fileKibSeriesByIndex.get(indexKey).addOrUpdate(tick, fileKibPerSec);
+
+            previousFileSuccessByIndex.put(indexKey, currentFileSuccess);
+            previousFileBytesByIndex.put(indexKey, currentFileBytes);
         }
         previousSampleAtMs = now;
         updateChartWindow(now);
@@ -552,6 +754,21 @@ public class StatsPanel extends JPanel {
             TimeSeries s = new TimeSeries(displaySeriesLabel(key));
             s.setMaximumItemCount(CHART_MAX_POINTS);
             kibPerSecondDataset.addSeries(s);
+            return s;
+        });
+    }
+
+    private void ensureFileSeries(String indexKey) {
+        fileDocsSeriesByIndex.computeIfAbsent(indexKey, key -> {
+            TimeSeries s = new TimeSeries(displaySeriesLabel(key));
+            s.setMaximumItemCount(CHART_MAX_POINTS);
+            fileDocsPerSecondDataset.addSeries(s);
+            return s;
+        });
+        fileKibSeriesByIndex.computeIfAbsent(indexKey, key -> {
+            TimeSeries s = new TimeSeries(displaySeriesLabel(key));
+            s.setMaximumItemCount(CHART_MAX_POINTS);
+            fileKibPerSecondDataset.addSeries(s);
             return s;
         });
     }
@@ -663,8 +880,12 @@ public class StatsPanel extends JPanel {
         long minMs = (nowMs - startMs) < CHART_WINDOW_MAX_MS ? startMs : (nowMs - CHART_WINDOW_MAX_MS);
         updateDomainRange(docsChart, minMs, nowMs);
         updateDomainRange(kibChart, minMs, nowMs);
+        updateDomainRange(fileDocsChart, minMs, nowMs);
+        updateDomainRange(fileKibChart, minMs, nowMs);
         applyReasonableDefaultRange(docsChart, docsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
         applyReasonableDefaultRange(kibChart, kibPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
+        applyReasonableDefaultRange(fileDocsChart, fileDocsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
+        applyReasonableDefaultRange(fileKibChart, fileKibPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
     }
 
     private static void updateDomainRange(JFreeChart chart, long minMs, long maxMs) {
@@ -870,6 +1091,45 @@ public class StatsPanel extends JPanel {
         }
         sb.append("\n");
 
+        long totalFileSuccess = FileExportStats.getTotalSuccessCount();
+        long totalFileFailure = FileExportStats.getTotalFailureCount();
+        sb.append("File totals (this session)\n");
+        sb.append("  total docs exported: ").append(totalFileSuccess).append("\n");
+        sb.append("  total failures: ").append(totalFileFailure).append("\n\n");
+
+        sb.append("File traffic by source\n");
+        sb.append(String.format("  %-22s %-12s %-10s%n", "Source", "Docs exported", "Failures"));
+        sb.append("  ").append("-".repeat(22)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(10)).append("\n");
+        long fileSourceTotalSuccess = 0;
+        long fileSourceTotalFailure = 0;
+        for (String sourceKey : FileExportStats.getTrafficToolTypeKeys()) {
+            if ("UNKNOWN".equals(sourceKey)) {
+                continue;
+            }
+            long sourceSuccess = resolveFileSourceSuccess(sourceKey);
+            long sourceFailure = resolveFileSourceFailure(sourceKey);
+            fileSourceTotalSuccess += sourceSuccess;
+            fileSourceTotalFailure += sourceFailure;
+            sb.append(String.format("  %-22s %-12d %-10d%n", sourceKey.toLowerCase(Locale.ROOT), sourceSuccess, sourceFailure));
+        }
+        sb.append(String.format("  %-22s %-12d %-10d%n%n", "total", fileSourceTotalSuccess, fileSourceTotalFailure));
+
+        sb.append("File by index\n");
+        sb.append(String.format("  %-10s %-12s %-8s %-8s %-10s %-14s  %s%n",
+                "Index", "Docs exported", "Queued", "Rty drop", "Failures", "Last push (ms)", "Last error"));
+        sb.append("  ").append("-".repeat(10)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(10)).append(" ").append("-".repeat(14)).append("  ").append("-".repeat(ERROR_COL_MAX)).append("\n");
+        for (String indexKey : FileExportStats.getIndexKeys()) {
+            long success = FileExportStats.getSuccessCount(indexKey);
+            long failure = FileExportStats.getFailureCount(indexKey);
+            long lastPushMs = FileExportStats.getLastWriteDurationMs(indexKey);
+            String lastPushStr = lastPushMs >= 0 ? String.valueOf(lastPushMs) : "-";
+            String lastError = FileExportStats.getLastError(indexKey);
+            String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
+            sb.append(String.format("  %-10s %-12d %-8d %-8d %-10d %-14s  %s%n",
+                    indexKey, success, 0, 0, failure, lastPushStr, errStr));
+        }
+        sb.append("\n");
+
         return sb.toString();
     }
 
@@ -894,6 +1154,23 @@ public class StatsPanel extends JPanel {
         if ("PROXY_HISTORY".equals(sourceKey)) {
             return ExportStats.getTrafficSourceFailureCount("proxy_history_snapshot")
                     + ExportStats.getTrafficSourceFailureCount("proxy_websocket");
+        }
+        return 0;
+    }
+
+    private static long resolveFileSourceSuccess(String sourceKey) {
+        long captured = FileExportStats.getTrafficToolTypeCapturedCount(sourceKey);
+        if ("PROXY_HISTORY".equals(sourceKey)) {
+            captured += FileExportStats.getTrafficSourceSuccessCount("proxy_history_snapshot");
+            captured += FileExportStats.getTrafficSourceSuccessCount("proxy_websocket");
+        }
+        return captured;
+    }
+
+    private static long resolveFileSourceFailure(String sourceKey) {
+        if ("PROXY_HISTORY".equals(sourceKey)) {
+            return FileExportStats.getTrafficSourceFailureCount("proxy_history_snapshot")
+                    + FileExportStats.getTrafficSourceFailureCount("proxy_websocket");
         }
         return 0;
     }

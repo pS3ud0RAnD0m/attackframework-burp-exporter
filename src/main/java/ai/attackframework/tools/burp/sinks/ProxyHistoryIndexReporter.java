@@ -56,15 +56,14 @@ public final class ProxyHistoryIndexReporter {
      * Schedules a one-time push of all current proxy history items (on Start), after a short delay.
      *
      * <p>Safe to call from any thread; work runs on a background thread. No-op if export is not
-     * running, OpenSearch URL is blank, or PROXY_HISTORY is not selected.</p>
+     * running, no sink is enabled, or PROXY_HISTORY is not selected.</p>
      */
     public static void pushSnapshotNow() {
         try {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
+            if (!RuntimeConfig.isOpenSearchTrafficEnabled()) {
                 return;
             }
             List<String> trafficTypes = RuntimeConfig.getState().trafficToolTypes();
@@ -79,7 +78,6 @@ public final class ProxyHistoryIndexReporter {
             scheduler.execute(() -> {
                 if (!RuntimeConfig.isExportRunning()) return;
                 String activeBaseUrl = RuntimeConfig.openSearchUrl();
-                if (activeBaseUrl == null || activeBaseUrl.isBlank()) return;
                 pushItems(apiRef, activeBaseUrl);
             });
         } catch (Exception e) {

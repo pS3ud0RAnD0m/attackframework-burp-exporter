@@ -60,8 +60,7 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
         if (!RuntimeConfig.isExportReady()) {
             return;
         }
-        String baseUrl = RuntimeConfig.openSearchUrl();
-        if (baseUrl == null || baseUrl.isBlank()) {
+        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
             return;
         }
         Map<String, Object> doc = new LinkedHashMap<>();
@@ -99,12 +98,16 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                     continue;
                 }
 
+                if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+                    queue.clear();
+                    TimeUnit.SECONDS.sleep(1);
+                    continue;
+                }
+
                 Map<String, Object> doc = queue.poll(1, TimeUnit.SECONDS);
                 if (doc == null) continue;
 
                 String baseUrl = RuntimeConfig.openSearchUrl();
-                if (baseUrl == null || baseUrl.isBlank()) continue;
-
                 boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
                 if (ok) {
                     ExportStats.recordSuccess("tool", 1);

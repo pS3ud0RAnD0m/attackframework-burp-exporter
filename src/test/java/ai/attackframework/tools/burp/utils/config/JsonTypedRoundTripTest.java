@@ -21,7 +21,10 @@ class JsonTypedRoundTripTest {
                         new ConfigState.ScopeEntry("x", ConfigState.Kind.REGEX),
                         new ConfigState.ScopeEntry("y", ConfigState.Kind.STRING)
                 ),
-                new ConfigState.Sinks(true, "/path/to/directory", true, "https://opensearch.url:9200", "", "", false),
+                new ConfigState.Sinks(true, "/path/to/directory", true, true,
+                        true, 7L * 1024L * 1024L * 1024L,
+                        true, 91,
+                        true, "https://opensearch.url:9200", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -33,6 +36,12 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.scopeType()).isEqualTo("custom");
         assertThat(parsed.scopeRegexes()).containsExactly("x", "y");
         assertThat(parsed.filesPath()).isEqualTo("/path/to/directory");
+        assertThat(parsed.fileJsonlEnabled()).isTrue();
+        assertThat(parsed.fileBulkNdjsonEnabled()).isTrue();
+        assertThat(parsed.fileTotalCapEnabled()).isTrue();
+        assertThat(parsed.fileTotalCapBytes()).isEqualTo(7L * 1024L * 1024L * 1024L);
+        assertThat(parsed.fileDiskUsagePercentEnabled()).isTrue();
+        assertThat(parsed.fileDiskUsagePercent()).isEqualTo(91);
         assertThat(parsed.openSearchUrl()).isEqualTo("https://opensearch.url:9200");
     }
 

@@ -44,6 +44,7 @@ public final class ExportReporterLifecycle {
         stopBackgroundReporters();
         TrafficExportQueue.clearPendingWork();
         IndexingRetryCoordinator.getInstance().clearPendingWork();
+        FileExportService.resetForRuntime();
     }
 
     /**
@@ -70,5 +71,6 @@ public final class ExportReporterLifecycle {
         stopAndClearSessionState();
         ControlStatusBridge.clear();
         DiskSpaceGuard.resetForTests();
+        FileExportService.resetForTests();
     }
 }

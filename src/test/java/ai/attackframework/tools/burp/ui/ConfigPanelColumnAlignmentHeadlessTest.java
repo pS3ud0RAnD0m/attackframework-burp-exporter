@@ -43,6 +43,30 @@ class ConfigPanelColumnAlignmentHeadlessTest {
         }
     }
 
+    @Test
+    void destination_path_fields_share_left_edge() throws Exception {
+        ConfigPanel panel = new ConfigPanel();
+        layoutPanel(panel);
+
+        JTextField filesPath = findByName(panel, "files.path", JTextField.class);
+        JTextField openSearchUrl = findByName(panel, "os.url", JTextField.class);
+
+        assertThat(bounds(filesPath).x).isEqualTo(bounds(openSearchUrl).x);
+    }
+
+    @Test
+    void file_format_options_render_jsonl_before_ndjson() throws Exception {
+        ConfigPanel panel = new ConfigPanel();
+        layoutPanel(panel);
+
+        JRadioButton jsonl = findByName(panel, "files.format.jsonl", JRadioButton.class);
+        JRadioButton ndjson = findByName(panel, "files.format.bulkNdjson", JRadioButton.class);
+
+        assertThat(jsonl.getParent()).isSameAs(ndjson.getParent());
+        assertThat(jsonl.getParent().getComponentZOrder(jsonl))
+                .isLessThan(jsonl.getParent().getComponentZOrder(ndjson));
+    }
+
     // ---------- helpers ----------
 
     private static List<JButton> findDeletes(JComponent root) {

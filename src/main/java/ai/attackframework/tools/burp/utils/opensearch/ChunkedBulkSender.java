@@ -25,9 +25,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
+import ai.attackframework.tools.burp.sinks.FileExportService;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.config.ExportFieldFilter;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.ExportLineCodec;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 /**
  * Sends traffic documents to OpenSearch using a chunked POST to the standard Bulk API.
@@ -42,7 +45,6 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
  */
 public final class ChunkedBulkSender {
 
-    private static final String INDEX_ACTION_LINE = "{\"index\":{}}\n";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private ChunkedBulkSender() {}
@@ -73,8 +75,8 @@ public final class ChunkedBulkSender {
      * Performs one chunked bulk index request: drains from the queue (respecting batch limits),
      * writes NDJSON to {@code POST &lt;baseUrl&gt;/&lt;indexName&gt;/_bulk}, parses the response.
      *
-     * <p>Documents are filtered with {@link ExportFieldFilter#filterDocument} for the
-     * {@code traffic} index before writing. Batch is limited by {@code maxBatch} doc count,
+     * <p>Documents are prepared with the shared export-ID path before writing. Batch is limited by
+     * {@code maxBatch} doc count,
      * {@code maxBytes} estimated payload size, and {@code maxWaitMs} time. If no document
      * is available within the first {@code maxWaitMs}, returns a result with zero attempted
      * count (no request is sent).</p>
@@ -104,7 +106,7 @@ public final class ChunkedBulkSender {
         AtomicInteger attemptedRef = new AtomicInteger(0);
         AtomicLong attemptedBytesRef = new AtomicLong(0);
         InputStream ndjsonStream = new NdjsonQueueInputStream(
-                queue, firstDoc, maxBatch, maxBytes, maxWaitNanos, attemptedRef, attemptedBytesRef);
+                indexName, queue, firstDoc, maxBatch, maxBytes, maxWaitNanos, attemptedRef, attemptedBytesRef);
         post.setEntity(new InputStreamEntity(ndjsonStream, -1, ContentType.create("application/x-ndjson")));
         addPreemptiveBasicAuthHeader(post);
 
@@ -215,6 +217,7 @@ public final class ChunkedBulkSender {
      * at a time. Stops when batch count, size, or time limit is reached.
      */
     private static final class NdjsonQueueInputStream extends InputStream {
+        private final String indexName;
         private final BlockingQueue<Map<String, Object>> queue;
         private Map<String, Object> firstDoc;
         private final int maxBatch;
@@ -230,11 +233,13 @@ public final class ChunkedBulkSender {
         private long runningBytes;
 
         NdjsonQueueInputStream(
+                String indexName,
                 BlockingQueue<Map<String, Object>> queue,
                 Map<String, Object> firstDoc,
                 int maxBatch,
                 long maxBytes,
                 long maxWaitNanos, AtomicInteger attemptedRef, AtomicLong attemptedBytesRef) {
+            this.indexName = indexName;
             this.queue = queue;
             this.firstDoc = firstDoc;
             this.maxBatch = maxBatch;
@@ -285,16 +290,15 @@ public final class ChunkedBulkSender {
                 doc = queue.poll();
             }
             if (doc == null) return false;
-            Map<String, Object> filtered = ExportFieldFilter.filterDocument(doc, "traffic");
-            long docBytes = BulkPayloadEstimator.estimateBytes(filtered);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, doc);
+            long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
             if (attemptedRef.get() > 0 && runningBytes + docBytes > maxBytes) {
                 queue.offer(doc);
                 return false;
             }
             ByteArrayOutputStream chunk = new ByteArrayOutputStream();
-            chunk.write(INDEX_ACTION_LINE.getBytes(StandardCharsets.UTF_8));
-            JSON.writeValue(chunk, filtered);
-            chunk.write('\n');
+            FileExportService.emit(prepared);
+            ExportLineCodec.writeBulkNdjson(chunk, prepared);
             buffer = chunk.toByteArray();
             pos = 0;
             attemptedRef.incrementAndGet();

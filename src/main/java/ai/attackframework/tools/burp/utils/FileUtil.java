@@ -59,7 +59,7 @@ public final class FileUtil {
         List<CreateResult> out = new ArrayList<>(fileNames.size());
 
         try {
-            java.nio.file.Files.createDirectories(rootDir);
+            ensureDirectoryWritable(rootDir, "file export root");
         } catch (IOException e) {
             for (String n : fileNames) {
                 out.add(new CreateResult(rootDir.resolve(n), Status.FAILED, e.getMessage()));
@@ -73,6 +73,27 @@ public final class FileUtil {
         }
 
         return out;
+    }
+
+    /**
+     * Ensures a directory is creatable and writable by performing a tiny probe write.
+     *
+     * <p>This is used before user-visible file export work so the UI can fail fast with a clean
+     * status instead of starting export and discovering write failures later.</p>
+     *
+     * @param rootDir directory that should accept exporter-managed writes
+     * @param context short user/log context for low-disk errors
+     * @throws IOException when the directory cannot be created or written
+     */
+    public static void ensureDirectoryWritable(Path rootDir, String context) throws IOException {
+        java.nio.file.Files.createDirectories(rootDir);
+        Path probe = rootDir.resolve(".attackframework-write-probe-" + java.util.UUID.randomUUID() + ".tmp");
+        try {
+            DiskSpaceGuard.ensureWritable(probe, 1L, context);
+            java.nio.file.Files.writeString(probe, "\n", StandardCharsets.UTF_8);
+        } finally {
+            java.nio.file.Files.deleteIfExists(probe);
+        }
     }
 
     /**

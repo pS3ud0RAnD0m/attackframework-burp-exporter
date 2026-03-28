@@ -55,6 +55,12 @@ public final class Json {
         private final List<String> scopeRegexes;
         private final List<String> scopeKinds;
         private final String filesPath;
+        private final boolean fileJsonlEnabled;
+        private final boolean fileBulkNdjsonEnabled;
+        private final boolean fileTotalCapEnabled;
+        private final long fileTotalCapBytes;
+        private final boolean fileDiskUsagePercentEnabled;
+        private final int fileDiskUsagePercent;
         private final String openSearchUrl;
         private final String openSearchUser;
         private final String openSearchPassword;
@@ -70,6 +76,12 @@ public final class Json {
                 List<String> scopeRegexes,
                 List<String> scopeKinds,
                 String filesPath,
+                boolean fileJsonlEnabled,
+                boolean fileBulkNdjsonEnabled,
+                boolean fileTotalCapEnabled,
+                long fileTotalCapBytes,
+                boolean fileDiskUsagePercentEnabled,
+                int fileDiskUsagePercent,
                 String openSearchUrl,
                 String openSearchUser,
                 String openSearchPassword,
@@ -84,6 +96,12 @@ public final class Json {
             this.scopeRegexes = scopeRegexes == null ? List.of() : List.copyOf(scopeRegexes);
             this.scopeKinds = scopeKinds == null ? null : List.copyOf(scopeKinds);
             this.filesPath = filesPath;
+            this.fileJsonlEnabled = fileJsonlEnabled;
+            this.fileBulkNdjsonEnabled = fileBulkNdjsonEnabled;
+            this.fileTotalCapEnabled = fileTotalCapEnabled;
+            this.fileTotalCapBytes = fileTotalCapBytes;
+            this.fileDiskUsagePercentEnabled = fileDiskUsagePercentEnabled;
+            this.fileDiskUsagePercent = fileDiskUsagePercent;
             this.openSearchUrl = openSearchUrl;
             this.openSearchUser = openSearchUser != null ? openSearchUser : "";
             this.openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
@@ -123,6 +141,30 @@ public final class Json {
 
         public String filesPath() {
             return filesPath;
+        }
+
+        public boolean fileJsonlEnabled() {
+            return fileJsonlEnabled;
+        }
+
+        public boolean fileBulkNdjsonEnabled() {
+            return fileBulkNdjsonEnabled;
+        }
+
+        public boolean fileTotalCapEnabled() {
+            return fileTotalCapEnabled;
+        }
+
+        public long fileTotalCapBytes() {
+            return fileTotalCapBytes;
+        }
+
+        public boolean fileDiskUsagePercentEnabled() {
+            return fileDiskUsagePercentEnabled;
+        }
+
+        public int fileDiskUsagePercent() {
+            return fileDiskUsagePercent;
         }
 
         public String openSearchUrl() {
@@ -253,6 +295,18 @@ public final class Json {
         String files = sinks.filesPath();
         if (sinks.filesEnabled() && files != null && !files.isBlank()) {
             sinksNode.put("files", files);
+            ArrayNode fileFormats = sinksNode.putArray("fileFormats");
+            if (sinks.fileJsonlEnabled()) {
+                fileFormats.add("jsonl");
+            }
+            if (sinks.fileBulkNdjsonEnabled()) {
+                fileFormats.add("bulkNdjson");
+            }
+            ObjectNode fileLimits = sinksNode.putObject("fileLimits");
+            fileLimits.put("totalEnabled", sinks.fileTotalCapEnabled());
+            fileLimits.put("totalBytes", sinks.fileTotalCapBytes());
+            fileLimits.put("diskUsedPercentEnabled", sinks.fileDiskUsagePercentEnabled());
+            fileLimits.put("maxDiskUsedPercent", sinks.fileDiskUsagePercent());
         }
         String os = sinks.openSearchUrl();
         if (sinks.osEnabled() && os != null && !os.isBlank()) {
@@ -291,6 +345,12 @@ public final class Json {
                 scope.values(),
                 scope.kinds(),
                 sinks.files(),
+                sinks.fileJsonlEnabled(),
+                sinks.fileBulkNdjsonEnabled(),
+                sinks.fileTotalCapEnabled(),
+                sinks.fileTotalCapBytes(),
+                sinks.fileDiskUsagePercentEnabled(),
+                sinks.fileDiskUsagePercent(),
                 sinks.os(),
                 sinks.osUser(),
                 sinks.osPass(),
@@ -420,10 +480,43 @@ public final class Json {
         JsonNode sinks = root.path("sinks");
 
         String files = null;
+        boolean fileJsonlEnabled = false;
+        boolean fileBulkNdjsonEnabled = false;
+        boolean fileTotalCapEnabled = true;
+        long fileTotalCapBytes = ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES;
+        boolean fileDiskUsagePercentEnabled = true;
+        int fileDiskUsagePercent = ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT;
         JsonNode filesNode = sinks.path("files");
         if (filesNode.isTextual()) {
             String v = filesNode.asText();
             if (!v.isBlank()) files = v;
+        }
+        JsonNode fileFormatsNode = sinks.path("fileFormats");
+        if (fileFormatsNode.isArray()) {
+            for (JsonNode formatNode : fileFormatsNode) {
+                if (!formatNode.isTextual()) {
+                    continue;
+                }
+                String format = formatNode.asText();
+                if ("jsonl".equalsIgnoreCase(format)) {
+                    fileJsonlEnabled = true;
+                } else if ("bulkNdjson".equalsIgnoreCase(format) || "bulk_ndjson".equalsIgnoreCase(format)) {
+                    fileBulkNdjsonEnabled = true;
+                }
+            }
+        }
+        JsonNode fileLimitsNode = sinks.path("fileLimits");
+        if (fileLimitsNode.isObject()) {
+            fileTotalCapEnabled = fileLimitsNode.path("totalEnabled").asBoolean(true);
+            JsonNode totalBytesNode = fileLimitsNode.get("totalBytes");
+            if (totalBytesNode != null && totalBytesNode.canConvertToLong()) {
+                fileTotalCapBytes = totalBytesNode.asLong(ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES);
+            }
+            fileDiskUsagePercentEnabled = fileLimitsNode.path("diskUsedPercentEnabled").asBoolean(true);
+            JsonNode diskPercentNode = fileLimitsNode.get("maxDiskUsedPercent");
+            if (diskPercentNode != null && diskPercentNode.canConvertToInt()) {
+                fileDiskUsagePercent = diskPercentNode.asInt(ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT);
+            }
         }
 
         String os = null;
@@ -435,7 +528,10 @@ public final class Json {
 
         boolean insecureSsl = sinks.path("openSearchInsecureSsl").asBoolean(false);
 
-        return new SinksParts(files, os, "", "", insecureSsl);
+        return new SinksParts(files, fileJsonlEnabled, fileBulkNdjsonEnabled,
+                fileTotalCapEnabled, fileTotalCapBytes,
+                fileDiskUsagePercentEnabled, fileDiskUsagePercent,
+                os, "", "", insecureSsl);
     }
 
     /** Returns null when absent or empty (all fields enabled). */
@@ -459,6 +555,9 @@ public final class Json {
     /* ----------------------- small carrier records ----------------------- */
 
     private record ScopeParts(String type, List<String> values, List<String> kinds) { }
-    private record SinksParts(String files, String os, String osUser, String osPass, boolean openSearchInsecureSsl) { }
+    private record SinksParts(String files, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
+                              boolean fileTotalCapEnabled, long fileTotalCapBytes,
+                              boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
+                              String os, String osUser, String osPass, boolean openSearchInsecureSsl) { }
     private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }
 }

@@ -25,6 +25,12 @@ public final class ConfigState {
     public static final List<String> DEFAULT_FINDINGS_SEVERITIES =
             List.of("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL");
 
+    /** Default total cap across exporter files under the selected root. */
+    public static final long DEFAULT_FILE_TOTAL_CAP_BYTES = 5L * 1024L * 1024L * 1024L;
+
+    /** Default advanced disk-used threshold for file export. */
+    public static final int DEFAULT_FILE_MAX_DISK_USED_PERCENT = 95;
+
     /** Scope kind for {@link ScopeEntry}. */
     public enum Kind { REGEX, STRING }
 
@@ -36,12 +42,48 @@ public final class ConfigState {
         }
     }
 
-    /** Sinks selection and values. Optional OpenSearch basic-auth (empty = no auth). When true, openSearchInsecureSsl skips TLS verification (e.g. self-signed). */
-    public record Sinks(boolean filesEnabled, String filesPath,
+    /**
+     * Sinks selection and values.
+     *
+     * <p>File export can target document-only JSONL, bulk-compatible NDJSON, or both. Optional
+     * OpenSearch basic-auth remains non-durable (empty = no auth). When true,
+     * {@code openSearchInsecureSsl} skips TLS verification (for example self-signed certs).</p>
+     */
+    public record Sinks(boolean filesEnabled, String filesPath, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
+                        boolean fileTotalCapEnabled, long fileTotalCapBytes,
+                        boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
                         boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword, boolean openSearchInsecureSsl) {
         public Sinks {
+            filesPath = filesPath != null ? filesPath : "";
+            fileTotalCapBytes = fileTotalCapBytes > 0 ? fileTotalCapBytes : DEFAULT_FILE_TOTAL_CAP_BYTES;
+            fileDiskUsagePercent = Math.clamp(fileDiskUsagePercent, 1, 100);
             openSearchUser = openSearchUser != null ? openSearchUser : "";
             openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
+        }
+
+        public Sinks(boolean filesEnabled, String filesPath,
+                     boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
+                     boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
+                     boolean openSearchInsecureSsl) {
+            this(filesEnabled, filesPath, fileJsonlEnabled, fileBulkNdjsonEnabled,
+                    true, DEFAULT_FILE_TOTAL_CAP_BYTES,
+                    true, DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchInsecureSsl);
+        }
+
+        /**
+         * Backward-compatible constructor for older call sites that predate explicit file formats.
+         *
+         * <p>When used, file export formats default to disabled until explicitly selected in the
+         * UI or config.</p>
+         */
+        public Sinks(boolean filesEnabled, String filesPath,
+                     boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
+                     boolean openSearchInsecureSsl) {
+            this(filesEnabled, filesPath, false, false,
+                    true, DEFAULT_FILE_TOTAL_CAP_BYTES,
+                    true, DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchInsecureSsl);
         }
     }
 

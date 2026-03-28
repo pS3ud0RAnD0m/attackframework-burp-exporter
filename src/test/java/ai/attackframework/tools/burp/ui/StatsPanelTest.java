@@ -37,7 +37,10 @@ import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 class StatsPanelTest {
@@ -253,6 +256,59 @@ class StatsPanelTest {
     }
 
     @Test
+    void sinkSections_hideAndShowBasedOnSelectedDestinations() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(true, false));
+            StatsPanel fileOnlyPanel = onEdt(StatsPanel::new);
+            JPanel fileChartsSection = get(fileOnlyPanel, "fileChartsSectionPanel");
+            JPanel openSearchChartsSection = get(fileOnlyPanel, "openSearchChartsSectionPanel");
+            JPanel fileTablesRow = get(fileOnlyPanel, "fileTablesRow");
+            JPanel tablesRow = get(fileOnlyPanel, "tablesRow");
+            onEdt(() -> call(fileOnlyPanel, "refreshDashboard"));
+            assertThat(onEdt(fileChartsSection::isVisible)).isTrue();
+            assertThat(onEdt(openSearchChartsSection::isVisible)).isFalse();
+            assertThat(onEdt(fileTablesRow::isVisible)).isTrue();
+            assertThat(onEdt(tablesRow::isVisible)).isFalse();
+
+            RuntimeConfig.updateState(runtimeState(false, true));
+            StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
+            JPanel osFileChartsSection = get(openSearchOnlyPanel, "fileChartsSectionPanel");
+            JPanel osOpenSearchChartsSection = get(openSearchOnlyPanel, "openSearchChartsSectionPanel");
+            JPanel osFileTablesRow = get(openSearchOnlyPanel, "fileTablesRow");
+            JPanel osTablesRow = get(openSearchOnlyPanel, "tablesRow");
+            onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
+            assertThat(onEdt(osFileChartsSection::isVisible)).isFalse();
+            assertThat(onEdt(osOpenSearchChartsSection::isVisible)).isTrue();
+            assertThat(onEdt(osFileTablesRow::isVisible)).isFalse();
+            assertThat(onEdt(osTablesRow::isVisible)).isTrue();
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void fileSections_areOrderedBeforeOpenSearchSections() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel chartSectionsPanel = get(panel, "chartSectionsPanel");
+        JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
+        JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
+        JPanel fileTablesRow = get(panel, "fileTablesRow");
+        JPanel tablesRow = get(panel, "tablesRow");
+
+        assertThat(chartSectionsPanel.getComponent(0)).isSameAs(fileChartsSection);
+        assertThat(chartSectionsPanel.getComponent(1)).isSameAs(openSearchChartsSection);
+        assertThat(findDescendant((Container) fileTablesRow.getComponent(0), JTable.class))
+                .isSameAs(get(panel, "fileByIndexTable"));
+        assertThat(findDescendant((Container) fileTablesRow.getComponent(1), JTable.class))
+                .isSameAs(get(panel, "fileTrafficBySourceTable"));
+        assertThat(findDescendant((Container) tablesRow.getComponent(0), JTable.class))
+                .isSameAs(get(panel, "byIndexTable"));
+        assertThat(findDescendant((Container) tablesRow.getComponent(1), JTable.class))
+                .isSameAs(get(panel, "trafficBySourceTable"));
+    }
+
+    @Test
     void miscStatsCard_doesNotIncludeProxyHistoryAttemptedSuccess() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JPanel cardsRow = get(panel, "cardsRow");
@@ -265,15 +321,18 @@ class StatsPanelTest {
                 labels.add(label.getText());
             }
         }
-        assertThat(labels).contains("Throughput (Last 10s)");
+        assertThat(labels).contains("OpenSearch Throughput (Last 10s)");
         assertThat(labels).contains("Spill Queue Docs");
         assertThat(labels).contains("Spill Oldest Age (s)");
         assertThat(labels).contains("Spill Enq/Deq/Drops");
         assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
         assertThat(labels).contains("Spill Directory");
-        assertThat(labels).contains("Total Size Exported");
-        assertThat(labels).contains("Total Docs Exported");
-        assertThat(labels).contains("Total Failures");
+        assertThat(labels).contains("OpenSearch Total Size Exported");
+        assertThat(labels).contains("OpenSearch Total Docs Exported");
+        assertThat(labels).contains("OpenSearch Total Failures");
+        assertThat(labels).contains("File Total Size Exported");
+        assertThat(labels).contains("File Total Docs Exported");
+        assertThat(labels).contains("File Total Failures");
         assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
     }
 
@@ -300,6 +359,23 @@ class StatsPanelTest {
                 "formatHumanReadableBytes",
                 beforeTotal + (1024L * 1024L));
         assertThat(totalExportedValue.getText()).isEqualTo(expected);
+    }
+
+    @Test
+    void refreshDashboard_updatesFileTotalExportedValueWithHumanReadableSize() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JLabel fileTotalExportedValue = get(panel, "fileTotalExportedValue");
+        long beforeTotal = FileExportStats.getTotalExportedBytes();
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+        FileExportStats.recordExportedBytes("traffic", 1024L * 1024L);
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+        String expected = (String) callStatic(
+                StatsPanel.class,
+                "formatHumanReadableBytes",
+                beforeTotal + (1024L * 1024L));
+        assertThat(fileTotalExportedValue.getText()).isEqualTo(expected);
     }
 
     @Test
@@ -426,13 +502,47 @@ class StatsPanelTest {
     void preferredSize_growsToFitCardsAndTablesSoBottomDoesNotClip() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JPanel tablesRow = get(panel, "tablesRow");
+        JPanel fileTablesRow = get(panel, "fileTablesRow");
         JPanel cardsRow = get(panel, "cardsRow");
-        int chartHeight = getStatic(StatsPanel.class, "CHART_PANEL_HEIGHT");
+        JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
+        JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
+        int chartHeight = ((Integer) getStatic(StatsPanel.class, "CHART_PANEL_HEIGHT")) / 2;
         int padding = getStatic(StatsPanel.class, "CONTENT_VERTICAL_PADDING");
 
         java.awt.Dimension preferred = onEdt(panel::getPreferredSize);
-        int requiredMinHeight = chartHeight + tablesRow.getPreferredSize().height + cardsRow.getPreferredSize().height + padding;
+        int visibleChartsHeight = (onEdt(fileChartsSection::isVisible) ? chartHeight * 2 : 0)
+                + (onEdt(openSearchChartsSection::isVisible) ? chartHeight * 2 : 0);
+        int requiredMinHeight = visibleChartsHeight
+                + (onEdt(tablesRow::isVisible) ? tablesRow.getPreferredSize().height : 0)
+                + (onEdt(fileTablesRow::isVisible) ? fileTablesRow.getPreferredSize().height : 0)
+                + cardsRow.getPreferredSize().height
+                + padding;
         assertThat(preferred.height).isGreaterThanOrEqualTo(requiredMinHeight);
+    }
+
+    @Test
+    void fileTablesAndCharts_updateFromFileExportStats() throws Exception {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        DefaultTableModel fileSourceModel = get(panel, "fileTrafficBySourceModel");
+        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
+        Map<String, TimeSeries> fileDocsSeriesByIndex = get(panel, "fileDocsSeriesByIndex");
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+        long proxyBefore = sourceTableLong(fileSourceModel, "Proxy", 1);
+        long trafficBefore = sourceTableLong(fileIndexModel, "Traffic", 1);
+
+        FileExportStats.recordSuccess("traffic", 5);
+        FileExportStats.recordExportedBytes("traffic", 4096L);
+        FileExportStats.recordTrafficToolTypeCaptured("PROXY", 5);
+        Thread.sleep(20L);
+        onEdt(() -> call(panel, "refreshVisibleStats"));
+
+        assertThat(sourceTableLong(fileSourceModel, "Proxy", 1) - proxyBefore).isEqualTo(5);
+        assertThat(sourceTableLong(fileIndexModel, "Traffic", 1) - trafficBefore).isEqualTo(5);
+        assertThat(onEdt(() -> {
+            TimeSeries traffic = fileDocsSeriesByIndex.get("traffic");
+            return traffic == null ? 0 : traffic.getItemCount();
+        })).isGreaterThan(0);
     }
 
     @Test
@@ -549,5 +659,30 @@ class StatsPanelTest {
             }
         }
         return null;
+    }
+
+    private static ConfigState.State runtimeState(boolean filesEnabled, boolean openSearchEnabled) {
+        return new ConfigState.State(
+                List.of(ConfigKeys.SRC_TRAFFIC),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(
+                        filesEnabled,
+                        filesEnabled ? "/path/to/directory" : "",
+                        filesEnabled,
+                        filesEnabled,
+                        true,
+                        ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        false,
+                        ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                        openSearchEnabled,
+                        openSearchEnabled ? "https://opensearch.url:9200" : "",
+                        "",
+                        "",
+                        true),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("PROXY"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null);
     }
 }

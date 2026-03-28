@@ -1,14 +1,18 @@
 package ai.attackframework.tools.burp.ui;
 
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.util.Objects;
 import java.util.function.Consumer;
 
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSeparator;
+import javax.swing.SwingConstants;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 
@@ -18,17 +22,18 @@ import net.miginfocom.swing.MigLayout;
 
 /**
  * Builds the "Destinations" section panel used by ConfigPanel.
- * Components are owned by ConfigPanel and injected to keep a single source of state.
+ *
+ * <p>Components are owned by {@link ConfigPanel} and injected to keep a single source of state.
+ * The section has one shared status box, used for OpenSearch test-connection results.</p>
  */
 public final class ConfigDestinationPanel {
 
     // Files destination
     private final JCheckBox fileSinkCheckbox;
     private final JTextField filePathField;
-    private final JButton createFilesButton;
-    private final JTextArea fileStatus;
-    private final JPanel fileStatusWrapper;
-
+    private final AbstractButton fileJsonlCheckbox;
+    private final AbstractButton fileBulkNdjsonCheckbox;
+    private final JPanel fileLimitsPanel;
     // OpenSearch destination
     private final JCheckBox openSearchSinkCheckbox;
     private final JTextField openSearchUrlField;
@@ -51,9 +56,9 @@ public final class ConfigDestinationPanel {
     public ConfigDestinationPanel(
             JCheckBox fileSinkCheckbox,
             JTextField filePathField,
-            JButton createFilesButton,
-            JTextArea fileStatus,
-            JPanel fileStatusWrapper,
+            AbstractButton fileJsonlCheckbox,
+            AbstractButton fileBulkNdjsonCheckbox,
+            JPanel fileLimitsPanel,
             JCheckBox openSearchSinkCheckbox,
             JTextField openSearchUrlField,
             JCheckBox openSearchInsecureSslCheckbox,
@@ -67,9 +72,9 @@ public final class ConfigDestinationPanel {
     ) {
         this.fileSinkCheckbox = Objects.requireNonNull(fileSinkCheckbox, "fileSinkCheckbox");
         this.filePathField = Objects.requireNonNull(filePathField, "filePathField");
-        this.createFilesButton = Objects.requireNonNull(createFilesButton, "createFilesButton");
-        this.fileStatus = Objects.requireNonNull(fileStatus, "fileStatus");
-        this.fileStatusWrapper = Objects.requireNonNull(fileStatusWrapper, "fileStatusWrapper");
+        this.fileJsonlCheckbox = Objects.requireNonNull(fileJsonlCheckbox, "fileJsonlCheckbox");
+        this.fileBulkNdjsonCheckbox = Objects.requireNonNull(fileBulkNdjsonCheckbox, "fileBulkNdjsonCheckbox");
+        this.fileLimitsPanel = Objects.requireNonNull(fileLimitsPanel, "fileLimitsPanel");
 
         this.openSearchSinkCheckbox = Objects.requireNonNull(openSearchSinkCheckbox, "openSearchSinkCheckbox");
         this.openSearchUrlField = Objects.requireNonNull(openSearchUrlField, "openSearchUrlField");
@@ -86,14 +91,14 @@ public final class ConfigDestinationPanel {
 
     /**
      * Builds the Destination section containing Files and OpenSearch controls.
-     * <p>
-     * Caller must invoke on the EDT. Layout mirrors the original for test/visual consistency
-     * and applies common status configuration to both destination wrappers.</p>
      *
-     * @return assembled panel with destination controls and status areas
+     * <p>Caller must invoke on the EDT. Layout keeps all Files controls on one row and places the
+     * shared destination status box beneath the OpenSearch row.</p>
+     *
+     * @return assembled panel with destination controls and the shared status area
      */
     public JPanel build() {
-        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"+rowGap+"[]"));
+        JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1", "[grow]", "[]"+rowGap+"[]"+rowGap+"[]"+rowGap+"[]"+rowGap+"[]"));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel header = Tooltips.label("Destinations",
@@ -102,16 +107,22 @@ public final class ConfigDestinationPanel {
         panel.add(header, "gapbottom 6, wrap");
 
         // Files row
-        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[left]20[left, grow]"));
+        JPanel fileRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]18[pref]8[pref]8[pref]22[pref]12[pref]12[pref]"));
         fileRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel formatsLabel = Tooltips.label("Format:",
+                Tooltips.html("Select the on-disk export format."));
+        JLabel safetyLabel = Tooltips.label("Safety:",
+                Tooltips.html("Configure file-export safety limits.", "These controls stop file export before the destination grows too large."));
+        JSeparator formatsSafetySeparator = buildInlineVerticalSeparator();
 
         fileRow.add(fileSinkCheckbox, GAPLEFT + indentPx + ", " + ALIGN_LEFT_TOP);
         fileRow.add(filePathField,    ALIGN_LEFT_TOP);
-        fileRow.add(createFilesButton, ALIGN_LEFT_TOP);
-
-        statusConfigurer.accept(fileStatus);
-        StatusViews.configureWrapper(fileStatusWrapper, fileStatus);
-        fileRow.add(fileStatusWrapper, "hidemode 3, alignx left, w pref!, wrap");
+        fileRow.add(formatsLabel, ALIGN_LEFT_TOP);
+        fileRow.add(fileJsonlCheckbox, ALIGN_LEFT_TOP);
+        fileRow.add(fileBulkNdjsonCheckbox, "gapright 6, " + ALIGN_LEFT_TOP);
+        fileRow.add(formatsSafetySeparator, "growy, h 18!, " + ALIGN_LEFT_TOP);
+        fileRow.add(safetyLabel, ALIGN_LEFT_TOP);
+        fileRow.add(fileLimitsPanel, ALIGN_LEFT_TOP);
         panel.add(fileRow, "growx, wrap");
 
         // OpenSearch row: URL + auth controls inline, with test/insecure on the right
@@ -121,7 +132,7 @@ public final class ConfigDestinationPanel {
         openSearchRow.add(openSearchSinkCheckbox, GAPLEFT + indentPx + ", top");
         openSearchRow.add(openSearchUrlField,     ALIGN_LEFT_TOP);
         openSearchRow.add(openSearchAuthFormPanel, ALIGN_LEFT_TOP);
-        openSearchRow.add(testConnectionButton,   "gapleft 15, " + ALIGN_LEFT_TOP);
+        openSearchRow.add(testConnectionButton,   "gapleft 9, " + ALIGN_LEFT_TOP);
         openSearchRow.add(openSearchInsecureSslCheckbox, "gapleft 10, " + ALIGN_LEFT_TOP);
 
         panel.add(openSearchRow, "growx, wrap");
@@ -132,5 +143,12 @@ public final class ConfigDestinationPanel {
         panel.add(statusWrapper, "gapleft " + indentPx + ", hidemode 3, alignx left, w pref!, wrap");
 
         return panel;
+    }
+
+    private static JSeparator buildInlineVerticalSeparator() {
+        JSeparator separator = new JSeparator(SwingConstants.VERTICAL);
+        separator.setPreferredSize(new Dimension(8, 18));
+        separator.setMinimumSize(new Dimension(8, 18));
+        return separator;
     }
 }

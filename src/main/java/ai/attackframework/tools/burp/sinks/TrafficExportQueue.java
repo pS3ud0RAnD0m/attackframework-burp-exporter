@@ -9,6 +9,8 @@ import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
 
@@ -151,7 +153,8 @@ public final class TrafficExportQueue {
         }
         BatchSizeController batchController = BatchSizeController.getInstance();
         while (true) {
-            String baseUrl = RuntimeConfig.openSearchUrl();
+            boolean openSearchEnabled = RuntimeConfig.isOpenSearchTrafficEnabled();
+            String baseUrl = openSearchEnabled ? RuntimeConfig.openSearchUrl() : "";
             if (!RuntimeConfig.isExportRunning()) {
                 clearPendingWork();
                 try {
@@ -163,15 +166,31 @@ public final class TrafficExportQueue {
                 continue;
             }
             if (baseUrl == null || baseUrl.isBlank()) {
-                try {
-                    Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                    if (doc != null && RuntimeConfig.isExportRunning()) {
-                        queue.offer(doc);
+                if (!RuntimeConfig.isAnyFileExportEnabled()) {
+                    try {
+                        Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                        if (doc != null && RuntimeConfig.isExportRunning()) {
+                            queue.offer(doc);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
                     }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
+                    continue;
                 }
+                int maxBatch = batchController.getCurrentBatchSize();
+                refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
+                long startNs = System.nanoTime();
+                FileOnlyDrainResult result = drainToFileOnly(maxBatch, BULK_MAX_BYTES);
+                long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+                if (result.attemptedCount == 0) {
+                    continue;
+                }
+                ExportStats.recordLastPush("traffic", durationMs);
+                ExportStats.recordSuccess("traffic", result.attemptedCount);
+                ExportStats.recordExportedBytes("traffic", result.exportedBytes);
+                ExportStats.recordTrafficSourceSuccess("proxy_live_http", result.attemptedCount);
+                batchController.recordSuccess(result.attemptedCount);
                 continue;
             }
 
@@ -234,6 +253,35 @@ public final class TrafficExportQueue {
         }
     }
 
+    private static FileOnlyDrainResult drainToFileOnly(int maxBatch, long maxBytes) {
+        int attempted = 0;
+        long exportedBytes = 0;
+        while (attempted < maxBatch && exportedBytes < maxBytes) {
+            Map<String, Object> doc;
+            try {
+                doc = attempted == 0
+                        ? queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                        : queue.poll();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            if (doc == null) {
+                break;
+            }
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(trafficIndexName(), doc);
+            long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
+            if (attempted > 0 && exportedBytes + docBytes > maxBytes) {
+                queue.offer(doc);
+                break;
+            }
+            FileExportService.emit(prepared);
+            attempted++;
+            exportedBytes += docBytes;
+        }
+        return new FileOnlyDrainResult(attempted, exportedBytes);
+    }
+
     /**
      * Applies startup grace before first drain while allowing immediate drain under backlog.
      *
@@ -266,4 +314,6 @@ public final class TrafficExportQueue {
         }
         return true;
     }
+
+    private record FileOnlyDrainResult(int attemptedCount, long exportedBytes) { }
 }

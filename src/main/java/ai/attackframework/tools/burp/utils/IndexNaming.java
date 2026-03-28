@@ -54,4 +54,18 @@ public final class IndexNaming {
         for (String b : baseNames) out.add(b + ".json");
         return out;
     }
+
+    /** Returns export data file names for the selected on-disk formats. */
+    public static List<String> toExportFileNames(List<String> baseNames, boolean jsonlEnabled, boolean bulkNdjsonEnabled) {
+        List<String> out = new ArrayList<>();
+        for (String baseName : baseNames) {
+            if (jsonlEnabled) {
+                out.add(baseName + ".jsonl");
+            }
+            if (bulkNdjsonEnabled) {
+                out.add(baseName + ".ndjson");
+            }
+        }
+        return out;
+    }
 }

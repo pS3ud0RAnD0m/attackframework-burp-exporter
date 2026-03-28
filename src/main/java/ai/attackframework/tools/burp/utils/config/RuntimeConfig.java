@@ -73,18 +73,49 @@ public final class RuntimeConfig {
         state = normalize(newState);
     }
 
+    /** True when OpenSearch export is enabled and a non-blank runtime URL is available. */
+    public static boolean isOpenSearchExportEnabled() {
+        ConfigState.State current = state;
+        return current != null
+                && current.sinks() != null
+                && current.sinks().osEnabled()
+                && !safe(current.sinks().openSearchUrl()).isBlank();
+    }
+
     /** True when OpenSearch export is enabled for the traffic source and at least one tool type is selected. */
     public static boolean isOpenSearchTrafficEnabled() {
         ConfigState.State current = state;
         return current != null
-                && current.sinks().osEnabled()
+                && isOpenSearchExportEnabled()
                 && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
                 && current.trafficToolTypes() != null
                 && !current.trafficToolTypes().isEmpty();
     }
 
-    /** Current OpenSearch URL for runtime exports. */
+    /** True when any export sink is enabled and sufficiently configured to accept documents. */
+    public static boolean isAnySinkEnabled() {
+        ConfigState.State current = state;
+        if (current == null || current.sinks() == null) {
+            return false;
+        }
+        return isAnyFileExportEnabled() || isOpenSearchExportEnabled();
+    }
+
+    /** True when traffic export has at least one destination sink enabled. */
+    public static boolean isAnyTrafficExportEnabled() {
+        ConfigState.State current = state;
+        return current != null
+                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
+                && current.trafficToolTypes() != null
+                && !current.trafficToolTypes().isEmpty()
+                && (isOpenSearchTrafficEnabled() || isAnyFileExportEnabled());
+    }
+
+    /** Current OpenSearch URL for runtime exports; blank when OpenSearch export is disabled. */
     public static String openSearchUrl() {
+        if (!isOpenSearchExportEnabled()) {
+            return "";
+        }
         ConfigState.State current = state;
         return current == null ? "" : safe(current.sinks().openSearchUrl());
     }
@@ -121,10 +152,19 @@ public final class RuntimeConfig {
 
         ConfigState.Sinks sinks = incoming.sinks();
         ConfigState.Sinks normalizedSinks = sinks == null
-                ? new ConfigState.Sinks(false, "", false, "", "", "", false)
+                ? new ConfigState.Sinks(false, "", false, false,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                        false, "", "", "", false)
                 : new ConfigState.Sinks(
                         sinks.filesEnabled(),
                         safe(sinks.filesPath()),
+                        sinks.fileJsonlEnabled(),
+                        sinks.fileBulkNdjsonEnabled(),
+                        sinks.fileTotalCapEnabled(),
+                        sinks.fileTotalCapBytes(),
+                        sinks.fileDiskUsagePercentEnabled(),
+                        sinks.fileDiskUsagePercent(),
                         sinks.osEnabled(),
                         safe(sinks.openSearchUrl()),
                         safe(sinks.openSearchUser()),
@@ -175,7 +215,10 @@ public final class RuntimeConfig {
                 List.of(),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
-                new ConfigState.Sinks(false, "", false, "", "", "", false),
+                new ConfigState.Sinks(false, "", false, false,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                        false, "", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -194,5 +237,69 @@ public final class RuntimeConfig {
                 ? current.enabledExportFieldsByIndex().get(indexShortName)
                 : null;
         return ExportFieldRegistry.getAllowedKeys(indexShortName, enabled);
+    }
+
+    /** Returns whether any runtime file export format is enabled and a root path is set. */
+    public static boolean isAnyFileExportEnabled() {
+        ConfigState.State current = state;
+        if (current == null || current.sinks() == null) {
+            return false;
+        }
+        ConfigState.Sinks sinks = current.sinks();
+        return sinks.filesEnabled()
+                && !safe(sinks.filesPath()).isBlank()
+                && (sinks.fileJsonlEnabled() || sinks.fileBulkNdjsonEnabled());
+    }
+
+    /** Returns whether document-only JSONL export is enabled. */
+    public static boolean isFileJsonlEnabled() {
+        ConfigState.State current = state;
+        return current != null && current.sinks() != null
+                && current.sinks().filesEnabled()
+                && current.sinks().fileJsonlEnabled()
+                && !safe(current.sinks().filesPath()).isBlank();
+    }
+
+    /** Returns whether bulk-compatible NDJSON export is enabled. */
+    public static boolean isFileBulkNdjsonEnabled() {
+        ConfigState.State current = state;
+        return current != null && current.sinks() != null
+                && current.sinks().filesEnabled()
+                && current.sinks().fileBulkNdjsonEnabled()
+                && !safe(current.sinks().filesPath()).isBlank();
+    }
+
+    /** Returns the configured file export root, or blank when unset. */
+    public static String fileExportRoot() {
+        ConfigState.State current = state;
+        return current == null || current.sinks() == null ? "" : safe(current.sinks().filesPath());
+    }
+
+    /** True when the total exporter-file cap is enabled. */
+    public static boolean isFileTotalCapEnabled() {
+        ConfigState.State current = state;
+        return current != null && current.sinks() != null && current.sinks().fileTotalCapEnabled();
+    }
+
+    /** Configured total cap across exporter files under the selected root. */
+    public static long fileTotalCapBytes() {
+        ConfigState.State current = state;
+        return current == null || current.sinks() == null
+                ? ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES
+                : current.sinks().fileTotalCapBytes();
+    }
+
+    /** True when the optional destination-volume used-percent threshold is enabled. */
+    public static boolean isFileDiskUsagePercentEnabled() {
+        ConfigState.State current = state;
+        return current != null && current.sinks() != null && current.sinks().fileDiskUsagePercentEnabled();
+    }
+
+    /** Configured destination-volume used-percent threshold for file export. */
+    public static int fileDiskUsagePercent() {
+        ConfigState.State current = state;
+        return current == null || current.sinks() == null
+                ? ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT
+                : current.sinks().fileDiskUsagePercent();
     }
 }

@@ -5,39 +5,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.nio.file.Path;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 import javax.swing.JButton;
+import javax.swing.ButtonGroup;
 import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
-import javax.swing.JPasswordField;
+import javax.swing.JRadioButton;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
-import ai.attackframework.tools.burp.sinks.TrafficExportQueue;
-import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
-import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
-@Tag("integration")
-class ConfigPanelStartFailureAuthIT {
-
-    private ConfigPanel panel;
+class ConfigPanelStartFailureFilesHeadlessTest {
 
     @Test
-    void start_withInvalidAuth_revertsUi_and_clearsQueuedExportWork() throws Exception {
+    void start_withFileRootThatIsNotWritableDirectory_revertsUi_and_reportsStatus() throws Exception {
+        Path notADirectory = TestPathSupport.createFile("af-file-root-not-dir", ".tmp");
         try {
-            Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-
             AtomicReference<ConfigPanel> ref = new AtomicReference<>();
             SwingUtilities.invokeAndWait(() -> {
                 ConfigPanel p = new ConfigPanel();
@@ -45,24 +38,24 @@ class ConfigPanelStartFailureAuthIT {
                 p.doLayout();
 
                 JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
-                if (!openSearchEnabled.isSelected()) {
+                if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JTextField openSearchUrlField = get(p, "openSearchUrlField");
-                openSearchUrlField.setText(OpenSearchReachable.BASE_URL);
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                if (!bulkNdjsonEnabled.isSelected()) {
+                    bulkNdjsonEnabled.doClick();
+                }
 
-                JComboBox<String> authCombo = get(p, "openSearchAuthTypeCombo");
-                authCombo.setSelectedItem("Basic");
-
-                JTextField userField = get(p, "openSearchUserField");
-                JPasswordField passwordField = get(p, "openSearchPasswordField");
-                userField.setText("definitely-wrong");
-                passwordField.setText("definitely-wrong");
-
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText(notADirectory.toString());
                 ref.set(p);
             });
-            panel = Objects.requireNonNull(ref.get());
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
             JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
@@ -73,19 +66,50 @@ class ConfigPanelStartFailureAuthIT {
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
             assertThat(controlStatus.getText()).contains("Start aborted");
-            assertThat(controlStatus.getText()).contains("401");
+            assertThat(controlStatus.getText()).contains("File export preflight failed");
+        } finally {
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
 
-            // Give any late worker transitions a brief chance to enqueue if cleanup is incomplete.
-            LockSupport.parkNanos(1_500_000_000L);
+    @Test
+    void start_withFilesEnabledButNoFormatSelected_revertsUi_and_reportsStatus() throws Exception {
+        try {
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                ButtonGroup fileFormatGroup = get(p, "fileFormatGroup");
+                fileFormatGroup.clearSelection();
+
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText(TestPathSupport.defaultUiFileRoot().toString());
+                ref.set(p);
+            });
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
-            assertThat(ExportStats.getQueueSize("tool")).isZero();
-            assertThat(ExportStats.getQueueSize("traffic")).isZero();
-            assertThat(ExportStats.getQueueSize("settings")).isZero();
-            assertThat(ExportStats.getQueueSize("sitemap")).isZero();
-            assertThat(ExportStats.getQueueSize("findings")).isZero();
-            assertThat(TrafficExportQueue.getCurrentSize()).isZero();
-            assertThat(TrafficExportQueue.getCurrentSpillSize()).isZero();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(controlStatus.getText()).contains("Start aborted");
+            assertThat(controlStatus.getText()).contains("select at least one file format");
         } finally {
             ExportReporterLifecycle.resetForTests();
             Logger.resetState();

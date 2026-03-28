@@ -95,9 +95,6 @@ public final class ProxyWebSocketIndexReporter {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
-                return;
-            }
             if (!trafficSelectionAllowsWebSockets()) {
                 return;
             }
@@ -126,9 +123,6 @@ public final class ProxyWebSocketIndexReporter {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
-            if (baseUrl == null || baseUrl.isBlank()) {
-                return;
-            }
             if (!trafficSelectionAllowsWebSockets()) {
                 return;
             }
