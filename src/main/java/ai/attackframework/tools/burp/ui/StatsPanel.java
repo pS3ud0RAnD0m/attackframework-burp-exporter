@@ -74,16 +74,16 @@ public class StatsPanel extends JPanel {
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
     private static final int DOMAIN_TARGET_LABELS = 14;
     private static final int[] DOMAIN_CANDIDATE_SECONDS = new int[] { 1, 2, 3, 5, 6, 10, 12, 15, 20, 30, 60, 120, 300 };
-    private static final Font CHART_TITLE_FONT = new Font("SansSerif", Font.PLAIN, 14);
-    private static final Font CHART_AXIS_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 15);
-    private static final Font CHART_TICK_FONT = new Font("SansSerif", Font.PLAIN, 11);
-    private static final Font CHART_LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 15);
-    private static final Font CARD_KEY_FONT = new Font("SansSerif", Font.PLAIN, 12);
-    private static final Font CARD_VALUE_FONT = new Font("SansSerif", Font.BOLD, 12);
+    private static final Font CHART_TITLE_FONT = uiFont(Font.PLAIN, 14f);
+    private static final Font CHART_AXIS_LABEL_FONT = uiFont(Font.PLAIN, 15f);
+    private static final Font CHART_TICK_FONT = uiFont(Font.PLAIN, 11f);
+    private static final Font CHART_LEGEND_FONT = uiFont(Font.PLAIN, 15f);
+    private static final Font CARD_KEY_FONT = uiFont(Font.PLAIN, 12f);
+    private static final Font CARD_VALUE_FONT = uiFont(Font.PLAIN, 12f);
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
     private static final Color CHART_BG = new Color(38, 38, 38);
     private static final Color PLOT_BG = new Color(48, 48, 48);
-    private static final Color TEXT_FG = new Color(235, 235, 235);
+    private static final Color TEXT_FG = uiColor("Label.foreground", new Color(235, 235, 235));
     private static final Color GRID_FG = new Color(95, 95, 95);
     private static final DecimalFormat DECIMAL_ONE =
             new DecimalFormat("0.0", DecimalFormatSymbols.getInstance(Locale.ROOT));
@@ -304,6 +304,7 @@ public class StatsPanel extends JPanel {
 
         exportRunningValue.setText(exportRunning ? "Yes" : "No");
         exportRunningValue.setForeground(exportRunning ? EXPORT_RUNNING_YES_FG : EXPORT_RUNNING_NO_FG);
+        exportRunningValue.setFont(CARD_VALUE_FONT.deriveFont(Font.BOLD));
         currentBatchSizeValue.setText(formatWhole(BatchSizeController.getInstance().getCurrentBatchSize()));
         trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
         queueDropsValue.setText(formatWhole(ExportStats.getTrafficQueueDrops()));
@@ -547,6 +548,22 @@ public class StatsPanel extends JPanel {
 
     private static boolean isDark(Color color) {
         return ((color.getRed() * 299) + (color.getGreen() * 587) + (color.getBlue() * 114)) / 1000 < 128;
+    }
+
+    private static Font uiFont(int style, float size) {
+        Font base = UIManager.getFont("Label.font");
+        if (base == null) {
+            base = new JLabel().getFont();
+        }
+        if (base == null) {
+            base = new Font("SansSerif", Font.PLAIN, Math.round(size));
+        }
+        return base.deriveFont(style, size);
+    }
+
+    private static Color uiColor(String key, Color fallback) {
+        Color color = UIManager.getColor(key);
+        return color != null ? color : fallback;
     }
 
     private static Color adjust(Color color, int delta) {

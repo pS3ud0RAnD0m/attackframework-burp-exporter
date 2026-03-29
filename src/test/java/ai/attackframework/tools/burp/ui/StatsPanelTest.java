@@ -509,6 +509,7 @@ class StatsPanelTest {
         try {
             StatsPanel panel = onEdt(StatsPanel::new);
             JLabel exportRunningValue = get(panel, "exportRunningValue");
+            JLabel currentBatchSizeValue = get(panel, "currentBatchSizeValue");
             Color[] seriesColors = getStatic(StatsPanel.class, "SERIES_COLORS");
 
             onEdt(() -> {
@@ -518,6 +519,7 @@ class StatsPanelTest {
             assertThat(exportRunningValue.getText()).isEqualTo("Yes");
             assertThat(exportRunningValue.getForeground()).isEqualTo(seriesColors[1]);
             assertThat(exportRunningValue.getFont().isBold()).isTrue();
+            assertThat(currentBatchSizeValue.getFont().isBold()).isFalse();
 
             onEdt(() -> {
                 RuntimeConfig.setExportRunning(false);
