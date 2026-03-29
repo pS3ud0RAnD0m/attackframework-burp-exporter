@@ -278,12 +278,14 @@ final class TrafficSpillFileQueue {
     private void initializeFromDisk() {
         lock.lock();
         try {
-            ensureDirectoryExists();
             files.clear();
             totalBytes = 0;
             nextSequence = 1;
             recoveredCount = 0;
             recoveredBytes = 0;
+            if (!Files.isDirectory(directory)) {
+                return;
+            }
             cleanupTempFilesLocked();
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.json")) {
                 for (Path path : stream) {

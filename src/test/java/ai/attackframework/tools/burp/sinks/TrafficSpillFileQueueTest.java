@@ -110,6 +110,23 @@ class TrafficSpillFileQueueTest {
     }
 
     @Test
+    void constructor_doesNotCreateSpillDirectory_untilFirstWrite() throws IOException {
+        Path parent = TestPathSupport.createDirectory("traffic-spill-lazy-parent");
+        Path dir = parent.resolve("spill-not-created-yet");
+        try {
+            assertThat(Files.exists(dir)).isFalse();
+
+            TrafficSpillFileQueue queue = new TrafficSpillFileQueue(dir, 10, 1024 * 1024);
+
+            assertThat(Files.exists(dir)).isFalse();
+            assertThat(queue.offer(Map.of("id", 1, "url", "https://lazy.example"))).isTrue();
+            assertThat(Files.isDirectory(dir)).isTrue();
+        } finally {
+            deleteRecursively(parent);
+        }
+    }
+
+    @Test
     void offerDetailed_rejectsWhenLowDiskThresholdWouldBeBreached() throws IOException {
         Path dir = TestPathSupport.createDirectory("traffic-spill-low-disk");
         try {
