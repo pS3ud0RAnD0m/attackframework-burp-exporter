@@ -65,6 +65,7 @@ import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchTlsSupport;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.BurpSuiteEdition;
 import net.miginfocom.swing.MigLayout;
@@ -140,17 +141,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JRadioButton fileJsonlCheckbox = new Tooltips.HtmlRadioButton("JSONL");
     private final JRadioButton fileBulkNdjsonCheckbox = new Tooltips.HtmlRadioButton("NDJSON", true);
     private final ButtonGroup fileFormatGroup = new ButtonGroup();
-    private final JCheckBox fileTotalCapCheckbox = new Tooltips.HtmlCheckBox("Max total file size:", true);
+    private final JCheckBox fileTotalCapCheckbox = new Tooltips.HtmlCheckBox("", true);
     private final JTextField fileTotalCapField = new AutoSizingTextField("10");
-    private final JCheckBox fileDiskUsagePercentCheckbox = new Tooltips.HtmlCheckBox("Disk usage:", true);
+    private final JCheckBox fileDiskUsagePercentCheckbox = new Tooltips.HtmlCheckBox("", true);
     private final JTextField fileDiskUsagePercentField = new AutoSizingTextField("95");
 
     private final JCheckBox  openSearchSinkCheckbox = new Tooltips.HtmlCheckBox("OpenSearch", true);
     private final JTextField openSearchUrlField     = new AutoSizingTextField("https://opensearch.url:9200");
-    private final JCheckBox  openSearchInsecureSslCheckbox = new Tooltips.HtmlCheckBox("Accept self-signed cert", true);
+    private final JComboBox<String> openSearchTlsModeCombo = new Tooltips.HtmlComboBox<>(
+            new String[] { "Verify", "Trust pinned certificate", "Trust all certificates" });
+    private final JButton    importPinnedCertificateButton = new Tooltips.HtmlButton("Import Certificate");
     private final JButton    testConnectionButton   = new Tooltips.HtmlButton("Test Connection");
     /** OpenSearch auth controls panel (inline on the OpenSearch row). Built in {@link #buildAuthFormPanel()}. */
     private JPanel           openSearchAuthFormPanel;
+    /** TLS controls panel (inline on the OpenSearch row). Built in {@link #buildTlsPanel()}. */
+    private JPanel           openSearchTlsPanel;
+    /** Last TLS mode logged to avoid duplicate mode-change messages during no-op selections. */
+    private String           lastLoggedTlsMode = ConfigState.OPEN_SEARCH_TLS_VERIFY;
     /** Auth type dropdown (used in buildCurrentState to clear creds when None). Set in buildAuthFormPanel. */
     private JComboBox<String> openSearchAuthTypeCombo;
     /** Basic auth fields (used in auth form and buildCurrentState). */
@@ -277,6 +284,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         add(panelSeparator(), MIG_FILL_WRAP);
 
         openSearchAuthFormPanel = buildAuthFormPanel();
+        openSearchTlsPanel = buildTlsPanel();
         add(new ConfigDestinationPanel(
                 fileSinkCheckbox,
                 filePathField,
@@ -285,7 +293,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 buildFileLimitsPanel(),
                 openSearchSinkCheckbox,
                 openSearchUrlField,
-                openSearchInsecureSslCheckbox,
+                openSearchTlsPanel,
                 testConnectionButton,
                 openSearchAuthFormPanel,
                 openSearchStatus,
@@ -655,7 +663,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 fileDiskUsagePercentField.setText(String.valueOf(sinks.fileDiskUsagePercent()));
                 openSearchSinkCheckbox.setSelected(sinks.osEnabled());
                 openSearchUrlField.setText(sinks.openSearchUrl() != null ? sinks.openSearchUrl() : "");
-                openSearchInsecureSslCheckbox.setSelected(sinks.openSearchInsecureSsl());
+                openSearchTlsModeCombo.setSelectedItem(labelForTlsMode(sinks.openSearchTlsMode()));
             }
 
             switch (state.scopeType()) {
@@ -814,6 +822,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         fileTotalCapCheckbox.addActionListener(sinkUpdater);
         fileDiskUsagePercentCheckbox.addActionListener(sinkUpdater);
         openSearchSinkCheckbox.addActionListener(sinkUpdater);
+        openSearchTlsModeCombo.addActionListener(sinkUpdater);
 
         testConnectionButton.addActionListener(e -> {
             persistSelectedAuthSecrets();
@@ -823,6 +832,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             onOpenSearchStatus("Testing ...");
             controller().testConnectionAsync(url);
         });
+        importPinnedCertificateButton.addActionListener(e -> importPinnedCertificate());
         openSearchPasswordField.addActionListener(e -> {
             String selectedType = openSearchAuthTypeCombo == null
                     ? "None"
@@ -982,6 +992,130 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         return form;
     }
 
+    /** Builds inline TLS controls (mode selection + optional pinned-certificate import). */
+    private JPanel buildTlsPanel() {
+        openSearchTlsModeCombo.setName("os.tlsMode");
+        openSearchTlsModeCombo.setSelectedItem("Verify");
+        importPinnedCertificateButton.setName("os.tls.import");
+
+        JPanel pinnedPanel = new JPanel(new MigLayout("insets 0", "[pref]", "[]"));
+        pinnedPanel.setOpaque(false);
+        pinnedPanel.add(importPinnedCertificateButton);
+
+        JPanel controls = new JPanel(new MigLayout("insets 0, hidemode 3", "[pref]", "[]"));
+        controls.setOpaque(false);
+        controls.add(Box.createHorizontalStrut(0), "hidemode 3");
+        controls.add(pinnedPanel, "hidemode 3");
+
+        java.util.function.Consumer<String> applyPinnedVisibility = selectedMode -> {
+            boolean pinned = ConfigState.OPEN_SEARCH_TLS_PINNED.equals(normalizeTlsModeLabel(selectedMode));
+            pinnedPanel.setVisible(pinned);
+            importPinnedCertificateButton.setVisible(pinned);
+            importPinnedCertificateButton.setEnabled(openSearchSinkCheckbox.isSelected() && pinned);
+        };
+        applyPinnedVisibility.accept(String.valueOf(openSearchTlsModeCombo.getSelectedItem()));
+        openSearchTlsModeCombo.addActionListener(e -> {
+            String selectedMode = String.valueOf(openSearchTlsModeCombo.getSelectedItem());
+            String normalizedMode = normalizeTlsModeLabel(selectedMode);
+            applyPinnedVisibility.accept(selectedMode);
+            logTlsModeChangeIfNeeded(normalizedMode);
+            controls.revalidate();
+            controls.repaint();
+        });
+
+        String tlsModeTip = Tooltips.html(
+                "Select how OpenSearch TLS server certificates are trusted.",
+                "Verify uses the system trust store.",
+                "Trust pinned certificate requires an imported X.509 server certificate stored only in session memory.",
+                "Trust all certificates disables verification and should only be used temporarily."
+        );
+        String importTip = Tooltips.html(
+                "Import a pinned X.509 server certificate for OpenSearch TLS trust.",
+                "Common file types: .cer, .crt, .der, .pem.",
+                "The imported certificate bytes and source path are stored only within in-process memory."
+        );
+        Tooltips.apply(openSearchTlsModeCombo, tlsModeTip);
+        Tooltips.apply(importPinnedCertificateButton, importTip);
+
+        JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][pref]", "[]"));
+        form.setOpaque(false);
+        form.setAlignmentX(Component.LEFT_ALIGNMENT);
+        form.add(Tooltips.label("TLS mode:", tlsModeTip));
+        form.add(openSearchTlsModeCombo);
+        form.add(controls, "gapleft 12");
+        return form;
+    }
+
+    private void importPinnedCertificate() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import OpenSearch TLS Certificate");
+        chooser.setAcceptAllFileFilterUsed(true);
+        chooser.setFileFilter(new FileNameExtensionFilter(
+                "Certificate files (*.cer, *.crt, *.der, *.pem)", "cer", "crt", "der", "pem"));
+        int choice = chooser.showOpenDialog(this);
+        if (choice != JFileChooser.APPROVE_OPTION) {
+            Logger.logDebug("[ConfigPanel] OpenSearch pinned TLS certificate import canceled.");
+            return;
+        }
+        applyPinnedCertificateImport(chooser.getSelectedFile().toPath());
+    }
+
+    private void applyPinnedCertificateImport(Path selectedPath) {
+        Logger.logDebug("[ConfigPanel] Importing OpenSearch pinned TLS certificate from " + selectedPath);
+        try {
+            SecureCredentialStore.PinnedTlsCertificate certificate =
+                    OpenSearchTlsSupport.importPinnedCertificate(selectedPath);
+            SecureCredentialStore.savePinnedTlsCertificate(
+                    certificate.sourcePath(), certificate.fingerprintSha256(), certificate.encodedBytes());
+            Logger.logInfoPanelOnly("[ConfigPanel] Imported OpenSearch pinned TLS certificate: fingerprint="
+                    + certificate.fingerprintSha256() + ", source=" + certificate.sourcePath());
+            Logger.logTrace("[ConfigPanel] OpenSearch pinned TLS certificate bytes=" + certificate.encodedBytes().length);
+            onOpenSearchStatus("Pinned TLS certificate imported\nTrust: " + certificate.fingerprintSha256()
+                    + "\nSource: " + certificate.sourcePath());
+        } catch (IOException | java.security.cert.CertificateException e) {
+            Logger.logErrorPanelOnly("[ConfigPanel] OpenSearch pinned TLS certificate import failed for "
+                    + selectedPath + ": " + rootMessage(e));
+            onOpenSearchStatus("Pinned TLS certificate import failed\nDetails: " + rootMessage(e));
+        }
+    }
+
+    private void logTlsModeChangeIfNeeded(String normalizedMode) {
+        if (normalizedMode == null || normalizedMode.equals(lastLoggedTlsMode)) {
+            return;
+        }
+        lastLoggedTlsMode = normalizedMode;
+        String label = labelForTlsMode(normalizedMode);
+        Logger.logDebug("[ConfigPanel] OpenSearch TLS mode set to " + label + ".");
+        if (ConfigState.OPEN_SEARCH_TLS_PINNED.equals(normalizedMode) && !OpenSearchTlsSupport.hasPinnedCertificate()) {
+            Logger.logInfoPanelOnly("[ConfigPanel] OpenSearch TLS mode requires an imported pinned certificate before test/start.");
+        } else if (ConfigState.OPEN_SEARCH_TLS_INSECURE.equals(normalizedMode)) {
+            Logger.logInfoPanelOnly("[ConfigPanel] OpenSearch TLS mode is trusting all certificates insecurely.");
+        }
+    }
+
+    private static String normalizeTlsModeLabel(String label) {
+        if (label == null || label.isBlank()) {
+            return ConfigState.OPEN_SEARCH_TLS_VERIFY;
+        }
+        return switch (label.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "trust pinned certificate" -> ConfigState.OPEN_SEARCH_TLS_PINNED;
+            case "trust all certificates" -> ConfigState.OPEN_SEARCH_TLS_INSECURE;
+            default -> ConfigState.OPEN_SEARCH_TLS_VERIFY;
+        };
+    }
+
+    private static String labelForTlsMode(String mode) {
+        return switch (ConfigState.normalizeOpenSearchTlsMode(mode)) {
+            case ConfigState.OPEN_SEARCH_TLS_PINNED -> "Trust pinned certificate";
+            case ConfigState.OPEN_SEARCH_TLS_INSECURE -> "Trust all certificates";
+            default -> "Verify";
+        };
+    }
+
+    private String selectedTlsMode() {
+        return normalizeTlsModeLabel(String.valueOf(openSearchTlsModeCombo.getSelectedItem()));
+    }
+
     /**
      * Caches auth values in memory for the current Burp session.
      */
@@ -1107,11 +1241,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         boolean os = openSearchSinkCheckbox.isSelected();
         openSearchUrlField.setEnabled(os);
-        openSearchInsecureSslCheckbox.setEnabled(os);
         testConnectionButton.setEnabled(os);
         if (openSearchAuthFormPanel != null) {
             setEnabledRecursively(openSearchAuthFormPanel, os);
         }
+        if (openSearchTlsPanel != null) {
+            setEnabledRecursively(openSearchTlsPanel, os);
+        }
+        importPinnedCertificateButton.setEnabled(os
+                && ConfigState.OPEN_SEARCH_TLS_PINNED.equals(selectedTlsMode()));
     }
 
     private static void setEnabledRecursively(Component c, boolean enabled) {
@@ -1246,7 +1384,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                         osEnabled, osUrl,
                         osUser,
                         osPass,
-                        openSearchInsecureSslCheckbox.isSelected()),
+                        selectedTlsMode()),
                 settingsSub,
                 trafficToolTypes,
                 findingsSeverities,
@@ -1456,13 +1594,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         Tooltips.apply(openSearchSinkCheckbox, Tooltips.html("Enable OpenSearch export."));
         Tooltips.apply(openSearchUrlField, Tooltips.html("Base URL of the OpenSearch cluster."));
-        openSearchInsecureSslCheckbox.setName("os.insecureSsl");
-        Tooltips.apply(openSearchInsecureSslCheckbox, Tooltips.html(
-                "Skip TLS certificate verification.",
-                "Useful for self-signed certificates."
-        ));
         Tooltips.apply(testConnectionButton, Tooltips.html(
-                "Test connectivity.",
+                "Test connectivity and authentication against OpenSearch.",
+                "Status output includes connection, authentication, trust, and reported version.",
                 "Secrets are only stored within in-process memory."
         ));
     }
@@ -1501,6 +1635,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return "";
         }
         return new String(field.getPassword());
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        String message = current.getMessage();
+        return (message == null || message.isBlank()) ? current.getClass().getSimpleName() : message;
     }
 
     private ConfigController controller() {

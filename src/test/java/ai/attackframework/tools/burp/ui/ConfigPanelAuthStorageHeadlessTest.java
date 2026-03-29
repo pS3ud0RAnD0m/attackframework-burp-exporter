@@ -1,10 +1,19 @@
 package ai.attackframework.tools.burp.ui;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
@@ -18,6 +27,7 @@ import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 
@@ -129,11 +139,62 @@ class ConfigPanelAuthStorageHeadlessTest {
     }
 
     @Test
-    void insecureSsl_defaultsToChecked() throws Exception {
+    void tlsMode_defaultsToVerify() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JCheckBox insecureSsl = get(panel, "openSearchInsecureSslCheckbox");
-            runEdt(() -> assertThat(insecureSsl.isSelected()).isTrue());
+            JComboBox<String> tlsMode = get(panel, "openSearchTlsModeCombo");
+            runEdt(() -> assertThat(String.valueOf(tlsMode.getSelectedItem())).isEqualTo("Verify"));
+        });
+    }
+
+    @Test
+    void changingTlsMode_emitsLogPanelEvents() throws Exception {
+        withCleanSession(() -> {
+            Logger.resetState();
+            List<String> events = new CopyOnWriteArrayList<>();
+            Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+            Logger.registerListener(listener);
+            try {
+                ConfigPanel panel = newPanelOnEdt();
+                JComboBox<String> tlsMode = get(panel, "openSearchTlsModeCombo");
+
+                runEdt(() -> tlsMode.setSelectedItem("Trust pinned certificate"));
+                runEdt(() -> tlsMode.setSelectedItem("Trust all certificates"));
+
+                assertThat(events).anyMatch(message -> message.contains("OpenSearch TLS mode set to Trust pinned certificate."));
+                assertThat(events).anyMatch(message -> message.contains("requires an imported pinned certificate before test/start"));
+                assertThat(events).anyMatch(message -> message.contains("OpenSearch TLS mode set to Trust all certificates."));
+                assertThat(events).anyMatch(message -> message.contains("trusting all certificates insecurely"));
+            } finally {
+                Logger.unregisterListener(listener);
+                Logger.resetState();
+            }
+        });
+    }
+
+    @Test
+    void applyPinnedCertificateImport_logsSuccessAndStoresPinnedCertificate() throws Exception {
+        withCleanSession(() -> {
+            Logger.resetState();
+            List<String> events = new CopyOnWriteArrayList<>();
+            Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+            Logger.registerListener(listener);
+            Path certFile = exportAnyDefaultTrustStoreCertificate();
+            try {
+                ConfigPanel panel = newPanelOnEdt();
+                runEdt(() -> call(panel, "applyPinnedCertificateImport", certFile));
+
+                SecureCredentialStore.PinnedTlsCertificate pinned = SecureCredentialStore.loadPinnedTlsCertificate();
+                assertThat(pinned.sourcePath()).isEqualTo(certFile.toAbsolutePath().normalize().toString());
+                assertThat(pinned.fingerprintSha256()).isNotBlank();
+                assertThat(events).anyMatch(message -> message.contains("Importing OpenSearch pinned TLS certificate from"));
+                assertThat(events).anyMatch(message -> message.contains("Imported OpenSearch pinned TLS certificate: fingerprint=")
+                        && message.contains(pinned.fingerprintSha256()));
+            } finally {
+                Files.deleteIfExists(certFile);
+                Logger.unregisterListener(listener);
+                Logger.resetState();
+            }
         });
     }
 
@@ -145,7 +206,7 @@ class ConfigPanelAuthStorageHeadlessTest {
             JPanel authForm = get(panel, "openSearchAuthFormPanel");
             runEdt(() -> {
                 assertThat(testButton.getToolTipText())
-                        .isEqualTo("<html>Test connectivity.<br>Secrets are only stored within in-process memory.</html>");
+                        .isEqualTo("<html>Test connectivity and authentication against OpenSearch.<br>Status output includes connection, authentication, trust, and reported version.<br>Secrets are only stored within in-process memory.</html>");
                 assertThat(findByNameOrNull(authForm, "os.authenticate")).isNull();
             });
         });
@@ -347,6 +408,26 @@ class ConfigPanelAuthStorageHeadlessTest {
             SecureCredentialStore.clearAll();
             RuntimeConfig.updateState(null);
         }
+    }
+
+    private static Path exportAnyDefaultTrustStoreCertificate() throws Exception {
+        Path trustStore = Path.of(System.getProperty("java.home"), "lib", "security", "cacerts");
+        KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        try (InputStream input = Files.newInputStream(trustStore)) {
+            keyStore.load(input, "changeit".toCharArray());
+        }
+        Enumeration<String> aliases = keyStore.aliases();
+        while (aliases.hasMoreElements()) {
+            String alias = aliases.nextElement();
+            Certificate cert = keyStore.getCertificate(alias);
+            if (cert == null) {
+                continue;
+            }
+            Path file = Files.createTempFile("tls-pin-", ".cer");
+            Files.write(file, cert.getEncoded());
+            return file;
+        }
+        throw new AssertionError("No certificate found in default trust store");
     }
 
     private static Component findByName(Container root, String name) {

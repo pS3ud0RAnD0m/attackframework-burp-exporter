@@ -60,6 +60,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         JCheckBox osEnable  = get(panel, "openSearchSinkCheckbox");
         JTextField osUrl    = get(panel, "openSearchUrlField");
         JComboBox<?> osAuthType = get(panel, "openSearchAuthTypeCombo");
+        JComboBox<?> osTlsMode = get(panel, "openSearchTlsModeCombo");
         JButton osTest      = get(panel, "testConnectionButton");
 
         // Ensure both destinations are enabled
@@ -77,6 +78,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(diskPercentField.isEnabled()).isTrue();
         assertThat(osUrl.isEnabled()).isTrue();
         assertThat(osAuthType.isEnabled()).isTrue();
+        assertThat(osTlsMode.isEnabled()).isTrue();
         assertThat(osTest.isEnabled()).isTrue();
 
         // Disable both destinations
@@ -93,6 +95,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(diskPercentField.isEnabled()).isFalse();
         assertThat(osUrl.isEnabled()).isFalse();
         assertThat(osAuthType.isEnabled()).isFalse();
+        assertThat(osTlsMode.isEnabled()).isFalse();
         assertThat(osTest.isEnabled()).isFalse();
     }
 
@@ -150,7 +153,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
                 new ConfigState.Sinks(true, "/path/to/directory", false, true,
                         true, 1_342_177_280L,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
-                        false, "", "", "", false),
+                        false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -166,6 +169,20 @@ class ConfigPanelDestinationEnablementHeadlessTest {
     void per_index_cap_controls_are_not_present() {
         assertThat(findByName(panel, "files.limit.perIndex.enable")).isNull();
         assertThat(findByName(panel, "files.limit.perIndex.gib")).isNull();
+    }
+
+    @Test
+    void pinned_tls_mode_shows_import_button_only_when_selected() {
+        JComboBox<String> tlsMode = get(panel, "openSearchTlsModeCombo");
+        JButton importButton = get(panel, "importPinnedCertificateButton");
+
+        assertThat(importButton.isVisible()).isFalse();
+
+        tlsMode.setSelectedItem("Trust pinned certificate");
+        assertThat(importButton.isVisible()).isTrue();
+
+        tlsMode.setSelectedItem("Verify");
+        assertThat(importButton.isVisible()).isFalse();
     }
 
     private static JComponent findByName(JComponent root, String name) {

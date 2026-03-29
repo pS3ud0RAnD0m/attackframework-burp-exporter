@@ -39,6 +39,11 @@ public class OpenSearchClientWrapper {
      * HTTP version and status line from the wire; on 200 parses the response body for version/distribution.
      */
     public static OpenSearchStatus testConnection(String baseUrl, String username, String password) {
+        boolean credentialsProvided = username != null && !username.isBlank() && password != null && !password.isBlank();
+        Logger.logDebug("[OpenSearch] Testing connection: url=" + baseUrl
+                + ", tlsMode=" + OpenSearchTlsSupport.currentTlsMode()
+                + ", pinnedCertificateLoaded=" + OpenSearchTlsSupport.hasPinnedCertificate()
+                + ", credentialsProvided=" + credentialsProvided);
         OpenSearchRawGet.RawGetResult result = OpenSearchRawGet.performRawGet(baseUrl, username, password);
 
         // Log request/response only when we actually got an HTTP response from the server.
@@ -65,14 +70,42 @@ public class OpenSearchClientWrapper {
                     // keep empty version/distribution
                 }
             }
-            return new OpenSearchStatus(true, distribution, version, "Connection successful");
+            OpenSearchStatus status = new OpenSearchStatus(
+                    true,
+                    distribution,
+                    version,
+                    "Connection successful",
+                    "Success",
+                    credentialsProvided ? "Successful" : "Not used",
+                    OpenSearchTlsSupport.successTrustSummary(baseUrl)
+            );
+            Logger.logDebug("[OpenSearch] Connection test succeeded: auth=" + status.authenticationStatus()
+                    + ", trust=" + status.trustStatus()
+                    + ", version=" + status.version());
+            return status;
         }
 
         String msg = result.statusCode() == 0
                 ? (result.reasonPhrase() != null ? result.reasonPhrase() : "Connection failed")
                 : "HTTP " + result.statusCode() + (result.reasonPhrase() != null && !result.reasonPhrase().isBlank() ? " " + result.reasonPhrase() : "");
-        Logger.logErrorPanelOnly("[OpenSearch] Connection failed for " + baseUrl + ": " + msg);
-        return new OpenSearchStatus(false, "", "", msg);
+        String trustStatus = OpenSearchTlsSupport.failureTrustSummary(baseUrl, msg);
+        Logger.logErrorPanelOnly("[OpenSearch] Connection failed for " + baseUrl + ": " + msg
+                + " | tlsMode=" + OpenSearchTlsSupport.currentTlsMode()
+                + " | trust=" + trustStatus);
+        String authStatus = switch (result.statusCode()) {
+            case 401, 403 -> "Failed";
+            case 0 -> "Not tested";
+            default -> credentialsProvided ? "Attempted" : "Not used";
+        };
+        return new OpenSearchStatus(
+                false,
+                "",
+                "",
+                msg,
+                "Failed",
+                authStatus,
+                trustStatus
+        );
     }
 
     public static OpenSearchStatus safeTestConnection(String baseUrl) {
@@ -84,11 +117,22 @@ public class OpenSearchClientWrapper {
             return testConnection(baseUrl, username, password);
         } catch (RuntimeException e) {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            Logger.logErrorPanelOnly("[OpenSearch] safeTestConnection threw for " + baseUrl + ": " + msg);
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             Logger.logErrorPanelOnly(sw.toString().stripTrailing());
-            return new OpenSearchStatus(false, "", "", msg);
+            String trustStatus = OpenSearchTlsSupport.failureTrustSummary(baseUrl, msg);
+            Logger.logErrorPanelOnly("[OpenSearch] safeTestConnection threw for " + baseUrl
+                    + ": " + msg + " | tlsMode=" + OpenSearchTlsSupport.currentTlsMode()
+                    + " | trust=" + trustStatus);
+            return new OpenSearchStatus(
+                    false,
+                    "",
+                    "",
+                    msg,
+                    "Failed",
+                    "Not tested",
+                    trustStatus
+            );
         }
     }
 
@@ -239,5 +283,18 @@ public class OpenSearchClientWrapper {
         }
     }
 
-    public record OpenSearchStatus(boolean success, String distribution, String version, String message) {}
+    public record OpenSearchStatus(boolean success, String distribution, String version, String message,
+                                   String connectionStatus, String authenticationStatus, String trustStatus) {
+        /** Returns a multi-line status summary suitable for the Config destination status panel. */
+        public String formattedStatus() {
+            String resolvedVersion = (distribution == null || distribution.isBlank() ? "" : distribution + " ")
+                    + (version == null || version.isBlank() ? "unknown" : version);
+            String details = message == null || message.isBlank() ? "" : "\nDetails: " + message;
+            return "Connection: " + connectionStatus
+                    + "\nAuthentication: " + authenticationStatus
+                    + "\nTrust: " + trustStatus
+                    + "\nOpenSearch version: " + resolvedVersion.trim()
+                    + details;
+        }
+    }
 }

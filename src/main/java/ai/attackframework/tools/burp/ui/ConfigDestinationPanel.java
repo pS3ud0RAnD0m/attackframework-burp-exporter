@@ -12,9 +12,9 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSeparator;
-import javax.swing.SwingConstants;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingConstants;
 
 import ai.attackframework.tools.burp.ui.primitives.StatusViews;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
@@ -37,7 +37,7 @@ public final class ConfigDestinationPanel {
     // OpenSearch destination
     private final JCheckBox openSearchSinkCheckbox;
     private final JTextField openSearchUrlField;
-    private final JCheckBox openSearchInsecureSslCheckbox;
+    private final JPanel openSearchTlsPanel;
     private final JButton testConnectionButton;
     private final JPanel openSearchAuthFormPanel;
     private final JTextArea openSearchStatus;
@@ -61,7 +61,7 @@ public final class ConfigDestinationPanel {
             JPanel fileLimitsPanel,
             JCheckBox openSearchSinkCheckbox,
             JTextField openSearchUrlField,
-            JCheckBox openSearchInsecureSslCheckbox,
+            JPanel openSearchTlsPanel,
             JButton testConnectionButton,
             JPanel openSearchAuthFormPanel,
             JTextArea openSearchStatus,
@@ -78,7 +78,7 @@ public final class ConfigDestinationPanel {
 
         this.openSearchSinkCheckbox = Objects.requireNonNull(openSearchSinkCheckbox, "openSearchSinkCheckbox");
         this.openSearchUrlField = Objects.requireNonNull(openSearchUrlField, "openSearchUrlField");
-        this.openSearchInsecureSslCheckbox = Objects.requireNonNull(openSearchInsecureSslCheckbox, "openSearchInsecureSslCheckbox");
+        this.openSearchTlsPanel = Objects.requireNonNull(openSearchTlsPanel, "openSearchTlsPanel");
         this.testConnectionButton = Objects.requireNonNull(testConnectionButton, "testConnectionButton");
         this.openSearchAuthFormPanel = Objects.requireNonNull(openSearchAuthFormPanel, "openSearchAuthFormPanel");
         this.openSearchStatus = Objects.requireNonNull(openSearchStatus, "openSearchStatus");
@@ -111,7 +111,7 @@ public final class ConfigDestinationPanel {
         fileRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel formatsLabel = Tooltips.label("Format:",
                 Tooltips.html("Select the on-disk export format."));
-        JLabel safetyLabel = Tooltips.label("Safety:",
+        JLabel safetyLabel = Tooltips.label("Disk Usage Limits:",
                 Tooltips.html("Configure file-export safety limits.", "These controls stop file export before the destination grows too large."));
         JSeparator formatsSafetySeparator = buildInlineVerticalSeparator();
 
@@ -125,15 +125,17 @@ public final class ConfigDestinationPanel {
         fileRow.add(fileLimitsPanel, ALIGN_LEFT_TOP);
         panel.add(fileRow, "growx, wrap");
 
-        // OpenSearch row: URL + auth controls inline, with test/insecure on the right
-        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]20[pref]20[pref]20[pref]"));
+        // OpenSearch row: URL + auth/TLS controls inline, with test button at the end
+        JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]14[pref]12[pref]16[pref]"));
         openSearchRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JSeparator tlsSeparator = buildInlineVerticalSeparator();
 
         openSearchRow.add(openSearchSinkCheckbox, GAPLEFT + indentPx + ", top");
         openSearchRow.add(openSearchUrlField,     ALIGN_LEFT_TOP);
         openSearchRow.add(openSearchAuthFormPanel, ALIGN_LEFT_TOP);
-        openSearchRow.add(testConnectionButton,   "gapleft 9, " + ALIGN_LEFT_TOP);
-        openSearchRow.add(openSearchInsecureSslCheckbox, "gapleft 10, " + ALIGN_LEFT_TOP);
+        openSearchRow.add(tlsSeparator, "growy, h 18!, " + ALIGN_LEFT_TOP);
+        openSearchRow.add(openSearchTlsPanel, ALIGN_LEFT_TOP);
+        openSearchRow.add(testConnectionButton, ALIGN_LEFT_TOP);
 
         panel.add(openSearchRow, "growx, wrap");
 

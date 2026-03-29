@@ -64,7 +64,7 @@ public final class Json {
         private final String openSearchUrl;
         private final String openSearchUser;
         private final String openSearchPassword;
-        private final boolean openSearchInsecureSsl;
+        private final String openSearchTlsMode;
         private final List<String> settingsSub;
         private final List<String> trafficToolTypes;
         private final List<String> findingsSeverities;
@@ -85,7 +85,7 @@ public final class Json {
                 String openSearchUrl,
                 String openSearchUser,
                 String openSearchPassword,
-                boolean openSearchInsecureSsl,
+                String openSearchTlsMode,
                 List<String> settingsSub,
                 List<String> trafficToolTypes,
                 List<String> findingsSeverities,
@@ -105,7 +105,7 @@ public final class Json {
             this.openSearchUrl = openSearchUrl;
             this.openSearchUser = openSearchUser != null ? openSearchUser : "";
             this.openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
-            this.openSearchInsecureSsl = openSearchInsecureSsl;
+            this.openSearchTlsMode = ConfigState.normalizeOpenSearchTlsMode(openSearchTlsMode);
             this.settingsSub = settingsSub == null ? List.of() : List.copyOf(settingsSub);
             this.trafficToolTypes = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
             this.findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
@@ -179,8 +179,8 @@ public final class Json {
             return openSearchPassword;
         }
 
-        public boolean openSearchInsecureSsl() {
-            return openSearchInsecureSsl;
+        public String openSearchTlsMode() {
+            return openSearchTlsMode;
         }
 
         public List<String> settingsSub() {
@@ -312,7 +312,7 @@ public final class Json {
         if (sinks.osEnabled() && os != null && !os.isBlank()) {
             sinksNode.put("openSearch", os);
         }
-        if (sinks.openSearchInsecureSsl()) sinksNode.put("openSearchInsecureSsl", true);
+        sinksNode.put("openSearchTlsMode", ConfigState.normalizeOpenSearchTlsMode(sinks.openSearchTlsMode()));
     }
 
     private static void buildExportFields(ObjectNode root, ConfigState.State state) {
@@ -354,7 +354,7 @@ public final class Json {
                 sinks.os(),
                 sinks.osUser(),
                 sinks.osPass(),
-                sinks.openSearchInsecureSsl(),
+                sinks.openSearchTlsMode(),
                 opts.settingsSub(),
                 opts.trafficToolTypes(),
                 opts.findingsSeverities(),
@@ -526,12 +526,12 @@ public final class Json {
             if (!v.isBlank()) os = v;
         }
 
-        boolean insecureSsl = sinks.path("openSearchInsecureSsl").asBoolean(false);
+        String tlsMode = ConfigState.normalizeOpenSearchTlsMode(sinks.path("openSearchTlsMode").asText(null));
 
         return new SinksParts(files, fileJsonlEnabled, fileBulkNdjsonEnabled,
                 fileTotalCapEnabled, fileTotalCapBytes,
                 fileDiskUsagePercentEnabled, fileDiskUsagePercent,
-                os, "", "", insecureSsl);
+                os, "", "", tlsMode);
     }
 
     /** Returns null when absent or empty (all fields enabled). */
@@ -558,6 +558,6 @@ public final class Json {
     private record SinksParts(String files, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
                               boolean fileTotalCapEnabled, long fileTotalCapBytes,
                               boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
-                              String os, String osUser, String osPass, boolean openSearchInsecureSsl) { }
+                              String os, String osUser, String osPass, String openSearchTlsMode) { }
     private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }
 }

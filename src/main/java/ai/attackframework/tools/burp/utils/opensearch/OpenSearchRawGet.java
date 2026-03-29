@@ -26,6 +26,8 @@ import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.apache.hc.core5.util.Timeout;
 
+import ai.attackframework.tools.burp.utils.Logger;
+
 /**
  * Performs a raw HTTP GET to the OpenSearch root (/) with the same auth, SSL, and
  * HTTP version policy (NEGOTIATE) as {@link OpenSearchConnector}, so we can log the
@@ -60,6 +62,13 @@ public final class OpenSearchRawGet {
         try {
             URI uri = URI.create(requestUri);
             HttpHost host = new HttpHost(uri.getScheme(), uri.getHost(), uri.getPort());
+            if ("https".equalsIgnoreCase(uri.getScheme())
+                    && OpenSearchTlsSupport.isPinnedMode()
+                    && !OpenSearchTlsSupport.hasPinnedCertificate()) {
+                Logger.logErrorPanelOnly("[OpenSearch] TLS mode requires a pinned certificate, but none is imported.");
+                String reqLog = OpenSearchLogFormat.formatRequestForLog("GET", "/", requestUri, null, credsUsed);
+                return new RawGetResult(0, null, "Pinned TLS certificate not imported.", "", reqLog, java.util.List.of());
+            }
             try (CloseableHttpAsyncClient client = buildAsyncClient(host, username, password, insecure)) {
                 client.start();
                 SimpleHttpRequest request = SimpleRequestBuilder.get(requestUri).build();
@@ -113,14 +122,21 @@ public final class OpenSearchRawGet {
                     new UsernamePasswordCredentials(username, password.toCharArray()));
             clientBuilder.setDefaultCredentialsProvider(credsProvider);
         }
-        if (insecure && "https".equalsIgnoreCase(host.getSchemeName())) {
-            SSLContext sslContext = SSLContextBuilder.create()
-                    .loadTrustMaterial(TrustAllStrategy.INSTANCE)
-                    .build();
-            connManagerBuilder.setTlsStrategy(ClientTlsStrategyBuilder.create()
-                    .setSslContext(sslContext)
-                    .setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
-                    .buildAsync());
+        if ("https".equalsIgnoreCase(host.getSchemeName())) {
+            if (insecure) {
+                SSLContext sslContext = SSLContextBuilder.create()
+                        .loadTrustMaterial(TrustAllStrategy.INSTANCE)
+                        .build();
+                connManagerBuilder.setTlsStrategy(ClientTlsStrategyBuilder.create()
+                        .setSslContext(sslContext)
+                        .setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                        .buildAsync());
+            } else if (OpenSearchTlsSupport.isPinnedMode()) {
+                SSLContext sslContext = OpenSearchTlsSupport.buildPinnedSslContext();
+                connManagerBuilder.setTlsStrategy(ClientTlsStrategyBuilder.create()
+                        .setSslContext(sslContext)
+                        .buildAsync());
+            }
         }
         AsyncClientConnectionManager connManager = connManagerBuilder.build();
         clientBuilder.setConnectionManager(connManager);

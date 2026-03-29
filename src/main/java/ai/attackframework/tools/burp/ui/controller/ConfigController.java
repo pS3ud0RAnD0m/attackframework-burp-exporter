@@ -24,8 +24,6 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  */
 public final class ConfigController {
 
-    private static final String TEST_FAILED = "Test failed: ";
-
     /** UI callback surface implemented by ConfigPanel. */
     public interface Ui {
         void onFileStatus(String message);
@@ -165,14 +163,11 @@ public final class ConfigController {
                     var s = OpenSearchClientWrapper.safeTestConnection(url, user, pass);
                     Logger.logDebug("[ConfigPanel] testConnection result: success=" + s.success()
                             + ", message=" + s.message());
-                    if (s.success()) {
-                        return "Connected to: " + s.distribution() + " " + s.version();
-                    } else {
-                        return TEST_FAILED + (s.message() == null ? "Unknown error" : s.message());
-                    }
+                    return s.formattedStatus();
                 } catch (Exception ex) {
                     Logger.logError("[ConfigPanel] Test connection failed: " + rootMessage(ex));
-                    return TEST_FAILED + rootMessage(ex);
+                    return "Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: "
+                            + rootMessage(ex);
                 }
             }
             @Override protected void done() {
@@ -180,9 +175,10 @@ public final class ConfigController {
                     ui.onOpenSearchStatus(get());
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    ui.onOpenSearchStatus(TEST_FAILED + "interrupted.");
+                    ui.onOpenSearchStatus("Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: interrupted.");
                 } catch (ExecutionException ex) {
-                    ui.onOpenSearchStatus(TEST_FAILED + rootMessage(ex));
+                    ui.onOpenSearchStatus("Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: "
+                            + rootMessage(ex));
                 }
             }
         }.execute();

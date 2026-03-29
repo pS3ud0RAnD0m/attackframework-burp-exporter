@@ -47,6 +47,22 @@ class SecureCredentialStoreTest {
     }
 
     @Test
+    void pinnedTlsCertificate_roundTrip_saveAndLoad_returnsDefensiveCopy() {
+        withCleanStore(() -> {
+            byte[] encoded = new byte[] { 1, 2, 3, 4 };
+            SecureCredentialStore.savePinnedTlsCertificate("server.pem", "AA:BB", encoded);
+
+            SecureCredentialStore.PinnedTlsCertificate cert = SecureCredentialStore.loadPinnedTlsCertificate();
+            cert.encodedBytes()[0] = 9;
+
+            SecureCredentialStore.PinnedTlsCertificate reloaded = SecureCredentialStore.loadPinnedTlsCertificate();
+            assertThat(reloaded.sourcePath()).isEqualTo("server.pem");
+            assertThat(reloaded.fingerprintSha256()).isEqualTo("AA:BB");
+            assertThat(reloaded.encodedBytes()).containsExactly(1, 2, 3, 4);
+        });
+    }
+
+    @Test
     void blankInput_clearsOnlyTargetAuthType() {
         withCleanStore(() -> {
             SecureCredentialStore.saveOpenSearchCredentials("u", "p");
@@ -74,6 +90,7 @@ class SecureCredentialStoreTest {
             assertThat(SecureCredentialStore.loadSelectedAuthType()).isEqualTo("Basic");
             assertThat(SecureCredentialStore.loadOpenSearchCredentials().username()).isBlank();
             assertThat(SecureCredentialStore.loadJwtCredentials().token()).isBlank();
+            assertThat(SecureCredentialStore.loadPinnedTlsCertificate().fingerprintSha256()).isBlank();
         });
     }
 

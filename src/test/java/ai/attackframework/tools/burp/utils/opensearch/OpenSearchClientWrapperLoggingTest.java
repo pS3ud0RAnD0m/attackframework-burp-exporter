@@ -1,5 +1,9 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 import ai.attackframework.tools.burp.utils.Logger;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +31,9 @@ class OpenSearchClientWrapperLoggingTest {
 
     private void cleanUp() {
         Logger.unregisterListener(listener);
+        Logger.resetState();
+        SecureCredentialStore.clearAll();
+        RuntimeConfig.updateState(null);
         events.clear();
         while (latch.getCount() > 0) {
             latch.countDown();
@@ -35,6 +42,7 @@ class OpenSearchClientWrapperLoggingTest {
 
     @Test
     void testConnection_withInvalidUrl_emitsLogEvent() throws Exception {
+        Logger.resetState();
         Logger.registerListener(listener);
         try {
             // Run on EDT so Logger listener is invoked synchronously (Logger dispatches to EDT when off it).
@@ -49,6 +57,49 @@ class OpenSearchClientWrapperLoggingTest {
                     });
             assertThat(events).noneMatch(e -> e.message().contains("Request:"));
         } finally {
+            cleanUp();
+        }
+    }
+
+    @Test
+    void testConnection_withPinnedModeButNoImportedCertificate_emitsTlsLogEvents() throws Exception {
+        String originalInsecure = System.getProperty("OPENSEARCH_INSECURE");
+        Logger.resetState();
+        SecureCredentialStore.clearAll();
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of(),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(false, "", false, false,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                        true, "https://opensearch.url:9200", "", "", ConfigState.OPEN_SEARCH_TLS_PINNED),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
+        ));
+        System.clearProperty("OPENSEARCH_INSECURE");
+        Logger.registerListener(listener);
+        try {
+            SwingUtilities.invokeAndWait(() ->
+                    OpenSearchClientWrapper.testConnection("https://opensearch.url:9200"));
+
+            assertThat(events).anySatisfy(e -> assertThat(e.message())
+                    .contains("Testing connection: url=https://opensearch.url:9200")
+                    .contains("tlsMode=pinned")
+                    .contains("pinnedCertificateLoaded=false"));
+            assertThat(events).anySatisfy(e -> assertThat(e.message())
+                    .contains("TLS mode requires a pinned certificate, but none is imported"));
+            assertThat(events).anySatisfy(e -> assertThat(e.message())
+                    .contains("Connection failed for https://opensearch.url:9200")
+                    .contains("trust=Pinned certificate not imported"));
+        } finally {
+            if (originalInsecure == null) {
+                System.clearProperty("OPENSEARCH_INSECURE");
+            } else {
+                System.setProperty("OPENSEARCH_INSECURE", originalInsecure);
+            }
             cleanUp();
         }
     }

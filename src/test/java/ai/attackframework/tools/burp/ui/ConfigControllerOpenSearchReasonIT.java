@@ -34,6 +34,6 @@ class ConfigControllerOpenSearchReasonIT {
 
         cc.testConnectionAsync("http://127.0.0.1:1");
         assertThat(done.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(ui.osMsg).containsAnyOf("failed", "interrupted", "Test failed");
+        assertThat(ui.osMsg).contains("Connection: Failed").containsAnyOf("Details:", "interrupted");
     }
 }

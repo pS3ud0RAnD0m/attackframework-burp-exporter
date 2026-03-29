@@ -15,7 +15,7 @@ class JsonSinksOmissionTest {
     void build_omits_blank_sinks_fields() throws IOException {
         var state = new ConfigState.State(
                 null, "all", null,
-                new ConfigState.Sinks(false, "", false, "", "", "", false),
+                new ConfigState.Sinks(false, "", false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -31,6 +31,7 @@ class JsonSinksOmissionTest {
         assertThat(cfg.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(cfg.fileDiskUsagePercent()).isEqualTo(ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT);
         assertThat(cfg.openSearchUrl()).isNull();
+        assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_VERIFY);
     }
 
     @Test
@@ -40,7 +41,7 @@ class JsonSinksOmissionTest {
                 new ConfigState.Sinks(true, FILES_ROOT, true, true,
                         true, 9L * 1024L * 1024L * 1024L,
                         true, 92,
-                        true, OS_URL, "admin", "admin", false),
+                        true, OS_URL, "admin", "admin", ConfigState.OPEN_SEARCH_TLS_PINNED),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
@@ -49,6 +50,7 @@ class JsonSinksOmissionTest {
         assertThat(json).doesNotContain("openSearchUser");
         assertThat(json).doesNotContain("openSearchPassword");
         assertThat(json).contains("\"fileFormats\"");
+        assertThat(json).contains("\"openSearchTlsMode\" : \"pinned\"");
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         assertThat(cfg.filesPath()).isEqualTo(FILES_ROOT);
@@ -61,6 +63,7 @@ class JsonSinksOmissionTest {
         assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
         assertThat(cfg.openSearchUser()).isBlank();
         assertThat(cfg.openSearchPassword()).isBlank();
+        assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_PINNED);
     }
 
     @Test
@@ -81,6 +84,7 @@ class JsonSinksOmissionTest {
         assertThat(cfg.fileTotalCapEnabled()).isTrue();
         assertThat(cfg.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(cfg.openSearchUrl()).isNull();
+        assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_VERIFY);
     }
 
     @Test
@@ -99,5 +103,6 @@ class JsonSinksOmissionTest {
         assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
         assertThat(cfg.openSearchUser()).isBlank();
         assertThat(cfg.openSearchPassword()).isBlank();
+        assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_VERIFY);
     }
 }

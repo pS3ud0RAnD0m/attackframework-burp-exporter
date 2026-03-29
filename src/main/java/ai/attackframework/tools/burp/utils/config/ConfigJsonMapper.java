@@ -33,7 +33,7 @@ public final class ConfigJsonMapper {
                 cfg.fileDiskUsagePercentEnabled(), cfg.fileDiskUsagePercent(),
                 cfg.openSearchUrl() != null && !cfg.openSearchUrl().isBlank(), cfg.openSearchUrl(),
                 cfg.openSearchUser(), cfg.openSearchPassword(),
-                cfg.openSearchInsecureSsl()
+                cfg.openSearchTlsMode()
         );
 
         return new State(cfg.dataSources(), cfg.scopeType(), entries, sinks,

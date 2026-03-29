@@ -132,10 +132,12 @@ public final class RuntimeConfig {
         return current == null ? "" : safe(current.sinks().openSearchPassword());
     }
 
-    /** When true, OpenSearch client skips TLS verification (for self-signed certs). */
-    public static boolean openSearchInsecureSsl() {
+    /** Current OpenSearch TLS mode. */
+    public static String openSearchTlsMode() {
         ConfigState.State current = state;
-        return current != null && current.sinks().openSearchInsecureSsl();
+        return current == null || current.sinks() == null
+                ? ConfigState.OPEN_SEARCH_TLS_VERIFY
+                : ConfigState.normalizeOpenSearchTlsMode(current.sinks().openSearchTlsMode());
     }
 
     private static ConfigState.State normalize(ConfigState.State incoming) {
@@ -155,7 +157,7 @@ public final class RuntimeConfig {
                 ? new ConfigState.Sinks(false, "", false, false,
                         true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
-                        false, "", "", "", false)
+                        false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY)
                 : new ConfigState.Sinks(
                         sinks.filesEnabled(),
                         safe(sinks.filesPath()),
@@ -169,7 +171,7 @@ public final class RuntimeConfig {
                         safe(sinks.openSearchUrl()),
                         safe(sinks.openSearchUser()),
                         safe(sinks.openSearchPassword()),
-                        sinks.openSearchInsecureSsl()
+                        sinks.openSearchTlsMode()
                 );
 
         String scopeType = normalizeScopeType(incoming.scopeType());
@@ -218,7 +220,7 @@ public final class RuntimeConfig {
                 new ConfigState.Sinks(false, "", false, false,
                         true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
-                        false, "", "", "", false),
+                        false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,

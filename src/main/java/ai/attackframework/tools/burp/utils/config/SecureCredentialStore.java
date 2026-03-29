@@ -9,6 +9,7 @@ public final class SecureCredentialStore {
     private static volatile ApiKeyCredentials apiKeyCredentials = new ApiKeyCredentials("", "");
     private static volatile JwtCredentials jwtCredentials = new JwtCredentials("");
     private static volatile CertificateCredentials certificateCredentials = new CertificateCredentials("", "", "");
+    private static volatile PinnedTlsCertificate pinnedTlsCertificate = new PinnedTlsCertificate("", "", new byte[0]);
 
     private SecureCredentialStore() {}
 
@@ -20,6 +21,8 @@ public final class SecureCredentialStore {
     public record JwtCredentials(String token) {}
     /** Immutable certificate credentials read from session memory. */
     public record CertificateCredentials(String certPath, String keyPath, String passphrase) {}
+    /** Immutable imported TLS pin material read from session memory. */
+    public record PinnedTlsCertificate(String sourcePath, String fingerprintSha256, byte[] encodedBytes) {}
 
     /** Saves selected auth type for the current Burp session. */
     public static void saveSelectedAuthType(String authType) {
@@ -95,6 +98,25 @@ public final class SecureCredentialStore {
         return certificateCredentials;
     }
 
+    /** Saves pinned TLS certificate material for the current Burp session. */
+    public static void savePinnedTlsCertificate(String sourcePath, String fingerprintSha256, byte[] encodedBytes) {
+        String path = safe(sourcePath);
+        String fingerprint = safe(fingerprintSha256);
+        byte[] bytes = encodedBytes == null ? new byte[0] : java.util.Arrays.copyOf(encodedBytes, encodedBytes.length);
+        if (path.isBlank() || fingerprint.isBlank() || bytes.length == 0) {
+            clearPinnedTlsCertificate();
+            return;
+        }
+        pinnedTlsCertificate = new PinnedTlsCertificate(path, fingerprint, bytes);
+    }
+
+    /** Loads pinned TLS certificate material for the current Burp session. */
+    public static PinnedTlsCertificate loadPinnedTlsCertificate() {
+        PinnedTlsCertificate current = pinnedTlsCertificate;
+        return new PinnedTlsCertificate(current.sourcePath(), current.fingerprintSha256(),
+                java.util.Arrays.copyOf(current.encodedBytes(), current.encodedBytes().length));
+    }
+
     /** Clears basic credentials for the current Burp session. */
     public static void clearOpenSearchCredentials() {
         basicCredentials = new BasicCredentials("", "");
@@ -115,6 +137,11 @@ public final class SecureCredentialStore {
         certificateCredentials = new CertificateCredentials("", "", "");
     }
 
+    /** Clears pinned TLS certificate material for the current Burp session. */
+    public static void clearPinnedTlsCertificate() {
+        pinnedTlsCertificate = new PinnedTlsCertificate("", "", new byte[0]);
+    }
+
     /** Clears all session-scoped auth values. Intended for tests and extension reload/reset paths. */
     public static void clearAll() {
         selectedAuthType = "Basic";
@@ -122,6 +149,7 @@ public final class SecureCredentialStore {
         clearApiKeyCredentials();
         clearJwtCredentials();
         clearCertificateCredentials();
+        clearPinnedTlsCertificate();
     }
 
     private static String safe(String value) {
