@@ -6,10 +6,7 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
 import java.awt.GridLayout;
-import java.awt.Insets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
@@ -72,7 +69,7 @@ public class StatsPanel extends JPanel {
     private static final int ERROR_COL_MAX = 50;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
     private static final int CHART_MAX_POINTS = (int) (CHART_WINDOW_MAX_MS / REFRESH_INTERVAL_MS) + 5;
-    private static final int CHART_PANEL_HEIGHT = 460;
+    private static final int CHART_PANEL_HEIGHT = 360;
     private static final double DEFAULT_RATE_RANGE_MAX = 10.0;
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
     private static final int DOMAIN_TARGET_LABELS = 14;
@@ -81,8 +78,8 @@ public class StatsPanel extends JPanel {
     private static final Font CHART_AXIS_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 15);
     private static final Font CHART_TICK_FONT = new Font("SansSerif", Font.PLAIN, 11);
     private static final Font CHART_LEGEND_FONT = new Font("SansSerif", Font.PLAIN, 15);
-    private static final Font CARD_KEY_FONT = new Font("SansSerif", Font.PLAIN, 13);
-    private static final Font CARD_VALUE_FONT = new Font("SansSerif", Font.BOLD, 13);
+    private static final Font CARD_KEY_FONT = new Font("SansSerif", Font.PLAIN, 12);
+    private static final Font CARD_VALUE_FONT = new Font("SansSerif", Font.BOLD, 12);
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
     private static final Color CHART_BG = new Color(38, 38, 38);
     private static final Color PLOT_BG = new Color(48, 48, 48);
@@ -147,6 +144,7 @@ public class StatsPanel extends JPanel {
     private final JPanel tablesRow;
     private final JPanel fileTablesRow;
     private final JPanel cardsRow;
+    private final JPanel lowerPanel;
     private final Map<String, TimeSeries> docsSeriesByIndex = new HashMap<>();
     private final Map<String, TimeSeries> kibSeriesByIndex = new HashMap<>();
     private final Map<String, TimeSeries> fileDocsSeriesByIndex = new HashMap<>();
@@ -220,31 +218,38 @@ public class StatsPanel extends JPanel {
         cardsRow = new JPanel(new GridLayout(1, 1, 10, 0));
         cardsRow.setOpaque(false);
 
-        JLabel[] exportStateValues = addMetricCard(cardsRow, "Misc Stats", new String[] {
-                "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
-                "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
-                "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)", "Spill Directory",
-                "OpenSearch Throughput (Last 10s)", "OpenSearch Total Size Exported", "OpenSearch Total Docs Exported",
-                "OpenSearch Total Failures", "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
-        });
-        exportRunningValue = exportStateValues[0];
-        currentBatchSizeValue = exportStateValues[1];
-        trafficQueueValue = exportStateValues[2];
-        queueDropsValue = exportStateValues[3];
-        spillQueueDocsValue = exportStateValues[4];
-        spillQueueMibValue = exportStateValues[5];
-        spillOldestAgeValue = exportStateValues[6];
-        spillFlowValue = exportStateValues[7];
-        dropReasonValue = exportStateValues[8];
-        spillRecoveredValue = exportStateValues[9];
-        spillDirectoryValue = exportStateValues[10];
-        throughputValue = exportStateValues[11];
-        totalExportedValue = exportStateValues[12];
-        totalDocsPushedValue = exportStateValues[13];
-        totalFailuresValue = exportStateValues[14];
-        fileTotalExportedValue = exportStateValues[15];
-        fileTotalDocsPushedValue = exportStateValues[16];
-        fileTotalFailuresValue = exportStateValues[17];
+        Map<String, JLabel> miscValues = addGroupedMetricCard(cardsRow, "Misc Stats", List.of(
+                new MetricSection("Global", new String[] {
+                        "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops"
+                }),
+                new MetricSection("OpenSearch", new String[] {
+                        "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
+                        "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)", "Spill Directory",
+                        "OpenSearch Throughput (Last 10s)", "OpenSearch Total Size Exported",
+                        "OpenSearch Total Docs Exported", "OpenSearch Total Failures"
+                }),
+                new MetricSection("Files", new String[] {
+                        "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
+                })
+        ));
+        exportRunningValue = miscValues.get("Export Running");
+        currentBatchSizeValue = miscValues.get("Current Batch Size");
+        trafficQueueValue = miscValues.get("Traffic Queue Size");
+        queueDropsValue = miscValues.get("Queue Drops");
+        spillQueueDocsValue = miscValues.get("Spill Queue Docs");
+        spillQueueMibValue = miscValues.get("Spill Queue MiB");
+        spillOldestAgeValue = miscValues.get("Spill Oldest Age (s)");
+        spillFlowValue = miscValues.get("Spill Enq/Deq/Drops");
+        dropReasonValue = miscValues.get("Drop Reasons (Spill/Queue/Requeue/Retention)");
+        spillRecoveredValue = miscValues.get("Spill Recovered (Startup)");
+        spillDirectoryValue = miscValues.get("Spill Directory");
+        throughputValue = miscValues.get("OpenSearch Throughput (Last 10s)");
+        totalExportedValue = miscValues.get("OpenSearch Total Size Exported");
+        totalDocsPushedValue = miscValues.get("OpenSearch Total Docs Exported");
+        totalFailuresValue = miscValues.get("OpenSearch Total Failures");
+        fileTotalExportedValue = miscValues.get("File Total Size Exported");
+        fileTotalDocsPushedValue = miscValues.get("File Total Docs Exported");
+        fileTotalFailuresValue = miscValues.get("File Total Failures");
 
         tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
         tablesRow.setOpaque(false);
@@ -269,7 +274,7 @@ public class StatsPanel extends JPanel {
         fileTablesRow.add(createTableCard("File Index Counts", fileByIndexTable));
         fileTablesRow.add(createTableCard("File Traffic Counts", fileTrafficBySourceTable));
 
-        JPanel lowerPanel = new JPanel();
+        lowerPanel = new JPanel();
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
         lowerPanel.setOpaque(false);
         lowerPanel.add(fileTablesRow);
@@ -467,49 +472,92 @@ public class StatsPanel extends JPanel {
         return table;
     }
 
-    private static JLabel[] addMetricCard(JPanel parent, String title, String[] keys) {
-        JPanel card = new JPanel(new GridBagLayout());
+    private static Map<String, JLabel> addGroupedMetricCard(JPanel parent, String title, List<MetricSection> sections) {
+        JPanel card = new JPanel();
+        card.setName("miscStatsCard");
+        card.setLayout(new javax.swing.BoxLayout(card, javax.swing.BoxLayout.Y_AXIS));
         card.setBorder(BorderFactory.createTitledBorder(title));
-        card.setPreferredSize(new Dimension(420, Math.max(180, keys.length * 22)));
-        card.setMinimumSize(new Dimension(360, Math.max(160, keys.length * 20)));
+        card.setOpaque(false);
         int maxKeyWidth = 0;
-        for (String key : keys) {
-            JLabel probe = new JLabel(key);
-            probe.setFont(CARD_KEY_FONT);
-            maxKeyWidth = Math.max(maxKeyWidth, probe.getPreferredSize().width);
+        for (MetricSection section : sections) {
+            for (String key : section.keys()) {
+                JLabel probe = new JLabel(key);
+                probe.setFont(CARD_KEY_FONT);
+                maxKeyWidth = Math.max(maxKeyWidth, probe.getPreferredSize().width);
+            }
         }
-        JLabel[] values = new JLabel[keys.length];
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridy = 0;
-        gbc.insets = new Insets(1, 0, 1, 8);
-        gbc.anchor = GridBagConstraints.WEST;
-        for (int i = 0; i < keys.length; i++) {
-            JLabel keyLabel = new JLabel(keys[i]);
-            keyLabel.setForeground(UIManager.getColor("Label.foreground"));
-            keyLabel.setFont(CARD_KEY_FONT);
-            keyLabel.setPreferredSize(new Dimension(maxKeyWidth, keyLabel.getPreferredSize().height));
-            JLabel valueLabel = new JLabel("-");
-            valueLabel.setHorizontalAlignment(SwingConstants.LEFT);
-            valueLabel.setForeground(UIManager.getColor("Label.foreground"));
-            valueLabel.setFont(CARD_VALUE_FONT);
-            values[i] = valueLabel;
-            gbc.gridx = 0;
-            gbc.weightx = 0;
-            card.add(keyLabel, gbc);
-            gbc.gridx = 1;
-            gbc.weightx = 1.0;
-            gbc.insets = new Insets(1, 0, 1, 0);
-            card.add(valueLabel, gbc);
-            gbc.gridy++;
-            gbc.insets = new Insets(1, 0, 1, 8);
+        Map<String, JLabel> values = new HashMap<>();
+        int rowIndex = 0;
+        for (MetricSection section : sections) {
+            JLabel sectionLabel = new JLabel(section.title());
+            sectionLabel.setName("miscStats.section." + section.title());
+            sectionLabel.setForeground(TEXT_FG);
+            sectionLabel.setFont(CARD_KEY_FONT.deriveFont(Font.BOLD));
+            sectionLabel.setBorder(BorderFactory.createEmptyBorder(rowIndex == 0 ? 0 : 4, 6, 2, 6));
+            sectionLabel.setAlignmentX(LEFT_ALIGNMENT);
+            card.add(sectionLabel);
+            for (int i = 0; i < section.keys().length; i++) {
+                String key = section.keys()[i];
+                JPanel row = new JPanel(new BorderLayout(10, 0));
+                row.setName("miscStats.row." + section.title() + "." + i);
+                row.setOpaque(true);
+                row.setBackground(rowBackground(i));
+                row.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+                row.setAlignmentX(LEFT_ALIGNMENT);
+
+                JLabel keyLabel = new JLabel(key);
+                keyLabel.setForeground(TEXT_FG);
+                keyLabel.setFont(CARD_KEY_FONT);
+                keyLabel.setPreferredSize(new Dimension(maxKeyWidth, keyLabel.getPreferredSize().height));
+
+                JLabel valueLabel = new JLabel("-");
+                valueLabel.setHorizontalAlignment(SwingConstants.LEFT);
+                valueLabel.setForeground(TEXT_FG);
+                valueLabel.setFont(CARD_VALUE_FONT);
+                values.put(key, valueLabel);
+
+                row.add(keyLabel, BorderLayout.WEST);
+                row.add(valueLabel, BorderLayout.CENTER);
+                card.add(row);
+                rowIndex++;
+            }
         }
+        Dimension preferred = card.getPreferredSize();
+        card.setPreferredSize(new Dimension(Math.max(520, preferred.width), preferred.height));
+        card.setMinimumSize(new Dimension(420, preferred.height));
         parent.add(card);
         return values;
     }
 
+    private static Color rowBackground(int rowIndex) {
+        Color base = UIManager.getColor("Table.background");
+        if (base == null) {
+            base = UIManager.getColor("Panel.background");
+        }
+        if (base == null) {
+            base = new Color(60, 60, 60);
+        }
+        Color alternate = UIManager.getColor("Table.alternateRowColor");
+        if (alternate == null) {
+            int delta = isDark(base) ? 8 : -8;
+            alternate = adjust(base, delta);
+        }
+        return (rowIndex % 2 == 0) ? base : alternate;
+    }
+
+    private static boolean isDark(Color color) {
+        return ((color.getRed() * 299) + (color.getGreen() * 587) + (color.getBlue() * 114)) / 1000 < 128;
+    }
+
+    private static Color adjust(Color color, int delta) {
+        return new Color(
+                Math.clamp(color.getRed() + delta, 0, 255),
+                Math.clamp(color.getGreen() + delta, 0, 255),
+                Math.clamp(color.getBlue() + delta, 0, 255)
+        );
+    }
+
     private void updateDashboardSectionSizing() {
-        int visibleChartCount = visibleChartPanelCount();
-        int visibleChartsHeight = Math.max(0, visibleChartCount * (CHART_PANEL_HEIGHT / 2));
         int leftTableHeight = trafficBySourceTable.getPreferredSize().height
                 + trafficBySourceTable.getTableHeader().getPreferredSize().height + 28;
         int rightTableHeight = byIndexTable.getPreferredSize().height
@@ -524,22 +572,30 @@ public class StatsPanel extends JPanel {
         tablesRow.setMinimumSize(new Dimension(800, tablesHeight));
         fileTablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, fileTablesHeight));
         fileTablesRow.setMinimumSize(new Dimension(800, fileTablesHeight));
-        chartsPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, visibleChartsHeight));
 
-        int cardsHeight = 220;
-        for (java.awt.Component component : cardsRow.getComponents()) {
-            cardsHeight = Math.max(cardsHeight, component.getPreferredSize().height + 22);
-        }
+        int visibleChartCount = visibleChartPanelCount();
+        int visibleLegendHeight = sharedLegendPanel.isVisible() ? sharedLegendPanel.getPreferredSize().height + 4 : 0;
+        int chartsHeight = chartsPanel.isVisible()
+                ? Math.max(0, visibleChartCount * (CHART_PANEL_HEIGHT / 2)) + visibleLegendHeight
+                : 0;
+        chartsPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, chartsHeight));
+
+        int cardsHeight = Math.max(220, preferredHeightOf(cardsRow));
         cardsRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, cardsHeight));
         cardsRow.setMinimumSize(new Dimension(800, cardsHeight));
 
-        int requiredHeight = visibleChartsHeight
-                + (tablesRow.isVisible() ? tablesHeight : 0)
-                + (fileTablesRow.isVisible() ? fileTablesHeight : 0)
-                + cardsHeight
+        int lowerHeight = preferredHeightOf(lowerPanel);
+        lowerPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, lowerHeight));
+
+        int requiredHeight = chartsHeight
+                + lowerHeight
                 + CONTENT_VERTICAL_PADDING;
         int dynamicPanelHeight = Math.max(PANEL_BASE_HEIGHT, requiredHeight);
         setPreferredSize(new Dimension(PANEL_BASE_WIDTH, dynamicPanelHeight));
+    }
+
+    private static int preferredHeightOf(JPanel panel) {
+        return Math.max(0, panel.getLayout().preferredLayoutSize(panel).height);
     }
 
     /**
@@ -558,8 +614,16 @@ public class StatsPanel extends JPanel {
         openSearchChartsSectionPanel.setVisible(openSearchVisible);
         tablesRow.setVisible(openSearchVisible);
 
+        updateChartDomainLabels(fileVisible, openSearchVisible);
         chartsPanel.setVisible(fileVisible || openSearchVisible);
         sharedLegendPanel.setVisible(fileVisible || openSearchVisible);
+    }
+
+    private void updateChartDomainLabels(boolean fileVisible, boolean openSearchVisible) {
+        setChartDomainLabel(fileDocsChart, null);
+        setChartDomainLabel(docsChart, null);
+        setChartDomainLabel(fileKibChart, fileVisible && !openSearchVisible ? "Time" : null);
+        setChartDomainLabel(kibChart, openSearchVisible ? "Time" : null);
     }
 
     /** Returns whether the current runtime config has file export selected. */
@@ -848,6 +912,13 @@ public class StatsPanel extends JPanel {
         return chart;
     }
 
+    private static void setChartDomainLabel(JFreeChart chart, String label) {
+        ValueAxis domain = chart.getXYPlot().getDomainAxis();
+        if (domain != null) {
+            domain.setLabel(label);
+        }
+    }
+
     private static ChartPanel createRateChartPanel(JFreeChart chart) {
         ChartPanel panel = new ChartPanel(chart);
         panel.setMouseWheelEnabled(false);
@@ -955,6 +1026,8 @@ public class StatsPanel extends JPanel {
         }
         return false;
     }
+
+    private record MetricSection(String title, String[] keys) { }
 
     /**
      * Starts periodic refresh while this panel is in the display hierarchy.

@@ -146,7 +146,7 @@ class StatsPanelTest {
     }
 
     @Test
-    void trafficBySourceTable_matchesIndexTableColumns_andCardsOnlyShowExportState() {
+    void trafficBySourceTable_matchesIndexTableColumns_andMiscStatsShowsSingleStackedCard() {
         StatsPanel panel = onEdt(StatsPanel::new);
         DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
         DefaultTableModel indexModel = get(panel, "byIndexModel");
@@ -309,24 +309,27 @@ class StatsPanelTest {
     }
 
     @Test
-    void miscStatsCard_doesNotIncludeProxyHistoryAttemptedSuccess() {
+    void miscStatsCard_groupsMetricsByDestinationAndKeepsFileSectionVisible() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JPanel cardsRow = get(panel, "cardsRow");
         assertThat(cardsRow.getComponentCount()).isEqualTo(1);
-        JPanel miscCard = (JPanel) cardsRow.getComponent(0);
+        JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
 
-        List<String> labels = new ArrayList<>();
-        for (Component component : miscCard.getComponents()) {
-            if (component instanceof JLabel label) {
-                labels.add(label.getText());
-            }
-        }
-        assertThat(labels).contains("OpenSearch Throughput (Last 10s)");
+        assertThat(miscCard).isNotNull();
+
+        List<String> labels = collectLabelTexts(miscCard);
+        JPanel openSearchRow0 = findByName(miscCard, "miscStats.row.OpenSearch.0", JPanel.class);
+        JPanel openSearchRow1 = findByName(miscCard, "miscStats.row.OpenSearch.1", JPanel.class);
+        JPanel openSearchRow2 = findByName(miscCard, "miscStats.row.OpenSearch.2", JPanel.class);
+
+        assertThat(labels).contains("Global", "OpenSearch", "Files");
+        assertThat(labels).contains("Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops");
         assertThat(labels).contains("Spill Queue Docs");
         assertThat(labels).contains("Spill Oldest Age (s)");
         assertThat(labels).contains("Spill Enq/Deq/Drops");
         assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
         assertThat(labels).contains("Spill Directory");
+        assertThat(labels).contains("OpenSearch Throughput (Last 10s)");
         assertThat(labels).contains("OpenSearch Total Size Exported");
         assertThat(labels).contains("OpenSearch Total Docs Exported");
         assertThat(labels).contains("OpenSearch Total Failures");
@@ -334,6 +337,37 @@ class StatsPanelTest {
         assertThat(labels).contains("File Total Docs Exported");
         assertThat(labels).contains("File Total Failures");
         assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
+
+        assertThat(openSearchRow0.getBackground()).isNotEqualTo(openSearchRow1.getBackground());
+        assertThat(openSearchRow0.getBackground()).isEqualTo(openSearchRow2.getBackground());
+    }
+
+    @Test
+    void timeLabel_appearsOnlyOnBottomVisibleHistogramGroup() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(true, true));
+            StatsPanel dualPanel = onEdt(StatsPanel::new);
+            JFreeChart dualFileKibChart = get(dualPanel, "fileKibChart");
+            JFreeChart dualOpenSearchKibChart = get(dualPanel, "kibChart");
+            onEdt(() -> call(dualPanel, "refreshDashboard"));
+            assertThat(((DateAxis) dualFileKibChart.getXYPlot().getDomainAxis()).getLabel()).isNull();
+            assertThat(((DateAxis) dualOpenSearchKibChart.getXYPlot().getDomainAxis()).getLabel()).isEqualTo("Time");
+
+            RuntimeConfig.updateState(runtimeState(true, false));
+            StatsPanel fileOnlyPanel = onEdt(StatsPanel::new);
+            JFreeChart fileOnlyKibChart = get(fileOnlyPanel, "fileKibChart");
+            onEdt(() -> call(fileOnlyPanel, "refreshDashboard"));
+            assertThat(((DateAxis) fileOnlyKibChart.getXYPlot().getDomainAxis()).getLabel()).isEqualTo("Time");
+
+            RuntimeConfig.updateState(runtimeState(false, true));
+            StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
+            JFreeChart openSearchOnlyKibChart = get(openSearchOnlyPanel, "kibChart");
+            onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
+            assertThat(((DateAxis) openSearchOnlyKibChart.getXYPlot().getDomainAxis()).getLabel()).isEqualTo("Time");
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
     }
 
     @Test
@@ -501,23 +535,26 @@ class StatsPanelTest {
     @Test
     void preferredSize_growsToFitCardsAndTablesSoBottomDoesNotClip() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel tablesRow = get(panel, "tablesRow");
-        JPanel fileTablesRow = get(panel, "fileTablesRow");
-        JPanel cardsRow = get(panel, "cardsRow");
+        JPanel chartsPanel = get(panel, "chartsPanel");
+        JPanel sharedLegendPanel = get(panel, "sharedLegendPanel");
         JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
         JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
+        JPanel lowerPanel = get(panel, "lowerPanel");
+        JPanel cardsRow = get(panel, "cardsRow");
+        JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
         int chartHeight = ((Integer) getStatic(StatsPanel.class, "CHART_PANEL_HEIGHT")) / 2;
         int padding = getStatic(StatsPanel.class, "CONTENT_VERTICAL_PADDING");
 
         java.awt.Dimension preferred = onEdt(panel::getPreferredSize);
-        int visibleChartsHeight = (onEdt(fileChartsSection::isVisible) ? chartHeight * 2 : 0)
-                + (onEdt(openSearchChartsSection::isVisible) ? chartHeight * 2 : 0);
-        int requiredMinHeight = visibleChartsHeight
-                + (onEdt(tablesRow::isVisible) ? tablesRow.getPreferredSize().height : 0)
-                + (onEdt(fileTablesRow::isVisible) ? fileTablesRow.getPreferredSize().height : 0)
-                + cardsRow.getPreferredSize().height
+        int expectedChartsHeight = (onEdt(fileChartsSection::isVisible) ? chartHeight * 2 : 0)
+                + (onEdt(openSearchChartsSection::isVisible) ? chartHeight * 2 : 0)
+                + (onEdt(sharedLegendPanel::isVisible) ? sharedLegendPanel.getPreferredSize().height + 4 : 0);
+        int requiredMinHeight = expectedChartsHeight
+                + lowerPanel.getPreferredSize().height
                 + padding;
         assertThat(preferred.height).isGreaterThanOrEqualTo(requiredMinHeight);
+        assertThat(chartsPanel.getPreferredSize().height).isEqualTo(expectedChartsHeight);
+        assertThat(cardsRow.getPreferredSize().height).isGreaterThanOrEqualTo(miscCard.getPreferredSize().height);
     }
 
     @Test
@@ -656,6 +693,34 @@ class StatsPanelTest {
                 }
             } else if (type.isInstance(component)) {
                 return type.cast(component);
+            }
+        }
+        return null;
+    }
+
+    private static List<String> collectLabelTexts(Container root) {
+        List<String> labels = new ArrayList<>();
+        for (Component component : root.getComponents()) {
+            if (component instanceof JLabel label) {
+                labels.add(label.getText());
+            }
+            if (component instanceof Container child) {
+                labels.addAll(collectLabelTexts(child));
+            }
+        }
+        return labels;
+    }
+
+    private static <T extends Component> T findByName(Container root, String name, Class<T> type) {
+        for (Component component : root.getComponents()) {
+            if (name.equals(component.getName()) && type.isInstance(component)) {
+                return type.cast(component);
+            }
+            if (component instanceof Container child) {
+                T nested = findByName(child, name, type);
+                if (nested != null) {
+                    return nested;
+                }
             }
         }
         return null;
