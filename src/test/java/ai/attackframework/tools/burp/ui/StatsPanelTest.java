@@ -262,13 +262,13 @@ class StatsPanelTest {
                 }
             }
             assertThat(legendPanel.getComponent(0)).isSameAs(styleButton);
-            assertThat(styleButton.getText()).isEqualTo("Smooth");
+            assertThat(styleButton.getText()).isEqualTo("Simple");
             assertThat(styleButton.getFont().isBold()).isFalse();
             JToolTip styleToolTip = onEdt(styleButton::createToolTip);
             assertThat(styleToolTip.getComponent()).isSameAs(styleButton);
             assertThat(styleToolTip.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
             assertThat(styleButton.getToolTipText())
-                    .isEqualTo("<html>Cycle chart styles: <b>Smooth</b>, <b>Accessible</b>, and <b>Simple</b>.</html>");
+                    .isEqualTo("<html>Cycle chart styles: <b>Simple</b>, <b>Smooth</b>, and <b>Accessible</b>.</html>");
             assertThat(labels).containsExactly(
                     "Traffic",
                     "Tool",
@@ -642,6 +642,7 @@ class StatsPanelTest {
 
         JButton styleButton = get(panel, "chartStyleButton");
         onEdt((Runnable) styleButton::doClick);
+        onEdt((Runnable) styleButton::doClick);
         XYLineAndShapeRenderer renderer = currentRenderer(chart);
 
         assertSeriesStyle(panel, renderer, 0, new float[] { 8f, 5f }, true);
@@ -669,6 +670,11 @@ class StatsPanelTest {
             JButton styleButton = get(panel, "chartStyleButton");
             JFreeChart chart = get(panel, "docsChart");
 
+            assertThat(styleButton.getText()).isEqualTo("Simple");
+            assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+            assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
+
+            onEdt((Runnable) styleButton::doClick);
             assertThat(styleButton.getText()).isEqualTo("Smooth");
             assertThat(chart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
             assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
@@ -680,11 +686,6 @@ class StatsPanelTest {
 
             onEdt((Runnable) styleButton::doClick);
             assertThat(styleButton.getText()).isEqualTo("Simple");
-            assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
-            assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
-
-            onEdt((Runnable) styleButton::doClick);
-            assertThat(styleButton.getText()).isEqualTo("Smooth");
         } finally {
             RuntimeConfig.updateState(previous);
         }
@@ -708,6 +709,10 @@ class StatsPanelTest {
             JFreeChart chart = get(panel, "docsChart");
 
             XYPlot plot = chart.getXYPlot();
+            assertThat(plot.getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+            JButton styleButton = get(panel, "chartStyleButton");
+            assertThat(styleButton.getText()).isEqualTo("Simple");
+            onEdt((Runnable) styleButton::doClick);
             assertThat(plot.getRenderer()).isInstanceOf(XYSplineRenderer.class);
             XYSplineRenderer renderer = (XYSplineRenderer) plot.getRenderer();
             assertThat(renderer.getFillType()).isEqualTo(XYSplineRenderer.FillType.TO_LOWER_BOUND);
@@ -732,7 +737,7 @@ class StatsPanelTest {
                     previous.trafficToolTypes(),
                     previous.findingsSeverities(),
                     previous.enabledExportFieldsByIndex(),
-                    new ConfigState.UiPreferences(2, ConfigState.defaultLogPanelPreferences())));
+                    new ConfigState.UiPreferences(3, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
             JButton styleButton = get(panel, "chartStyleButton");
             assertThat(styleButton.getText()).isEqualTo("Accessible");

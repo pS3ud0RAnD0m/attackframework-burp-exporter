@@ -79,7 +79,7 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
  */
 public class StatsPanel extends JPanel {
 
-    private static final String[] CHART_STYLE_NAMES = { "Smooth", "Accessible", "Simple" };
+    private static final String[] CHART_STYLE_NAMES = { "Simple", "Smooth", "Accessible" };
 
     private static final int PANEL_BASE_WIDTH = 1200;
     private static final int PANEL_BASE_HEIGHT = 900;
@@ -1140,7 +1140,7 @@ public class StatsPanel extends JPanel {
             renderer.setSeriesShapesVisible(i, seriesShapesVisible(i));
             renderer.setSeriesShapesFilled(i, seriesShapesFilled(i));
         }
-        if (chartStyleIndex == 0) {
+        if (chartStyleIndex == 1) {
             XYSplineRenderer slickRenderer = (XYSplineRenderer) renderer;
             slickRenderer.setFillType(XYSplineRenderer.FillType.TO_LOWER_BOUND);
             for (int i = 0; i < SERIES_STYLES.length; i++) {
@@ -1153,7 +1153,7 @@ public class StatsPanel extends JPanel {
 
     private XYLineAndShapeRenderer rendererForStyle(JFreeChart chart) {
         XYPlot plot = chart.getXYPlot();
-        if (chartStyleIndex == 0) {
+        if (chartStyleIndex == 1) {
             if (plot.getRenderer() instanceof XYSplineRenderer splineRenderer) {
                 splineRenderer.setPrecision(12);
                 return splineRenderer;
@@ -1197,7 +1197,7 @@ public class StatsPanel extends JPanel {
         button.setFocusable(false);
         Font buttonFont = UIManager.getFont("Button.font");
         button.setFont(uiFont(Font.PLAIN, buttonFont == null ? 12f : buttonFont.getSize2D()));
-        Tooltips.apply(button, Tooltips.htmlRaw("Cycle chart styles: <b>Smooth</b>, <b>Accessible</b>, and <b>Simple</b>."));
+        Tooltips.apply(button, Tooltips.htmlRaw("Cycle chart styles: <b>Simple</b>, <b>Smooth</b>, and <b>Accessible</b>."));
         button.addActionListener(event -> cycleChartStyle());
         return button;
     }
@@ -1260,25 +1260,25 @@ public class StatsPanel extends JPanel {
     private Paint seriesPaint(int index) {
         SeriesStyle base = SERIES_STYLES[index];
         return switch (chartStyleIndex) {
-            case 0 -> slickGradientAreaPaint(base);
-            case 1 -> base.paint();
-            case 2 -> withAlpha(base.paint(), isDarkTheme() ? 235 : 210);
+            case 0 -> withAlpha(base.paint(), isDarkTheme() ? 235 : 210);
+            case 1 -> slickGradientAreaPaint(base);
+            case 2 -> base.paint();
             default -> base.paint();
         };
     }
 
     private Paint seriesLinePaint(int index) {
-        return chartStyleIndex == 0
+        return chartStyleIndex == 1
                 ? withAlpha(seriesSolidColor(index), isDarkTheme() ? 245 : 225)
                 : seriesPaint(index);
     }
 
     private Paint seriesAreaPaint(int index) {
-        return chartStyleIndex == 0 ? seriesPaint(index) : seriesLinePaint(index);
+        return chartStyleIndex == 1 ? seriesPaint(index) : seriesLinePaint(index);
     }
 
     private Paint legendPaint(int index, int topY, int bottomY) {
-        if (chartStyleIndex == 0) {
+        if (chartStyleIndex == 1) {
             Color top = withAlpha(seriesSolidColor(index), isDarkTheme() ? 235 : 210);
             Color bottom = withAlpha(adjust(seriesSolidColor(index), isDarkTheme() ? -34 : -26), isDarkTheme() ? 130 : 150);
             return new GradientPaint(0f, topY, top, 0f, bottomY, bottom);
@@ -1288,9 +1288,9 @@ public class StatsPanel extends JPanel {
 
     private BasicStroke seriesStroke(int index) {
         return switch (chartStyleIndex) {
-            case 0 -> new BasicStroke(2.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-            case 1 -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
-            case 2 -> new BasicStroke(2.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 0 -> new BasicStroke(2.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 1 -> new BasicStroke(2.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 2 -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
             default -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
         };
     }
@@ -1308,8 +1308,8 @@ public class StatsPanel extends JPanel {
     private boolean seriesShapesVisible(int index) {
         return index >= 0 && switch (chartStyleIndex) {
             case 0 -> false;
-            case 1 -> true;
-            case 2 -> false;
+            case 1 -> false;
+            case 2 -> true;
             default -> true;
         };
     }
@@ -1317,8 +1317,8 @@ public class StatsPanel extends JPanel {
     private boolean seriesShapesFilled(int index) {
         return switch (chartStyleIndex) {
             case 0 -> false;
-            case 1 -> SERIES_STYLES[index].markerFilled();
-            case 2 -> false;
+            case 1 -> false;
+            case 2 -> SERIES_STYLES[index].markerFilled();
             default -> SERIES_STYLES[index].markerFilled();
         };
     }
