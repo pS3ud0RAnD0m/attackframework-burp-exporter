@@ -13,12 +13,10 @@ import java.util.Map;
 
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -51,9 +49,7 @@ class FileExportReimportIT {
 
     private final ConfigState.State previous = RuntimeConfig.getState();
 
-    @AfterEach
-    @SuppressWarnings("unused")
-    void tearDown() {
+    private void restoreRuntimeState() {
         RuntimeConfig.updateState(previous);
         FileExportService.resetForTests();
         OpenSearchCleanupIT.deleteAttackFrameworkIndexesNow();
@@ -61,30 +57,34 @@ class FileExportReimportIT {
 
     @Test
     void exportedNdjson_canBeImportedTwice_withoutIncreasingCount() throws Exception {
-        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        try {
+            Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        Path root = TestPathSupport.createDirectory("file-export-reimport");
-        String indexName = IndexNaming.indexNameForShortName("traffic");
-        RuntimeConfig.updateState(fileOnlyNdjsonState(root));
-        OpenSearchCleanupIT.deleteAttackFrameworkIndexesNow();
-        OpenSearchReachable.createSelectedIndexes(List.of("traffic"));
+            Path root = TestPathSupport.createDirectory("file-export-reimport");
+            String indexName = IndexNaming.indexNameForShortName("traffic");
+            RuntimeConfig.updateState(fileOnlyNdjsonState(root));
+            OpenSearchCleanupIT.deleteAttackFrameworkIndexesNow();
+            OpenSearchReachable.createSelectedIndexes(List.of("traffic"));
 
-        PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
-        FileExportService.emit(prepared);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            FileExportService.emit(prepared);
 
-        Path ndjsonPath = root.resolve(indexName + ".ndjson");
-        assertThat(ndjsonPath).exists();
-        String payload = Files.readString(ndjsonPath);
-        assertThat(payload).contains("\"_id\":\"" + prepared.exportId() + "\"");
+            Path ndjsonPath = root.resolve(indexName + ".ndjson");
+            assertThat(ndjsonPath).exists();
+            String payload = Files.readString(ndjsonPath);
+            assertThat(payload).contains("\"_id\":\"" + prepared.exportId() + "\"");
 
-        bulkImport(indexName, payload);
-        long countAfterFirst = countDocuments(indexName);
+            bulkImport(indexName, payload);
+            long countAfterFirst = countDocuments(indexName);
 
-        bulkImport(indexName, payload);
-        long countAfterSecond = countDocuments(indexName);
+            bulkImport(indexName, payload);
+            long countAfterSecond = countDocuments(indexName);
 
-        assertThat(countAfterFirst).isEqualTo(1L);
-        assertThat(countAfterSecond).isEqualTo(countAfterFirst);
+            assertThat(countAfterFirst).isEqualTo(1L);
+            assertThat(countAfterSecond).isEqualTo(countAfterFirst);
+        } finally {
+            restoreRuntimeState();
+        }
     }
 
     private static ConfigState.State fileOnlyNdjsonState(Path root) {
@@ -120,7 +120,6 @@ class FileExportReimportIT {
         return document;
     }
 
-    @SuppressWarnings("deprecation")
     private static void bulkImport(String indexName, String payload) throws IOException {
         String baseUrl = OpenSearchReachable.getBaseUrl();
         String bulkUrl = (baseUrl.endsWith("/") ? baseUrl + indexName + "/_bulk" : baseUrl + "/" + indexName + "/_bulk")
@@ -131,7 +130,7 @@ class FileExportReimportIT {
 
         CloseableHttpClient client = OpenSearchConnector.getClassicHttpClient(
                 baseUrl, OpenSearchReachable.getUsername(), OpenSearchReachable.getPassword());
-        try (CloseableHttpResponse response = client.execute(post)) {
+        client.execute(post, response -> {
             String body;
             try {
                 body = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
@@ -141,7 +140,8 @@ class FileExportReimportIT {
             assertThat(response.getCode()).isBetween(200, 299);
             JsonNode root = JSON.readTree(body);
             assertThat(root.path("errors").asBoolean(true)).isFalse();
-        }
+            return null;
+        });
     }
 
     private static long countDocuments(String indexName) throws IOException {

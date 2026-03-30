@@ -23,8 +23,7 @@ class LogPanelPersistenceHeadlessTest {
         prefs.remove("minLevel");
 
         LogPanel panel = newPanel();
-        @SuppressWarnings("unchecked")
-        JComboBox<String> level = (JComboBox<String>) combo(panel, "log.filter.level");
+        JComboBox<?> level = combo(panel, "log.filter.level");
         assertThat(level.getSelectedItem()).isEqualTo("TRACE");
     }
 
@@ -33,8 +32,7 @@ class LogPanelPersistenceHeadlessTest {
         // Instance A: set values
         LogPanel a = newPanel();
 
-        @SuppressWarnings("unchecked")
-        JComboBox<String> level = (JComboBox<String>) combo(a, "log.filter.level");
+        JComboBox<?> level = combo(a, "log.filter.level");
         level.setSelectedItem("WARN");
 
         JCheckBox pause = check(a, "Pause autoscroll");
@@ -52,8 +50,7 @@ class LogPanelPersistenceHeadlessTest {
         // Instance B: verify restoration
         LogPanel b = newPanel();
 
-        @SuppressWarnings("unchecked")
-        JComboBox<String> levelB = (JComboBox<String>) combo(b, "log.filter.level");
+        JComboBox<?> levelB = combo(b, "log.filter.level");
         assertThat(levelB.getSelectedItem()).isEqualTo("WARN");
 
         JCheckBox pauseB = check(b, "Pause autoscroll");
@@ -72,8 +69,7 @@ class LogPanelPersistenceHeadlessTest {
         try {
             LogPanel panel = newPanel();
 
-            @SuppressWarnings("unchecked")
-            JComboBox<String> level = (JComboBox<String>) combo(panel, "log.filter.level");
+            JComboBox<?> level = combo(panel, "log.filter.level");
             level.setSelectedItem("ERROR");
 
             JCheckBox pause = check(panel, "Pause autoscroll");

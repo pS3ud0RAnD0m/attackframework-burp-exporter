@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.ui;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.event.ActionEvent;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.AbstractButton;
 import javax.swing.Action;
@@ -83,17 +84,15 @@ public class LogPanelTestHarness {
                 throw asRuntime(e);
             }
         }
-        final Object[] box = new Object[1];
+        AtomicReference<T> box = new AtomicReference<>();
         onEdt(() -> {
             try {
-                box[0] = c.call();
+                box.set(c.call());
             } catch (Exception e) {
                 throw asRuntime(e);
             }
         });
-        @SuppressWarnings("unchecked")
-        T result = (T) box[0];
-        return result;
+        return box.get();
     }
 
     private static RuntimeException asRuntime(Throwable t) {
@@ -180,11 +179,10 @@ public class LogPanelTestHarness {
         return (JCheckBox) c;
     }
 
-    @SuppressWarnings("rawtypes")
-    public static JComboBox combo(LogPanel root, String nameOrTooltipOrText) {
+    public static JComboBox<?> combo(LogPanel root, String nameOrTooltipOrText) {
         Component c = findByNameOrTooltipOrText(root, nameOrTooltipOrText);
         if (!(c instanceof JComboBox)) throw new IllegalStateException("No JComboBox: " + nameOrTooltipOrText);
-        return (JComboBox) c;
+        return (JComboBox<?>) c;
     }
 
     /** Match-counter label text like "n/m". */
@@ -275,8 +273,7 @@ public class LogPanelTestHarness {
 
     /** Resets persisted UI state so each test starts from a clean baseline. */
     public static void resetPanelState(LogPanel p) {
-        @SuppressWarnings("unchecked")
-        JComboBox<String> level = (JComboBox<String>) combo(p, "log.filter.level");
+        JComboBox<?> level = combo(p, "log.filter.level");
         onEdt(() -> level.setSelectedItem("INFO"));
 
         JCheckBox fCase = check(p, "log.filter.case");

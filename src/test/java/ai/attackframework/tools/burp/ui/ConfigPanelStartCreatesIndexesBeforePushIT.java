@@ -221,10 +221,9 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static <T extends Component> T findByName(Container root, String name, Class<T> type) {
         if (type.isInstance(root) && name.equals(root.getName())) {
-            return (T) root;
+            return type.cast(root);
         }
         for (Component c : root.getComponents()) {
             if (c instanceof Container cont) {
@@ -232,7 +231,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
                 if (found != null) return found;
             }
             if (type.isInstance(c) && name.equals(c.getName())) {
-                return (T) c;
+                return type.cast(c);
             }
         }
         return null;

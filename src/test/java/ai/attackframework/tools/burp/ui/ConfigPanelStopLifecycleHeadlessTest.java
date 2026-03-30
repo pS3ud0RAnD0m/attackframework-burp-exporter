@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -62,7 +63,7 @@ class ConfigPanelStopLifecycleHeadlessTest {
             JButton startStop = (JButton) findByName(panel, "control.startStop");
             JTextArea controlStatus = findByName(panel, "control.status", JTextArea.class);
             JCheckBox openSearchEnabled = findByName(panel, "os.enable", JCheckBox.class);
-            JTextField openSearchUrlField = getField(panel, "openSearchUrlField");
+            JTextField openSearchUrlField = get(panel, "openSearchUrlField");
             assertThat(startStop).isNotNull();
             assertThat(controlStatus).isNotNull();
 
@@ -104,18 +105,6 @@ class ConfigPanelStopLifecycleHeadlessTest {
             ref.set(panel);
         });
         return ref.get();
-    }
-
-    private static <T> T getField(Object target, String fieldName) {
-        try {
-            java.lang.reflect.Field field = target.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            T value = (T) field.get(target);
-            return value;
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private static void runEdt(Runnable runnable) throws Exception {

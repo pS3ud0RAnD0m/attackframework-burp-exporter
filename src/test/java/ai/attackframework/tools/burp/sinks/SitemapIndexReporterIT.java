@@ -4,14 +4,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 import org.opensearch.client.opensearch.indices.RefreshRequest;
 
@@ -44,6 +46,8 @@ import burp.api.montoya.sitemap.SiteMap;
 @Tag("integration")
 class SitemapIndexReporterIT {
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     private static final String ITEM_URL = "https://example.com/path?q=1";
@@ -55,17 +59,11 @@ class SitemapIndexReporterIT {
     private static final short ITEM_STATUS = 200;
     private static final String ITEM_REASON = "OK";
 
-    @BeforeEach
-    void assumeOpenSearchReachable() {
-        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-    }
-
     private static String sitemapIndexName() {
         return IndexNaming.indexNameForShortName("sitemap");
     }
 
-    @AfterEach
-    void cleanup() {
+    private void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
         OpenSearchClient client = OpenSearchReachable.getClient();
@@ -78,43 +76,44 @@ class SitemapIndexReporterIT {
 
     @Test
     void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() {
-        createSitemapIndex();
-        setRuntimeConfigForSitemapExport();
-        setMockMontoyaApiWithOneSitemapItem();
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        try {
+            createSitemapIndex();
+            setRuntimeConfigForSitemapExport();
+            setMockMontoyaApiWithOneSitemapItem();
 
-        SitemapIndexReporter.start();
-        SitemapIndexReporter.pushSnapshotNow();
+            SitemapIndexReporter.start();
+            SitemapIndexReporter.pushSnapshotNow();
 
-        Map<String, Object> doc = awaitFirstDocument();
-        assertThat(doc).isNotNull();
-        assertThat(doc).containsKey("url");
-        assertThat(doc).containsKey("host");
-        assertThat(doc).containsKey("port");
-        assertThat(doc).containsKey("protocol_transport");
-        assertThat(doc).containsKey("method");
-        assertThat(doc).containsKey("status_code");
-        assertThat(doc).containsKey("request_id");
-        assertThat(doc).containsKey("document_meta");
-        assertThat(doc).containsKey("source");
-        assertThat(doc).containsKey("path");
-        assertThat(doc).containsKey("status_reason");
+            Map<String, Object> doc = awaitFirstDocument();
+            assertThat(doc).isNotNull();
+            assertThat(doc).containsKey("url");
+            assertThat(doc).containsKey("host");
+            assertThat(doc).containsKey("port");
+            assertThat(doc).containsKey("protocol_transport");
+            assertThat(doc).containsKey("method");
+            assertThat(doc).containsKey("status_code");
+            assertThat(doc).containsKey("request_id");
+            assertThat(doc).containsKey("document_meta");
+            assertThat(doc).containsKey("source");
+            assertThat(doc).containsKey("path");
+            assertThat(doc).containsKey("status_reason");
 
-        assertThat(doc.get("url")).isEqualTo(ITEM_URL);
-        assertThat(doc.get("host")).isEqualTo(ITEM_HOST);
-        assertThat(doc.get("port")).isEqualTo(ITEM_PORT);
-        assertThat(doc.get("protocol_transport")).isEqualTo("https");
-        assertThat(doc.get("method")).isEqualTo(ITEM_METHOD);
-        assertThat(doc.get("status_code")).isEqualTo((int) ITEM_STATUS);
-        assertThat(doc.get("status_reason")).isEqualTo(ITEM_REASON);
-        assertThat(doc.get("path")).isEqualTo(ITEM_PATH);
-        assertThat(doc.get("source")).isEqualTo("burp-exporter");
+            assertThat(doc.get("url")).isEqualTo(ITEM_URL);
+            assertThat(doc.get("host")).isEqualTo(ITEM_HOST);
+            assertThat(doc.get("port")).isEqualTo(ITEM_PORT);
+            assertThat(doc.get("protocol_transport")).isEqualTo("https");
+            assertThat(doc.get("method")).isEqualTo(ITEM_METHOD);
+            assertThat(doc.get("status_code")).isEqualTo((int) ITEM_STATUS);
+            assertThat(doc.get("status_reason")).isEqualTo(ITEM_REASON);
+            assertThat(doc.get("path")).isEqualTo(ITEM_PATH);
+            assertThat(doc.get("source")).isEqualTo("burp-exporter");
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> documentMeta = (Map<String, Object>) doc.get("document_meta");
-        assertThat(documentMeta).isNotNull()
-                .containsKey("schema_version")
-                .containsKey("extension_version")
-                .containsKey("indexed_at");
+            Map<?, ?> documentMeta = nestedMap(doc, "document_meta");
+            assertContainsKeys(documentMeta, "schema_version", "extension_version", "indexed_at");
+        } finally {
+            cleanup();
+        }
     }
 
     private void createSitemapIndex() {
@@ -177,7 +176,6 @@ class SitemapIndexReporterIT {
         MontoyaApiProvider.set(api);
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> awaitFirstDocument() {
         OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
@@ -192,10 +190,13 @@ class SitemapIndexReporterIT {
                 // best-effort refresh
             }
             try {
-                SearchResponse<Map<String, Object>> resp = client.search(req, (Class<Map<String, Object>>) (Class<?>) Map.class);
+                SearchResponse<JsonNode> resp = client.search(req, JsonNode.class);
                 List<?> hits = resp.hits().hits();
                 if (!hits.isEmpty()) {
-                    return (Map<String, Object>) resp.hits().hits().get(0).source();
+                    JsonNode source = resp.hits().hits().get(0).source();
+                    if (source != null) {
+                        return JSON.convertValue(source, new TypeReference<Map<String, Object>>() { });
+                    }
                 }
             } catch (Exception e) {
                 throw new AssertionError("Search failed: " + e.getMessage(), e);
@@ -210,5 +211,17 @@ class SitemapIndexReporterIT {
             }
         }
         throw new AssertionError("at least one document indexed (after " + maxAttempts + " attempts)");
+    }
+
+    private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {
+        Object value = parent.get(key);
+        assertThat(value).isInstanceOf(Map.class);
+        return (Map<?, ?>) value;
+    }
+
+    private static void assertContainsKeys(Map<?, ?> map, String... keys) {
+        for (String key : keys) {
+            assertThat(map.containsKey(key)).isTrue();
+        }
     }
 }

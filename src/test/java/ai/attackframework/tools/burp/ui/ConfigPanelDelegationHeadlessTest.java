@@ -11,9 +11,7 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
@@ -23,13 +21,11 @@ import ai.attackframework.tools.burp.ui.controller.ConfigController;
 /**
  * Verifies that the panel delegates to the controller and posts OpenSearch status updates.
  */
-@SuppressWarnings("unused")
 class ConfigPanelDelegationHeadlessTest {
 
     private static final class TestUi implements ConfigController.Ui {
-        volatile String fileMsg;
         volatile String osMsg;
-        @Override public void onFileStatus(String m) { fileMsg = m; }
+        @Override public void onFileStatus(String m) { }
         @Override public void onOpenSearchStatus(String m) { osMsg = m; }
         @Override public void onControlStatus(String m) {
             // Control status is not used in this scenario; required by ConfigController.Ui
@@ -40,8 +36,7 @@ class ConfigPanelDelegationHeadlessTest {
     private ConfigPanel panel;
     private Path defaultFileRoot;
 
-    @BeforeEach
-    void setup() throws Exception {
+    private void setup() throws Exception {
         ui = new TestUi();
         defaultFileRoot = TestPathSupport.defaultUiFileRoot();
         Assumptions.assumeTrue(TestPathSupport.isWritableDirectory(defaultFileRoot),
@@ -70,22 +65,24 @@ class ConfigPanelDelegationHeadlessTest {
         panel = ref.get();
     }
 
-    @AfterEach
-    void cleanupDefaultRoot() throws IOException {
+    private void cleanupDefaultRoot() throws IOException {
         TestPathSupport.cleanupExportArtifacts(defaultFileRoot);
     }
 
     @Test
     void clicking_testConnection_invokes_controller_and_posts_status() throws Exception {
-        javax.swing.JButton testConn = get(panel, "testConnectionButton");
+        setup();
+        try {
+            javax.swing.JButton testConn = get(panel, "testConnectionButton");
 
-        onEdtAndWait(() -> {
-            testConn.doClick();
-        });
+            onEdtAndWait(testConn::doClick);
 
-        await(() -> ui.osMsg != null);
+            await(() -> ui.osMsg != null);
 
-        assertThat(ui.osMsg).isNotBlank();
+            assertThat(ui.osMsg).isNotBlank();
+        } finally {
+            cleanupDefaultRoot();
+        }
     }
 
     // ---- helpers ----

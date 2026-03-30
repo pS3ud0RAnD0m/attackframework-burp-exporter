@@ -11,7 +11,6 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
@@ -24,24 +23,25 @@ import ai.attackframework.tools.burp.utils.config.ConfigState;
  * Verifies that toggling destination checkboxes enables/disables the corresponding
  * text fields and action buttons.
  */
-@SuppressWarnings("unused")
 class ConfigPanelDestinationEnablementHeadlessTest {
 
-    private ConfigPanel panel;
+    private final ConfigPanel panel = createPanel();
 
-    @BeforeEach
-    @SuppressWarnings("unused")
-    void setup() throws Exception {
+    private static ConfigPanel createPanel() {
         AtomicReference<ConfigPanel> ref = new AtomicReference<>();
-        SwingUtilities.invokeAndWait(() -> {
-            ConfigPanel p = new ConfigPanel(new ConfigController(new NoopUi()));
-            if (p.getWidth() <= 0 || p.getHeight() <= 0) {
-                p.setSize(1000, 700);
-            }
-            p.doLayout();
-            ref.set(p);
-        });
-        panel = ref.get();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel(new ConfigController(new NoopUi()));
+                if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+                    p.setSize(1000, 700);
+                }
+                p.doLayout();
+                ref.set(p);
+            });
+            return ref.get();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create ConfigPanel test fixture", e);
+        }
     }
 
     @Test

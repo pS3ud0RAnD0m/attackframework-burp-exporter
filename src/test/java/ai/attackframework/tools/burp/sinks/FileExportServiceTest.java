@@ -22,7 +22,6 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
-@SuppressWarnings("unused")
 class FileExportServiceTest {
 
     private final ConfigState.State previous = RuntimeConfig.getState();

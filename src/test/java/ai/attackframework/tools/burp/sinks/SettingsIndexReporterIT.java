@@ -3,9 +3,7 @@ package ai.attackframework.tools.burp.sinks;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -13,6 +11,10 @@ import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
 import org.opensearch.client.opensearch.indices.RefreshRequest;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -40,23 +42,19 @@ import burp.api.montoya.project.Project;
 @Tag("integration")
 class SettingsIndexReporterIT {
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
 
     private static final String PROJECT_JSON = "{\"project_options\":{\"test_key\":\"project_value\"}}";
     private static final String USER_JSON = "{\"user_options\":{\"test_key\":\"user_value\"}}";
     private static final String PROJECT_ID = "it-settings-project-id";
 
-    @BeforeEach
-    void assumeOpenSearchReachable() {
-        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-    }
-
     private static String settingsIndexName() {
         return IndexNaming.indexNameForShortName("settings");
     }
 
-    @AfterEach
-    void cleanup() {
+    private void cleanup() {
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
         OpenSearchClient client = OpenSearchReachable.getClient();
@@ -69,37 +67,34 @@ class SettingsIndexReporterIT {
 
     @Test
     void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() {
-        createSettingsIndex();
-        setRuntimeConfigForSettingsExport();
-        setMockMontoyaApi();
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        try {
+            createSettingsIndex();
+            setRuntimeConfigForSettingsExport();
+            setMockMontoyaApi();
 
-        SettingsIndexReporter.pushSnapshotNow();
+            SettingsIndexReporter.pushSnapshotNow();
 
-        Map<String, Object> doc = awaitFirstDocument();
-        assertThat(doc).isNotNull();
-        assertThat(doc).containsKey("project_id");
-        assertThat(doc).containsKey("settings_project");
-        assertThat(doc).containsKey("settings_user");
-        assertThat(doc).containsKey("document_meta");
+            Map<String, Object> doc = awaitFirstDocument();
+            assertThat(doc).isNotNull();
+            assertThat(doc).containsKey("project_id");
+            assertThat(doc).containsKey("settings_project");
+            assertThat(doc).containsKey("settings_user");
+            assertThat(doc).containsKey("document_meta");
 
-        assertThat(doc.get("project_id")).isEqualTo(PROJECT_ID);
+            assertThat(doc.get("project_id")).isEqualTo(PROJECT_ID);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> settingsProject = (Map<String, Object>) doc.get("settings_project");
-        assertThat(settingsProject).isNotNull().containsEntry("project_options",
-                Map.of("test_key", "project_value"));
+            Map<?, ?> settingsProject = nestedMap(doc, "settings_project");
+            assertThat(settingsProject.get("project_options")).isEqualTo(Map.of("test_key", "project_value"));
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> settingsUser = (Map<String, Object>) doc.get("settings_user");
-        assertThat(settingsUser).isNotNull().containsEntry("user_options",
-                Map.of("test_key", "user_value"));
+            Map<?, ?> settingsUser = nestedMap(doc, "settings_user");
+            assertThat(settingsUser.get("user_options")).isEqualTo(Map.of("test_key", "user_value"));
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> documentMeta = (Map<String, Object>) doc.get("document_meta");
-        assertThat(documentMeta).isNotNull()
-                .containsKey("schema_version")
-                .containsKey("extension_version")
-                .containsKey("indexed_at");
+            Map<?, ?> documentMeta = nestedMap(doc, "document_meta");
+            assertContainsKeys(documentMeta, "schema_version", "extension_version", "indexed_at");
+        } finally {
+            cleanup();
+        }
     }
 
     private void createSettingsIndex() {
@@ -141,7 +136,6 @@ class SettingsIndexReporterIT {
      * found or the retry limit is reached (handles refresh latency when cluster
      * is under load, e.g. in the integration suite).
      */
-    @SuppressWarnings("unchecked")
     private Map<String, Object> awaitFirstDocument() {
         OpenSearchClient client = OpenSearchReachable.getClient();
         SearchRequest req = new SearchRequest.Builder()
@@ -156,10 +150,13 @@ class SettingsIndexReporterIT {
                 // best-effort refresh
             }
             try {
-                SearchResponse<Map<String, Object>> resp = client.search(req, (Class<Map<String, Object>>) (Class<?>) Map.class);
+                SearchResponse<JsonNode> resp = client.search(req, JsonNode.class);
                 List<?> hits = resp.hits().hits();
                 if (!hits.isEmpty()) {
-                    return (Map<String, Object>) resp.hits().hits().get(0).source();
+                    JsonNode source = resp.hits().hits().get(0).source();
+                    if (source != null) {
+                        return JSON.convertValue(source, new TypeReference<Map<String, Object>>() { });
+                    }
                 }
             } catch (Exception e) {
                 throw new AssertionError("Search failed: " + e.getMessage(), e);
@@ -174,5 +171,17 @@ class SettingsIndexReporterIT {
             }
         }
         throw new AssertionError("at least one document indexed (after " + maxAttempts + " attempts)");
+    }
+
+    private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {
+        Object value = parent.get(key);
+        assertThat(value).isInstanceOf(Map.class);
+        return (Map<?, ?>) value;
+    }
+
+    private static void assertContainsKeys(Map<?, ?> map, String... keys) {
+        for (String key : keys) {
+            assertThat(map.containsKey(key)).isTrue();
+        }
     }
 }

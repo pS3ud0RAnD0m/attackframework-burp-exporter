@@ -9,7 +9,6 @@ import javax.swing.JLabel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,9 +17,7 @@ class AboutPanelVersionHeadlessTest {
 
     private String previous;
 
-    @SuppressWarnings("unused")
-    @AfterEach
-    void restore() {
+    private void restore() {
         if (previous == null) {
             System.clearProperty("attackframework.version");
         } else {
@@ -30,26 +27,28 @@ class AboutPanelVersionHeadlessTest {
 
     @Test
     void text_includes_version_from_system_property_override() {
-        previous = System.getProperty("attackframework.version");
-        System.setProperty("attackframework.version", "1.2.3-test");
+        try {
+            previous = System.getProperty("attackframework.version");
+            System.setProperty("attackframework.version", "1.2.3-test");
 
-        AboutPanel p = new AboutPanel();
-        String txt = collectVisibleText(p);
-        List<JLabel> labels = findLabels(p);
+            AboutPanel p = new AboutPanel();
+            String txt = collectVisibleText(p);
+            List<JLabel> labels = findLabels(p);
 
-        assertThat(txt)
-                .contains("Attack Framework: Burp Exporter")
-                .contains("v1.2.3-test")
-                .contains("This Burp Suite extension continuously exports settings, sitemap, issues, and traffic")
-                .contains("Burp Exporter:")
-                .contains("https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter")
-                .contains("Attack Framework:")
-                .contains("https://github.com/attackframework/attackframework");
-        assertThat(labels).filteredOn(label -> label.getText() != null && label.getText().startsWith("https://github.com/"))
-                .hasSize(2)
-                .allSatisfy(label -> {
-                    assertThat(label.getMouseListeners()).isNotEmpty();
-                });
+            assertThat(txt)
+                    .contains("Attack Framework: Burp Exporter")
+                    .contains("v1.2.3-test")
+                    .contains("This Burp Suite extension continuously exports settings, sitemap, issues, and traffic")
+                    .contains("Burp Exporter:")
+                    .contains("https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter")
+                    .contains("Attack Framework:")
+                    .contains("https://github.com/attackframework/attackframework");
+            assertThat(labels).filteredOn(label -> label.getText() != null && label.getText().startsWith("https://github.com/"))
+                    .hasSize(2)
+                    .allSatisfy(label -> assertThat(label.getMouseListeners()).isNotEmpty());
+        } finally {
+            restore();
+        }
     }
 
     private static List<JLabel> findLabels(Container root) {

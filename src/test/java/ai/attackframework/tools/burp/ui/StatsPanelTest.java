@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -863,17 +864,15 @@ class StatsPanelTest {
                 throw new RuntimeException(e);
             }
         }
-        final Object[] box = new Object[1];
+        AtomicReference<T> box = new AtomicReference<>();
         onEdt(() -> {
             try {
-                box[0] = callable.call();
+                box.set(callable.call());
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         });
-        @SuppressWarnings("unchecked")
-        T value = (T) box[0];
-        return value;
+        return box.get();
     }
 
     private static long sourceTableLong(DefaultTableModel model, String rowLabel, int columnIndex) {

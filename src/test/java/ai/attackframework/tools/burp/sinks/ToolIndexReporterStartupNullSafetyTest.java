@@ -40,8 +40,9 @@ class ToolIndexReporterStartupNullSafetyTest {
 
         assertThat(callStatic(SitemapIndexReporter.class, "safeSiteMapItems", api)).isNull();
 
-        @SuppressWarnings("unchecked")
-        List<Object> wsHistory = (List<Object>) callStatic(ProxyWebSocketIndexReporter.class, "safeWebSocketHistory", api);
+        Object wsHistoryObj = callStatic(ProxyWebSocketIndexReporter.class, "safeWebSocketHistory", api);
+        assertThat(wsHistoryObj).isInstanceOf(List.class);
+        List<?> wsHistory = (List<?>) wsHistoryObj;
         assertThat(wsHistory).isEmpty();
 
         boolean inScope = (boolean) callStatic(ProxyWebSocketIndexReporter.class, "safeBurpInScope", api, "https://example.com");

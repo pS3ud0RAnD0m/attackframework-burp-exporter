@@ -14,7 +14,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
@@ -110,9 +109,31 @@ public final class ChunkedBulkSender {
         post.setEntity(new InputStreamEntity(ndjsonStream, -1, ContentType.create("application/x-ndjson")));
         addPreemptiveBasicAuthHeader(post);
 
-        try (CloseableHttpResponse response = executeRequest(baseUrl, post)) {
+        try {
+            return executeRequest(baseUrl, post, attemptedRef, attemptedBytesRef, indexName);
+        } catch (IOException | RuntimeException e) {
+            long attemptedBytes = attemptedBytesRef.get();
+            Logger.logDebug("ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
+            return new Result(0, attemptedRef.get(), attemptedBytes, 0);
+        }
+    }
+
+    private static Result executeRequest(
+            String baseUrl,
+            HttpPost post,
+            AtomicInteger attemptedRef,
+            AtomicLong attemptedBytesRef,
+            String indexName) throws IOException {
+        CloseableHttpClient client = OpenSearchConnector.getClassicHttpClient(
+                baseUrl, RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
+        return client.execute(post, response -> {
             int status = response.getCode();
-            String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            String responseBody;
+            try {
+                responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            } catch (ParseException e) {
+                throw new IOException("Failed to parse bulk response body for " + indexName, e);
+            }
             int attempted = attemptedRef.get();
             long attemptedBytes = attemptedBytesRef.get();
             if (status < 200 || status >= 300) {
@@ -124,18 +145,7 @@ public final class ChunkedBulkSender {
                     ? Math.round((double) attemptedBytes * parsed.successCount / attempted)
                     : 0;
             return new Result(parsed.successCount, parsed.attemptedCount, attemptedBytes, successBytes);
-        } catch (IOException | ParseException | RuntimeException e) {
-            long attemptedBytes = attemptedBytesRef.get();
-            Logger.logDebug("ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
-            return new Result(0, attemptedRef.get(), attemptedBytes, 0);
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    private static CloseableHttpResponse executeRequest(String baseUrl, HttpPost post) throws IOException {
-        CloseableHttpClient client = OpenSearchConnector.getClassicHttpClient(
-                baseUrl, RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
-        return client.execute(post);
+        });
     }
 
     /**

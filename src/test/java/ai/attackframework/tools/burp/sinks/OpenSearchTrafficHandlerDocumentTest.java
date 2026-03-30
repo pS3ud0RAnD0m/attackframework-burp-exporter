@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import burp.api.montoya.http.HttpService;
@@ -30,19 +29,12 @@ import burp.api.montoya.core.ToolType;
  */
 class OpenSearchTrafficHandlerDocumentTest {
 
-    private OpenSearchTrafficHandler handler;
-    private HttpRequest request;
-    private HttpResponseReceived response;
-    private HttpService service;
+    private final OpenSearchTrafficHandler handler = new OpenSearchTrafficHandler();
+    private final HttpRequest request = mock(HttpRequest.class);
+    private final HttpResponseReceived response = mock(HttpResponseReceived.class);
+    private final HttpService service = mock(HttpService.class);
 
-    @BeforeEach
-    @SuppressWarnings("unused")
-    void setUp() {
-        handler = new OpenSearchTrafficHandler();
-        request = mock(HttpRequest.class);
-        response = mock(HttpResponseReceived.class);
-        service = mock(HttpService.class);
-
+    {
         when(service.host()).thenReturn("example.com");
         when(service.port()).thenReturn(443);
         when(service.secure()).thenReturn(true);
@@ -93,17 +85,14 @@ class OpenSearchTrafficHandlerDocumentTest {
     void buildDocument_requestHasExpectedShape() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> req = (Map<String, Object>) doc.get("request");
+        Map<?, ?> req = nestedMap(doc, "request");
         assertThat(req).isNotNull();
-        assertThat(req).containsKeys("method", "path", "path_without_query", "query", "headers", "parameters",
+        assertContainsKeys(req, "method", "path", "path_without_query", "query", "headers", "parameters",
                 "body", "markers");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> reqBody = (Map<String, Object>) req.get("body");
-        assertThat(reqBody).isNotNull().containsKeys("length", "offset", "b64", "text");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> reqHeaders = (Map<String, Object>) req.get("headers");
-        assertThat(reqHeaders).isNotNull().containsKey("full");
+        Map<?, ?> reqBody = nestedMap(req, "body");
+        assertContainsKeys(reqBody, "length", "offset", "b64", "text");
+        Map<?, ?> reqHeaders = nestedMap(req, "headers");
+        assertContainsKeys(reqHeaders, "full");
         assertThat(reqHeaders.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
         assertThat(req.get("method")).isEqualTo("GET");
         assertThat(req.get("path")).isEqualTo("/path?q=1");
@@ -113,17 +102,14 @@ class OpenSearchTrafficHandlerDocumentTest {
     void buildDocument_responseHasExpectedShape() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
+        Map<?, ?> resp = nestedMap(doc, "response");
         assertThat(resp).isNotNull();
-        assertThat(resp).containsKeys("status", "status_code_class", "reason_phrase", "http_version", "headers",
+        assertContainsKeys(resp, "status", "status_code_class", "reason_phrase", "http_version", "headers",
                 "cookies", "mime_type", "body", "markers");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
-        assertThat(respBody).isNotNull().containsKeys("length", "offset", "b64", "text");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respHeaders = (Map<String, Object>) resp.get("headers");
-        assertThat(respHeaders).isNotNull().containsKey("full");
+        Map<?, ?> respBody = nestedMap(resp, "body");
+        assertContainsKeys(respBody, "length", "offset", "b64", "text");
+        Map<?, ?> respHeaders = nestedMap(resp, "headers");
+        assertContainsKeys(respHeaders, "full");
         assertThat(respHeaders.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
         assertThat(resp.get("status")).isEqualTo(200);
         assertThat(resp.get("status_code_class")).isEqualTo("CLASS_2XX_SUCCESS");
@@ -141,10 +127,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.headers()).thenReturn(List.of(ct));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
         assertThat(respBody.get("text")).isEqualTo("<html>ok</html>");
     }
 
@@ -159,10 +142,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.headers()).thenReturn(List.of(ct));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
         assertThat(respBody.get("text")).isEqualTo("{\"k\":1}");
     }
 
@@ -180,10 +160,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.headers()).thenReturn(List.of(ct, ce));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
         assertThat(respBody.get("text")).isNull();
     }
 
@@ -198,10 +175,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.headers()).thenReturn(List.of(ct));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
         assertThat(respBody.get("text")).isNull();
     }
 
@@ -216,10 +190,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.headers()).thenReturn(List.of(ct));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
         assertThat(respBody.get("text")).isEqualTo("caf\u00e9");
     }
 
@@ -234,10 +205,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.inferredMimeType()).thenReturn(MimeType.JSON);
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resp = (Map<String, Object>) doc.get("response");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> respBody = (Map<String, Object>) resp.get("body");
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
         assertThat(respBody.get("text")).isEqualTo("{\"ok\":true}");
     }
 
@@ -252,10 +220,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(request.headers()).thenReturn(List.of(reqCt));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> req = (Map<String, Object>) doc.get("request");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> reqBody = (Map<String, Object>) req.get("body");
+        Map<?, ?> reqBody = nestedMap(nestedMap(doc, "request"), "body");
         assertThat(reqBody.get("text")).isEqualTo("<?php echo 1; ?>");
     }
 
@@ -270,10 +235,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(request.headers()).thenReturn(List.of(reqCt));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> req = (Map<String, Object>) doc.get("request");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> reqBody = (Map<String, Object>) req.get("body");
+        Map<?, ?> reqBody = nestedMap(nestedMap(doc, "request"), "body");
         assertThat(reqBody.get("text")).isEqualTo("user=alice&role=admin");
     }
 
@@ -281,32 +243,52 @@ class OpenSearchTrafficHandlerDocumentTest {
     void buildDocument_documentMetaHasSchemaAndVersion() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> meta = (Map<String, Object>) doc.get("document_meta");
+        Map<?, ?> meta = nestedMap(doc, "document_meta");
         assertThat(meta).isNotNull();
-        assertThat(meta).containsKeys("schema_version", "extension_version", "indexed_at");
+        assertContainsKeys(meta, "schema_version", "extension_version", "indexed_at");
         assertThat(meta.get("schema_version")).isEqualTo("1");
     }
 
     @Test
     void buildOrphanResponse_matchesCurrentTrafficResponseShape() {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> responseDoc = (Map<String, Object>) callStatic(OpenSearchTrafficHandler.class, "buildOrphanResponse");
+        Map<?, ?> responseDoc = map(callStatic(OpenSearchTrafficHandler.class, "buildOrphanResponse"));
 
-        assertThat(responseDoc).containsKeys(
+        assertContainsKeys(responseDoc,
                 "status", "status_code_class", "reason_phrase", "http_version", "headers", "cookies",
                 "mime_type", "stated_mime_type", "inferred_mime_type", "body", "markers");
-        assertThat(responseDoc).doesNotContainKeys("header_names", "body_length", "body_offset");
+        assertMissingKeys(responseDoc, "header_names", "body_length", "body_offset");
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> headers = (Map<String, Object>) responseDoc.get("headers");
-        assertThat(headers).containsKeys("full", "names", "etag", "last_modified", "content_location");
+        Map<?, ?> headers = nestedMap(responseDoc, "headers");
+        assertContainsKeys(headers, "full", "names", "etag", "last_modified", "content_location");
         assertThat(headers.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
         assertThat(headers.get("names")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> body = (Map<String, Object>) responseDoc.get("body");
-        assertThat(body).containsEntry("length", 0).containsEntry("offset", 0).containsEntry("b64", null).containsEntry("text", null);
+        Map<?, ?> body = nestedMap(responseDoc, "body");
+        assertThat(body.get("length")).isEqualTo(0);
+        assertThat(body.get("offset")).isEqualTo(0);
+        assertThat(body.get("b64")).isNull();
+        assertThat(body.get("text")).isNull();
+    }
+
+    private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {
+        return map(parent.get(key));
+    }
+
+    private static Map<?, ?> map(Object value) {
+        assertThat(value).isInstanceOf(Map.class);
+        return (Map<?, ?>) value;
+    }
+
+    private static void assertContainsKeys(Map<?, ?> map, String... keys) {
+        for (String key : keys) {
+            assertThat(map.containsKey(key)).isTrue();
+        }
+    }
+
+    private static void assertMissingKeys(Map<?, ?> map, String... keys) {
+        for (String key : keys) {
+            assertThat(map.containsKey(key)).isFalse();
+        }
     }
 
     @Test
