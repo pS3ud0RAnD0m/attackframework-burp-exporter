@@ -9,6 +9,8 @@ import java.util.prefs.Preferences;
 
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Ensures min-level, pause flag, filter text, and last search query persist across new instances.
@@ -62,5 +64,34 @@ class LogPanelPersistenceHeadlessTest {
 
         JTextField searchB = field(b, "log.search.field");
         assertThat(searchB.getText()).isEqualTo("needle");
+    }
+
+    @Test
+    void ui_changes_update_runtime_config_log_panel_preferences() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            LogPanel panel = newPanel();
+
+            @SuppressWarnings("unchecked")
+            JComboBox<String> level = (JComboBox<String>) combo(panel, "log.filter.level");
+            level.setSelectedItem("ERROR");
+
+            JCheckBox pause = check(panel, "Pause autoscroll");
+            if (!pause.isSelected()) click(pause);
+
+            setText(field(panel, "log.filter.text"), "opensearch");
+            JCheckBox filterRegex = check(panel, "log.filter.regex");
+            if (!filterRegex.isSelected()) click(filterRegex);
+            setText(field(panel, "log.search.field"), "traffic");
+
+            ConfigState.LogPanelPreferences preferences = RuntimeConfig.logPanelPreferences();
+            assertThat(preferences.minLevel()).isEqualTo("ERROR");
+            assertThat(preferences.pauseAutoscroll()).isTrue();
+            assertThat(preferences.filterText()).isEqualTo("opensearch");
+            assertThat(preferences.filterRegex()).isTrue();
+            assertThat(preferences.searchText()).isEqualTo("traffic");
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
     }
 }

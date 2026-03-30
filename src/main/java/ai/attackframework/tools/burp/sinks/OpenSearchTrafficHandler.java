@@ -374,11 +374,27 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
     private static Map<String, Object> buildOrphanResponse() {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("status", ORPHAN_STATUS);
+        resp.put("status_code_class", null);
         resp.put("reason_phrase", ORPHAN_REASON_PHRASE);
-        resp.put("headers", Collections.emptyList());
+        resp.put("http_version", null);
+        Map<String, Object> headers = new LinkedHashMap<>();
+        headers.put("full", List.of());
+        headers.put("names", List.of());
+        headers.put("etag", null);
+        headers.put("last_modified", null);
+        headers.put("content_location", null);
+        resp.put("headers", headers);
         resp.put("cookies", Collections.emptyList());
+        resp.put("mime_type", null);
+        resp.put("stated_mime_type", null);
+        resp.put("inferred_mime_type", null);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("length", 0);
+        body.put("offset", 0);
+        body.put("b64", null);
+        body.put("text", null);
+        resp.put("body", body);
         resp.put("markers", Collections.emptyList());
-        resp.put("header_names", Collections.emptyList());
         return resp;
     }
 
@@ -389,7 +405,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      */
     private static void flushOrphanedRequests() {
         if (!RuntimeConfig.isExportReady()
-                || !RuntimeConfig.isOpenSearchTrafficEnabled()) {
+                || !RuntimeConfig.isAnyTrafficExportEnabled()) {
             return;
         }
         String baseUrl = RuntimeConfig.openSearchUrl();
@@ -414,11 +430,14 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             long startNs = System.nanoTime();
             boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, trafficIndexName(), doc);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-            ExportStats.recordLastPush("traffic", durationMs);
-            if (success) {
+            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
+            if (openSearchActive) {
+                ExportStats.recordLastPush("traffic", durationMs);
+            }
+            if (success && openSearchActive) {
                 ExportStats.recordSuccess("traffic", 1);
                 ExportStats.recordTrafficSourceSuccess("proxy_live_http", 1);
-            } else {
+            } else if (!success && openSearchActive) {
                 ExportStats.recordFailure("traffic", 1);
                 ExportStats.recordTrafficSourceFailure("proxy_live_http", 1);
                 String errMsg = "Failed to index orphan traffic document to " + trafficIndexName();

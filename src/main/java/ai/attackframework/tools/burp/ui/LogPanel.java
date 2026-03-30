@@ -56,6 +56,8 @@ import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.text.TextQuery;
 import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
 
@@ -120,13 +122,17 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private static final String PREF_FILTER_TEXT   = "filterText";
     private static final String PREF_FILTER_CASE   = "filterCase";
     private static final String PREF_FILTER_REGEX  = "filterRegex";
+    private static final String PREF_SEARCH_CASE   = "searchCase";
+    private static final String PREF_SEARCH_REGEX  = "searchRegex";
 
     // Indicator bindings (kept so removeNotify can unbind explicitly)
     private final transient AutoCloseable searchIndicatorBinding;
     private final transient AutoCloseable filterIndicatorBinding;
+    private final transient RuntimeConfig.StateListener runtimeStateListener;
 
     // Model
     private final transient LogStore store;
+    private transient boolean applyingUiPreferences;
 
     /** Constructs and wires the UI (EDT). */
     public LogPanel() {
@@ -179,8 +185,10 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         searchField.setName("log.search.field");
         searchCaseToggle = new Tooltips.HtmlCheckBox("Aa");
         searchCaseToggle.setName("log.search.case");
+        searchCaseToggle.setSelected(PREFS.getBoolean(PREF_SEARCH_CASE, false));
         searchRegexToggle = new Tooltips.HtmlCheckBox(".*");
         searchRegexToggle.setName("log.search.regex");
+        searchRegexToggle.setSelected(PREFS.getBoolean(PREF_SEARCH_REGEX, false));
         JButton searchPrevBtn = new Tooltips.HtmlButton("Prev");
         searchPrevBtn.setName("log.search.prev");
         JButton searchNextBtn = new Tooltips.HtmlButton("Next");
@@ -270,30 +278,36 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         levelCombo.addActionListener(e -> {
             PREFS.put(PREF_MIN_LEVEL, Objects.toString(levelCombo.getSelectedItem(), DEFAULT_MIN_LEVEL));
             rebuildView();
+            syncRuntimePreferencesFromUi();
         });
 
         pauseAutoscroll.addActionListener(e -> {
             PREFS.putBoolean(PREF_PAUSE, pauseAutoscroll.isSelected());
             if (!pauseAutoscroll.isSelected()) renderer.autoscrollIfNeeded(false);
+            syncRuntimePreferencesFromUi();
         });
 
         DocumentListener filterChange = Doc.onChange(() -> {
             PREFS.put(PREF_FILTER_TEXT, filterField.getText());
             rebuildView();
+            syncRuntimePreferencesFromUi();
         });
         filterField.getDocument().addDocumentListener(filterChange);
         filterCaseToggle.addActionListener(e -> {
             PREFS.putBoolean(PREF_FILTER_CASE, filterCaseToggle.isSelected());
             rebuildView();
+            syncRuntimePreferencesFromUi();
         });
         filterRegexToggle.addActionListener(e -> {
             PREFS.putBoolean(PREF_FILTER_REGEX, filterRegexToggle.isSelected());
             rebuildView();
+            syncRuntimePreferencesFromUi();
         });
 
         DocumentListener searchChange = Doc.onChange(() -> {
             PREFS.put(PREF_LAST_SEARCH, searchField.getText());
             computeMatchesAndJumpFirst();
+            syncRuntimePreferencesFromUi();
         });
         searchField.getDocument().addDocumentListener(searchChange);
         searchField.getInputMap(JComponent.WHEN_FOCUSED).put(
@@ -305,6 +319,16 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
         searchPrevBtn.addActionListener(e -> jumpMatch(-1));
         searchNextBtn.addActionListener(e -> jumpMatch(+1));
+        searchCaseToggle.addActionListener(e -> {
+            PREFS.putBoolean(PREF_SEARCH_CASE, searchCaseToggle.isSelected());
+            computeMatchesAndJumpFirst();
+            syncRuntimePreferencesFromUi();
+        });
+        searchRegexToggle.addActionListener(e -> {
+            PREFS.putBoolean(PREF_SEARCH_REGEX, searchRegexToggle.isSelected());
+            computeMatchesAndJumpFirst();
+            syncRuntimePreferencesFromUi();
+        });
 
         clearBtn.addActionListener(e -> {
             Logger.internalDebug("LogPanel: clear requested");
@@ -331,8 +355,11 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         TextFieldUndo.install(filterField);
         TextFieldUndo.install(searchField);
 
+        runtimeStateListener = this::onRuntimeStateChanged;
+
         rebuildView();
         computeMatchesAndJumpFirst();
+        syncRuntimePreferencesFromUi();
     }
 
     /**
@@ -346,6 +373,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     public void addNotify() {
         super.addNotify();
         Logger.registerListener(this);
+        RuntimeConfig.registerStateListener(runtimeStateListener);
     }
 
     /**
@@ -391,10 +419,75 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     public void removeNotify() {
         super.removeNotify();
         Logger.unregisterListener(this);
+        RuntimeConfig.unregisterStateListener(runtimeStateListener);
         try { if (filterIndicatorBinding != null) filterIndicatorBinding.close(); }
         catch (Exception ex) { Logger.internalDebug("regex filter binder close skipped: " + ex); }
         try { if (searchIndicatorBinding != null) searchIndicatorBinding.close(); }
         catch (Exception ex) { Logger.internalDebug("regex search binder close skipped: " + ex); }
+    }
+
+    private void onRuntimeStateChanged(ConfigState.State state) {
+        Runnable apply = () -> applyUiPreferences(state == null ? null : state.uiPreferences());
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) {
+            apply.run();
+        } else {
+            javax.swing.SwingUtilities.invokeLater(apply);
+        }
+    }
+
+    private void applyUiPreferences(ConfigState.UiPreferences uiPreferences) {
+        ConfigState.LogPanelPreferences preferences = uiPreferences == null
+                ? ConfigState.defaultLogPanelPreferences()
+                : uiPreferences.logPanel();
+        ConfigState.LogPanelPreferences current = currentUiPreferences();
+        if (current.equals(preferences)) {
+            return;
+        }
+        applyingUiPreferences = true;
+        try {
+            levelCombo.setSelectedItem(preferences.minLevel());
+            pauseAutoscroll.setSelected(preferences.pauseAutoscroll());
+            filterField.setText(preferences.filterText());
+            filterCaseToggle.setSelected(preferences.filterCase());
+            filterRegexToggle.setSelected(preferences.filterRegex());
+            searchField.setText(preferences.searchText());
+            searchCaseToggle.setSelected(preferences.searchCase());
+            searchRegexToggle.setSelected(preferences.searchRegex());
+            persistUiPreferencesToPreferences(preferences);
+            rebuildView();
+            computeMatchesAndJumpFirst();
+        } finally {
+            applyingUiPreferences = false;
+        }
+    }
+
+    private void syncRuntimePreferencesFromUi() {
+        if (!applyingUiPreferences) {
+            RuntimeConfig.updateLogPanelPreferences(currentUiPreferences());
+        }
+    }
+
+    private ConfigState.LogPanelPreferences currentUiPreferences() {
+        return new ConfigState.LogPanelPreferences(
+                Objects.toString(levelCombo.getSelectedItem(), DEFAULT_MIN_LEVEL),
+                pauseAutoscroll.isSelected(),
+                filterField.getText(),
+                filterCaseToggle.isSelected(),
+                filterRegexToggle.isSelected(),
+                searchField.getText(),
+                searchCaseToggle.isSelected(),
+                searchRegexToggle.isSelected());
+    }
+
+    private static void persistUiPreferencesToPreferences(ConfigState.LogPanelPreferences preferences) {
+        PREFS.put(PREF_MIN_LEVEL, preferences.minLevel());
+        PREFS.putBoolean(PREF_PAUSE, preferences.pauseAutoscroll());
+        PREFS.put(PREF_FILTER_TEXT, preferences.filterText());
+        PREFS.putBoolean(PREF_FILTER_CASE, preferences.filterCase());
+        PREFS.putBoolean(PREF_FILTER_REGEX, preferences.filterRegex());
+        PREFS.put(PREF_LAST_SEARCH, preferences.searchText());
+        PREFS.putBoolean(PREF_SEARCH_CASE, preferences.searchCase());
+        PREFS.putBoolean(PREF_SEARCH_REGEX, preferences.searchRegex());
     }
 
     // ---- Logger.LogListener ----

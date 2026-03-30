@@ -30,6 +30,10 @@ public final class ConfigState {
 
     /** Default advanced disk-used threshold for file export. */
     public static final int DEFAULT_FILE_MAX_DISK_USED_PERCENT = 95;
+    /** Default Stats panel chart style (1 = Smooth). */
+    public static final int DEFAULT_STATS_CHART_STYLE = 1;
+    /** Default minimum visible level in LogPanel. */
+    public static final String DEFAULT_LOG_MIN_LEVEL = "TRACE";
 
     /** Verify OpenSearch TLS certificates against the system trust store. */
     public static final String OPEN_SEARCH_TLS_VERIFY = "verify";
@@ -125,6 +129,30 @@ public final class ConfigState {
     }
 
     /** Top-level state. */
+    public record LogPanelPreferences(
+            String minLevel,
+            boolean pauseAutoscroll,
+            String filterText,
+            boolean filterCase,
+            boolean filterRegex,
+            String searchText,
+            boolean searchCase,
+            boolean searchRegex) {
+        public LogPanelPreferences {
+            minLevel = normalizeLogMinLevel(minLevel);
+            filterText = filterText == null ? "" : filterText;
+            searchText = searchText == null ? "" : searchText;
+        }
+    }
+
+    /** Persisted UI preferences that should survive save/export/import. */
+    public record UiPreferences(int statsChartStyle, LogPanelPreferences logPanel) {
+        public UiPreferences {
+            statsChartStyle = Math.clamp(statsChartStyle, 1, 3);
+            logPanel = logPanel == null ? defaultLogPanelPreferences() : logPanel;
+        }
+    }
+
     public record State(List<String> dataSources,
                         String scopeType,               // "all" | "burp" | "custom"
                         List<ScopeEntry> customEntries, // ordered; used when scopeType=custom
@@ -132,7 +160,8 @@ public final class ConfigState {
                         List<String> settingsSub,       // "project", "user"; default both
                         List<String> trafficToolTypes,  // ToolType names; default empty (no traffic)
                         List<String> findingsSeverities, // AuditIssueSeverity names; default all five
-                        Map<String, Set<String>> enabledExportFieldsByIndex) { // index shortName -> enabled toggleable field keys; null = all enabled
+                        Map<String, Set<String>> enabledExportFieldsByIndex, // index shortName -> enabled toggleable field keys; null = all enabled
+                        UiPreferences uiPreferences) {
 
         public State {
             dataSources       = dataSources == null ? List.of() : List.copyOf(dataSources);
@@ -142,6 +171,19 @@ public final class ConfigState {
             trafficToolTypes  = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
             findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
             enabledExportFieldsByIndex = enabledExportFieldsByIndex == null ? null : copyMapOfSets(enabledExportFieldsByIndex);
+            uiPreferences = uiPreferences == null ? defaultUiPreferences() : uiPreferences;
+        }
+
+        public State(List<String> dataSources,
+                     String scopeType,
+                     List<ScopeEntry> customEntries,
+                     Sinks sinks,
+                     List<String> settingsSub,
+                     List<String> trafficToolTypes,
+                     List<String> findingsSeverities,
+                     Map<String, Set<String>> enabledExportFieldsByIndex) {
+            this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
+                    findingsSeverities, enabledExportFieldsByIndex, defaultUiPreferences());
         }
 
         private static Map<String, Set<String>> copyMapOfSets(Map<String, Set<String>> map) {
@@ -157,6 +199,16 @@ public final class ConfigState {
 
     private ConfigState() { }
 
+    /** Default persisted LogPanel preferences. */
+    public static LogPanelPreferences defaultLogPanelPreferences() {
+        return new LogPanelPreferences(DEFAULT_LOG_MIN_LEVEL, false, "", false, false, "", false, false);
+    }
+
+    /** Default persisted UI preferences. */
+    public static UiPreferences defaultUiPreferences() {
+        return new UiPreferences(DEFAULT_STATS_CHART_STYLE, defaultLogPanelPreferences());
+    }
+
     /** Returns a normalized persisted OpenSearch TLS mode, defaulting to {@link #OPEN_SEARCH_TLS_VERIFY}. */
     public static String normalizeOpenSearchTlsMode(String mode) {
         if (mode == null || mode.isBlank()) {
@@ -166,6 +218,17 @@ public final class ConfigState {
             case OPEN_SEARCH_TLS_PINNED, "trust pinned certificate", "trust-pinned-certificate" -> OPEN_SEARCH_TLS_PINNED;
             case OPEN_SEARCH_TLS_INSECURE, "trust all certificates", "trust-all-certificates" -> OPEN_SEARCH_TLS_INSECURE;
             default -> OPEN_SEARCH_TLS_VERIFY;
+        };
+    }
+
+    /** Returns one of TRACE/DEBUG/INFO/WARN/ERROR, defaulting to TRACE. */
+    public static String normalizeLogMinLevel(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DEFAULT_LOG_MIN_LEVEL;
+        }
+        return switch (raw.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "TRACE", "DEBUG", "INFO", "WARN", "ERROR" -> raw.trim().toUpperCase(java.util.Locale.ROOT);
+            default -> DEFAULT_LOG_MIN_LEVEL;
         };
     }
 }

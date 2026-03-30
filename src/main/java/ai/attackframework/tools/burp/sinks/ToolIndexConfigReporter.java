@@ -35,15 +35,16 @@ public final class ToolIndexConfigReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
+            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
             Map<String, Object> doc = buildConfigDoc(RuntimeConfig.getState());
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
-            if (ok) {
+            if (ok && openSearchActive) {
                 ExportStats.recordSuccess("tool", 1);
-            } else {
+            } else if (!ok && openSearchActive) {
                 ExportStats.recordFailure("tool", 1);
                 ExportStats.recordLastError("tool", "Tool config snapshot push failed");
             }

@@ -1,10 +1,12 @@
 package ai.attackframework.tools.burp.ui;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Shape;
 import java.lang.reflect.InvocationTargetException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -16,6 +18,8 @@ import java.util.concurrent.Callable;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTable;
+import javax.swing.JButton;
+import javax.swing.JToolTip;
 import javax.swing.RowSorter;
 import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
@@ -28,6 +32,8 @@ import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.DateTickUnitType;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.XYPlot;
+import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.chart.renderer.xy.XYSplineRenderer;
 import org.jfree.data.RangeType;
 import org.jfree.data.time.TimeSeries;
 import org.junit.jupiter.api.Test;
@@ -107,6 +113,7 @@ class StatsPanelTest {
 
         NumberAxis range = (NumberAxis) plot.getRangeAxis();
         assertThat(range.getRangeType()).isEqualTo(RangeType.POSITIVE);
+        assertThat(range.getUpperMargin()).isEqualTo(0.12);
         assertThat(range.getLowerBound()).isEqualTo(0.0);
         assertThat(range.getUpperBound()).isEqualTo(10.0);
 
@@ -222,26 +229,54 @@ class StatsPanelTest {
 
     @Test
     void sharedLegendPanel_isLeftAlignedWithExpectedSeriesLabels() {
-        JPanel legendPanel = (JPanel) callStatic(StatsPanel.class, "createSharedLegendPanel");
-        assertThat(legendPanel.getLayout()).isInstanceOf(FlowLayout.class);
-        FlowLayout layout = (FlowLayout) legendPanel.getLayout();
-        assertThat(layout.getAlignment()).isEqualTo(FlowLayout.LEFT);
-        Font expectedLegendFont = getStatic(StatsPanel.class, "CHART_LEGEND_FONT");
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JPanel legendPanel = get(panel, "sharedLegendPanel");
+            assertThat(legendPanel.getLayout()).isInstanceOf(FlowLayout.class);
+            FlowLayout layout = (FlowLayout) legendPanel.getLayout();
+            assertThat(layout.getAlignment()).isEqualTo(FlowLayout.LEFT);
+            Font expectedLegendFont = getStatic(StatsPanel.class, "CHART_LEGEND_FONT");
+            Color expectedTextColor = getStatic(StatsPanel.class, "TEXT_FG");
+            JButton styleButton = get(panel, "chartStyleButton");
 
-        List<String> labels = new ArrayList<>();
-        for (Component component : legendPanel.getComponents()) {
-            if (component instanceof JLabel label) {
-                labels.add(label.getText());
-                assertThat(label.getHorizontalAlignment()).isEqualTo(SwingConstants.LEFT);
-                assertThat(label.getFont()).isEqualTo(expectedLegendFont);
+            List<String> labels = new ArrayList<>();
+            for (Component component : legendPanel.getComponents()) {
+                if (component instanceof JLabel label) {
+                    labels.add(label.getText());
+                    assertThat(label.getHorizontalAlignment()).isEqualTo(SwingConstants.LEFT);
+                    assertThat(label.getFont()).isEqualTo(expectedLegendFont);
+                    assertThat(label.getForeground()).isEqualTo(expectedTextColor);
+                    assertThat(label.getIcon()).isNotNull();
+                }
             }
+            assertThat(legendPanel.getComponent(0)).isSameAs(styleButton);
+            assertThat(styleButton.getText()).isEqualTo("Smooth");
+            assertThat(styleButton.getFont().isBold()).isFalse();
+            JToolTip styleToolTip = onEdt(styleButton::createToolTip);
+            assertThat(styleToolTip.getComponent()).isSameAs(styleButton);
+            assertThat(styleToolTip.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
+            assertThat(styleButton.getToolTipText())
+                    .isEqualTo("<html>Cycle chart styles: <b>Smooth</b>, <b>Accessible</b>, and <b>Simple</b>.</html>");
+            assertThat(labels).containsExactly(
+                    "Traffic",
+                    "Tool",
+                    "Settings",
+                    "Sitemap",
+                    "Findings");
+        } finally {
+            RuntimeConfig.updateState(previous);
         }
-        assertThat(labels).containsExactly(
-                "\u2014 Traffic",
-                "\u2014 Tool",
-                "\u2014 Settings",
-                "\u2014 Sitemap",
-                "\u2014 Findings");
     }
 
     @Test
@@ -309,37 +344,103 @@ class StatsPanelTest {
     }
 
     @Test
-    void miscStatsCard_groupsMetricsByDestinationAndKeepsFileSectionVisible() {
-        StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel cardsRow = get(panel, "cardsRow");
-        assertThat(cardsRow.getComponentCount()).isEqualTo(1);
-        JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
+    void sharedLegendPanel_movesAboveFirstVisibleHistogramGroup() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(true, true));
+            StatsPanel dualPanel = onEdt(StatsPanel::new);
+            JPanel dualLegend = get(dualPanel, "sharedLegendPanel");
+            JPanel dualFileSection = get(dualPanel, "fileChartsSectionPanel");
+            onEdt(() -> call(dualPanel, "refreshDashboard"));
+            assertThat(dualLegend.getParent()).isSameAs(dualFileSection);
+            assertThat(dualFileSection.getComponent(0)).isSameAs(dualLegend);
 
-        assertThat(miscCard).isNotNull();
+            RuntimeConfig.updateState(runtimeState(false, true));
+            StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
+            JPanel osLegend = get(openSearchOnlyPanel, "sharedLegendPanel");
+            JPanel osSection = get(openSearchOnlyPanel, "openSearchChartsSectionPanel");
+            onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
+            assertThat(osLegend.getParent()).isSameAs(osSection);
+            assertThat(osSection.getComponent(0)).isSameAs(osLegend);
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
 
-        List<String> labels = collectLabelTexts(miscCard);
-        JPanel openSearchRow0 = findByName(miscCard, "miscStats.row.OpenSearch.0", JPanel.class);
-        JPanel openSearchRow1 = findByName(miscCard, "miscStats.row.OpenSearch.1", JPanel.class);
-        JPanel openSearchRow2 = findByName(miscCard, "miscStats.row.OpenSearch.2", JPanel.class);
+    @Test
+    void miscStatsCard_groupsMetricsByDestination_whenBothDestinationsEnabled() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(true, true));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JPanel cardsRow = get(panel, "cardsRow");
+            assertThat(cardsRow.getComponentCount()).isEqualTo(1);
+            JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
 
-        assertThat(labels).contains("Global", "OpenSearch", "Files");
-        assertThat(labels).contains("Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops");
-        assertThat(labels).contains("Spill Queue Docs");
-        assertThat(labels).contains("Spill Oldest Age (s)");
-        assertThat(labels).contains("Spill Enq/Deq/Drops");
-        assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
-        assertThat(labels).contains("Spill Directory");
-        assertThat(labels).contains("OpenSearch Throughput (Last 10s)");
-        assertThat(labels).contains("OpenSearch Total Size Exported");
-        assertThat(labels).contains("OpenSearch Total Docs Exported");
-        assertThat(labels).contains("OpenSearch Total Failures");
-        assertThat(labels).contains("File Total Size Exported");
-        assertThat(labels).contains("File Total Docs Exported");
-        assertThat(labels).contains("File Total Failures");
-        assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
+            assertThat(miscCard).isNotNull();
 
-        assertThat(openSearchRow0.getBackground()).isNotEqualTo(openSearchRow1.getBackground());
-        assertThat(openSearchRow0.getBackground()).isEqualTo(openSearchRow2.getBackground());
+            List<String> labels = collectLabelTexts(miscCard);
+            JPanel openSearchRow0 = findByName(miscCard, "miscStats.row.OpenSearch.0", JPanel.class);
+            JPanel openSearchRow1 = findByName(miscCard, "miscStats.row.OpenSearch.1", JPanel.class);
+            JPanel openSearchRow2 = findByName(miscCard, "miscStats.row.OpenSearch.2", JPanel.class);
+
+            assertThat(labels).contains("Global", "OpenSearch", "Files");
+            assertThat(labels).contains("Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops");
+            assertThat(labels).contains("Spill Queue Docs");
+            assertThat(labels).contains("Spill Oldest Age (s)");
+            assertThat(labels).contains("Spill Enq/Deq/Drops");
+            assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
+            assertThat(labels).contains("Spill Directory");
+            assertThat(labels).contains("OpenSearch Throughput (Last 10s)");
+            assertThat(labels).contains("OpenSearch Total Size Exported");
+            assertThat(labels).contains("OpenSearch Total Docs Exported");
+            assertThat(labels).contains("OpenSearch Total Failures");
+            assertThat(labels).contains("File Total Size Exported");
+            assertThat(labels).contains("File Total Docs Exported");
+            assertThat(labels).contains("File Total Failures");
+            assertThat(labels).doesNotContain("Proxy-History Attempted/Success");
+
+            assertThat(openSearchRow0.getBackground()).isNotEqualTo(openSearchRow1.getBackground());
+            assertThat(openSearchRow0.getBackground()).isEqualTo(openSearchRow2.getBackground());
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void miscStatsCard_hidesOpenSearchSection_whenOpenSearchDestinationDisabled() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(true, false));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JPanel miscCard = findByName(get(panel, "cardsRow"), "miscStatsCard", JPanel.class);
+
+            assertThat(miscCard).isNotNull();
+            assertThat(findByName(miscCard, "miscStats.section.Global", JLabel.class).isVisible()).isTrue();
+            assertThat(findByName(miscCard, "miscStats.section.Files", JLabel.class).isVisible()).isTrue();
+            assertThat(findByName(miscCard, "miscStats.section.OpenSearch", JLabel.class).isVisible()).isFalse();
+            assertThat(findByName(miscCard, "miscStats.row.OpenSearch.0", JPanel.class).isVisible()).isFalse();
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void miscStatsCard_hidesFilesSection_whenFilesDestinationDisabled() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(false, true));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JPanel miscCard = findByName(get(panel, "cardsRow"), "miscStatsCard", JPanel.class);
+
+            assertThat(miscCard).isNotNull();
+            assertThat(findByName(miscCard, "miscStats.section.Global", JLabel.class).isVisible()).isTrue();
+            assertThat(findByName(miscCard, "miscStats.section.OpenSearch", JLabel.class).isVisible()).isTrue();
+            assertThat(findByName(miscCard, "miscStats.section.Files", JLabel.class).isVisible()).isFalse();
+            assertThat(findByName(miscCard, "miscStats.row.Files.0", JPanel.class).isVisible()).isFalse();
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
     }
 
     @Test
@@ -510,14 +611,13 @@ class StatsPanelTest {
             StatsPanel panel = onEdt(StatsPanel::new);
             JLabel exportRunningValue = get(panel, "exportRunningValue");
             JLabel currentBatchSizeValue = get(panel, "currentBatchSizeValue");
-            Color[] seriesColors = getStatic(StatsPanel.class, "SERIES_COLORS");
 
             onEdt(() -> {
                 RuntimeConfig.setExportRunning(true);
                 call(panel, "refreshDashboard");
             });
             assertThat(exportRunningValue.getText()).isEqualTo("Yes");
-            assertThat(exportRunningValue.getForeground()).isEqualTo(seriesColors[1]);
+            assertThat(exportRunningValue.getForeground()).isEqualTo(seriesBaseColor(panel, 0));
             assertThat(exportRunningValue.getFont().isBold()).isTrue();
             assertThat(currentBatchSizeValue.getFont().isBold()).isFalse();
 
@@ -526,11 +626,117 @@ class StatsPanelTest {
                 call(panel, "refreshDashboard");
             });
             assertThat(exportRunningValue.getText()).isEqualTo("No");
-            assertThat(exportRunningValue.getForeground()).isEqualTo(seriesColors[4]);
+            assertThat(exportRunningValue.getForeground()).isEqualTo(seriesBaseColor(panel, 4));
             assertThat(exportRunningValue.getFont().isBold()).isTrue();
             assertThat(exportRunningValue.getFont().getStyle()).isEqualTo(Font.BOLD);
         } finally {
             onEdt(() -> RuntimeConfig.setExportRunning(original));
+        }
+    }
+
+    @Test
+    void chartRenderer_usesAccessibleSeriesPaintsStrokesAndMarkers() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JFreeChart chart = get(panel, "docsChart");
+
+        JButton styleButton = get(panel, "chartStyleButton");
+        onEdt((Runnable) styleButton::doClick);
+        XYLineAndShapeRenderer renderer = currentRenderer(chart);
+
+        assertSeriesStyle(panel, renderer, 0, new float[] { 8f, 5f }, true);
+        assertSeriesStyle(panel, renderer, 1, new float[] { 8f, 4f, 1.5f, 4f }, true);
+        assertSeriesStyle(panel, renderer, 2, null, true);
+        assertSeriesStyle(panel, renderer, 3, new float[] { 1.5f, 4f }, true);
+        assertSeriesStyle(panel, renderer, 4, new float[] { 12f, 6f }, true);
+    }
+
+    @Test
+    void styleButton_cyclesThroughThreeNamedChartStyles() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JButton styleButton = get(panel, "chartStyleButton");
+            JFreeChart chart = get(panel, "docsChart");
+
+            assertThat(styleButton.getText()).isEqualTo("Smooth");
+            assertThat(chart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
+            assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
+
+            onEdt((Runnable) styleButton::doClick);
+            assertThat(styleButton.getText()).isEqualTo("Accessible");
+            assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+            assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isTrue();
+
+            onEdt((Runnable) styleButton::doClick);
+            assertThat(styleButton.getText()).isEqualTo("Simple");
+            assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+            assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
+
+            onEdt((Runnable) styleButton::doClick);
+            assertThat(styleButton.getText()).isEqualTo("Smooth");
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void smoothStyle_usesSplineRendererFillWithoutSecondaryAreaDataset() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JFreeChart chart = get(panel, "docsChart");
+
+            XYPlot plot = chart.getXYPlot();
+            assertThat(plot.getRenderer()).isInstanceOf(XYSplineRenderer.class);
+            XYSplineRenderer renderer = (XYSplineRenderer) plot.getRenderer();
+            assertThat(renderer.getFillType()).isEqualTo(XYSplineRenderer.FillType.TO_LOWER_BOUND);
+            assertThat(renderer.getSeriesFillPaint(0)).isInstanceOf(call(panel, "seriesAreaPaint", 0).getClass());
+            assertThat(plot.getDataset(1)).isNull();
+            assertThat(plot.getRenderer(1)).isNull();
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void statsPanel_readsChartStyleFromRuntimeUiPreferences() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(2, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JButton styleButton = get(panel, "chartStyleButton");
+            assertThat(styleButton.getText()).isEqualTo("Accessible");
+        } finally {
+            RuntimeConfig.updateState(previous);
         }
     }
 
@@ -726,6 +932,39 @@ class StatsPanelTest {
             }
         }
         return null;
+    }
+
+    private static void assertSeriesStyle(
+            StatsPanel panel,
+            XYLineAndShapeRenderer renderer,
+            int index,
+            float[] expectedDashArray,
+            boolean expectedShapesVisible) {
+        assertThat(renderer.getSeriesPaint(index)).isEqualTo(call(panel, "seriesPaint", index));
+        assertThat(renderer.getSeriesShape(index).getBounds2D())
+                .isEqualTo(((Shape) call(panel, "seriesMarkerShape", index)).getBounds2D());
+        assertThat(renderer.getSeriesShapesVisible(index)).isEqualTo(expectedShapesVisible);
+
+        BasicStroke actualStroke = (BasicStroke) renderer.getSeriesStroke(index);
+        BasicStroke expectedStroke = (BasicStroke) call(panel, "seriesStroke", index);
+        if (expectedDashArray == null) {
+            assertThat(actualStroke.getDashArray()).isNull();
+        } else {
+            assertThat(actualStroke.getDashArray()).containsExactly(expectedDashArray);
+        }
+        if (expectedStroke.getDashArray() == null) {
+            assertThat(actualStroke.getDashArray()).isNull();
+        } else {
+            assertThat(actualStroke.getDashArray()).containsExactly(expectedStroke.getDashArray());
+        }
+    }
+
+    private static XYLineAndShapeRenderer currentRenderer(JFreeChart chart) {
+        return (XYLineAndShapeRenderer) chart.getXYPlot().getRenderer();
+    }
+
+    private static Color seriesBaseColor(StatsPanel panel, int index) {
+        return (Color) call(panel, "seriesSolidColor", index);
     }
 
     private static ConfigState.State runtimeState(boolean filesEnabled, boolean openSearchEnabled) {

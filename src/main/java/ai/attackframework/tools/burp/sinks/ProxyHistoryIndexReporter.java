@@ -63,7 +63,7 @@ public final class ProxyHistoryIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchTrafficEnabled()) {
+            if (!RuntimeConfig.isAnyTrafficExportEnabled()) {
                 return;
             }
             List<String> trafficTypes = RuntimeConfig.getState().trafficToolTypes();
@@ -97,6 +97,7 @@ public final class ProxyHistoryIndexReporter {
      * @param baseUrl OpenSearch base URL
      */
     private static void pushItems(MontoyaApi api, String baseUrl) {
+        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
         List<ProxyHttpRequestResponse> history = api.proxy().history();
         if (history == null || history.isEmpty()) {
             return;
@@ -126,9 +127,11 @@ public final class ProxyHistoryIndexReporter {
                 int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), chunk);
                 success += sent;
                 attempted += attemptedChunk;
-                ExportStats.recordSuccess("traffic", sent);
-                ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
-                if (sent < attemptedChunk) {
+                if (openSearchActive) {
+                    ExportStats.recordSuccess("traffic", sent);
+                    ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
+                }
+                if (openSearchActive && sent < attemptedChunk) {
                     int failureChunk = attemptedChunk - sent;
                     ExportStats.recordFailure("traffic", failureChunk);
                     ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
@@ -146,9 +149,11 @@ public final class ProxyHistoryIndexReporter {
             int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), chunk);
             success += sent;
             attempted += attemptedChunk;
-            ExportStats.recordSuccess("traffic", sent);
-            ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
-            if (sent < attemptedChunk) {
+            if (openSearchActive) {
+                ExportStats.recordSuccess("traffic", sent);
+                ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
+            }
+            if (openSearchActive && sent < attemptedChunk) {
                 int failureChunk = attemptedChunk - sent;
                 ExportStats.recordFailure("traffic", failureChunk);
                 ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
@@ -156,9 +161,12 @@ public final class ProxyHistoryIndexReporter {
         }
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-        ExportStats.recordLastPush("traffic", durationMs);
+        if (openSearchActive) {
+            ExportStats.recordLastPush("traffic", durationMs);
+        }
         ExportStats.recordProxyHistorySnapshot(attempted, success, durationMs, chunkTarget);
-        Logger.logTrace("[ProxyHistory] pushed " + success + " of " + attempted);
+        Logger.logTrace("[ProxyHistory] pushed " + success + " of " + attempted
+                + " to " + RuntimeConfig.activeSinkSummary());
     }
 
     /**
@@ -341,19 +349,24 @@ public final class ProxyHistoryIndexReporter {
         m.put("status_code_class", null);
         m.put("reason_phrase", "No response");
         m.put("http_version", null);
-        m.put("headers", List.of());
+        Map<String, Object> headers = new LinkedHashMap<>();
+        headers.put("full", List.of());
+        headers.put("names", List.of());
+        headers.put("etag", null);
+        headers.put("last_modified", null);
+        headers.put("content_location", null);
+        m.put("headers", headers);
         m.put("cookies", List.of());
         m.put("mime_type", null);
         m.put("stated_mime_type", null);
         m.put("inferred_mime_type", null);
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("length", 0);
+        body.put("offset", 0);
         body.put("b64", null);
         body.put("text", null);
         m.put("body", body);
-        m.put("body_length", 0);
-        m.put("body_offset", 0);
         m.put("markers", List.of());
-        m.put("header_names", List.of());
         return m;
     }
 }

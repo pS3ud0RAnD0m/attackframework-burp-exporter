@@ -38,7 +38,7 @@ public final class ConfigJsonMapper {
 
         return new State(cfg.dataSources(), cfg.scopeType(), entries, sinks,
                 cfg.settingsSub(), cfg.trafficToolTypes(), cfg.findingsSeverities(),
-                cfg.enabledExportFieldsByIndex());
+                cfg.enabledExportFieldsByIndex(), cfg.uiPreferences());
     }
 
     /** Extract ordered custom entries from the parsed config. */

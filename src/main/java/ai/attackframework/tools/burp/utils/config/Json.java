@@ -69,6 +69,7 @@ public final class Json {
         private final List<String> trafficToolTypes;
         private final List<String> findingsSeverities;
         private final Map<String, Set<String>> enabledExportFieldsByIndex;
+        private final ConfigState.UiPreferences uiPreferences;
 
         public ImportedConfig(
                 List<String> dataSources,
@@ -89,7 +90,8 @@ public final class Json {
                 List<String> settingsSub,
                 List<String> trafficToolTypes,
                 List<String> findingsSeverities,
-                Map<String, Set<String>> enabledExportFieldsByIndex
+                Map<String, Set<String>> enabledExportFieldsByIndex,
+                ConfigState.UiPreferences uiPreferences
         ) {
             this.dataSources = dataSources == null ? List.of() : List.copyOf(dataSources);
             this.scopeType = scopeType == null ? "all" : scopeType;
@@ -110,6 +112,7 @@ public final class Json {
             this.trafficToolTypes = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
             this.findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
             this.enabledExportFieldsByIndex = copyMapOfSets(enabledExportFieldsByIndex);
+            this.uiPreferences = uiPreferences == null ? ConfigState.defaultUiPreferences() : uiPreferences;
         }
 
         private static Map<String, Set<String>> copyMapOfSets(Map<String, Set<String>> map) {
@@ -199,6 +202,10 @@ public final class Json {
         public Map<String, Set<String>> enabledExportFieldsByIndex() {
             return enabledExportFieldsByIndex;
         }
+
+        public ConfigState.UiPreferences uiPreferences() {
+            return uiPreferences;
+        }
     }
 
     /* ======================== BUILD (from typed state) ======================== */
@@ -212,6 +219,7 @@ public final class Json {
         buildDataSourceOptions(root, state);
         buildScope(root, state);
         buildSinks(root, state);
+        buildUi(root, state);
         buildExportFields(root, state);
 
         try {
@@ -315,6 +323,26 @@ public final class Json {
         sinksNode.put("openSearchTlsMode", ConfigState.normalizeOpenSearchTlsMode(sinks.openSearchTlsMode()));
     }
 
+    private static void buildUi(ObjectNode root, ConfigState.State state) {
+        ConfigState.UiPreferences uiPreferences = state.uiPreferences() == null
+                ? ConfigState.defaultUiPreferences()
+                : state.uiPreferences();
+        ObjectNode uiNode = root.putObject("ui");
+        ObjectNode statsNode = uiNode.putObject("stats");
+        statsNode.put("chartStyle", uiPreferences.statsChartStyle());
+
+        ConfigState.LogPanelPreferences log = uiPreferences.logPanel();
+        ObjectNode logNode = uiNode.putObject("log");
+        logNode.put("minLevel", ConfigState.normalizeLogMinLevel(log.minLevel()));
+        logNode.put("pauseAutoscroll", log.pauseAutoscroll());
+        logNode.put("filterText", log.filterText());
+        logNode.put("filterCase", log.filterCase());
+        logNode.put("filterRegex", log.filterRegex());
+        logNode.put("searchText", log.searchText());
+        logNode.put("searchCase", log.searchCase());
+        logNode.put("searchRegex", log.searchRegex());
+    }
+
     private static void buildExportFields(ObjectNode root, ConfigState.State state) {
         Map<String, Set<String>> byIndex = state.enabledExportFieldsByIndex();
         if (byIndex == null || byIndex.isEmpty()) return;
@@ -337,6 +365,7 @@ public final class Json {
         DataSourceOptionsParts opts = parseDataSourceOptions(root);
         ScopeParts scope = parseScope(root);
         SinksParts sinks = parseSinks(root);
+        UiParts ui = parseUi(root);
         Map<String, Set<String>> exportFields = parseExportFields(root);
 
         return new ImportedConfig(
@@ -358,8 +387,28 @@ public final class Json {
                 opts.settingsSub(),
                 opts.trafficToolTypes(),
                 opts.findingsSeverities(),
-                exportFields
+                exportFields,
+                ui.uiPreferences()
         );
+    }
+
+    private static UiParts parseUi(JsonNode root) {
+        JsonNode ui = root.path("ui");
+        JsonNode stats = ui.path("stats");
+        JsonNode log = ui.path("log");
+        ConfigState.LogPanelPreferences logPreferences = new ConfigState.LogPanelPreferences(
+                textOrNull(log.get("minLevel")),
+                bool(log.get("pauseAutoscroll"), false),
+                textOrEmpty(log.get("filterText")),
+                bool(log.get("filterCase"), false),
+                bool(log.get("filterRegex"), false),
+                textOrEmpty(log.get("searchText")),
+                bool(log.get("searchCase"), false),
+                bool(log.get("searchRegex"), false));
+        ConfigState.UiPreferences uiPreferences = new ConfigState.UiPreferences(
+                intOr(stats.get("chartStyle"), ConfigState.DEFAULT_STATS_CHART_STYLE),
+                logPreferences);
+        return new UiParts(uiPreferences);
     }
 
     /* ----------------------- parse helpers ----------------------- */
@@ -552,6 +601,22 @@ public final class Json {
         return out.isEmpty() ? null : Map.copyOf(out);
     }
 
+    private static String textOrNull(JsonNode node) {
+        return node != null && node.isTextual() ? node.asText() : null;
+    }
+
+    private static String textOrEmpty(JsonNode node) {
+        return node != null && node.isTextual() ? node.asText() : "";
+    }
+
+    private static boolean bool(JsonNode node, boolean fallback) {
+        return node != null && node.isBoolean() ? node.asBoolean() : fallback;
+    }
+
+    private static int intOr(JsonNode node, int fallback) {
+        return node != null && node.canConvertToInt() ? node.asInt() : fallback;
+    }
+
     /* ----------------------- small carrier records ----------------------- */
 
     private record ScopeParts(String type, List<String> values, List<String> kinds) { }
@@ -560,4 +625,5 @@ public final class Json {
                               boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
                               String os, String osUser, String osPass, String openSearchTlsMode) { }
     private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }
+    private record UiParts(ConfigState.UiPreferences uiPreferences) { }
 }

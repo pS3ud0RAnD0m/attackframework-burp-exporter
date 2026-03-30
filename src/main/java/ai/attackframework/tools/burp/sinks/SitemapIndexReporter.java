@@ -68,7 +68,7 @@ public final class SitemapIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
@@ -142,7 +142,7 @@ public final class SitemapIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
@@ -253,11 +253,14 @@ public final class SitemapIndexReporter {
     }
 
     private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
+        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
         int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, sitemapIndexName(), batchDocs);
         int failureCount = batchDocs.size() - successCount;
-        ExportStats.recordSuccess("sitemap", successCount);
-        ExportStats.recordFailure("sitemap", failureCount);
-        if (failureCount > 0) {
+        if (openSearchActive) {
+            ExportStats.recordSuccess("sitemap", successCount);
+            ExportStats.recordFailure("sitemap", failureCount);
+        }
+        if (openSearchActive && failureCount > 0) {
             ExportStats.recordLastError("sitemap", "Bulk had " + failureCount + " failure(s)");
         }
         if (successCount == batchDocs.size()) {

@@ -180,16 +180,10 @@ public final class TrafficExportQueue {
                 }
                 int maxBatch = batchController.getCurrentBatchSize();
                 refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
-                long startNs = System.nanoTime();
                 FileOnlyDrainResult result = drainToFileOnly(maxBatch, BULK_MAX_BYTES);
-                long durationMs = (System.nanoTime() - startNs) / 1_000_000;
                 if (result.attemptedCount == 0) {
                     continue;
                 }
-                ExportStats.recordLastPush("traffic", durationMs);
-                ExportStats.recordSuccess("traffic", result.attemptedCount);
-                ExportStats.recordExportedBytes("traffic", result.exportedBytes);
-                ExportStats.recordTrafficSourceSuccess("proxy_live_http", result.attemptedCount);
                 batchController.recordSuccess(result.attemptedCount);
                 continue;
             }

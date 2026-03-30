@@ -22,8 +22,8 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  * index so the Attack Framework can analyze extension/OpenSearch issues centrally.
  *
  * <p>Registers as a {@link Logger.LogListener}; each log event is queued and pushed asynchronously
- * by a single worker thread. Only pushes when export is running and
- * {@link RuntimeConfig#openSearchUrl()} is set.
+ * by a single worker thread. Pushes when export is running and at least one sink
+ * is enabled.
  * Fire-and-forget; failures are not logged back to avoid feedback loops. If the queue is full,
  * the oldest event is dropped to make room.</p>
  */
@@ -60,7 +60,7 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
         if (!RuntimeConfig.isExportReady()) {
             return;
         }
-        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+        if (!RuntimeConfig.isAnySinkEnabled()) {
             return;
         }
         Map<String, Object> doc = new LinkedHashMap<>();
@@ -98,7 +98,7 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                     continue;
                 }
 
-                if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+                if (!RuntimeConfig.isAnySinkEnabled()) {
                     queue.clear();
                     TimeUnit.SECONDS.sleep(1);
                     continue;
@@ -108,10 +108,11 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                 if (doc == null) continue;
 
                 String baseUrl = RuntimeConfig.openSearchUrl();
+                boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
                 boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
-                if (ok) {
+                if (ok && openSearchActive) {
                     ExportStats.recordSuccess("tool", 1);
-                } else {
+                } else if (!ok && openSearchActive) {
                     ExportStats.recordFailure("tool", 1);
                     ExportStats.recordLastError("tool", "Tool log push failed");
                 }

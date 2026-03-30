@@ -72,4 +72,45 @@ class RuntimeConfigDestinationGatingTest {
         assertThat(RuntimeConfig.isOpenSearchExportEnabled()).isTrue();
         assertThat(RuntimeConfig.openSearchUrl()).isEqualTo("https://opensearch.url:9200");
     }
+
+    @Test
+    void activeSinkSummary_reportsEnabledDestinations() {
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                        true, "https://opensearch.url:9200", "", "", false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
+        ));
+        assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("Files and OpenSearch");
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                        false, "https://opensearch.url:9200", "", "", false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
+        ));
+        assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("Files");
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(false, "", true, "https://opensearch.url:9200", "", "", false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
+        ));
+        assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("OpenSearch");
+    }
 }

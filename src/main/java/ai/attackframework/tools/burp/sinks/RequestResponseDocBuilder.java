@@ -79,7 +79,9 @@ public final class RequestResponseDocBuilder {
 
     /**
      * Builds a request sub-document matching the traffic index request shape.
-     * Body is always stored as base64 in {@code body.b64} for exact replay.
+     *
+     * <p>Body bytes are always stored as full base64 in {@code body.b64} for exact replay. When
+     * the payload is classified as textual, {@code body.text} contains the full decoded text.</p>
      *
      * @param request the HTTP request (never null)
      * @return map with method, path, headers, parameters, and body content fields.
@@ -119,9 +121,11 @@ public final class RequestResponseDocBuilder {
 
     /**
      * Builds a response sub-document matching the traffic index response shape.
-     * Body is always stored as base64 in {@code body.b64} for exact replay.
-     * When the response is an {@link HttpResponseReceived}, response attributes
-     * (page_title, location, etc.) are included.
+     *
+     * <p>Body bytes are always stored as full base64 in {@code body.b64} for exact replay. When
+     * the payload is classified as textual, {@code body.text} contains the full decoded text. For
+     * {@link HttpResponseReceived}, response attributes such as {@code visible_text} are preserved
+     * as returned by Montoya.</p>
      *
      * @param response the HTTP response (never null)
      * @return map with status, headers, cookies, and body content fields.
@@ -373,7 +377,7 @@ public final class RequestResponseDocBuilder {
      * Puts body object:
      * - body.length/body.offset: raw body metadata
      * - body.b64: full raw bytes as base64 (always when body exists)
-     * - body.text: only when content is dynamically classified as searchable text.
+     * - body.text: full decoded text when content is dynamically classified as searchable text
      */
     private static void putBodyFields(
             Map<String, Object> doc,

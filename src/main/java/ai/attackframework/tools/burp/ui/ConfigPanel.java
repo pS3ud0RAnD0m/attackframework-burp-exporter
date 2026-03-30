@@ -553,7 +553,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        Logger.logInfoPanelOnly("Export started.");
+        Logger.logInfoPanelOnly("Export started to " + RuntimeConfig.activeSinkSummary() + ".");
     }
 
     /**
@@ -684,7 +684,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             applyExportFieldsState(state.enabledExportFieldsByIndex());
             refreshFieldsSectionsEnabled();
             refreshEnabledStates();
-            updateRuntimeConfig();
+            RuntimeConfig.updateState(buildCurrentState(state.uiPreferences()));
         };
         runOnEdt(r);
     }
@@ -1315,6 +1315,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @return assembled {@link ConfigState.State} reflecting user selections
      */
     private ConfigState.State buildCurrentState() {
+        return buildCurrentState(currentUiPreferences());
+    }
+
+    private ConfigState.State buildCurrentState(ConfigState.UiPreferences uiPreferences) {
         List<String> selectedSources = getSelectedSources();
 
         String scopeType;
@@ -1388,8 +1392,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 settingsSub,
                 trafficToolTypes,
                 findingsSeverities,
-                buildEnabledExportFieldsByIndex()
+                buildEnabledExportFieldsByIndex(),
+                uiPreferences
         );
+    }
+
+    private static ConfigState.UiPreferences currentUiPreferences() {
+        ConfigState.State current = RuntimeConfig.getState();
+        return current == null || current.uiPreferences() == null
+                ? ConfigState.defaultUiPreferences()
+                : current.uiPreferences();
     }
 
     /** Builds enabled export fields map from Fields panel checkboxes; null = all enabled (omit from JSON). */

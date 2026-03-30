@@ -67,7 +67,7 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
@@ -135,7 +135,7 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
@@ -248,11 +248,14 @@ public final class FindingsIndexReporter {
     }
 
     private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
+        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
         int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, findingsIndexName(), batchDocs);
         int failureCount = batchDocs.size() - successCount;
-        ExportStats.recordSuccess("findings", successCount);
-        ExportStats.recordFailure("findings", failureCount);
-        if (failureCount > 0) {
+        if (openSearchActive) {
+            ExportStats.recordSuccess("findings", successCount);
+            ExportStats.recordFailure("findings", failureCount);
+        }
+        if (openSearchActive && failureCount > 0) {
             ExportStats.recordLastError("findings", "Bulk had " + failureCount + " failure(s)");
         }
         if (successCount == batchDocs.size()) {

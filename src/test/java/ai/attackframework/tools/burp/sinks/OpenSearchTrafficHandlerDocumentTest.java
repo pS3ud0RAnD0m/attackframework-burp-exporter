@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -35,6 +36,7 @@ class OpenSearchTrafficHandlerDocumentTest {
     private HttpService service;
 
     @BeforeEach
+    @SuppressWarnings("unused")
     void setUp() {
         handler = new OpenSearchTrafficHandler();
         request = mock(HttpRequest.class);
@@ -284,6 +286,27 @@ class OpenSearchTrafficHandlerDocumentTest {
         assertThat(meta).isNotNull();
         assertThat(meta).containsKeys("schema_version", "extension_version", "indexed_at");
         assertThat(meta.get("schema_version")).isEqualTo("1");
+    }
+
+    @Test
+    void buildOrphanResponse_matchesCurrentTrafficResponseShape() {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> responseDoc = (Map<String, Object>) callStatic(OpenSearchTrafficHandler.class, "buildOrphanResponse");
+
+        assertThat(responseDoc).containsKeys(
+                "status", "status_code_class", "reason_phrase", "http_version", "headers", "cookies",
+                "mime_type", "stated_mime_type", "inferred_mime_type", "body", "markers");
+        assertThat(responseDoc).doesNotContainKeys("header_names", "body_length", "body_offset");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> headers = (Map<String, Object>) responseDoc.get("headers");
+        assertThat(headers).containsKeys("full", "names", "etag", "last_modified", "content_location");
+        assertThat(headers.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
+        assertThat(headers.get("names")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) responseDoc.get("body");
+        assertThat(body).containsEntry("length", 0).containsEntry("offset", 0).containsEntry("b64", null).containsEntry("text", null);
     }
 
     @Test

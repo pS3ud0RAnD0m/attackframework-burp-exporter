@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.utils.config;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Holds the current runtime configuration for export pipelines.
@@ -14,6 +15,12 @@ public final class RuntimeConfig {
     private static volatile ConfigState.State state = defaultState();
     private static volatile boolean exportRunning = false;
     private static volatile boolean exportStarting = false;
+    private static final CopyOnWriteArrayList<StateListener> listeners = new CopyOnWriteArrayList<>();
+
+    @FunctionalInterface
+    public interface StateListener {
+        void onStateChanged(ConfigState.State newState);
+    }
 
     private RuntimeConfig() { }
 
@@ -71,6 +78,23 @@ public final class RuntimeConfig {
     /** Updates the runtime config state with a normalized, non-null value. */
     public static void updateState(ConfigState.State newState) {
         state = normalize(newState);
+        notifyListeners(state);
+    }
+
+    /** Registers a listener for runtime-state changes and immediately replays the current state. */
+    public static void registerStateListener(StateListener listener) {
+        if (listener == null) {
+            return;
+        }
+        listeners.addIfAbsent(listener);
+        listener.onStateChanged(state);
+    }
+
+    /** Removes a previously registered runtime-state listener. */
+    public static void unregisterStateListener(StateListener listener) {
+        if (listener != null) {
+            listeners.remove(listener);
+        }
     }
 
     /** True when OpenSearch export is enabled and a non-blank runtime URL is available. */
@@ -99,6 +123,30 @@ public final class RuntimeConfig {
             return false;
         }
         return isAnyFileExportEnabled() || isOpenSearchExportEnabled();
+    }
+
+    /**
+     * Returns a human-readable summary of the currently enabled export destinations.
+     *
+     * <p>The result is intended for UI and log messages such as start/stop status updates. It
+     * reflects the current runtime sink selection and returns {@code "no destinations"} when
+     * neither Files nor OpenSearch is enabled.</p>
+     *
+     * @return destination summary suitable for operator-facing status text
+     */
+    public static String activeSinkSummary() {
+        boolean files = isAnyFileExportEnabled();
+        boolean openSearch = isOpenSearchExportEnabled();
+        if (files && openSearch) {
+            return "Files and OpenSearch";
+        }
+        if (files) {
+            return "Files";
+        }
+        if (openSearch) {
+            return "OpenSearch";
+        }
+        return "no destinations";
     }
 
     /** True when traffic export has at least one destination sink enabled. */
@@ -138,6 +186,52 @@ public final class RuntimeConfig {
         return current == null || current.sinks() == null
                 ? ConfigState.OPEN_SEARCH_TLS_VERIFY
                 : ConfigState.normalizeOpenSearchTlsMode(current.sinks().openSearchTlsMode());
+    }
+
+    /** Returns the persisted UI preferences currently attached to runtime config. */
+    public static ConfigState.UiPreferences uiPreferences() {
+        ConfigState.State current = state;
+        return current == null || current.uiPreferences() == null
+                ? ConfigState.defaultUiPreferences()
+                : current.uiPreferences();
+    }
+
+    /** Returns the configured StatsPanel chart style in the range 1-3. */
+    public static int statsChartStyle() {
+        return uiPreferences().statsChartStyle();
+    }
+
+    /** Returns the configured LogPanel preferences. */
+    public static ConfigState.LogPanelPreferences logPanelPreferences() {
+        return uiPreferences().logPanel();
+    }
+
+    /** Updates only the persisted StatsPanel chart style while preserving all other runtime config. */
+    public static void updateStatsChartStyle(int chartStyle) {
+        updateUiPreferences(new ConfigState.UiPreferences(
+                chartStyle,
+                logPanelPreferences()));
+    }
+
+    /** Updates only the persisted LogPanel preferences while preserving all other runtime config. */
+    public static void updateLogPanelPreferences(ConfigState.LogPanelPreferences logPanelPreferences) {
+        updateUiPreferences(new ConfigState.UiPreferences(
+                statsChartStyle(),
+                logPanelPreferences));
+    }
+
+    private static void updateUiPreferences(ConfigState.UiPreferences uiPreferences) {
+        ConfigState.State current = normalize(state);
+        updateState(new ConfigState.State(
+                current.dataSources(),
+                current.scopeType(),
+                current.customEntries(),
+                current.sinks(),
+                current.settingsSub(),
+                current.trafficToolTypes(),
+                current.findingsSeverities(),
+                current.enabledExportFieldsByIndex(),
+                uiPreferences));
     }
 
     private static ConfigState.State normalize(ConfigState.State incoming) {
@@ -188,7 +282,8 @@ public final class RuntimeConfig {
 
         Map<String, java.util.Set<String>> enabledFields = incoming.enabledExportFieldsByIndex();
         return new ConfigState.State(sources, scopeType, custom, normalizedSinks,
-                settingsSub, trafficToolTypes, findingsSeverities, enabledFields);
+                settingsSub, trafficToolTypes, findingsSeverities, enabledFields,
+                incoming.uiPreferences());
     }
 
     private static String safe(String value) {
@@ -224,8 +319,15 @@ public final class RuntimeConfig {
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
-                null  // all export fields enabled
+                null,  // all export fields enabled
+                ConfigState.defaultUiPreferences()
         );
+    }
+
+    private static void notifyListeners(ConfigState.State currentState) {
+        for (StateListener listener : listeners) {
+            listener.onStateChanged(currentState);
+        }
     }
 
     /**

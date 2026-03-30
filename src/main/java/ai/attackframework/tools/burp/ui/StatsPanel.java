@@ -3,10 +3,17 @@ package ai.attackframework.tools.burp.ui;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.Paint;
+import java.awt.RenderingHints;
+import java.awt.Shape;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
@@ -18,6 +25,9 @@ import java.util.Locale;
 import java.util.Map;
 
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.Icon;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTable;
@@ -38,6 +48,7 @@ import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.chart.renderer.xy.XYSplineRenderer;
 import org.jfree.chart.title.TextTitle;
 import org.jfree.chart.ui.RectangleInsets;
 import org.jfree.chart.ui.VerticalAlignment;
@@ -45,10 +56,16 @@ import org.jfree.data.RangeType;
 import org.jfree.data.time.Millisecond;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
 
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 
@@ -61,6 +78,8 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
  * selected at runtime. Caller must construct on the EDT.</p>
  */
 public class StatsPanel extends JPanel {
+
+    private static final String[] CHART_STYLE_NAMES = { "Smooth", "Accessible", "Simple" };
 
     private static final int PANEL_BASE_WIDTH = 1200;
     private static final int PANEL_BASE_HEIGHT = 900;
@@ -81,21 +100,120 @@ public class StatsPanel extends JPanel {
     private static final Font CARD_KEY_FONT = uiFont(Font.PLAIN, 12f);
     private static final Font CARD_VALUE_FONT = uiFont(Font.PLAIN, 12f);
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
-    private static final Color CHART_BG = new Color(38, 38, 38);
-    private static final Color PLOT_BG = new Color(48, 48, 48);
     private static final Color TEXT_FG = uiColor("Label.foreground", new Color(235, 235, 235));
-    private static final Color GRID_FG = new Color(95, 95, 95);
+    private static final int LEGEND_ICON_WIDTH = 28;
+    private static final int LEGEND_ICON_HEIGHT = 14;
     private static final DecimalFormat DECIMAL_ONE =
             new DecimalFormat("0.0", DecimalFormatSymbols.getInstance(Locale.ROOT));
-    private static final Color[] SERIES_COLORS = new Color[] {
-            new Color(86, 156, 214),   // blue
-            new Color(57, 255, 20),    // neon green
-            new Color(220, 220, 170),  // yellow
-            new Color(120, 70, 160),   // darker purple
-            new Color(244, 71, 71)     // red
+    private static final SeriesStyle[] SERIES_STYLES = new SeriesStyle[] {
+            new SeriesStyle(
+                    "Traffic",
+                    new Color(57, 255, 20),
+                    new Color(46, 140, 54),
+                    new float[] { 8f, 5f },
+                    squareMarker(6f),
+                    true),
+            new SeriesStyle(
+                    "Tool",
+                    new Color(174, 126, 255),
+                    new Color(112, 74, 176),
+                    new float[] { 8f, 4f, 1.5f, 4f },
+                    diamondMarker(7f),
+                    true),
+            new SeriesStyle(
+                    "Settings",
+                    new Color(86, 156, 214),
+                    new Color(41, 98, 179),
+                    null,
+                    circleMarker(6f),
+                    true),
+            new SeriesStyle(
+                    "Sitemap",
+                    new Color(255, 210, 92),
+                    new Color(196, 138, 0),
+                    new float[] { 1.5f, 4f },
+                    triangleMarker(7f),
+                    true),
+            new SeriesStyle(
+                    "Findings",
+                    new Color(244, 71, 71),
+                    new Color(191, 52, 52),
+                    new float[] { 12f, 6f },
+                    crossMarker(7f),
+                    false)
     };
-    private static final Color EXPORT_RUNNING_YES_FG = SERIES_COLORS[1];
-    private static final Color EXPORT_RUNNING_NO_FG = SERIES_COLORS[4];
+
+    private record SeriesStyle(
+            String label,
+            Color darkColor,
+            Color lightColor,
+            float[] dashPattern,
+            Shape markerShape,
+            boolean markerFilled) {
+
+        private Color paint() {
+            return isDarkTheme() ? darkColor : lightColor;
+        }
+
+        private BasicStroke stroke(float width) {
+            if (dashPattern == null || dashPattern.length == 0) {
+                return new BasicStroke(width, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            }
+            return new BasicStroke(
+                    width,
+                    BasicStroke.CAP_ROUND,
+                    BasicStroke.JOIN_ROUND,
+                    1f,
+                    dashPattern,
+                    0f);
+        }
+    }
+
+    private final class LegendSampleIcon implements Icon {
+
+        private final int seriesIndex;
+
+        private LegendSampleIcon(int seriesIndex) {
+            this.seriesIndex = seriesIndex;
+        }
+
+        @Override
+        public void paintIcon(java.awt.Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int centerY = y + (LEGEND_ICON_HEIGHT / 2);
+                int startX = x + 1;
+                int endX = x + LEGEND_ICON_WIDTH - 2;
+                g2.setPaint(legendPaint(seriesIndex, y, y + LEGEND_ICON_HEIGHT));
+                g2.setStroke(seriesStroke(seriesIndex));
+                g2.draw(new Line2D.Float(startX, centerY, endX, centerY));
+
+                g2.translate(x + (LEGEND_ICON_WIDTH / 2.0), centerY);
+                g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                Shape marker = seriesMarkerShape(seriesIndex);
+                if (seriesShapesVisible(seriesIndex) && marker != null) {
+                    g2.setPaint(seriesSolidColor(seriesIndex));
+                    if (seriesShapesFilled(seriesIndex)) {
+                        g2.fill(marker);
+                    }
+                    g2.draw(marker);
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public int getIconWidth() {
+            return LEGEND_ICON_WIDTH;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return LEGEND_ICON_HEIGHT;
+        }
+    }
 
     private final Timer refreshTimer;
     private final TimeSeriesCollection docsPerSecondDataset;
@@ -115,6 +233,7 @@ public class StatsPanel extends JPanel {
     private final JPanel fileDocsChartPanel;
     private final JPanel fileKibChartPanel;
     private final JPanel sharedLegendPanel;
+    private final JButton chartStyleButton;
     private final JLabel exportRunningValue;
     private final JLabel currentBatchSizeValue;
     private final JLabel trafficQueueValue;
@@ -145,6 +264,8 @@ public class StatsPanel extends JPanel {
     private final JPanel fileTablesRow;
     private final JPanel cardsRow;
     private final JPanel lowerPanel;
+    private final JPanel miscStatsCard;
+    private final Map<String, List<Component>> miscSectionComponents;
     private final Map<String, TimeSeries> docsSeriesByIndex = new HashMap<>();
     private final Map<String, TimeSeries> kibSeriesByIndex = new HashMap<>();
     private final Map<String, TimeSeries> fileDocsSeriesByIndex = new HashMap<>();
@@ -156,6 +277,8 @@ public class StatsPanel extends JPanel {
     private long lastLoggedToolSourceFallbacks = -1;
     private long firstSampleAtMs = -1;
     private long previousSampleAtMs = -1;
+    private int chartStyleIndex = 0;
+    private final transient RuntimeConfig.StateListener runtimeStateListener;
 
     /**
      * Creates the Stats panel and starts the refresh timer.
@@ -209,7 +332,12 @@ public class StatsPanel extends JPanel {
         chartSectionsPanel.add(openSearchChartsSectionPanel);
         chartsPanel.add(chartSectionsPanel, BorderLayout.CENTER);
         sharedLegendPanel = createSharedLegendPanel();
-        chartsPanel.add(sharedLegendPanel, BorderLayout.SOUTH);
+        chartStyleButton = createChartStyleButton();
+        fileChartsSectionPanel.add(sharedLegendPanel, 0);
+        runtimeStateListener = this::onRuntimeStateChanged;
+        chartStyleIndex = Math.clamp(RuntimeConfig.statsChartStyle(), 1, CHART_STYLE_NAMES.length) - 1;
+        applyChartStyles();
+        refreshSharedLegendPanel();
         JPanel contentPanel = new JPanel(new BorderLayout(0, 10));
         contentPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
         contentPanel.setBackground(UIManager.getColor("Panel.background"));
@@ -218,7 +346,7 @@ public class StatsPanel extends JPanel {
         cardsRow = new JPanel(new GridLayout(1, 1, 10, 0));
         cardsRow.setOpaque(false);
 
-        Map<String, JLabel> miscValues = addGroupedMetricCard(cardsRow, "Misc Stats", List.of(
+        MetricCardState miscState = addGroupedMetricCard(cardsRow, "Misc Stats", List.of(
                 new MetricSection("Global", new String[] {
                         "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops"
                 }),
@@ -232,6 +360,9 @@ public class StatsPanel extends JPanel {
                         "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
                 })
         ));
+        miscStatsCard = miscState.card();
+        miscSectionComponents = miscState.sections();
+        Map<String, JLabel> miscValues = miscState.values();
         exportRunningValue = miscValues.get("Export Running");
         currentBatchSizeValue = miscValues.get("Current Batch Size");
         trafficQueueValue = miscValues.get("Traffic Queue Size");
@@ -303,7 +434,7 @@ public class StatsPanel extends JPanel {
         long totalFailure = ExportStats.getTotalFailureCount();
 
         exportRunningValue.setText(exportRunning ? "Yes" : "No");
-        exportRunningValue.setForeground(exportRunning ? EXPORT_RUNNING_YES_FG : EXPORT_RUNNING_NO_FG);
+        exportRunningValue.setForeground(exportRunning ? SERIES_STYLES[0].paint() : SERIES_STYLES[4].paint());
         exportRunningValue.setFont(CARD_VALUE_FONT.deriveFont(Font.BOLD));
         currentBatchSizeValue.setText(formatWhole(BatchSizeController.getInstance().getCurrentBatchSize()));
         trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
@@ -473,7 +604,7 @@ public class StatsPanel extends JPanel {
         return table;
     }
 
-    private static Map<String, JLabel> addGroupedMetricCard(JPanel parent, String title, List<MetricSection> sections) {
+    private static MetricCardState addGroupedMetricCard(JPanel parent, String title, List<MetricSection> sections) {
         JPanel card = new JPanel();
         card.setName("miscStatsCard");
         card.setLayout(new javax.swing.BoxLayout(card, javax.swing.BoxLayout.Y_AXIS));
@@ -488,6 +619,7 @@ public class StatsPanel extends JPanel {
             }
         }
         Map<String, JLabel> values = new HashMap<>();
+        Map<String, List<Component>> sectionComponents = new HashMap<>();
         int rowIndex = 0;
         for (MetricSection section : sections) {
             JLabel sectionLabel = new JLabel(section.title());
@@ -497,9 +629,12 @@ public class StatsPanel extends JPanel {
             sectionLabel.setBorder(BorderFactory.createEmptyBorder(rowIndex == 0 ? 0 : 4, 6, 2, 6));
             sectionLabel.setAlignmentX(LEFT_ALIGNMENT);
             card.add(sectionLabel);
+            List<Component> components = new ArrayList<>();
+            components.add(sectionLabel);
+            sectionComponents.put(section.title(), components);
             for (int i = 0; i < section.keys().length; i++) {
                 String key = section.keys()[i];
-                JPanel row = new JPanel(new BorderLayout(10, 0));
+                JComponent row = new JPanel(new BorderLayout(10, 0));
                 row.setName("miscStats.row." + section.title() + "." + i);
                 row.setOpaque(true);
                 row.setBackground(rowBackground(i));
@@ -520,6 +655,7 @@ public class StatsPanel extends JPanel {
                 row.add(keyLabel, BorderLayout.WEST);
                 row.add(valueLabel, BorderLayout.CENTER);
                 card.add(row);
+                components.add(row);
                 rowIndex++;
             }
         }
@@ -527,7 +663,7 @@ public class StatsPanel extends JPanel {
         card.setPreferredSize(new Dimension(Math.max(520, preferred.width), preferred.height));
         card.setMinimumSize(new Dimension(420, preferred.height));
         parent.add(card);
-        return values;
+        return new MetricCardState(card, values, sectionComponents);
     }
 
     private static Color rowBackground(int rowIndex) {
@@ -624,16 +760,72 @@ public class StatsPanel extends JPanel {
     private void updateSectionVisibility() {
         boolean fileVisible = isFileSectionEnabled();
         boolean openSearchVisible = isOpenSearchSectionEnabled();
+        moveLegendToFirstVisibleSection(fileVisible, openSearchVisible);
 
         fileChartsSectionPanel.setVisible(fileVisible);
         fileTablesRow.setVisible(fileVisible);
 
         openSearchChartsSectionPanel.setVisible(openSearchVisible);
         tablesRow.setVisible(openSearchVisible);
+        updateMiscStatsSectionVisibility(fileVisible, openSearchVisible);
 
         updateChartDomainLabels(fileVisible, openSearchVisible);
         chartsPanel.setVisible(fileVisible || openSearchVisible);
         sharedLegendPanel.setVisible(fileVisible || openSearchVisible);
+    }
+
+    /**
+     * Shows only the Misc Stats groups that apply to the active destinations.
+     *
+     * <p>Caller must invoke on the EDT because this method mutates Swing component visibility and
+     * triggers layout/paint work on {@link #miscStatsCard}. The {@code Global} group always
+     * remains visible, while {@code Files} and {@code OpenSearch} follow the currently visible
+     * lower-panel sections.</p>
+     *
+     * @param fileVisible whether the Files metrics group should be visible
+     * @param openSearchVisible whether the OpenSearch metrics group should be visible
+     */
+    private void updateMiscStatsSectionVisibility(boolean fileVisible, boolean openSearchVisible) {
+        setMiscSectionVisible("Global", true);
+        setMiscSectionVisible("OpenSearch", openSearchVisible);
+        setMiscSectionVisible("Files", fileVisible);
+        miscStatsCard.revalidate();
+        miscStatsCard.repaint();
+    }
+
+    /**
+     * Applies visibility to all components that belong to one Misc Stats group.
+     *
+     * <p>Caller must invoke on the EDT.</p>
+     *
+     * @param title section title used as the lookup key in {@link #miscSectionComponents}
+     * @param visible whether the section label and rows should be shown
+     */
+    private void setMiscSectionVisible(String title, boolean visible) {
+        List<Component> components = miscSectionComponents.get(title);
+        if (components == null) {
+            return;
+        }
+        for (Component component : components) {
+            component.setVisible(visible);
+        }
+    }
+
+    private void moveLegendToFirstVisibleSection(boolean fileVisible, boolean openSearchVisible) {
+        JPanel target = fileVisible ? fileChartsSectionPanel : (openSearchVisible ? openSearchChartsSectionPanel : null);
+        if (target == null) {
+            return;
+        }
+        if (sharedLegendPanel.getParent() == target) {
+            return;
+        }
+        java.awt.Container parent = sharedLegendPanel.getParent();
+        if (parent != null) {
+            parent.remove(sharedLegendPanel);
+        }
+        target.add(sharedLegendPanel, 0);
+        target.revalidate();
+        target.repaint();
     }
 
     private void updateChartDomainLabels(boolean fileVisible, boolean openSearchVisible) {
@@ -867,8 +1059,11 @@ public class StatsPanel extends JPanel {
             TimeSeriesCollection dataset,
             boolean showLegend,
             boolean showDomainLabel) {
+        Color chartBackground = chartBackgroundPaint();
+        Color plotBackground = plotBackgroundPaint();
+        Color gridForeground = gridPaint();
         JFreeChart chart = ChartFactory.createTimeSeriesChart(title, "Time", yLabel, dataset, showLegend, false, false);
-        chart.setBackgroundPaint(CHART_BG);
+        chart.setBackgroundPaint(chartBackground);
         chart.setPadding(RectangleInsets.ZERO_INSETS);
         TextTitle titleNode = chart.getTitle();
         titleNode.setPaint(TEXT_FG);
@@ -879,9 +1074,9 @@ public class StatsPanel extends JPanel {
         titleNode.setPadding(RectangleInsets.ZERO_INSETS);
         XYPlot plot = chart.getXYPlot();
         plot.setInsets(new RectangleInsets(1, 2, 2, 2));
-        plot.setBackgroundPaint(PLOT_BG);
-        plot.setDomainGridlinePaint(GRID_FG);
-        plot.setRangeGridlinePaint(GRID_FG);
+        plot.setBackgroundPaint(plotBackground);
+        plot.setDomainGridlinePaint(gridForeground);
+        plot.setRangeGridlinePaint(gridForeground);
         plot.setDomainGridlinesVisible(true);
         plot.setRangeGridlinesVisible(true);
         ValueAxis domain = plot.getDomainAxis();
@@ -891,6 +1086,9 @@ public class StatsPanel extends JPanel {
             numberAxis.setRangeType(RangeType.POSITIVE);
             numberAxis.setAutoRangeIncludesZero(true);
             numberAxis.setAutoRangeStickyZero(true);
+            numberAxis.setLowerMargin(0.0);
+            // Smoothed spline peaks can rise slightly above raw samples; keep some headroom.
+            numberAxis.setUpperMargin(0.12);
             // Keep Y-axis labels/ticks as whole numbers for readability.
             numberAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
         }
@@ -915,18 +1113,62 @@ public class StatsPanel extends JPanel {
             range.setTickLabelFont(CHART_TICK_FONT);
         }
         XYLineAndShapeRenderer renderer = (XYLineAndShapeRenderer) plot.getRenderer();
-        renderer.setDefaultShapesVisible(false);
-        renderer.setDefaultStroke(new BasicStroke(CHART_LINE_STROKE_WIDTH));
-        for (int i = 0; i < SERIES_COLORS.length; i++) {
-            renderer.setSeriesPaint(i, SERIES_COLORS[i]);
-            renderer.setSeriesStroke(i, new BasicStroke(CHART_LINE_STROKE_WIDTH));
-        }
+        renderer.setDefaultStroke(new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         if (chart.getLegend() != null) {
-            chart.getLegend().setBackgroundPaint(CHART_BG);
+            chart.getLegend().setBackgroundPaint(chartBackground);
             chart.getLegend().setItemPaint(TEXT_FG);
             chart.getLegend().setItemFont(CHART_LEGEND_FONT);
         }
         return chart;
+    }
+
+    private void applyChartStyles() {
+        applyChartStyle(docsChart);
+        applyChartStyle(kibChart);
+        applyChartStyle(fileDocsChart);
+        applyChartStyle(fileKibChart);
+    }
+
+    private void applyChartStyle(JFreeChart chart) {
+        XYPlot plot = chart.getXYPlot();
+        XYLineAndShapeRenderer renderer = rendererForStyle(chart);
+        renderer.setDefaultStroke(new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        for (int i = 0; i < SERIES_STYLES.length; i++) {
+            renderer.setSeriesPaint(i, seriesLinePaint(i));
+            renderer.setSeriesStroke(i, seriesStroke(i));
+            renderer.setSeriesShape(i, seriesMarkerShape(i));
+            renderer.setSeriesShapesVisible(i, seriesShapesVisible(i));
+            renderer.setSeriesShapesFilled(i, seriesShapesFilled(i));
+        }
+        if (chartStyleIndex == 0) {
+            XYSplineRenderer slickRenderer = (XYSplineRenderer) renderer;
+            slickRenderer.setFillType(XYSplineRenderer.FillType.TO_LOWER_BOUND);
+            for (int i = 0; i < SERIES_STYLES.length; i++) {
+                slickRenderer.setSeriesFillPaint(i, seriesAreaPaint(i));
+            }
+        }
+        plot.setDataset(1, null);
+        plot.setRenderer(1, null);
+    }
+
+    private XYLineAndShapeRenderer rendererForStyle(JFreeChart chart) {
+        XYPlot plot = chart.getXYPlot();
+        if (chartStyleIndex == 0) {
+            if (plot.getRenderer() instanceof XYSplineRenderer splineRenderer) {
+                splineRenderer.setPrecision(12);
+                return splineRenderer;
+            }
+            XYSplineRenderer splineRenderer = new XYSplineRenderer(12);
+            plot.setRenderer(splineRenderer);
+            return splineRenderer;
+        }
+        if (plot.getRenderer() instanceof XYLineAndShapeRenderer lineRenderer
+                && !(lineRenderer instanceof XYSplineRenderer)) {
+            return lineRenderer;
+        }
+        XYLineAndShapeRenderer lineRenderer = new XYLineAndShapeRenderer();
+        plot.setRenderer(lineRenderer);
+        return lineRenderer;
     }
 
     private static void setChartDomainLabel(JFreeChart chart, String label) {
@@ -943,18 +1185,193 @@ public class StatsPanel extends JPanel {
         return panel;
     }
 
-    private static JPanel createSharedLegendPanel() {
+    private JPanel createSharedLegendPanel() {
         JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
-        legendPanel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+        legendPanel.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 0));
         legendPanel.setOpaque(false);
-        String[] labels = { "Traffic", "Tool", "Settings", "Sitemap", "Findings" };
-        for (int i = 0; i < labels.length; i++) {
-            JLabel legendItem = new JLabel("\u2014 " + labels[i], SwingConstants.LEFT);
-            legendItem.setForeground(SERIES_COLORS[i]);
-            legendItem.setFont(CHART_LEGEND_FONT);
-            legendPanel.add(legendItem);
-        }
         return legendPanel;
+    }
+
+    private JButton createChartStyleButton() {
+        JButton button = new Tooltips.HtmlButton(chartStyleButtonLabel());
+        button.setFocusable(false);
+        Font buttonFont = UIManager.getFont("Button.font");
+        button.setFont(uiFont(Font.PLAIN, buttonFont == null ? 12f : buttonFont.getSize2D()));
+        Tooltips.apply(button, Tooltips.htmlRaw("Cycle chart styles: <b>Smooth</b>, <b>Accessible</b>, and <b>Simple</b>."));
+        button.addActionListener(event -> cycleChartStyle());
+        return button;
+    }
+
+    private void refreshSharedLegendPanel() {
+        sharedLegendPanel.removeAll();
+        sharedLegendPanel.add(chartStyleButton);
+        for (int i = 0; i < SERIES_STYLES.length; i++) {
+            JLabel legendItem = new JLabel(SERIES_STYLES[i].label(), new LegendSampleIcon(i), SwingConstants.LEFT);
+            legendItem.setForeground(TEXT_FG);
+            legendItem.setFont(CHART_LEGEND_FONT);
+            legendItem.setIconTextGap(6);
+            sharedLegendPanel.add(legendItem);
+        }
+        chartStyleButton.setText(chartStyleButtonLabel());
+        sharedLegendPanel.revalidate();
+        sharedLegendPanel.repaint();
+    }
+
+    private void cycleChartStyle() {
+        chartStyleIndex = (chartStyleIndex + 1) % CHART_STYLE_NAMES.length;
+        RuntimeConfig.updateStatsChartStyle(chartStyleIndex + 1);
+        applyChartStyles();
+        refreshSharedLegendPanel();
+        refreshDashboard();
+    }
+
+    private String chartStyleButtonLabel() {
+        return CHART_STYLE_NAMES[chartStyleIndex];
+    }
+
+    private static boolean isDarkTheme() {
+        return isDark(uiColor("Panel.background", new Color(38, 38, 38)));
+    }
+
+    private static Color chartBackgroundPaint() {
+        return uiColor("Panel.background", new Color(38, 38, 38));
+    }
+
+    private static Color plotBackgroundPaint() {
+        Color plotBackground = uiColor("Table.background", chartBackgroundPaint());
+        if (plotBackground.equals(chartBackgroundPaint())) {
+            return adjust(plotBackground, isDark(plotBackground) ? 6 : -6);
+        }
+        return plotBackground;
+    }
+
+    private static Color gridPaint() {
+        Color separator = uiColor("Separator.foreground", adjust(plotBackgroundPaint(), isDarkTheme() ? 28 : -28));
+        if (separator.equals(chartBackgroundPaint())) {
+            return adjust(separator, isDarkTheme() ? 32 : -32);
+        }
+        return separator;
+    }
+
+    private Color seriesSolidColor(int index) {
+        return SERIES_STYLES[index].paint();
+    }
+
+    private Paint seriesPaint(int index) {
+        SeriesStyle base = SERIES_STYLES[index];
+        return switch (chartStyleIndex) {
+            case 0 -> slickGradientAreaPaint(base);
+            case 1 -> base.paint();
+            case 2 -> withAlpha(base.paint(), isDarkTheme() ? 235 : 210);
+            default -> base.paint();
+        };
+    }
+
+    private Paint seriesLinePaint(int index) {
+        return chartStyleIndex == 0
+                ? withAlpha(seriesSolidColor(index), isDarkTheme() ? 245 : 225)
+                : seriesPaint(index);
+    }
+
+    private Paint seriesAreaPaint(int index) {
+        return chartStyleIndex == 0 ? seriesPaint(index) : seriesLinePaint(index);
+    }
+
+    private Paint legendPaint(int index, int topY, int bottomY) {
+        if (chartStyleIndex == 0) {
+            Color top = withAlpha(seriesSolidColor(index), isDarkTheme() ? 235 : 210);
+            Color bottom = withAlpha(adjust(seriesSolidColor(index), isDarkTheme() ? -34 : -26), isDarkTheme() ? 130 : 150);
+            return new GradientPaint(0f, topY, top, 0f, bottomY, bottom);
+        }
+        return seriesPaint(index);
+    }
+
+    private BasicStroke seriesStroke(int index) {
+        return switch (chartStyleIndex) {
+            case 0 -> new BasicStroke(2.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 1 -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
+            case 2 -> new BasicStroke(2.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            default -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
+        };
+    }
+
+    private Shape seriesMarkerShape(int index) {
+        return switch (chartStyleIndex) {
+            case 0 -> SERIES_STYLES[index].markerShape();
+            case 1 -> SERIES_STYLES[index].markerShape();
+            case 2 -> SERIES_STYLES[index].markerShape();
+            case 3 -> SERIES_STYLES[index].markerShape();
+            default -> SERIES_STYLES[index].markerShape();
+        };
+    }
+
+    private boolean seriesShapesVisible(int index) {
+        return index >= 0 && switch (chartStyleIndex) {
+            case 0 -> false;
+            case 1 -> true;
+            case 2 -> false;
+            default -> true;
+        };
+    }
+
+    private boolean seriesShapesFilled(int index) {
+        return switch (chartStyleIndex) {
+            case 0 -> false;
+            case 1 -> SERIES_STYLES[index].markerFilled();
+            case 2 -> false;
+            default -> SERIES_STYLES[index].markerFilled();
+        };
+    }
+
+    private Paint slickGradientAreaPaint(SeriesStyle base) {
+        Color top = withAlpha(base.paint(), isDarkTheme() ? 235 : 215);
+        Color bottom = withAlpha(adjust(base.paint(), isDarkTheme() ? -44 : -34), isDarkTheme() ? 80 : 105);
+        return new GradientPaint(0f, 0f, top, 0f, CHART_PANEL_HEIGHT / 2f, bottom, true);
+    }
+
+    private static Color withAlpha(Color color, int alpha) {
+        return new Color(color.getRed(), color.getGreen(), color.getBlue(), Math.clamp(alpha, 0, 255));
+    }
+
+    private static Shape circleMarker(float size) {
+        float half = size / 2f;
+        return new Ellipse2D.Float(-half, -half, size, size);
+    }
+
+    private static Shape squareMarker(float size) {
+        float half = size / 2f;
+        return new Rectangle2D.Float(-half, -half, size, size);
+    }
+
+    private static Shape diamondMarker(float size) {
+        float half = size / 2f;
+        Path2D.Float path = new Path2D.Float();
+        path.moveTo(0, -half);
+        path.lineTo(half, 0);
+        path.lineTo(0, half);
+        path.lineTo(-half, 0);
+        path.closePath();
+        return path;
+    }
+
+    private static Shape triangleMarker(float size) {
+        float half = size / 2f;
+        Path2D.Float path = new Path2D.Float();
+        path.moveTo(0, -half);
+        path.lineTo(half, half);
+        path.lineTo(-half, half);
+        path.closePath();
+        return path;
+    }
+
+    private static Shape crossMarker(float size) {
+        float half = size / 2f;
+        Path2D.Float path = new Path2D.Float();
+        path.moveTo(-half, -half);
+        path.lineTo(half, half);
+        path.moveTo(-half, half);
+        path.lineTo(half, -half);
+        return path;
     }
 
     private void updateChartWindow(long nowMs) {
@@ -1046,6 +1463,11 @@ public class StatsPanel extends JPanel {
 
     private record MetricSection(String title, String[] keys) { }
 
+    private record MetricCardState(
+            JPanel card,
+            Map<String, JLabel> values,
+            Map<String, List<Component>> sections) { }
+
     /**
      * Starts periodic refresh while this panel is in the display hierarchy.
      *
@@ -1055,6 +1477,7 @@ public class StatsPanel extends JPanel {
     @Override
     public void addNotify() {
         super.addNotify();
+        RuntimeConfig.registerStateListener(runtimeStateListener);
         if (!refreshTimer.isRunning()) {
             refreshTimer.start();
         }
@@ -1071,7 +1494,29 @@ public class StatsPanel extends JPanel {
         if (refreshTimer.isRunning()) {
             refreshTimer.stop();
         }
+        RuntimeConfig.unregisterStateListener(runtimeStateListener);
         super.removeNotify();
+    }
+
+    private void onRuntimeStateChanged(ConfigState.State state) {
+        int runtimeStyle = state == null || state.uiPreferences() == null
+                ? ConfigState.DEFAULT_STATS_CHART_STYLE
+                : state.uiPreferences().statsChartStyle();
+        int normalizedStyle = Math.clamp(runtimeStyle, 1, CHART_STYLE_NAMES.length) - 1;
+        Runnable apply = () -> {
+            if (chartStyleIndex == normalizedStyle) {
+                return;
+            }
+            chartStyleIndex = normalizedStyle;
+            applyChartStyles();
+            refreshSharedLegendPanel();
+            repaint();
+        };
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) {
+            apply.run();
+        } else {
+            javax.swing.SwingUtilities.invokeLater(apply);
+        }
     }
 
     static String buildStatsText() {

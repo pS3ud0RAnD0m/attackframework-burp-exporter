@@ -91,7 +91,7 @@ public final class ProxyWebSocketIndexReporter {
 
     public static void pushSnapshotNow() {
         try {
-            if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isOpenSearchTrafficEnabled()) {
+            if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isAnyTrafficExportEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
@@ -119,7 +119,7 @@ public final class ProxyWebSocketIndexReporter {
 
     static void pushNewItemsOnly() {
         try {
-            if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isOpenSearchTrafficEnabled()) {
+            if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isAnyTrafficExportEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
@@ -196,15 +196,18 @@ public final class ProxyWebSocketIndexReporter {
     }
 
     private static void flushBatch(String baseUrl, List<String> keys, List<Map<String, Object>> docs) {
+        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
         int success = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), docs);
         int failure = docs.size() - success;
-        ExportStats.recordSuccess("traffic", success);
-        ExportStats.recordTrafficSourceSuccess("proxy_websocket", success);
-        ExportStats.recordFailure("traffic", failure);
-        ExportStats.recordTrafficSourceFailure("proxy_websocket", failure);
+        if (openSearchActive) {
+            ExportStats.recordSuccess("traffic", success);
+            ExportStats.recordTrafficSourceSuccess("proxy_websocket", success);
+            ExportStats.recordFailure("traffic", failure);
+            ExportStats.recordTrafficSourceFailure("proxy_websocket", failure);
+        }
         if (success == docs.size()) {
             pushedKeys.addAll(keys);
-        } else if (failure > 0) {
+        } else if (openSearchActive && failure > 0) {
             ExportStats.recordLastError("traffic", "Proxy WebSocket bulk had " + failure + " failure(s)");
         }
     }

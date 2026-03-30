@@ -150,4 +150,33 @@ class JsonTypedRoundTripTest {
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
         assertThat(parsed.enabledExportFieldsByIndex()).isNull();
     }
+
+    @Test
+    void build_and_parse_preserves_ui_preferences_for_stats_and_log_panel() throws IOException {
+        var state = new ConfigState.State(
+                List.of("settings"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null,
+                new ConfigState.UiPreferences(
+                        2,
+                        new ConfigState.LogPanelPreferences("WARN", true, "tls", true, false, "retry", false, true)));
+
+        String json = ConfigJsonMapper.build(state);
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(parsed.uiPreferences().statsChartStyle()).isEqualTo(2);
+        assertThat(parsed.uiPreferences().logPanel().minLevel()).isEqualTo("WARN");
+        assertThat(parsed.uiPreferences().logPanel().pauseAutoscroll()).isTrue();
+        assertThat(parsed.uiPreferences().logPanel().filterText()).isEqualTo("tls");
+        assertThat(parsed.uiPreferences().logPanel().filterCase()).isTrue();
+        assertThat(parsed.uiPreferences().logPanel().filterRegex()).isFalse();
+        assertThat(parsed.uiPreferences().logPanel().searchText()).isEqualTo("retry");
+        assertThat(parsed.uiPreferences().logPanel().searchCase()).isFalse();
+        assertThat(parsed.uiPreferences().logPanel().searchRegex()).isTrue();
+    }
 }

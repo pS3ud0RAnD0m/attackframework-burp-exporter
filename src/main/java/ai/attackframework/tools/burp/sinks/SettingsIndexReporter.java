@@ -60,10 +60,11 @@ public final class SettingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
+            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SETTINGS)) {
                 return;
@@ -81,19 +82,25 @@ public final class SettingsIndexReporter {
             }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
             if (ok) {
-                ExportStats.recordSuccess("settings", 1);
+                if (openSearchActive) {
+                    ExportStats.recordSuccess("settings", 1);
+                }
                 lastPushedHash = hashSettingsForEnabled(state, projectJson, userJson);
-                Logger.logDebug("Settings index: snapshot pushed successfully.");
+                Logger.logDebug("Settings index: snapshot pushed successfully to " + RuntimeConfig.activeSinkSummary() + ".");
             } else {
-                ExportStats.recordFailure("settings", 1);
-                ExportStats.recordLastError("settings", "Settings index push failed");
-                Logger.logDebug("Settings index: push failed (index request did not succeed).");
+                if (openSearchActive) {
+                    ExportStats.recordFailure("settings", 1);
+                    ExportStats.recordLastError("settings", "Settings index push failed");
+                }
+                Logger.logDebug("Settings index: push failed for " + RuntimeConfig.activeSinkSummary() + " (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            ExportStats.recordFailure("settings", 1);
-            ExportStats.recordLastError("settings", msg);
-            Logger.logDebug("Settings index: push failed: " + msg);
+            if (RuntimeConfig.isOpenSearchExportEnabled()) {
+                ExportStats.recordFailure("settings", 1);
+                ExportStats.recordLastError("settings", msg);
+            }
+            Logger.logDebug("Settings index: push failed for " + RuntimeConfig.activeSinkSummary() + ": " + msg);
         }
     }
 
@@ -148,10 +155,11 @@ public final class SettingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
+            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SETTINGS)) {
                 return;
@@ -173,19 +181,26 @@ public final class SettingsIndexReporter {
             }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
             if (ok) {
-                ExportStats.recordSuccess("settings", 1);
+                if (openSearchActive) {
+                    ExportStats.recordSuccess("settings", 1);
+                }
                 lastPushedHash = currentHash;
-                Logger.logDebug("Settings index: snapshot pushed successfully (change detected).");
+                Logger.logDebug("Settings index: snapshot pushed successfully to "
+                        + RuntimeConfig.activeSinkSummary() + " (change detected).");
             } else {
-                ExportStats.recordFailure("settings", 1);
-                ExportStats.recordLastError("settings", "Settings index push failed");
-                Logger.logDebug("Settings index: push failed (index request did not succeed).");
+                if (openSearchActive) {
+                    ExportStats.recordFailure("settings", 1);
+                    ExportStats.recordLastError("settings", "Settings index push failed");
+                }
+                Logger.logDebug("Settings index: push failed for " + RuntimeConfig.activeSinkSummary() + " (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            ExportStats.recordFailure("settings", 1);
-            ExportStats.recordLastError("settings", msg);
-            Logger.logDebug("Settings index: push failed: " + msg);
+            if (RuntimeConfig.isOpenSearchExportEnabled()) {
+                ExportStats.recordFailure("settings", 1);
+                ExportStats.recordLastError("settings", msg);
+            }
+            Logger.logDebug("Settings index: push failed for " + RuntimeConfig.activeSinkSummary() + ": " + msg);
         }
     }
 

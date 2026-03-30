@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.awt.Component;
 import java.awt.Container;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
@@ -26,6 +28,58 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 class ConfigPanelStartFailureFilesHeadlessTest {
+
+    @Test
+    void start_withFilesOnly_logsDestinationSummary() throws Exception {
+        Path exportRoot = TestPathSupport.createDirectory("af-file-root");
+        Logger.resetState();
+        List<String> events = new CopyOnWriteArrayList<>();
+        Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+        Logger.registerListener(listener);
+        try {
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                if (!bulkNdjsonEnabled.isSelected()) {
+                    bulkNdjsonEnabled.doClick();
+                }
+
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText(exportRoot.toString());
+                ref.set(p);
+            });
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStartedUi(startStop);
+            waitForLogMessage(events, "Export started to Files.");
+
+            assertThat(RuntimeConfig.isExportRunning()).isTrue();
+            assertThat(startStop.getText()).isEqualTo("Stop");
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
+        } finally {
+            Logger.unregisterListener(listener);
+            TestPathSupport.cleanupExportArtifacts(exportRoot);
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
 
     @Test
     void start_withFileRootThatIsNotWritableDirectory_revertsUi_and_reportsStatus() throws Exception {
@@ -133,6 +187,36 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             LockSupport.parkNanos(100_000_000L);
         }
         throw new AssertionError("Start button did not revert to stopped state within timeout");
+    }
+
+    private static void waitForStartedUi(JButton startStop) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                SwingUtilities.invokeAndWait(() -> { });
+            } catch (java.lang.InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+            if (RuntimeConfig.isExportRunning() && "Stop".equals(startStop.getText())) {
+                return;
+            }
+            LockSupport.parkNanos(100_000_000L);
+        }
+        throw new AssertionError("Start button did not reach running state within timeout");
+    }
+
+    private static void waitForLogMessage(List<String> events, String snippet) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (events.stream().anyMatch(message -> message.contains(snippet))) {
+                return;
+            }
+            LockSupport.parkNanos(100_000_000L);
+        }
+        throw new AssertionError("Expected log message containing: " + snippet);
     }
 
     private static <T extends Component> T findByName(Container root, String name, Class<T> type) {
