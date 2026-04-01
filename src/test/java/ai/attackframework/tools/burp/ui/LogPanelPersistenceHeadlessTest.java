@@ -24,7 +24,7 @@ class LogPanelPersistenceHeadlessTest {
 
         LogPanel panel = newPanel();
         JComboBox<?> level = combo(panel, "log.filter.level");
-        assertThat(level.getSelectedItem()).isEqualTo("trace");
+        assertThat(level.getSelectedItem()).isEqualTo("Trace");
     }
 
     @Test
@@ -33,7 +33,7 @@ class LogPanelPersistenceHeadlessTest {
         LogPanel a = newPanel();
 
         JComboBox<?> level = combo(a, "log.filter.level");
-        level.setSelectedItem("warn");
+        level.setSelectedItem("Warn");
 
         JCheckBox pause = check(a, "Pause autoscroll");
         if (!pause.isSelected()) click(pause);
@@ -51,7 +51,7 @@ class LogPanelPersistenceHeadlessTest {
         LogPanel b = newPanel();
 
         JComboBox<?> levelB = combo(b, "log.filter.level");
-        assertThat(levelB.getSelectedItem()).isEqualTo("warn");
+        assertThat(levelB.getSelectedItem()).isEqualTo("Warn");
 
         JCheckBox pauseB = check(b, "Pause autoscroll");
         assertThat(pauseB.isSelected()).isTrue();
@@ -70,7 +70,7 @@ class LogPanelPersistenceHeadlessTest {
             LogPanel panel = newPanel();
 
             JComboBox<?> level = combo(panel, "log.filter.level");
-            level.setSelectedItem("error");
+            level.setSelectedItem("Error");
 
             JCheckBox pause = check(panel, "Pause autoscroll");
             if (!pause.isSelected()) click(pause);

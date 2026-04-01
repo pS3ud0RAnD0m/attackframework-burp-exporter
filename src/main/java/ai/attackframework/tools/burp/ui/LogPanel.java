@@ -88,6 +88,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
     private static final String DEFAULT_MIN_LEVEL  = "trace";
+    private static final String[] LEVEL_LABELS = {"Trace", "Debug", "Info", "Warn", "Error"};
     private static final int MAX_MODEL_ENTRIES     = 5000;
 
     // Editor and renderer (JTextArea for reliable line wrap; no horizontal scroll)
@@ -161,9 +162,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         JPanel toolbar = new JPanel(new MigLayout(MIG_TOOLBAR_INSETS, "", "[]"));
         toolbar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Separator.foreground")));
 
-        levelCombo = new Tooltips.HtmlComboBox<>(new String[]{"trace", "debug", "info", "warn", "error"});
+        levelCombo = new Tooltips.HtmlComboBox<>(LEVEL_LABELS);
         levelCombo.setName("log.filter.level");
-        levelCombo.setSelectedItem(ConfigState.normalizeLogMinLevel(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL)));
+        levelCombo.setSelectedItem(displayLogMinLevel(ConfigState.normalizeLogMinLevel(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL))));
 
         pauseAutoscroll = new Tooltips.HtmlCheckBox("Pause autoscroll");
         pauseAutoscroll.setName("log.pause");
@@ -276,7 +277,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
         // Wiring
         levelCombo.addActionListener(e -> {
-            PREFS.put(PREF_MIN_LEVEL, Objects.toString(levelCombo.getSelectedItem(), DEFAULT_MIN_LEVEL));
+            PREFS.put(PREF_MIN_LEVEL, selectedLogMinLevel());
             rebuildView();
             syncRuntimePreferencesFromUi();
         });
@@ -445,7 +446,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         }
         applyingUiPreferences = true;
         try {
-            levelCombo.setSelectedItem(preferences.minLevel());
+            levelCombo.setSelectedItem(displayLogMinLevel(preferences.minLevel()));
             pauseAutoscroll.setSelected(preferences.pauseAutoscroll());
             filterField.setText(preferences.filterText());
             filterCaseToggle.setSelected(preferences.filterCase());
@@ -469,7 +470,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     private ConfigState.LogPanelPreferences currentUiPreferences() {
         return new ConfigState.LogPanelPreferences(
-                Objects.toString(levelCombo.getSelectedItem(), DEFAULT_MIN_LEVEL),
+                selectedLogMinLevel(),
                 pauseAutoscroll.isSelected(),
                 filterField.getText(),
                 filterCaseToggle.isSelected(),
@@ -477,6 +478,21 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
                 searchField.getText(),
                 searchCaseToggle.isSelected(),
                 searchRegexToggle.isSelected());
+    }
+
+    private String selectedLogMinLevel() {
+        return ConfigState.normalizeLogMinLevel(Objects.toString(levelCombo.getSelectedItem(), DEFAULT_MIN_LEVEL));
+    }
+
+    private static String displayLogMinLevel(String normalizedLevel) {
+        return switch (ConfigState.normalizeLogMinLevel(normalizedLevel)) {
+            case "trace" -> "Trace";
+            case "debug" -> "Debug";
+            case "info" -> "Info";
+            case "warn" -> "Warn";
+            case "error" -> "Error";
+            default -> "Trace";
+        };
     }
 
     private static void persistUiPreferencesToPreferences(ConfigState.LogPanelPreferences preferences) {
@@ -558,7 +574,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      * @return {@code true} when the level is visible
      */
     private boolean passesLevel(LogStore.Level lvl) {
-        LogStore.Level min = LogStore.Level.fromString((String) levelCombo.getSelectedItem());
+        LogStore.Level min = LogStore.Level.fromString(selectedLogMinLevel());
         return lvl.ordinal() >= min.ordinal();
     }
 

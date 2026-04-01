@@ -274,7 +274,7 @@ public class LogPanelTestHarness {
     /** Resets persisted UI state so each test starts from a clean baseline. */
     public static void resetPanelState(LogPanel p) {
         JComboBox<?> level = combo(p, "log.filter.level");
-        onEdt(() -> level.setSelectedItem("INFO"));
+        onEdt(() -> level.setSelectedItem("Info"));
 
         JCheckBox fCase = check(p, "log.filter.case");
         JCheckBox fRegex = check(p, "log.filter.regex");
