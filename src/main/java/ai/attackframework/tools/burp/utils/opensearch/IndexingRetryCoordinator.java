@@ -8,7 +8,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
+import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
+import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -73,14 +75,16 @@ public final class IndexingRetryCoordinator {
         if (!outageMode.get()) {
             boolean success = OpenSearchClientWrapper.doPushDocument(activeBaseUrl, indexName, document);
             if (success) {
-            consecutiveFailures.set(0);
-            if (outageMode.get()) {
-                checkRecoveryAndLog(activeBaseUrl);
-            }
-            return true;
+                consecutiveFailures.set(0);
+                if (outageMode.get()) {
+                    checkRecoveryAndLog(activeBaseUrl);
+                }
+                return true;
             }
             int fails = consecutiveFailures.incrementAndGet();
-            maybeEnterOutageMode(activeBaseUrl, fails);
+            if (maybeEnterOutageMode(activeBaseUrl, fails)) {
+                return false;
+            }
         }
 
         if (!RuntimeConfig.isExportReady()) {
@@ -159,7 +163,9 @@ public final class IndexingRetryCoordinator {
         }
 
         int fails = consecutiveFailures.incrementAndGet();
-        maybeEnterOutageMode(activeBaseUrl, fails);
+        if (maybeEnterOutageMode(activeBaseUrl, fails)) {
+            return successCount;
+        }
 
         if (!RuntimeConfig.isExportReady()) {
             return successCount;
@@ -195,17 +201,43 @@ public final class IndexingRetryCoordinator {
         lastDrainBaseUrl = "";
     }
 
-    private void maybeEnterOutageMode(String baseUrl, int consecutiveFails) {
+    private boolean maybeEnterOutageMode(String baseUrl, int consecutiveFails) {
         if (consecutiveFails != CONSECUTIVE_FAILURES_BEFORE_CHECK) {
-            return;
+            return false;
         }
         OpenSearchClientWrapper.OpenSearchStatus status = testConnectionWithRuntimeConfig(baseUrl);
         if (!status.success()) {
             outageMode.set(true);
             logOutageOnce();
+            return handlePersistentDestinationFailure(status);
         } else {
             consecutiveFailures.set(0);
         }
+        return false;
+    }
+
+    private boolean handlePersistentDestinationFailure(OpenSearchClientWrapper.OpenSearchStatus status) {
+        if (!RuntimeConfig.disableOpenSearchDestination()) {
+            return false;
+        }
+        clearPendingWork();
+        String failureKind = "Failed".equals(status.authenticationStatus())
+                ? "authentication failures"
+                : "connectivity failures";
+        String detail = status.message() == null || status.message().isBlank()
+                ? failureKind
+                : failureKind + " (" + status.message() + ")";
+        if (RuntimeConfig.isAnyFileExportEnabled()) {
+            String message = "OpenSearch export disabled after repeated " + detail + ". Files export will continue.";
+            Logger.logErrorPanelOnly("[OpenSearch] " + message);
+            ControlStatusBridge.post(message);
+            return true;
+        }
+        String message = "OpenSearch export disabled after repeated " + detail + ". No destinations remain; export stopped.";
+        Logger.logErrorPanelOnly("[OpenSearch] " + message);
+        ControlStatusBridge.post(message);
+        ExportReporterLifecycle.stopAndClearPendingExportWork();
+        return true;
     }
 
     private void logOutageOnce() {

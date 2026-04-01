@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * Unit tests for {@link ProxyHistoryIndexReporter}: no-op paths when PROXY_HISTORY
+ * Unit tests for {@link ProxyHistoryIndexReporter}: no-op paths when proxy_history
  * is not selected or export is not running (no OpenSearch or MontoyaApi required).
  */
 class ProxyHistoryIndexReporterTest {
@@ -38,7 +38,7 @@ class ProxyHistoryIndexReporterTest {
                     List.of("traffic"), "all", List.of(),
                     new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                     ConfigState.DEFAULT_SETTINGS_SUB,
-                    List.of("PROXY", "REPEATER"),
+                    List.of("proxy", "repeater"),
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                     null
             ));
@@ -56,7 +56,7 @@ class ProxyHistoryIndexReporterTest {
                     List.of("traffic"), "all", List.of(),
                     new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                     ConfigState.DEFAULT_SETTINGS_SUB,
-                    List.of("PROXY_HISTORY"),
+                    List.of("proxy_history"),
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                     null
             ));
@@ -74,7 +74,7 @@ class ProxyHistoryIndexReporterTest {
                     List.of("traffic"), "all", List.of(),
                     new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                     ConfigState.DEFAULT_SETTINGS_SUB,
-                    List.of("PROXY_HISTORY"),
+                    List.of("proxy_history"),
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                     null
             ));

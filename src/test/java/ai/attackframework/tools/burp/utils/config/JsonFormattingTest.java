@@ -28,8 +28,8 @@ class JsonFormattingTest {
                         true
                 ),
                 List.of(ConfigKeys.SRC_SETTINGS_PROJECT),
-                List.of("PROXY", "REPEATER"),
-                List.of("HIGH", "CRITICAL"),
+                List.of("proxy", "repeater"),
+                List.of("high", "critical"),
                 null
         );
 

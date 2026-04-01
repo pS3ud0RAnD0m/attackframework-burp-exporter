@@ -24,7 +24,7 @@ class LogPanelPersistenceHeadlessTest {
 
         LogPanel panel = newPanel();
         JComboBox<?> level = combo(panel, "log.filter.level");
-        assertThat(level.getSelectedItem()).isEqualTo("TRACE");
+        assertThat(level.getSelectedItem()).isEqualTo("trace");
     }
 
     @Test
@@ -33,7 +33,7 @@ class LogPanelPersistenceHeadlessTest {
         LogPanel a = newPanel();
 
         JComboBox<?> level = combo(a, "log.filter.level");
-        level.setSelectedItem("WARN");
+        level.setSelectedItem("warn");
 
         JCheckBox pause = check(a, "Pause autoscroll");
         if (!pause.isSelected()) click(pause);
@@ -51,7 +51,7 @@ class LogPanelPersistenceHeadlessTest {
         LogPanel b = newPanel();
 
         JComboBox<?> levelB = combo(b, "log.filter.level");
-        assertThat(levelB.getSelectedItem()).isEqualTo("WARN");
+        assertThat(levelB.getSelectedItem()).isEqualTo("warn");
 
         JCheckBox pauseB = check(b, "Pause autoscroll");
         assertThat(pauseB.isSelected()).isTrue();
@@ -70,7 +70,7 @@ class LogPanelPersistenceHeadlessTest {
             LogPanel panel = newPanel();
 
             JComboBox<?> level = combo(panel, "log.filter.level");
-            level.setSelectedItem("ERROR");
+            level.setSelectedItem("error");
 
             JCheckBox pause = check(panel, "Pause autoscroll");
             if (!pause.isSelected()) click(pause);
@@ -81,7 +81,7 @@ class LogPanelPersistenceHeadlessTest {
             setText(field(panel, "log.search.field"), "traffic");
 
             ConfigState.LogPanelPreferences preferences = RuntimeConfig.logPanelPreferences();
-            assertThat(preferences.minLevel()).isEqualTo("ERROR");
+            assertThat(preferences.minLevel()).isEqualTo("error");
             assertThat(preferences.pauseAutoscroll()).isTrue();
             assertThat(preferences.filterText()).isEqualTo("opensearch");
             assertThat(preferences.filterRegex()).isTrue();

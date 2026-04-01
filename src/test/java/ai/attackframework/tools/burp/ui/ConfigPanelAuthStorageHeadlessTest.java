@@ -213,12 +213,10 @@ class ConfigPanelAuthStorageHeadlessTest {
     }
 
     @Test
-    void saveTooltip_describesSavingCurrentConfiguration() throws Exception {
+    void configControl_noLongerShowsSaveButton() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JButton save = (JButton) findByName(panel, "control.save");
-            runEdt(() -> assertThat(save.getToolTipText())
-                    .isEqualTo("<html>Save and apply the current configuration.<br>Secrets are only stored within in-process memory.</html>"));
+            runEdt(() -> assertThat(findByNameOrNull(panel, "control.save")).isNull());
         });
     }
 
@@ -350,6 +348,28 @@ class ConfigPanelAuthStorageHeadlessTest {
             assertThat(creds.password()).isEqualTo("pw-conn");
             assertThat(RuntimeConfig.openSearchUser()).isEqualTo("dana");
             assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw-conn");
+        });
+    }
+
+    @Test
+    void editingBasicAuthFields_updatesSessionStoreAndRuntimeImmediately() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+            JTextField user = get(panel, "openSearchUserField");
+            JPasswordField pass = get(panel, "openSearchPasswordField");
+
+            runEdt(() -> {
+                authType.setSelectedItem("Basic");
+                user.setText("frank");
+                pass.setText("pw-live");
+            });
+
+            SecureCredentialStore.BasicCredentials creds = SecureCredentialStore.loadOpenSearchCredentials();
+            assertThat(creds.username()).isEqualTo("frank");
+            assertThat(creds.password()).isEqualTo("pw-live");
+            assertThat(RuntimeConfig.openSearchUser()).isEqualTo("frank");
+            assertThat(RuntimeConfig.openSearchPassword()).isEqualTo("pw-live");
         });
     }
 

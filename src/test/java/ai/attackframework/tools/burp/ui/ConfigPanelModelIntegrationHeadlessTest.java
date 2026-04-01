@@ -1,98 +1,58 @@
 package ai.attackframework.tools.burp.ui;
 
-import java.awt.Component;
-import java.awt.Container;
-import java.util.concurrent.Callable;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import javax.swing.AbstractButton;
 import javax.swing.JButton;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
-import ai.attackframework.tools.burp.ui.controller.ConfigController;
-
 /**
- * Integration-style headless test validating that the panel can:
- *  1) Build a model from the UI
- *  2) Save via the controller
- *  3) Report a user-facing control status message
+ * Small integration check for the current ConfigPanel control surface.
  */
 class ConfigPanelModelIntegrationHeadlessTest {
 
     @Test
-    void ui_to_json_to_state_back_to_ui_roundtrip() {
-        TestUi ui = new TestUi();
-        ConfigPanel panel = new ConfigPanel(new ConfigController(ui));
+    void configControl_surface_exposesImportExportAndStartButNoSave() {
+        ConfigPanel panel = new ConfigPanel();
 
-        // Prefer text; if unsupported, pick the last button in the Control block
-        JButton save = (JButton) findByTextOrLastButton(panel);
-        save.doClick();
-
-        await(() -> ui.controlStatus != null);
-        assertThat(ui.controlStatus)
-                .isNotBlank()
-                .containsAnyOf("Saved", "Exported", "Imported");
+        JButton start = (JButton) findByName(panel, "control.startStop");
+        assertThat(start.getText()).isIn("Start", "Stop");
+        assertThat(findByText(panel, "Import Config")).isNotNull();
+        assertThat(findByText(panel, "Export Config")).isNotNull();
+        assertThat(findByText(panel, "Save")).isNull();
+        assertThat(findByName(panel, "control.save")).isNull();
     }
 
-    // ---- Mini harness ----
-
-    private static final class TestUi implements ConfigController.Ui {
-        volatile String controlStatus;
-        @Override public void onFileStatus(String message) {
-            // File status is not observed in this test; required by ConfigController.Ui
+    private static java.awt.Component findByName(java.awt.Container root, String name) {
+        if (name.equals(root.getName())) {
+            return root;
         }
-        @Override public void onOpenSearchStatus(String message) {
-            // OpenSearch status is not observed in this test; required by ConfigController.Ui
-        }
-        @Override public void onControlStatus(String message) { controlStatus = message; }
-    }
-
-    private static Component findByTextOrLastButton(Container root) {
-        Component byText = findByText(root, "Save");
-        if (byText != null) return byText;
-        Component last = findLastButton(root);
-        if (last != null) return last;
-        throw new IllegalStateException("Save button not found (by text or position).");
-    }
-
-    private static Component findByText(Container root, String text) {
-        for (Component c : root.getComponents()) {
-            if (c instanceof AbstractButton b && text.equals(b.getText())) return b;
-            if (c instanceof Container child) {
-                Component hit = findByText(child, text);
-                if (hit != null) return hit;
+        for (java.awt.Component child : root.getComponents()) {
+            if (name.equals(child.getName())) {
+                return child;
+            }
+            if (child instanceof java.awt.Container container) {
+                java.awt.Component hit = findByName(container, name);
+                if (hit != null) {
+                    return hit;
+                }
             }
         }
         return null;
     }
 
-    private static Component findLastButton(Container root) {
-        Component last = null;
-        for (Component c : root.getComponents()) {
-            if (c instanceof JButton) last = c;
-            if (c instanceof Container child) {
-                Component hit = findLastButton(child);
-                if (hit != null) last = hit;
+    private static java.awt.Component findByText(java.awt.Container root, String text) {
+        for (java.awt.Component child : root.getComponents()) {
+            if (child instanceof javax.swing.AbstractButton button && text.equals(button.getText())) {
+                return button;
             }
-        }
-        return last;
-    }
-
-    private static void await(Callable<Boolean> cond) {
-        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(3);
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                if (Boolean.TRUE.equals(cond.call())) {
-                    return;
+            if (child instanceof java.awt.Container container) {
+                java.awt.Component hit = findByText(container, text);
+                if (hit != null) {
+                    return hit;
                 }
-            } catch (Exception ignored) {
-                // Condition evaluation failed; continue until deadline or success.
             }
-            LockSupport.parkNanos(15_000_000L); // ~15ms without using Thread.sleep
         }
-        throw new AssertionError("Timed out waiting for condition.");
+        return null;
     }
 }

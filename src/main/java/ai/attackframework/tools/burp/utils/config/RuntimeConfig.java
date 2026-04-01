@@ -81,6 +81,47 @@ public final class RuntimeConfig {
         notifyListeners(state);
     }
 
+    /**
+     * Disables only the OpenSearch destination in the current runtime state.
+     *
+     * <p>This is used for runtime shutdown of a failing destination while allowing any configured
+     * file export destination to continue. Later UI changes can intentionally re-enable
+     * OpenSearch by pushing a fresh runtime state from the current form values.</p>
+     *
+     * @return {@code true} when OpenSearch was enabled and is now disabled; {@code false} otherwise
+     */
+    public static boolean disableOpenSearchDestination() {
+        ConfigState.State current = normalize(state);
+        ConfigState.Sinks sinks = current.sinks();
+        if (sinks == null || !sinks.osEnabled()) {
+            return false;
+        }
+        updateState(new ConfigState.State(
+                current.dataSources(),
+                current.scopeType(),
+                current.customEntries(),
+                new ConfigState.Sinks(
+                        sinks.filesEnabled(),
+                        sinks.filesPath(),
+                        sinks.fileJsonlEnabled(),
+                        sinks.fileBulkNdjsonEnabled(),
+                        sinks.fileTotalCapEnabled(),
+                        sinks.fileTotalCapGb(),
+                        sinks.fileDiskUsagePercentEnabled(),
+                        sinks.fileDiskUsagePercent(),
+                        false,
+                        sinks.openSearchUrl(),
+                        sinks.openSearchUser(),
+                        sinks.openSearchPassword(),
+                        sinks.openSearchTlsMode()),
+                current.settingsSub(),
+                current.trafficToolTypes(),
+                current.findingsSeverities(),
+                current.enabledExportFieldsByIndex(),
+                current.uiPreferences()));
+        return true;
+    }
+
     /** Registers a listener for runtime-state changes and immediately replays the current state. */
     public static void registerStateListener(StateListener listener) {
         if (listener == null) {
@@ -249,7 +290,7 @@ public final class RuntimeConfig {
         ConfigState.Sinks sinks = incoming.sinks();
         ConfigState.Sinks normalizedSinks = sinks == null
                 ? new ConfigState.Sinks(false, "", false, false,
-                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY)
                 : new ConfigState.Sinks(
@@ -258,7 +299,7 @@ public final class RuntimeConfig {
                         sinks.fileJsonlEnabled(),
                         sinks.fileBulkNdjsonEnabled(),
                         sinks.fileTotalCapEnabled(),
-                        sinks.fileTotalCapBytes(),
+                        sinks.fileTotalCapGb(),
                         sinks.fileDiskUsagePercentEnabled(),
                         sinks.fileDiskUsagePercent(),
                         sinks.osEnabled(),
@@ -268,16 +309,16 @@ public final class RuntimeConfig {
                         sinks.openSearchTlsMode()
                 );
 
-        String scopeType = normalizeScopeType(incoming.scopeType());
+        String scopeType = ConfigState.normalizeScopeType(incoming.scopeType());
 
         List<String> settingsSub = incoming.settingsSub() != null && !incoming.settingsSub().isEmpty()
-                ? List.copyOf(incoming.settingsSub())
+                ? ConfigState.normalizeSettingsSub(incoming.settingsSub())
                 : ConfigState.DEFAULT_SETTINGS_SUB;
         List<String> trafficToolTypes = incoming.trafficToolTypes() != null
-                ? List.copyOf(incoming.trafficToolTypes())
+                ? ConfigState.normalizeTrafficToolTypes(incoming.trafficToolTypes())
                 : ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES;
         List<String> findingsSeverities = incoming.findingsSeverities() != null && !incoming.findingsSeverities().isEmpty()
-                ? List.copyOf(incoming.findingsSeverities())
+                ? ConfigState.normalizeFindingsSeverities(incoming.findingsSeverities())
                 : ConfigState.DEFAULT_FINDINGS_SEVERITIES;
 
         Map<String, java.util.Set<String>> enabledFields = incoming.enabledExportFieldsByIndex();
@@ -290,30 +331,13 @@ public final class RuntimeConfig {
         return value == null ? "" : value.trim();
     }
 
-    /**
-     * Normalizes scope type to lowercase and trims; unknown values default to {@link ConfigKeys#SCOPE_ALL}.
-     *
-     * @param raw scope type from config; may be {@code null}
-     * @return one of {@code "all"}, {@code "burp"}, {@code "custom"}
-     */
-    private static String normalizeScopeType(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return ConfigKeys.SCOPE_ALL;
-        }
-        String normalized = raw.trim().toLowerCase(java.util.Locale.ROOT);
-        if (ConfigKeys.SCOPE_BURP.equals(normalized) || ConfigKeys.SCOPE_CUSTOM.equals(normalized)) {
-            return normalized;
-        }
-        return ConfigKeys.SCOPE_ALL;
-    }
-
     private static ConfigState.State defaultState() {
         return new ConfigState.State(
                 List.of(),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 new ConfigState.Sinks(false, "", false, false,
-                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,
@@ -389,7 +413,7 @@ public final class RuntimeConfig {
     public static long fileTotalCapBytes() {
         ConfigState.State current = state;
         return current == null || current.sinks() == null
-                ? ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES
+                ? ConfigState.gbToBytes(ConfigState.DEFAULT_FILE_TOTAL_CAP_GB)
                 : current.sinks().fileTotalCapBytes();
     }
 

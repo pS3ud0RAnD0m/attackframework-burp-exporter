@@ -49,7 +49,7 @@ class RuntimeConfigDestinationGatingTest {
                     new ConfigState.Sinks(true, "/path/to/directory", false, true,
                             false, "https://opensearch.url:9200", "", "", false),
                     ConfigState.DEFAULT_SETTINGS_SUB,
-                    List.of("PROXY"),
+                    List.of("proxy"),
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                     null
             ));

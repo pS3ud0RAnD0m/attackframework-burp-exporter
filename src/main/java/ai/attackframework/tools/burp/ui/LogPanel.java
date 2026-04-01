@@ -87,7 +87,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
-    private static final String DEFAULT_MIN_LEVEL  = "TRACE";
+    private static final String DEFAULT_MIN_LEVEL  = "trace";
     private static final int MAX_MODEL_ENTRIES     = 5000;
 
     // Editor and renderer (JTextArea for reliable line wrap; no horizontal scroll)
@@ -161,9 +161,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         JPanel toolbar = new JPanel(new MigLayout(MIG_TOOLBAR_INSETS, "", "[]"));
         toolbar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Separator.foreground")));
 
-        levelCombo = new Tooltips.HtmlComboBox<>(new String[]{"TRACE", "DEBUG", "INFO", "WARN", "ERROR"});
+        levelCombo = new Tooltips.HtmlComboBox<>(new String[]{"trace", "debug", "info", "warn", "error"});
         levelCombo.setName("log.filter.level");
-        levelCombo.setSelectedItem(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL));
+        levelCombo.setSelectedItem(ConfigState.normalizeLogMinLevel(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL)));
 
         pauseAutoscroll = new Tooltips.HtmlCheckBox("Pause autoscroll");
         pauseAutoscroll.setName("log.pause");

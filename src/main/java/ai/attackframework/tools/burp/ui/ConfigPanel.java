@@ -1,7 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
 import java.awt.Component;
-import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.IOException;
@@ -89,8 +88,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final String MIG_FILL_WRAP = "growx, wrap";
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
-    private static final long GIB_BYTES = 1024L * 1024L * 1024L;
-    private static final BigDecimal GIB_BYTES_DECIMAL = BigDecimal.valueOf(GIB_BYTES);
     /** Background executor for Start-path OpenSearch bootstrap work. */
     private static final ExecutorService STARTUP_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "attackframework-startup");
@@ -181,6 +178,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             = new JPanel(new MigLayout(MIG_STATUS_INSETS, MIG_PREF_COL));
     private transient boolean scopeGridListenerRegistered;
     private transient boolean buttonStylesNormalized;
+    private transient boolean suppressAuthSync;
 
     /** Action controller (transient; rebuilt on deserialization). */
     private transient ConfigController controller;
@@ -316,7 +314,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 StatusViews::configureTextArea,
                 this::importConfig,
                 this::exportConfig,
-                new ControlSaveButtonListener(),
                 this::startExportAsync,
                 () -> {
                     ExportReporterLifecycle.stopAndClearPendingExportWork();
@@ -352,12 +349,17 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         String selectedType = SecureCredentialStore.loadSelectedAuthType();
-        if (selectedType == null || selectedType.isBlank() || "None".equals(selectedType)) {
+        if (selectedType == null || selectedType.isBlank() || "none".equalsIgnoreCase(selectedType)) {
             selectedType = "Basic";
         }
-        openSearchAuthTypeCombo.setSelectedItem(selectedType);
-        loadSessionAuthFields();
-        updateRuntimeConfig();
+        suppressAuthSync = true;
+        try {
+            openSearchAuthTypeCombo.setSelectedItem(selectedType);
+            loadSessionAuthFields();
+        } finally {
+            suppressAuthSync = false;
+        }
+        syncSelectedAuthStateFromUi();
     }
 
     /** Groups file-format radios and keeps one selection active for the UI/runtime state. */
@@ -400,6 +402,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
+        syncSelectedAuthStateFromUi();
         if (fileSinkCheckbox.isSelected() && !hasSelectedFileFormat()) {
             Logger.logErrorPanelOnly("[Start] Files selected but no file format is enabled.");
             RuntimeConfig.setExportStarting(false);
@@ -407,9 +410,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             uiCallbacks.onStartFailure().run();
             return;
         }
+        if (!RuntimeConfig.isAnySinkEnabled()) {
+            RuntimeConfig.setExportStarting(false);
+            onControlStatus("Start aborted: configure at least one destination.");
+            uiCallbacks.onStartFailure().run();
+            return;
+        }
         RuntimeConfig.setExportStarting(true);
-        persistSelectedAuthSecrets();
-        updateRuntimeConfig();
         String url = openSearchUrlField.getText().trim();
         List<String> sources = List.copyOf(getSelectedSources());
         ExportStats.recordExportStartRequested();
@@ -475,32 +482,41 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 String reason = preflight.message() == null || preflight.message().isBlank()
                         ? "OpenSearch preflight failed."
                         : "OpenSearch preflight failed: " + preflight.message();
-                ExportReporterLifecycle.stopAndClearPendingExportWork();
-                SwingUtilities.invokeLater(() -> {
-                    onControlStatus("Start aborted: " + reason);
-                    uiCallbacks.onStartFailure().run();
-                });
-                return;
+                if (!RuntimeConfig.isAnyFileExportEnabled()) {
+                    ExportReporterLifecycle.stopAndClearPendingExportWork();
+                    SwingUtilities.invokeLater(() -> {
+                        onControlStatus("Start aborted: " + reason);
+                        uiCallbacks.onStartFailure().run();
+                    });
+                    return;
+                }
+                disableOpenSearchForCurrentRun(reason + " Files export will continue.");
+                openSearchEnabled = false;
             }
 
-            Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
-            List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
-                    RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword(), RuntimeConfig::isExportRunning);
-            for (OpenSearchSink.IndexResult r : results) {
-                Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
-                        + (r.error() != null ? " (" + r.error() + ")" : ""));
-            }
-            if (!RuntimeConfig.isExportRunning()) {
-                return;
-            }
-            if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
-                Logger.logErrorPanelOnly("[Start] Ensure indexes: one or more failed; see log above.");
-                ExportReporterLifecycle.stopAndClearPendingExportWork();
-                SwingUtilities.invokeLater(() -> {
-                    onControlStatus("Start aborted: one or more indexes failed to initialize.");
-                    uiCallbacks.onStartFailure().run();
-                });
-                return;
+            if (openSearchEnabled) {
+                Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
+                List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
+                        RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword(), RuntimeConfig::isExportRunning);
+                for (OpenSearchSink.IndexResult r : results) {
+                    Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
+                            + (r.error() != null ? " (" + r.error() + ")" : ""));
+                }
+                if (!RuntimeConfig.isExportRunning()) {
+                    return;
+                }
+                if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
+                    Logger.logErrorPanelOnly("[Start] Ensure indexes: one or more failed; see log above.");
+                    if (!RuntimeConfig.isAnyFileExportEnabled()) {
+                        ExportReporterLifecycle.stopAndClearPendingExportWork();
+                        SwingUtilities.invokeLater(() -> {
+                            onControlStatus("Start aborted: one or more indexes failed to initialize.");
+                            uiCallbacks.onStartFailure().run();
+                        });
+                        return;
+                    }
+                    disableOpenSearchForCurrentRun("OpenSearch index initialization failed. Files export will continue.");
+                }
             }
         }
 
@@ -509,11 +525,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
         RuntimeConfig.setExportStarting(false);
         SwingUtilities.invokeLater(() -> uiCallbacks.onStartSuccess().run());
-        ToolIndexConfigReporter.pushConfigSnapshot();
-        if (!RuntimeConfig.isExportRunning()) {
-            return;
+        if (RuntimeConfig.isAnySinkEnabled()) {
+            ToolIndexConfigReporter.pushConfigSnapshot();
+            if (!RuntimeConfig.isExportRunning()) {
+                return;
+            }
+            ToolIndexStatsReporter.start();
         }
-        ToolIndexStatsReporter.start();
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
@@ -554,6 +572,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         Logger.logInfoPanelOnly("Export started to " + RuntimeConfig.activeSinkSummary() + ".");
+    }
+
+    private void disableOpenSearchForCurrentRun(String reason) {
+        if (RuntimeConfig.disableOpenSearchDestination()) {
+            Logger.logErrorPanelOnly("[Start] " + reason);
+        }
     }
 
     /**
@@ -636,21 +660,21 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             settingsUserCheckbox.setSelected(settingsSub.contains(ConfigKeys.SRC_SETTINGS_USER));
 
             List<String> trafficTools = state.trafficToolTypes() != null ? state.trafficToolTypes() : List.of();
-            trafficBurpAiCheckbox.setSelected(trafficTools.contains("BURP_AI"));
-            trafficExtensionsCheckbox.setSelected(trafficTools.contains("EXTENSIONS"));
-            trafficIntruderCheckbox.setSelected(trafficTools.contains("INTRUDER"));
-            trafficProxyCheckbox.setSelected(trafficTools.contains("PROXY"));
-            trafficProxyHistoryCheckbox.setSelected(trafficTools.contains("PROXY_HISTORY"));
-            trafficRepeaterCheckbox.setSelected(trafficTools.contains("REPEATER"));
-            trafficScannerCheckbox.setSelected(trafficTools.contains("SCANNER"));
-            trafficSequencerCheckbox.setSelected(trafficTools.contains("SEQUENCER"));
+            trafficBurpAiCheckbox.setSelected(trafficTools.contains("burp_ai"));
+            trafficExtensionsCheckbox.setSelected(trafficTools.contains("extensions"));
+            trafficIntruderCheckbox.setSelected(trafficTools.contains("intruder"));
+            trafficProxyCheckbox.setSelected(trafficTools.contains("proxy"));
+            trafficProxyHistoryCheckbox.setSelected(trafficTools.contains("proxy_history"));
+            trafficRepeaterCheckbox.setSelected(trafficTools.contains("repeater"));
+            trafficScannerCheckbox.setSelected(trafficTools.contains("scanner"));
+            trafficSequencerCheckbox.setSelected(trafficTools.contains("sequencer"));
 
             List<String> severities = state.findingsSeverities() != null ? state.findingsSeverities() : List.of();
-            issuesCriticalCheckbox.setSelected(severities.contains("CRITICAL"));
-            issuesHighCheckbox.setSelected(severities.contains("HIGH"));
-            issuesMediumCheckbox.setSelected(severities.contains("MEDIUM"));
-            issuesLowCheckbox.setSelected(severities.contains("LOW"));
-            issuesInformationalCheckbox.setSelected(severities.contains("INFORMATIONAL"));
+            issuesCriticalCheckbox.setSelected(severities.contains("critical"));
+            issuesHighCheckbox.setSelected(severities.contains("high"));
+            issuesMediumCheckbox.setSelected(severities.contains("medium"));
+            issuesLowCheckbox.setSelected(severities.contains("low"));
+            issuesInformationalCheckbox.setSelected(severities.contains("informational"));
 
             ConfigState.Sinks sinks = state.sinks();
             if (sinks != null) {
@@ -658,7 +682,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 filePathField.setText(sinks.filesPath() != null ? sinks.filesPath() : "");
                 applyFileFormatSelection(sinks.fileJsonlEnabled(), sinks.fileBulkNdjsonEnabled());
                 fileTotalCapCheckbox.setSelected(sinks.fileTotalCapEnabled());
-                fileTotalCapField.setText(formatGiBLimit(sinks.fileTotalCapBytes()));
+                fileTotalCapField.setText(formatGiBLimit(sinks.fileTotalCapGb()));
                 fileDiskUsagePercentCheckbox.setSelected(sinks.fileDiskUsagePercentEnabled());
                 fileDiskUsagePercentField.setText(String.valueOf(sinks.fileDiskUsagePercent()));
                 openSearchSinkCheckbox.setSelected(sinks.osEnabled());
@@ -684,7 +708,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             applyExportFieldsState(state.enabledExportFieldsByIndex());
             refreshFieldsSectionsEnabled();
             refreshEnabledStates();
-            RuntimeConfig.updateState(buildCurrentState(state.uiPreferences()));
+            syncSelectedAuthStateFromUi(state.uiPreferences());
         };
         runOnEdt(r);
     }
@@ -719,6 +743,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void updateRuntimeConfig() {
         RuntimeConfig.updateState(buildCurrentState());
+    }
+
+    private void syncSelectedAuthStateFromUi() {
+        persistSelectedAuthSecrets();
+        updateRuntimeConfig();
+    }
+
+    private void syncSelectedAuthStateFromUi(ConfigState.UiPreferences uiPreferences) {
+        persistSelectedAuthSecrets();
+        RuntimeConfig.updateState(buildCurrentState(uiPreferences));
     }
 
     /** Grey-out and disable each Fields section when no related source option is selected; re-enable when at least one is selected. Does not change checkbox selected state. */
@@ -825,8 +859,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchTlsModeCombo.addActionListener(sinkUpdater);
 
         testConnectionButton.addActionListener(e -> {
-            persistSelectedAuthSecrets();
-            updateRuntimeConfig();
+            syncSelectedAuthStateFromUi();
             String url = openSearchUrlField.getText().trim();
             if (url.isEmpty()) { onOpenSearchStatus("✖ URL required"); return; }
             onOpenSearchStatus("Testing ...");
@@ -851,6 +884,20 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         openSearchUrlField.getDocument().addDocumentListener(relayout);
         fileTotalCapField.getDocument().addDocumentListener(relayout);
         fileDiskUsagePercentField.getDocument().addDocumentListener(relayout);
+
+        DocumentListener authUpdater = Doc.onChange(() -> {
+            if (!suppressAuthSync) {
+                syncSelectedAuthStateFromUi();
+            }
+        });
+        openSearchUserField.getDocument().addDocumentListener(authUpdater);
+        openSearchPasswordField.getDocument().addDocumentListener(authUpdater);
+        openSearchApiKeyIdField.getDocument().addDocumentListener(authUpdater);
+        openSearchApiKeySecretField.getDocument().addDocumentListener(authUpdater);
+        openSearchJwtTokenField.getDocument().addDocumentListener(authUpdater);
+        openSearchCertPathField.getDocument().addDocumentListener(authUpdater);
+        openSearchCertKeyPathField.getDocument().addDocumentListener(authUpdater);
+        openSearchCertPassphraseField.getDocument().addDocumentListener(authUpdater);
     }
 
     private JPanel buildSettingsSubPanel() {
@@ -930,9 +977,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         authTypeCombo.addActionListener(e -> {
             String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
-            SecureCredentialStore.saveSelectedAuthType(selectedType);
             applyAuthTypeCardVisibility.accept(selectedType);
-            updateRuntimeConfig();
+            if (!suppressAuthSync) {
+                syncSelectedAuthStateFromUi();
+            }
             contentCards.revalidate();
             contentCards.repaint();
         });
@@ -1353,21 +1401,21 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (settingsUserCheckbox.isSelected()) settingsSub.add(ConfigKeys.SRC_SETTINGS_USER);
 
         List<String> trafficToolTypes = new ArrayList<>();
-        if (trafficBurpAiCheckbox.isSelected()) trafficToolTypes.add("BURP_AI");
-        if (trafficExtensionsCheckbox.isSelected()) trafficToolTypes.add("EXTENSIONS");
-        if (trafficIntruderCheckbox.isSelected()) trafficToolTypes.add("INTRUDER");
-        if (trafficProxyCheckbox.isSelected()) trafficToolTypes.add("PROXY");
-        if (trafficProxyHistoryCheckbox.isSelected()) trafficToolTypes.add("PROXY_HISTORY");
-        if (trafficRepeaterCheckbox.isSelected()) trafficToolTypes.add("REPEATER");
-        if (trafficScannerCheckbox.isSelected()) trafficToolTypes.add("SCANNER");
-        if (trafficSequencerCheckbox.isSelected()) trafficToolTypes.add("SEQUENCER");
+        if (trafficBurpAiCheckbox.isSelected()) trafficToolTypes.add("burp_ai");
+        if (trafficExtensionsCheckbox.isSelected()) trafficToolTypes.add("extensions");
+        if (trafficIntruderCheckbox.isSelected()) trafficToolTypes.add("intruder");
+        if (trafficProxyCheckbox.isSelected()) trafficToolTypes.add("proxy");
+        if (trafficProxyHistoryCheckbox.isSelected()) trafficToolTypes.add("proxy_history");
+        if (trafficRepeaterCheckbox.isSelected()) trafficToolTypes.add("repeater");
+        if (trafficScannerCheckbox.isSelected()) trafficToolTypes.add("scanner");
+        if (trafficSequencerCheckbox.isSelected()) trafficToolTypes.add("sequencer");
 
         List<String> findingsSeverities = new ArrayList<>();
-        if (issuesCriticalCheckbox.isSelected()) findingsSeverities.add("CRITICAL");
-        if (issuesHighCheckbox.isSelected()) findingsSeverities.add("HIGH");
-        if (issuesMediumCheckbox.isSelected()) findingsSeverities.add("MEDIUM");
-        if (issuesLowCheckbox.isSelected()) findingsSeverities.add("LOW");
-        if (issuesInformationalCheckbox.isSelected()) findingsSeverities.add("INFORMATIONAL");
+        if (issuesCriticalCheckbox.isSelected()) findingsSeverities.add("critical");
+        if (issuesHighCheckbox.isSelected()) findingsSeverities.add("high");
+        if (issuesMediumCheckbox.isSelected()) findingsSeverities.add("medium");
+        if (issuesLowCheckbox.isSelected()) findingsSeverities.add("low");
+        if (issuesInformationalCheckbox.isSelected()) findingsSeverities.add("informational");
 
         String authType = openSearchAuthTypeCombo != null
                 ? String.valueOf(openSearchAuthTypeCombo.getSelectedItem())
@@ -1382,7 +1430,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 new ConfigState.Sinks(filesEnabled, filesRoot, fileJsonlCheckbox.isSelected(),
                         fileBulkNdjsonCheckbox.isSelected(),
                         fileTotalCapCheckbox.isSelected(), parseGiBLimit(fileTotalCapField.getText(),
-                                ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES),
+                                ConfigState.DEFAULT_FILE_TOTAL_CAP_GB),
                         fileDiskUsagePercentCheckbox.isSelected(), parsePercentLimit(fileDiskUsagePercentField.getText(),
                                 ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT),
                         osEnabled, osUrl,
@@ -1429,31 +1477,29 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Parses a GiB limit from the UI, accepting decimal values such as {@code 0.5}.
      *
-     * <p>Invalid, blank, or non-positive input falls back to {@code defaultBytes}. Fractional GiB
-     * values are converted to bytes using half-up rounding so import/export round-trips remain
-     * stable for user-entered values such as {@code 1.25}.</p>
+     * <p>Invalid, blank, or non-positive input falls back to {@code defaultGb}. Values are rounded
+     * to three decimals so import/export remains stable for user-entered values such as
+     * {@code 1.25}.</p>
      */
-    private static long parseGiBLimit(String raw, long defaultBytes) {
+    private static double parseGiBLimit(String raw, double defaultGb) {
         try {
             BigDecimal gib = new BigDecimal(nonBlankOr(raw, "").trim());
             if (gib.compareTo(BigDecimal.ZERO) <= 0) {
-                return defaultBytes;
+                return defaultGb;
             }
-            BigDecimal bytes = gib.multiply(GIB_BYTES_DECIMAL).setScale(0, RoundingMode.HALF_UP);
-            long asLong = bytes.longValueExact();
-            return asLong > 0 ? asLong : defaultBytes;
+            return gib.setScale(3, RoundingMode.HALF_UP).stripTrailingZeros().doubleValue();
         } catch (RuntimeException e) {
-            return defaultBytes;
+            return defaultGb;
         }
     }
 
-    /** Formats a byte limit back to a trimmed GiB string suitable for the UI text fields. */
-    private static String formatGiBLimit(long bytes) {
-        if (bytes <= 0) {
+    /** Formats a GB limit back to a trimmed string suitable for the UI text fields. */
+    private static String formatGiBLimit(double gb) {
+        if (gb <= 0) {
             return "1";
         }
-        return BigDecimal.valueOf(bytes)
-                .divide(GIB_BYTES_DECIMAL, 3, RoundingMode.HALF_UP)
+        return BigDecimal.valueOf(gb)
+                .setScale(3, RoundingMode.HALF_UP)
                 .stripTrailingZeros()
                 .toPlainString();
     }
@@ -1611,24 +1657,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 "Status output includes connection, authentication, trust, and reported version.",
                 "Secrets are only stored within in-process memory."
         ));
-    }
-
-    /**
-     * Save button handler: applies current UI state to runtime immediately so
-     * traffic and tool index use the new config (e.g. scope) without restarting
-     * export; persists via controller; triggers one tool index stats push when
-     * export is running so the next snapshot reflects the saved config.
-     */
-    private class ControlSaveButtonListener implements ActionListener {
-        @Override public void actionPerformed(ActionEvent e) {
-            persistSelectedAuthSecrets();
-            updateRuntimeConfig();
-            if (RuntimeConfig.isExportRunning()) {
-                ToolIndexConfigReporter.pushConfigSnapshot();
-                ToolIndexStatsReporter.pushSnapshotNow();
-            }
-            controller().saveAsync(buildCurrentState());
-        }
     }
 
     /**

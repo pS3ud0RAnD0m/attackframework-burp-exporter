@@ -180,7 +180,7 @@ public final class FindingsIndexReporter {
                 }
                 if (filterBySeverity) {
                     AuditIssueSeverity sev = issue.severity();
-                    if (sev == null || !selectedSeverities.contains(sev.name())) {
+                    if (sev == null || !selectedSeverities.contains(sev.name().toLowerCase(java.util.Locale.ROOT))) {
                         continue;
                     }
                 }

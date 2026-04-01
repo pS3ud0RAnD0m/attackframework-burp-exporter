@@ -77,7 +77,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             return false;
         }
         var types = RuntimeConfig.getState().trafficToolTypes();
-        return types != null && types.contains(toolType.name());
+        return types != null && types.contains(toolType.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     /**
@@ -88,7 +88,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      */
     private static boolean shouldExportNullToolSourceTraffic() {
         var types = RuntimeConfig.getState().trafficToolTypes();
-        return types != null && types.contains("PROXY");
+        return types != null && types.contains("proxy");
     }
 
     /**

@@ -29,7 +29,7 @@ public final class ConfigJsonMapper {
         Sinks sinks = new Sinks(
                 cfg.filesPath() != null && !cfg.filesPath().isBlank(), cfg.filesPath(),
                 cfg.fileJsonlEnabled(), cfg.fileBulkNdjsonEnabled(),
-                cfg.fileTotalCapEnabled(), cfg.fileTotalCapBytes(),
+                cfg.fileTotalCapEnabled(), cfg.fileTotalCapGb(),
                 cfg.fileDiskUsagePercentEnabled(), cfg.fileDiskUsagePercent(),
                 cfg.openSearchUrl() != null && !cfg.openSearchUrl().isBlank(), cfg.openSearchUrl(),
                 cfg.openSearchUser(), cfg.openSearchPassword(),

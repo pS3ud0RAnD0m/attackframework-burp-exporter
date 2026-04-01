@@ -34,7 +34,7 @@ class ToolIndexConfigReporterFileExportTest {
                     ConfigKeys.SCOPE_ALL,
                     List.of(),
                     new ConfigState.Sinks(true, root.toString(), true, true,
-                            true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                            true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                             true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                             false, "https://opensearch.url:9200", "", "", false),
                     ConfigState.DEFAULT_SETTINGS_SUB,

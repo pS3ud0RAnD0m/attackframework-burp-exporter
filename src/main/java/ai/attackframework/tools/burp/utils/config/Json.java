@@ -58,7 +58,7 @@ public final class Json {
         private final boolean fileJsonlEnabled;
         private final boolean fileBulkNdjsonEnabled;
         private final boolean fileTotalCapEnabled;
-        private final long fileTotalCapBytes;
+        private final double fileTotalCapGb;
         private final boolean fileDiskUsagePercentEnabled;
         private final int fileDiskUsagePercent;
         private final String openSearchUrl;
@@ -80,7 +80,7 @@ public final class Json {
                 boolean fileJsonlEnabled,
                 boolean fileBulkNdjsonEnabled,
                 boolean fileTotalCapEnabled,
-                long fileTotalCapBytes,
+                double fileTotalCapGb,
                 boolean fileDiskUsagePercentEnabled,
                 int fileDiskUsagePercent,
                 String openSearchUrl,
@@ -93,24 +93,24 @@ public final class Json {
                 Map<String, Set<String>> enabledExportFieldsByIndex,
                 ConfigState.UiPreferences uiPreferences
         ) {
-            this.dataSources = dataSources == null ? List.of() : List.copyOf(dataSources);
-            this.scopeType = scopeType == null ? "all" : scopeType;
+            this.dataSources = ConfigState.normalizeDataSources(dataSources);
+            this.scopeType = ConfigState.normalizeScopeType(scopeType);
             this.scopeRegexes = scopeRegexes == null ? List.of() : List.copyOf(scopeRegexes);
             this.scopeKinds = scopeKinds == null ? null : List.copyOf(scopeKinds);
             this.filesPath = filesPath;
             this.fileJsonlEnabled = fileJsonlEnabled;
             this.fileBulkNdjsonEnabled = fileBulkNdjsonEnabled;
             this.fileTotalCapEnabled = fileTotalCapEnabled;
-            this.fileTotalCapBytes = fileTotalCapBytes;
+            this.fileTotalCapGb = ConfigState.normalizeFileTotalCapGb(fileTotalCapGb);
             this.fileDiskUsagePercentEnabled = fileDiskUsagePercentEnabled;
             this.fileDiskUsagePercent = fileDiskUsagePercent;
             this.openSearchUrl = openSearchUrl;
             this.openSearchUser = openSearchUser != null ? openSearchUser : "";
             this.openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
             this.openSearchTlsMode = ConfigState.normalizeOpenSearchTlsMode(openSearchTlsMode);
-            this.settingsSub = settingsSub == null ? List.of() : List.copyOf(settingsSub);
-            this.trafficToolTypes = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
-            this.findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
+            this.settingsSub = ConfigState.normalizeSettingsSub(settingsSub);
+            this.trafficToolTypes = ConfigState.normalizeTrafficToolTypes(trafficToolTypes);
+            this.findingsSeverities = ConfigState.normalizeFindingsSeverities(findingsSeverities);
             this.enabledExportFieldsByIndex = copyMapOfSets(enabledExportFieldsByIndex);
             this.uiPreferences = uiPreferences == null ? ConfigState.defaultUiPreferences() : uiPreferences;
         }
@@ -158,8 +158,8 @@ public final class Json {
             return fileTotalCapEnabled;
         }
 
-        public long fileTotalCapBytes() {
-            return fileTotalCapBytes;
+        public double fileTotalCapGb() {
+            return fileTotalCapGb;
         }
 
         public boolean fileDiskUsagePercentEnabled() {
@@ -312,7 +312,7 @@ public final class Json {
             }
             ObjectNode fileLimits = sinksNode.putObject("fileLimits");
             fileLimits.put("totalEnabled", sinks.fileTotalCapEnabled());
-            fileLimits.put("totalBytes", sinks.fileTotalCapBytes());
+            fileLimits.put("totalGb", sinks.fileTotalCapGb());
             fileLimits.put("diskUsedPercentEnabled", sinks.fileDiskUsagePercentEnabled());
             fileLimits.put("maxDiskUsedPercent", sinks.fileDiskUsagePercent());
         }
@@ -377,7 +377,7 @@ public final class Json {
                 sinks.fileJsonlEnabled(),
                 sinks.fileBulkNdjsonEnabled(),
                 sinks.fileTotalCapEnabled(),
-                sinks.fileTotalCapBytes(),
+                sinks.fileTotalCapGb(),
                 sinks.fileDiskUsagePercentEnabled(),
                 sinks.fileDiskUsagePercent(),
                 sinks.os(),
@@ -425,15 +425,14 @@ public final class Json {
     }
 
     /**
-     * Parses dataSourceOptions. If absent (legacy config), returns defaults:
-     * settings both, traffic PROXY+REPEATER (legacy), findings all severities.
+     * Parses dataSourceOptions. If absent, returns current defaults.
      */
     private static DataSourceOptionsParts parseDataSourceOptions(JsonNode root) {
         JsonNode opts = root.path("dataSourceOptions");
         if (!opts.isObject()) {
             return new DataSourceOptionsParts(
                     ConfigState.DEFAULT_SETTINGS_SUB,
-                    ConfigState.LEGACY_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES
             );
         }
@@ -460,7 +459,7 @@ public final class Json {
     private static ScopeParts parseScope(JsonNode root) {
         JsonNode scope = root.path(LIT_SCOPE);
 
-        // New representation: simple scopes as array of strings, e.g. ["all"] or ["burp"].
+        // Current representation: simple scopes as array of strings, e.g. ["all"] or ["burp"].
         if (scope.isArray() && !scope.isEmpty()) {
             JsonNode first = scope.get(0);
             if (first.isTextual()) {
@@ -469,10 +468,10 @@ public final class Json {
                     return new ScopeParts(v, List.of(), null);
                 }
             }
-            // Empty / unrecognized array: fall through to legacy/custom handling below.
+            // Empty / unrecognized array: fall through to other accepted scope shapes below.
         }
 
-        // Legacy representation: object with boolean flags ("all": true / "burp": true).
+        // Also accept object flags ("all": true / "burp": true).
         if (scope.path("all").asBoolean(false)) {
             return new ScopeParts("all", List.of(), null);
         }
@@ -480,7 +479,7 @@ public final class Json {
             return new ScopeParts("burp", List.of(), null);
         }
 
-        // Custom scope: either object or array (plus optional customTypes), as before.
+        // Custom scope: either object or array (plus optional customTypes).
         JsonNode custom = scope.path(LIT_CUSTOM);
         if (custom.isObject()) {
             return parseCustomObject(custom);
@@ -532,7 +531,7 @@ public final class Json {
         boolean fileJsonlEnabled = false;
         boolean fileBulkNdjsonEnabled = false;
         boolean fileTotalCapEnabled = true;
-        long fileTotalCapBytes = ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES;
+        double fileTotalCapGb = ConfigState.DEFAULT_FILE_TOTAL_CAP_GB;
         boolean fileDiskUsagePercentEnabled = true;
         int fileDiskUsagePercent = ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT;
         JsonNode filesNode = sinks.path("files");
@@ -557,9 +556,9 @@ public final class Json {
         JsonNode fileLimitsNode = sinks.path("fileLimits");
         if (fileLimitsNode.isObject()) {
             fileTotalCapEnabled = fileLimitsNode.path("totalEnabled").asBoolean(true);
-            JsonNode totalBytesNode = fileLimitsNode.get("totalBytes");
-            if (totalBytesNode != null && totalBytesNode.canConvertToLong()) {
-                fileTotalCapBytes = totalBytesNode.asLong(ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES);
+            JsonNode totalGbNode = fileLimitsNode.get("totalGb");
+            if (totalGbNode != null && totalGbNode.isNumber()) {
+                fileTotalCapGb = totalGbNode.asDouble(ConfigState.DEFAULT_FILE_TOTAL_CAP_GB);
             }
             fileDiskUsagePercentEnabled = fileLimitsNode.path("diskUsedPercentEnabled").asBoolean(true);
             JsonNode diskPercentNode = fileLimitsNode.get("maxDiskUsedPercent");
@@ -578,7 +577,7 @@ public final class Json {
         String tlsMode = ConfigState.normalizeOpenSearchTlsMode(sinks.path("openSearchTlsMode").asText(null));
 
         return new SinksParts(files, fileJsonlEnabled, fileBulkNdjsonEnabled,
-                fileTotalCapEnabled, fileTotalCapBytes,
+                fileTotalCapEnabled, fileTotalCapGb,
                 fileDiskUsagePercentEnabled, fileDiskUsagePercent,
                 os, "", "", tlsMode);
     }
@@ -621,7 +620,7 @@ public final class Json {
 
     private record ScopeParts(String type, List<String> values, List<String> kinds) { }
     private record SinksParts(String files, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
-                              boolean fileTotalCapEnabled, long fileTotalCapBytes,
+                              boolean fileTotalCapEnabled, double fileTotalCapGb,
                               boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
                               String os, String osUser, String osPass, String openSearchTlsMode) { }
     private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }

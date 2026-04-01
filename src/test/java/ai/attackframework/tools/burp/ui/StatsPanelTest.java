@@ -982,7 +982,7 @@ class StatsPanelTest {
                         filesEnabled,
                         filesEnabled,
                         true,
-                        ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                         false,
                         ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         openSearchEnabled,
@@ -991,7 +991,7 @@ class StatsPanelTest {
                         "",
                         true),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("PROXY"),
+                List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null);
     }

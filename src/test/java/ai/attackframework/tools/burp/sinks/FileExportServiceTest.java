@@ -218,11 +218,11 @@ class FileExportServiceTest {
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 new ConfigState.Sinks(true, root.toString(), true, true,
-                        totalEnabled, totalBytes,
+                        totalEnabled, ConfigState.bytesToGb(totalBytes),
                         diskPercentEnabled, diskPercent,
                         openSearchEnabled, openSearchEnabled ? "https://opensearch.url:9200" : "", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("PROXY"),
+                List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );

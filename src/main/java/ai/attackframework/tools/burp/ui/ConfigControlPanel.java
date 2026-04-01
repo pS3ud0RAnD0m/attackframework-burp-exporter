@@ -10,7 +10,6 @@ import java.awt.Graphics2D;
 import java.awt.MultipleGradientPaint.CycleMethod;
 import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
-import java.awt.event.ActionListener;
 import java.awt.geom.Ellipse2D;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -30,7 +29,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Config Control section: Import / Export / Save actions, Start/Stop export, and their status rows.
+ * Config Control section: Import / Export actions, Start/Stop export, and their status rows.
  *
  * <p><strong>Responsibilities:</strong> render control panel and expose the assembled panel.
  * Callers supply actions and a status configurator for consistent text-area setup. A single
@@ -135,7 +134,6 @@ public final class ConfigControlPanel {
     private final Consumer<JTextArea> statusConfigurator;
     private final Runnable importAction;
     private final Runnable exportAction;
-    private final ActionListener saveAction;
     /** Receives UI callbacks to complete or revert startup state after bootstrap. */
     private final Consumer<StartUiCallbacks> startAction;
     private final Runnable stopAction;
@@ -153,7 +151,6 @@ public final class ConfigControlPanel {
             Consumer<JTextArea> statusConfigurator,
             Runnable importAction,
             Runnable exportAction,
-            ActionListener saveAction,
             Consumer<StartUiCallbacks> startAction,
             Runnable stopAction
     ) {
@@ -166,7 +163,6 @@ public final class ConfigControlPanel {
         this.statusConfigurator = Objects.requireNonNull(statusConfigurator, "statusConfigurator");
         this.importAction = Objects.requireNonNull(importAction, "importAction");
         this.exportAction = Objects.requireNonNull(exportAction, "exportAction");
-        this.saveAction = Objects.requireNonNull(saveAction, "saveAction");
         this.startAction = Objects.requireNonNull(startAction, "startAction");
         this.stopAction = Objects.requireNonNull(stopAction, "stopAction");
     }
@@ -177,20 +173,17 @@ public final class ConfigControlPanel {
         root.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel header = Tooltips.label("Config Control",
-                Tooltips.html("Import, export, save and apply the configuration.", "Start or stop Burp Exporter."));
+                Tooltips.html("Import or export the configuration.", "Start or stop Burp Exporter."));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         root.add(header, "gapbottom 6");
 
         JButton importBtn = new Tooltips.HtmlButton("Import Config");
         JButton exportBtn = new Tooltips.HtmlButton("Export Config");
-        JButton saveBtn = new Tooltips.HtmlButton("Save");
-        saveBtn.setName("control.save");
 
         JButton startStopBtn = new Tooltips.HtmlButton(runningButtonLabel(RuntimeConfig.isExportRunning()));
         startStopBtn.setName("control.startStop");
         ButtonStyles.normalize(importBtn);
         ButtonStyles.normalize(exportBtn);
-        ButtonStyles.normalize(saveBtn);
         ButtonStyles.normalize(startStopBtn);
         updateStartStopButton(startStopBtn, RuntimeConfig.isExportRunning());
 
@@ -198,11 +191,10 @@ public final class ConfigControlPanel {
         IndicatorDot indicator = new IndicatorDot(btnHeight);
         indicator.setState(RuntimeConfig.isExportRunning() ? IndicatorDot.State.RUNNING : IndicatorDot.State.STOPPED);
 
-        assignToolTips(importBtn, exportBtn, saveBtn);
+        assignToolTips(importBtn, exportBtn);
 
         importBtn.addActionListener(e -> importAction.run());
         exportBtn.addActionListener(e -> exportAction.run());
-        saveBtn.addActionListener(saveAction);
         startStopBtn.addActionListener(e -> {
             boolean wasRunning = RuntimeConfig.isExportRunning();
             Logger.logDebug("[Control] " + (wasRunning ? "Stop" : "Start") + " clicked; running=" + wasRunning + " -> " + !wasRunning);
@@ -237,10 +229,9 @@ public final class ConfigControlPanel {
         row1.add(importBtn, "gapleft " + indent);
         row1.add(exportBtn);
 
-        JPanel row2 = new JPanel(new MigLayout("insets 0, gapx 10", "[left][left][left]", "[]"));
+        JPanel row2 = new JPanel(new MigLayout("insets 0, gapx 10", "[left][left]", "[]"));
         row2.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row2.add(saveBtn, "gapleft " + indent + ", aligny center");
-        row2.add(startStopBtn, "aligny center");
+        row2.add(startStopBtn, "gapleft " + indent + ", aligny center");
         row2.add(indicator, "aligny center");
 
         JPanel buttons = new JPanel(new MigLayout("insets 0, gapy " + rowGap, "[left]", "[]" + rowGap + " []"));
@@ -288,7 +279,7 @@ public final class ConfigControlPanel {
     private static void updateStartStopButton(JButton btn, boolean running) {
         btn.setText(runningButtonLabel(running));
         Tooltips.apply(btn, running
-                ? Tooltips.html("Stop exporting.", "The saved configuration remains unchanged.")
+                ? Tooltips.html("Stop exporting.", "The current in-memory configuration remains active until changed.")
                 : Tooltips.html("Start exporting to the configured destination(s)."));
     }
 
@@ -297,14 +288,9 @@ public final class ConfigControlPanel {
      *
      * @param importBtn import action button
      * @param exportBtn export action button
-     * @param saveBtn   save action button
      */
-    private static void assignToolTips(JButton importBtn, JButton exportBtn, JButton saveBtn) {
+    private static void assignToolTips(JButton importBtn, JButton exportBtn) {
         Tooltips.apply(importBtn, Tooltips.html("Import configuration from file."));
         Tooltips.apply(exportBtn, Tooltips.html("Export configuration to file."));
-        Tooltips.apply(saveBtn, Tooltips.html(
-                "Save and apply the current configuration.",
-                "Secrets are only stored within in-process memory."
-        ));
     }
 }

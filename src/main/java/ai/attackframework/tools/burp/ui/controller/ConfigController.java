@@ -37,7 +37,7 @@ public final class ConfigController {
         this.ui = Objects.requireNonNull(ui, "ui");
     }
 
-    /* ---------------- Export / Import / Save ---------------- */
+    /* ---------------- Export / Import ---------------- */
 
     /**
      * Writes the provided config JSON to disk asynchronously.
@@ -103,40 +103,6 @@ public final class ConfigController {
                     ui.onControlStatus("Import interrupted.");
                 } catch (ExecutionException ex) {
                     ui.onControlStatus("Import failed: " + rootMessage(ex));
-                }
-            }
-        }.execute();
-    }
-
-    /**
-     * Serializes the current configuration to JSON asynchronously (no I/O).
-     * <p>
-     * Status is delivered to {@link Ui#onControlStatus} on the EDT. This is a lightweight operation
-     * but remains async for consistency with other actions.
-     *
-     * @param state configuration to serialize
-     */
-    public void saveAsync(ConfigState.State state) {
-        Logger.logDebug("[ConfigPanel] saveAsync invoked");
-        new SwingWorker<String, Void>() {
-            @Override protected String doInBackground() {
-                try {
-                    ConfigJsonMapper.build(state);
-                    Logger.logInfoPanelOnly("[ConfigPanel] saveAsync payload updated");
-                    return "Saved.";
-                } catch (Exception ex) {
-                    Logger.logError("[ConfigPanel] Save failed: " + rootMessage(ex));
-                    return "Save failed: " + userFacingMessage(ex);
-                }
-            }
-            @Override protected void done() {
-                try {
-                    ui.onControlStatus(get());
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    ui.onControlStatus("Save interrupted.");
-                } catch (ExecutionException ex) {
-                    ui.onControlStatus("Save failed: " + rootMessage(ex));
                 }
             }
         }.execute();

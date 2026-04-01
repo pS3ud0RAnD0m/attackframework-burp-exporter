@@ -67,7 +67,7 @@ public final class ProxyHistoryIndexReporter {
                 return;
             }
             List<String> trafficTypes = RuntimeConfig.getState().trafficToolTypes();
-            if (trafficTypes == null || !trafficTypes.contains("PROXY_HISTORY")) {
+            if (trafficTypes == null || !trafficTypes.contains("proxy_history")) {
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();

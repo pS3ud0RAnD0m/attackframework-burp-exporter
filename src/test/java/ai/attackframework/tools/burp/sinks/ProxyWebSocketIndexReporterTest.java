@@ -47,7 +47,7 @@ class ProxyWebSocketIndexReporterTest {
                 List.of(),
                 new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("PROXY"),
+                List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null));
 

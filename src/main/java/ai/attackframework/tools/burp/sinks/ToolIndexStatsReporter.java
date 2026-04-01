@@ -44,10 +44,10 @@ public final class ToolIndexStatsReporter {
     private ToolIndexStatsReporter() {}
 
     /**
-     * Pushes one stats snapshot immediately (e.g. after Save so the tool index
-     * reflects the new config without waiting for the next interval).
+     * Pushes one stats snapshot immediately so the tool index can reflect the
+     * current runtime state without waiting for the next interval.
      *
-     * <p>Safe to call from any thread. No-op if export is not running or URL is blank.</p>
+     * <p>Safe to call from any thread. No-op if export is not running or no sink is enabled.</p>
      */
     public static void pushSnapshotNow() {
         if (!ENABLED) return;

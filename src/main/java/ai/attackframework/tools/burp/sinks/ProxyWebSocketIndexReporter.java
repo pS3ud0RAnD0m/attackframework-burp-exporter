@@ -312,7 +312,7 @@ public final class ProxyWebSocketIndexReporter {
         if (trafficTypes == null) {
             return false;
         }
-        return trafficTypes.contains("PROXY") || trafficTypes.contains("PROXY_HISTORY");
+        return trafficTypes.contains("proxy") || trafficTypes.contains("proxy_history");
     }
 
     private static String inferPayloadType(byte[] bytes) {

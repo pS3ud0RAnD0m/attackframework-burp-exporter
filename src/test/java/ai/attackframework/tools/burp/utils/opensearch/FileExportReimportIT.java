@@ -93,11 +93,11 @@ class FileExportReimportIT {
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 new ConfigState.Sinks(true, root.toString(), false, true,
-                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                         false, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         false, "", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("PROXY"),
+                List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );

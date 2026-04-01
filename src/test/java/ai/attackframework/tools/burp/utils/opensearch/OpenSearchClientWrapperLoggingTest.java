@@ -71,7 +71,7 @@ class OpenSearchClientWrapperLoggingTest {
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 new ConfigState.Sinks(false, "", false, false,
-                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES,
+                        true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         true, "https://opensearch.url:9200", "", "", ConfigState.OPEN_SEARCH_TLS_PINNED),
                 ConfigState.DEFAULT_SETTINGS_SUB,

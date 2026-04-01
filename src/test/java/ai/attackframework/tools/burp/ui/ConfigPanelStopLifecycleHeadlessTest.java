@@ -23,6 +23,7 @@ import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
 import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
@@ -63,7 +64,9 @@ class ConfigPanelStopLifecycleHeadlessTest {
             JButton startStop = (JButton) findByName(panel, "control.startStop");
             JTextArea controlStatus = findByName(panel, "control.status", JTextArea.class);
             JCheckBox openSearchEnabled = findByName(panel, "os.enable", JCheckBox.class);
+            JCheckBox filesEnabled = findByName(panel, "files.enable", JCheckBox.class);
             JTextField openSearchUrlField = get(panel, "openSearchUrlField");
+            JTextField filePathField = get(panel, "filePathField");
             assertThat(startStop).isNotNull();
             assertThat(controlStatus).isNotNull();
 
@@ -72,6 +75,10 @@ class ConfigPanelStopLifecycleHeadlessTest {
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                filePathField.setText(TestPathSupport.defaultUiFileRoot().toString());
             });
 
             runEdt(startStop::doClick);

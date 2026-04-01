@@ -30,6 +30,44 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 class ConfigPanelStartFailureFilesHeadlessTest {
 
     @Test
+    void start_withNoConfiguredDestinations_revertsUi_and_reportsStatus() throws Exception {
+        try {
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                ref.set(p);
+            });
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
+
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(controlStatus.getText()).contains("Start aborted");
+            assertThat(controlStatus.getText()).contains("configure at least one destination");
+        } finally {
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
+
+    @Test
     void start_withFilesOnly_logsDestinationSummary() throws Exception {
         Path exportRoot = TestPathSupport.createDirectory("af-file-root");
         Logger.resetState();

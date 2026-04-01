@@ -16,7 +16,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
  * Pushes the current runtime configuration as a document to the tool index
- * when export is started or when the user saves config while export is running.
+ * when export startup completes.
  */
 public final class ToolIndexConfigReporter {
 
@@ -67,7 +67,7 @@ public final class ToolIndexConfigReporter {
             for (ConfigState.ScopeEntry e : state.customEntries()) {
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("value", e.value());
-                entry.put("kind", e.kind().name());
+                entry.put("kind", e.kind().name().toLowerCase(java.util.Locale.ROOT));
                 custom.add(entry);
             }
         }

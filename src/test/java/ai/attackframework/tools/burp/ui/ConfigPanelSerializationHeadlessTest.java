@@ -9,7 +9,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serial;
 import java.io.Serializable;
-import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
@@ -20,18 +19,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.testutils.Reflect;
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
-import ai.attackframework.tools.burp.utils.config.ConfigKeys;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
 
 /**
  * Validates that a restored {@link ConfigPanel} recreates its transient controller
- * and that a save operation updates the control status area.
+ * and that an async controller action still updates the control status area.
  */
 class ConfigPanelSerializationHeadlessTest {
 
     @Test
-    void controller_is_transient_and_fresh_panel_saves() throws Exception {
+    void controller_is_transient_and_fresh_panel_exports() throws Exception {
         ConfigPanel original = new ConfigPanel(new ConfigController(new SilentUi()));
 
         byte[] bytes = serialize(original);
@@ -43,14 +41,9 @@ class ConfigPanelSerializationHeadlessTest {
         Container wrapper = (Container) findByName(restored, "control.statusWrapper");
         assertThat(wrapper).as("the control status wrapper").isNotNull();
 
-        // Drive Save through the fresh controller on the restored panel.
+        // Drive Export through the fresh controller on the restored panel.
         ConfigController ctrl = controllerOf(restored);
-        ConfigState.State state = new ConfigState.State(
-                List.of(), ConfigKeys.SCOPE_ALL, List.of(), new ConfigState.Sinks(false, null, false, null, null, null, false),
-                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
-                null
-        );
-        ctrl.saveAsync(state);
+        ctrl.exportConfigAsync(TestPathSupport.createFile("config-panel-serialization", ".json"), "{}");
 
         // Await the creation and population of the control text area.
         AtomicReference<JTextArea> areaRef = new AtomicReference<>();
@@ -64,7 +57,7 @@ class ConfigPanelSerializationHeadlessTest {
 
         JTextArea controlArea = areaRef.get();
         assertThat(controlArea).as("the control status area").isNotNull();
-        assertThat(controlArea.getText()).isNotBlank();
+        assertThat(controlArea.getText()).contains("Exported configuration");
     }
 
     // ---- helpers ----

@@ -151,7 +151,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
                 ConfigKeys.SCOPE_ALL,
                 java.util.List.of(),
                 new ConfigState.Sinks(true, "/path/to/directory", false, true,
-                        true, 1_342_177_280L,
+                        true, ConfigState.bytesToGb(1_342_177_280L),
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,

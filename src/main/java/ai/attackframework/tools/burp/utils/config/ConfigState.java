@@ -1,7 +1,11 @@
 package ai.attackframework.tools.burp.utils.config;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -18,22 +22,19 @@ public final class ConfigState {
     /** Default traffic tool types: empty (no traffic exported by default). */
     public static final List<String> DEFAULT_TRAFFIC_TOOL_TYPES = List.of();
 
-    /** Legacy default for traffic when parsing config without dataSourceOptions (PROXY, REPEATER). */
-    public static final List<String> LEGACY_TRAFFIC_TOOL_TYPES = List.of("PROXY", "REPEATER");
-
     /** Default findings severities: all five. */
     public static final List<String> DEFAULT_FINDINGS_SEVERITIES =
-            List.of("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL");
+            List.of("critical", "high", "medium", "low", "informational");
 
-    /** Default total cap across exporter files under the selected root. */
-    public static final long DEFAULT_FILE_TOTAL_CAP_BYTES = 5L * 1024L * 1024L * 1024L;
+    /** Default total cap across exporter files under the selected root, stored as human-friendly GB. */
+    public static final double DEFAULT_FILE_TOTAL_CAP_GB = 5d;
 
     /** Default advanced disk-used threshold for file export. */
     public static final int DEFAULT_FILE_MAX_DISK_USED_PERCENT = 95;
     /** Default Stats panel chart style (1 = Smooth). */
     public static final int DEFAULT_STATS_CHART_STYLE = 1;
     /** Default minimum visible level in LogPanel. */
-    public static final String DEFAULT_LOG_MIN_LEVEL = "TRACE";
+    public static final String DEFAULT_LOG_MIN_LEVEL = "trace";
 
     /** Verify OpenSearch TLS certificates against the system trust store. */
     public static final String OPEN_SEARCH_TLS_VERIFY = "verify";
@@ -44,6 +45,9 @@ public final class ConfigState {
 
     /** Scope kind for {@link ScopeEntry}. */
     public enum Kind { REGEX, STRING }
+
+    private static final BigDecimal GB_BYTES_DECIMAL = BigDecimal.valueOf(1024L * 1024L * 1024L);
+    private static final BigDecimal LONG_MAX_DECIMAL = BigDecimal.valueOf(Long.MAX_VALUE);
 
     /** Ordered custom-scope entry. */
     public record ScopeEntry(String value, Kind kind) {
@@ -62,16 +66,21 @@ public final class ConfigState {
      * certificate, or trust-all TLS.</p>
      */
     public record Sinks(boolean filesEnabled, String filesPath, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
-                        boolean fileTotalCapEnabled, long fileTotalCapBytes,
+                        boolean fileTotalCapEnabled, double fileTotalCapGb,
                         boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
                         boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword, String openSearchTlsMode) {
         public Sinks {
             filesPath = filesPath != null ? filesPath : "";
-            fileTotalCapBytes = fileTotalCapBytes > 0 ? fileTotalCapBytes : DEFAULT_FILE_TOTAL_CAP_BYTES;
+            fileTotalCapGb = normalizeFileTotalCapGb(fileTotalCapGb);
             fileDiskUsagePercent = Math.clamp(fileDiskUsagePercent, 1, 100);
             openSearchUser = openSearchUser != null ? openSearchUser : "";
             openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
             openSearchTlsMode = normalizeOpenSearchTlsMode(openSearchTlsMode);
+        }
+
+        /** Returns the configured file cap converted to bytes for runtime enforcement. */
+        public long fileTotalCapBytes() {
+            return gbToBytes(fileTotalCapGb);
         }
 
         public Sinks(boolean filesEnabled, String filesPath,
@@ -79,18 +88,18 @@ public final class ConfigState {
                      boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
                      String openSearchTlsMode) {
             this(filesEnabled, filesPath, fileJsonlEnabled, fileBulkNdjsonEnabled,
-                    true, DEFAULT_FILE_TOTAL_CAP_BYTES,
+                    true, DEFAULT_FILE_TOTAL_CAP_GB,
                     true, DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                     osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchTlsMode);
         }
 
         public Sinks(boolean filesEnabled, String filesPath, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
-                     boolean fileTotalCapEnabled, long fileTotalCapBytes,
+                     boolean fileTotalCapEnabled, double fileTotalCapGb,
                      boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
                      boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
                      boolean openSearchInsecureSsl) {
             this(filesEnabled, filesPath, fileJsonlEnabled, fileBulkNdjsonEnabled,
-                    fileTotalCapEnabled, fileTotalCapBytes,
+                    fileTotalCapEnabled, fileTotalCapGb,
                     fileDiskUsagePercentEnabled, fileDiskUsagePercent,
                     osEnabled, openSearchUrl, openSearchUser, openSearchPassword,
                     openSearchInsecureSsl ? OPEN_SEARCH_TLS_INSECURE : OPEN_SEARCH_TLS_VERIFY);
@@ -106,7 +115,7 @@ public final class ConfigState {
         }
 
         /**
-         * Backward-compatible constructor for older call sites that predate explicit file formats.
+         * Convenience constructor for call sites that do not need to specify file formats.
          *
          * <p>When used, file export formats default to disabled until explicitly selected in the
          * UI or config.</p>
@@ -115,7 +124,7 @@ public final class ConfigState {
                      boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
                      String openSearchTlsMode) {
             this(filesEnabled, filesPath, false, false,
-                    true, DEFAULT_FILE_TOTAL_CAP_BYTES,
+                    true, DEFAULT_FILE_TOTAL_CAP_GB,
                     true, DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                     osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchTlsMode);
         }
@@ -164,12 +173,12 @@ public final class ConfigState {
                         UiPreferences uiPreferences) {
 
         public State {
-            dataSources       = dataSources == null ? List.of() : List.copyOf(dataSources);
-            scopeType         = scopeType == null ? "all" : scopeType;
+            dataSources       = normalizeDataSources(dataSources);
+            scopeType         = normalizeScopeType(scopeType);
             customEntries     = customEntries == null ? List.of() : List.copyOf(customEntries);
-            settingsSub       = settingsSub == null ? List.of() : List.copyOf(settingsSub);
-            trafficToolTypes  = trafficToolTypes == null ? List.of() : List.copyOf(trafficToolTypes);
-            findingsSeverities = findingsSeverities == null ? List.of() : List.copyOf(findingsSeverities);
+            settingsSub       = normalizeSettingsSub(settingsSub);
+            trafficToolTypes  = normalizeTrafficToolTypes(trafficToolTypes);
+            findingsSeverities = normalizeFindingsSeverities(findingsSeverities);
             enabledExportFieldsByIndex = enabledExportFieldsByIndex == null ? null : copyMapOfSets(enabledExportFieldsByIndex);
             uiPreferences = uiPreferences == null ? defaultUiPreferences() : uiPreferences;
         }
@@ -209,6 +218,26 @@ public final class ConfigState {
         return new UiPreferences(DEFAULT_STATS_CHART_STYLE, defaultLogPanelPreferences());
     }
 
+    /** Converts a human-friendly GB value to runtime bytes using half-up rounding. */
+    public static long gbToBytes(double gb) {
+        BigDecimal normalized = BigDecimal.valueOf(normalizeFileTotalCapGb(gb));
+        BigDecimal bytes = normalized.multiply(GB_BYTES_DECIMAL).setScale(0, RoundingMode.HALF_UP);
+        if (bytes.compareTo(LONG_MAX_DECIMAL) > 0) {
+            return Long.MAX_VALUE;
+        }
+        return bytes.longValueExact();
+    }
+
+    /** Converts runtime bytes to the human-friendly GB value used in config state/export. */
+    public static double bytesToGb(long bytes) {
+        if (bytes <= 0) {
+            return DEFAULT_FILE_TOTAL_CAP_GB;
+        }
+        return BigDecimal.valueOf(bytes)
+                .divide(GB_BYTES_DECIMAL, 12, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
     /** Returns a normalized persisted OpenSearch TLS mode, defaulting to {@link #OPEN_SEARCH_TLS_VERIFY}. */
     public static String normalizeOpenSearchTlsMode(String mode) {
         if (mode == null || mode.isBlank()) {
@@ -221,14 +250,64 @@ public final class ConfigState {
         };
     }
 
-    /** Returns one of TRACE/DEBUG/INFO/WARN/ERROR, defaulting to TRACE. */
+    /** Returns one of trace/debug/info/warn/error, defaulting to trace. */
     public static String normalizeLogMinLevel(String raw) {
         if (raw == null || raw.isBlank()) {
             return DEFAULT_LOG_MIN_LEVEL;
         }
-        return switch (raw.trim().toUpperCase(java.util.Locale.ROOT)) {
-            case "TRACE", "DEBUG", "INFO", "WARN", "ERROR" -> raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+            case "trace", "debug", "info", "warn", "error" -> raw.trim().toLowerCase(Locale.ROOT);
             default -> DEFAULT_LOG_MIN_LEVEL;
         };
+    }
+
+    /** Normalizes stored file-cap GB values and falls back to the default when unset or invalid. */
+    public static double normalizeFileTotalCapGb(double raw) {
+        return raw > 0d ? raw : DEFAULT_FILE_TOTAL_CAP_GB;
+    }
+
+    /** Normalizes config data-source ids to lowercase. */
+    public static List<String> normalizeDataSources(List<String> values) {
+        return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes settings sub-option ids to lowercase. */
+    public static List<String> normalizeSettingsSub(List<String> values) {
+        return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes traffic tool ids to lowercase. */
+    public static List<String> normalizeTrafficToolTypes(List<String> values) {
+        return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes finding severity ids to lowercase. */
+    public static List<String> normalizeFindingsSeverities(List<String> values) {
+        return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes persisted scope type values to lowercase supported ids. */
+    public static String normalizeScopeType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "all";
+        }
+        return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+            case "burp", "custom" -> raw.trim().toLowerCase(Locale.ROOT);
+            default -> "all";
+        };
+    }
+
+    private static List<String> normalizeLowercaseList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String value : values) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            normalized.add(value.trim().toLowerCase(Locale.ROOT));
+        }
+        return List.copyOf(normalized);
     }
 }

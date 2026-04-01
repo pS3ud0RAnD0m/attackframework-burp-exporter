@@ -27,7 +27,7 @@ class JsonSinksOmissionTest {
         assertThat(cfg.fileJsonlEnabled()).isFalse();
         assertThat(cfg.fileBulkNdjsonEnabled()).isFalse();
         assertThat(cfg.fileTotalCapEnabled()).isTrue();
-        assertThat(cfg.fileTotalCapBytes()).isEqualTo(ConfigState.DEFAULT_FILE_TOTAL_CAP_BYTES);
+        assertThat(cfg.fileTotalCapGb()).isEqualTo(ConfigState.DEFAULT_FILE_TOTAL_CAP_GB);
         assertThat(cfg.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(cfg.fileDiskUsagePercent()).isEqualTo(ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT);
         assertThat(cfg.openSearchUrl()).isNull();
@@ -39,7 +39,7 @@ class JsonSinksOmissionTest {
         var state = new ConfigState.State(
                 null, "all", null,
                 new ConfigState.Sinks(true, FILES_ROOT, true, true,
-                        true, 9L * 1024L * 1024L * 1024L,
+                        true, 9d,
                         true, 92,
                         true, OS_URL, "admin", "admin", ConfigState.OPEN_SEARCH_TLS_PINNED),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -57,7 +57,7 @@ class JsonSinksOmissionTest {
         assertThat(cfg.fileJsonlEnabled()).isTrue();
         assertThat(cfg.fileBulkNdjsonEnabled()).isTrue();
         assertThat(cfg.fileTotalCapEnabled()).isTrue();
-        assertThat(cfg.fileTotalCapBytes()).isEqualTo(9L * 1024L * 1024L * 1024L);
+        assertThat(cfg.fileTotalCapGb()).isEqualTo(9d);
         assertThat(cfg.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(cfg.fileDiskUsagePercent()).isEqualTo(92);
         assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
