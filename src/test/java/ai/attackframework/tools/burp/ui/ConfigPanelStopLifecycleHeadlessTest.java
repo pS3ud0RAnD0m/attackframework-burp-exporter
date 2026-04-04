@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.nio.file.Path;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -58,6 +59,8 @@ class ConfigPanelStopLifecycleHeadlessTest {
 
     @Test
     void startThenStop_updatesVisibleControlStatusThroughConfigPanelFlow() throws Exception {
+        Path exportRoot = TestPathSupport.createDirectory("af-stop-lifecycle-root");
+        Path exportRootAbs = exportRoot.toAbsolutePath().normalize();
         try {
             RuntimeConfig.setExportRunning(false);
             ConfigPanel panel = newPanelOnEdt();
@@ -78,11 +81,11 @@ class ConfigPanelStopLifecycleHeadlessTest {
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                filePathField.setText(TestPathSupport.defaultUiFileRoot().toString());
+                filePathField.setText(exportRootAbs.toString());
             });
 
             runEdt(startStop::doClick);
-            String expectedRunning = "Files: Running -> " + TestPathSupport.defaultUiFileRoot().toAbsolutePath().normalize();
+            String expectedRunning = "Files: Running -> " + exportRootAbs;
             waitForControlStatus(controlStatus, expectedRunning);
 
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
@@ -96,6 +99,7 @@ class ConfigPanelStopLifecycleHeadlessTest {
             assertThat(startStop.getText()).isEqualTo("Start");
             assertThat(controlStatus.getText()).isEqualTo("Stopped");
         } finally {
+            TestPathSupport.cleanupExportArtifacts(exportRoot);
             ExportReporterLifecycle.resetForTests();
         }
     }
