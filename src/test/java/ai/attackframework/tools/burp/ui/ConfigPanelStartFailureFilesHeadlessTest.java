@@ -31,6 +31,10 @@ class ConfigPanelStartFailureFilesHeadlessTest {
 
     @Test
     void start_withNoConfiguredDestinations_revertsUi_and_reportsStatus() throws Exception {
+        Logger.resetState();
+        List<String> events = new CopyOnWriteArrayList<>();
+        Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+        Logger.registerListener(listener);
         try {
             AtomicReference<ConfigPanel> ref = new AtomicReference<>();
             SwingUtilities.invokeAndWait(() -> {
@@ -61,7 +65,9 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             assertThat(startStop.getText()).isEqualTo("Start");
             assertThat(controlStatus.getText()).contains("Start aborted");
             assertThat(controlStatus.getText()).contains("configure at least one destination");
+            waitForLogMessage(events, "configure at least one destination");
         } finally {
+            Logger.unregisterListener(listener);
             ExportReporterLifecycle.resetForTests();
             Logger.resetState();
         }
@@ -108,6 +114,116 @@ class ConfigPanelStartFailureFilesHeadlessTest {
 
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
+            assertThat(get(panel, "controlStatus", JTextArea.class).getText()).isEqualTo("Running: Files.");
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
+        } finally {
+            Logger.unregisterListener(listener);
+            TestPathSupport.cleanupExportArtifacts(exportRoot);
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
+
+    @Test
+    void start_withFilesSelectedButBlankRoot_logsAndAborts() throws Exception {
+        Logger.resetState();
+        List<String> events = new CopyOnWriteArrayList<>();
+        Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+        Logger.registerListener(listener);
+        try {
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                if (!bulkNdjsonEnabled.isSelected()) {
+                    bulkNdjsonEnabled.doClick();
+                }
+
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText("   ");
+                ref.set(p);
+            });
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
+            waitForLogMessage(events, "Files not started: root directory is blank.");
+
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(controlStatus.getText()).contains("Start aborted");
+            assertThat(controlStatus.getText()).contains("Files not started: root directory is blank.");
+        } finally {
+            Logger.unregisterListener(listener);
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
+
+    @Test
+    void start_withFilesConfiguredAndBlankOpenSearchUrl_reportsFailureAndWhatIsRunning() throws Exception {
+        Path exportRoot = TestPathSupport.createDirectory("af-file-root-os-blank");
+        Logger.resetState();
+        List<String> events = new CopyOnWriteArrayList<>();
+        Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+        Logger.registerListener(listener);
+        try {
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                if (!bulkNdjsonEnabled.isSelected()) {
+                    bulkNdjsonEnabled.doClick();
+                }
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText(exportRoot.toString());
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (!openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+                JTextField openSearchUrlField = get(p, "openSearchUrlField");
+                openSearchUrlField.setText("");
+                ref.set(p);
+            });
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStartedUi(startStop);
+            waitForLogMessage(events, "OpenSearch not started: base URL is blank.");
+            waitForLogMessage(events, "Export started to Files.");
+
+            assertThat(RuntimeConfig.isExportRunning()).isTrue();
+            assertThat(startStop.getText()).isEqualTo("Stop");
+            assertThat(controlStatus.getText())
+                    .isEqualTo("Running: Files. OpenSearch not started: base URL is blank.");
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);

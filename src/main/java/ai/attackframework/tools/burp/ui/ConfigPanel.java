@@ -404,16 +404,17 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
         syncSelectedAuthStateFromUi();
         if (fileSinkCheckbox.isSelected() && !hasSelectedFileFormat()) {
-            Logger.logErrorPanelOnly("[Start] Files selected but no file format is enabled.");
-            RuntimeConfig.setExportStarting(false);
-            onControlStatus("Start aborted: select at least one file format when Files export is enabled.");
-            uiCallbacks.onStartFailure().run();
+            abortStartOnEdt(
+                    "select at least one file format when Files export is enabled.",
+                    uiCallbacks);
             return;
         }
+        List<String> startupIssues = validateSelectedDestinationConfiguration();
         if (!RuntimeConfig.isAnySinkEnabled()) {
-            RuntimeConfig.setExportStarting(false);
-            onControlStatus("Start aborted: configure at least one destination.");
-            uiCallbacks.onStartFailure().run();
+            String reason = startupIssues.isEmpty()
+                    ? "configure at least one destination."
+                    : String.join(" ", startupIssues);
+            abortStartOnEdt(reason, uiCallbacks);
             return;
         }
         RuntimeConfig.setExportStarting(true);
@@ -421,7 +422,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         List<String> sources = List.copyOf(getSelectedSources());
         ExportStats.recordExportStartRequested();
         RuntimeConfig.setExportRunning(true);
-        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, uiCallbacks));
+        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, uiCallbacks, startupIssues));
     }
 
     /** Returns whether at least one file-export format checkbox is selected. */
@@ -439,10 +440,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param sources selected source keys at Start time
      * @param uiCallbacks callbacks to revert or complete Start button/indicator state
      */
-    private void runStartupPipeline(String url, List<String> sources, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
+    private void runStartupPipeline(
+            String url,
+            List<String> sources,
+            ConfigControlPanel.StartUiCallbacks uiCallbacks,
+            List<String> startupIssues
+    ) {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
+        List<String> runtimeStartIssues = new ArrayList<>(startupIssues);
         boolean openSearchEnabled = RuntimeConfig.getState() != null
                 && RuntimeConfig.getState().sinks() != null
                 && RuntimeConfig.getState().sinks().osEnabled()
@@ -458,12 +465,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                         : "File export preflight failed: " + e.getMessage();
                 if (!openSearchEnabled) {
                     ExportReporterLifecycle.stopAndClearPendingExportWork();
-                    SwingUtilities.invokeLater(() -> {
-                        onControlStatus("Start aborted: " + reason);
-                        uiCallbacks.onStartFailure().run();
-                    });
+                    abortStartFromWorker(reason, uiCallbacks);
                     return;
                 }
+                recordStartIssue(runtimeStartIssues, "Files failed during start: " + reason);
                 FileExportService.disableCurrentRoot(reason + " OpenSearch export will continue.");
             }
         }
@@ -484,12 +489,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                         : "OpenSearch preflight failed: " + preflight.message();
                 if (!RuntimeConfig.isAnyFileExportEnabled()) {
                     ExportReporterLifecycle.stopAndClearPendingExportWork();
-                    SwingUtilities.invokeLater(() -> {
-                        onControlStatus("Start aborted: " + reason);
-                        uiCallbacks.onStartFailure().run();
-                    });
+                    abortStartFromWorker(reason, uiCallbacks);
                     return;
                 }
+                recordStartIssue(runtimeStartIssues, "OpenSearch failed during start: " + reason);
                 disableOpenSearchForCurrentRun(reason + " Files export will continue.");
                 openSearchEnabled = false;
             }
@@ -506,15 +509,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     return;
                 }
                 if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
+                    String reason = "one or more OpenSearch indexes failed to initialize.";
                     Logger.logErrorPanelOnly("[Start] Ensure indexes: one or more failed; see log above.");
                     if (!RuntimeConfig.isAnyFileExportEnabled()) {
                         ExportReporterLifecycle.stopAndClearPendingExportWork();
-                        SwingUtilities.invokeLater(() -> {
-                            onControlStatus("Start aborted: one or more indexes failed to initialize.");
-                            uiCallbacks.onStartFailure().run();
-                        });
+                        abortStartFromWorker(reason, uiCallbacks);
                         return;
                     }
+                    recordStartIssue(
+                            runtimeStartIssues,
+                            "OpenSearch failed during start: " + reason);
                     disableOpenSearchForCurrentRun("OpenSearch index initialization failed. Files export will continue.");
                 }
             }
@@ -524,7 +528,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         RuntimeConfig.setExportStarting(false);
-        SwingUtilities.invokeLater(() -> uiCallbacks.onStartSuccess().run());
+        String runningStatus = buildRunningStatusMessage(runtimeStartIssues);
+        SwingUtilities.invokeLater(() -> {
+            uiCallbacks.onStartSuccess().run();
+            onControlStatus(runningStatus);
+        });
         if (RuntimeConfig.isAnySinkEnabled()) {
             ToolIndexConfigReporter.pushConfigSnapshot();
             if (!RuntimeConfig.isExportRunning()) {
@@ -578,6 +586,46 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (RuntimeConfig.disableOpenSearchDestination()) {
             Logger.logErrorPanelOnly("[Start] " + reason);
         }
+    }
+
+    private List<String> validateSelectedDestinationConfiguration() {
+        List<String> startupIssues = new ArrayList<>();
+        if (fileSinkCheckbox.isSelected() && filePathField.getText().trim().isEmpty()) {
+            recordStartIssue(startupIssues, "Files not started: root directory is blank.");
+        }
+        if (openSearchSinkCheckbox.isSelected() && openSearchUrlField.getText().trim().isEmpty()) {
+            recordStartIssue(startupIssues, "OpenSearch not started: base URL is blank.");
+        }
+        return startupIssues;
+    }
+
+    private void recordStartIssue(List<String> startupIssues, String issue) {
+        startupIssues.add(issue);
+        Logger.logErrorPanelOnly("[Start] " + issue);
+    }
+
+    private void abortStartOnEdt(String reason, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
+        Logger.logErrorPanelOnly("[Start] " + reason);
+        RuntimeConfig.setExportStarting(false);
+        onControlStatus("Start aborted: " + reason);
+        uiCallbacks.onStartFailure().run();
+    }
+
+    private void abortStartFromWorker(String reason, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
+        Logger.logErrorPanelOnly("[Start] " + reason);
+        RuntimeConfig.setExportStarting(false);
+        SwingUtilities.invokeLater(() -> {
+            onControlStatus("Start aborted: " + reason);
+            uiCallbacks.onStartFailure().run();
+        });
+    }
+
+    private static String buildRunningStatusMessage(List<String> startupIssues) {
+        String runningSummary = "Running: " + RuntimeConfig.activeSinkSummary() + ".";
+        if (startupIssues == null || startupIssues.isEmpty()) {
+            return runningSummary;
+        }
+        return runningSummary + " " + String.join(" ", startupIssues);
     }
 
     /**
@@ -1073,14 +1121,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         String tlsModeTip = Tooltips.html(
                 "Select how OpenSearch TLS server certificates are trusted.",
-                "Verify uses the system trust store.",
-                "Trust pinned certificate requires an imported X.509 server certificate stored only in session memory.",
-                "Trust all certificates disables verification and should only be used temporarily."
+                "- Verify: uses the system trust store.",
+                "- Trust pinned certificate: requires an imported X.509 server certificate.",
+                "- Trust all certificates: disables verification. Use with caution."
         );
         String importTip = Tooltips.html(
                 "Import a pinned X.509 server certificate for OpenSearch TLS trust.",
-                "Common file types: .cer, .crt, .der, .pem.",
-                "The imported certificate bytes and source path are stored only within in-process memory."
+                "  Common file types: .cer, .crt, .der, .pem.",
+                "  The imported certificate bytes and source path are stored only within in-process memory."
         );
         Tooltips.apply(openSearchTlsModeCombo, tlsModeTip);
         Tooltips.apply(importPinnedCertificateButton, importTip);
@@ -1624,7 +1672,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Tooltips.apply(customRadio, Tooltips.html("Export custom scope."));
 
         Tooltips.apply(fileSinkCheckbox, Tooltips.html("Enable file-based export."));
-        Tooltips.apply(filePathField, Tooltips.html("Root directory for generated files."));
+        Tooltips.apply(filePathField, Tooltips.htmlRaw(
+                "Root directory for generated files.",
+                "Examples:",
+                "&nbsp;&nbsp;/path/to/directory",
+                "&nbsp;&nbsp;c:\\path\\to\\directory"
+        ));
         Tooltips.apply(fileJsonlCheckbox, Tooltips.html(
                 "JSONL (JSON Lines): write one filtered JSON document per line.",
                 "Each line is a standalone JSON object; there is no OpenSearch bulk action metadata.",

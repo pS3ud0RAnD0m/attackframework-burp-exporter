@@ -1,5 +1,9 @@
 package ai.attackframework.tools.burp.ui.text;
 
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -13,12 +17,15 @@ import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.JToolTip;
+import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 
 /**
  * Shared tooltip helpers so panels use consistent formatting.
  */
 public final class Tooltips {
     private static final String HTML_DISABLE = "html.disable";
+    private static final String TOOLTIP_FORWARDER_KEY = Tooltips.class.getName() + ".tooltipForwarder";
 
     private Tooltips() {}
 
@@ -123,8 +130,43 @@ public final class Tooltips {
         }
 
         @Override
+        public void addNotify() {
+            super.addNotify();
+            syncChildTooltips();
+        }
+
+        @Override
+        public void updateUI() {
+            super.updateUI();
+            putClientProperty(HTML_DISABLE, Boolean.FALSE);
+            syncChildTooltips();
+        }
+
+        @Override
+        public void setToolTipText(String text) {
+            super.setToolTipText(text);
+            syncChildTooltips();
+        }
+
+        @Override
         public JToolTip createToolTip() {
             return createHtmlToolTip(this);
+        }
+
+        /**
+         * Mirrors HTML tooltip ownership to child widgets such as the combo arrow button.
+         *
+         * <p>Swing copies tooltip text to combo children, but it does not copy this helper's HTML
+         * client-property setup. Refresh after UI install and tooltip updates so every hover target
+         * within the combo renders the same HTML tooltip.</p>
+         */
+        private void syncChildTooltips() {
+            Runnable sync = () -> applyHtmlTooltipToChildren(this, this, getToolTipText());
+            if (isDisplayable()) {
+                SwingUtilities.invokeLater(sync);
+            } else {
+                sync.run();
+            }
         }
     }
 
@@ -184,5 +226,64 @@ public final class Tooltips {
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
+    }
+
+    private static void applyHtmlTooltipToChildren(Container root, JComponent tooltipOwner, String tooltip) {
+        for (Component child : root.getComponents()) {
+            if (child instanceof JComponent jc) {
+                jc.putClientProperty(HTML_DISABLE, Boolean.FALSE);
+                if (jc instanceof JButton) {
+                    installTooltipForwarder(jc, tooltipOwner);
+                } else {
+                    jc.setToolTipText(tooltip);
+                }
+            }
+            if (child instanceof Container nested) {
+                applyHtmlTooltipToChildren(nested, tooltipOwner, tooltip);
+            }
+        }
+    }
+
+    private static void installTooltipForwarder(JComponent child, JComponent tooltipOwner) {
+        Object existing = child.getClientProperty(TOOLTIP_FORWARDER_KEY);
+        if (existing instanceof ComboChildTooltipForwarder forwarder) {
+            child.removeMouseListener(forwarder);
+            child.removeMouseMotionListener(forwarder);
+        }
+        child.setToolTipText(null);
+        ComboChildTooltipForwarder forwarder = new ComboChildTooltipForwarder(child, tooltipOwner);
+        child.addMouseListener(forwarder);
+        child.addMouseMotionListener(forwarder);
+        child.putClientProperty(TOOLTIP_FORWARDER_KEY, forwarder);
+    }
+
+    /** Forwards combo-child hover events to the combo so the combo's HTML tooltip is used. */
+    private static final class ComboChildTooltipForwarder extends MouseAdapter {
+        private final JComponent source;
+        private final JComponent tooltipOwner;
+
+        private ComboChildTooltipForwarder(JComponent source, JComponent tooltipOwner) {
+            this.source = source;
+            this.tooltipOwner = tooltipOwner;
+        }
+
+        @Override
+        public void mouseEntered(MouseEvent e) {
+            ToolTipManager.sharedInstance().mouseEntered(convert(e));
+        }
+
+        @Override
+        public void mouseMoved(MouseEvent e) {
+            ToolTipManager.sharedInstance().mouseMoved(convert(e));
+        }
+
+        @Override
+        public void mouseExited(MouseEvent e) {
+            ToolTipManager.sharedInstance().mouseExited(convert(e));
+        }
+
+        private MouseEvent convert(MouseEvent e) {
+            return SwingUtilities.convertMouseEvent(source, e, tooltipOwner);
+        }
     }
 }

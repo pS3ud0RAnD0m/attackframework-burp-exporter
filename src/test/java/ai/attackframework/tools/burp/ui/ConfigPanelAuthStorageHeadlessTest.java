@@ -148,6 +148,23 @@ class ConfigPanelAuthStorageHeadlessTest {
     }
 
     @Test
+    void tlsMode_arrowButton_usesSameHtmlTooltipSetupAsCombo() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            JComboBox<String> tlsMode = get(panel, "openSearchTlsModeCombo");
+            JButton arrowButton = findComboArrowButton(tlsMode);
+
+            runEdt(() -> {
+                assertThat(arrowButton).isNotNull();
+                assertThat(arrowButton.getToolTipText()).isNull();
+                assertThat(arrowButton.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
+                assertThat(arrowButton.getClientProperty("ai.attackframework.tools.burp.ui.text.Tooltips.tooltipForwarder"))
+                        .isNotNull();
+            });
+        });
+    }
+
+    @Test
     void changingTlsMode_emitsLogPanelEvents() throws Exception {
         withCleanSession(() -> {
             Logger.resetState();
@@ -235,11 +252,14 @@ class ConfigPanelAuthStorageHeadlessTest {
             ConfigPanel panel = newPanelOnEdt();
             JCheckBox settings = get(panel, "settingsCheckbox");
             JCheckBox issues = get(panel, "issuesCheckbox");
+            JTextField filePathField = get(panel, "filePathField");
             Component destinationsHeader = findLabelByText(panel, "Destinations");
 
             runEdt(() -> {
                 assertThat(settings.getToolTipText()).isEqualTo("<html>All settings.</html>");
                 assertThat(issues.getToolTipText()).isEqualTo("<html>All findings (aka issues).</html>");
+                assertThat(filePathField.getToolTipText()).isEqualTo(
+                        "<html>Root directory for generated files.<br>Examples:<br>&nbsp;&nbsp;/path/to/directory<br>&nbsp;&nbsp;c:\\path\\to\\directory</html>");
                 assertThat(((javax.swing.JLabel) destinationsHeader).getToolTipText())
                         .isEqualTo("<html>Configure export destination(s).</html>");
             });
@@ -497,6 +517,36 @@ class ConfigPanelAuthStorageHeadlessTest {
             current = current.getParent();
         }
         return true;
+    }
+
+    private static JButton findComboArrowButton(JComboBox<?> comboBox) {
+        for (Component child : comboBox.getComponents()) {
+            if (child instanceof JButton button) {
+                return button;
+            }
+            if (child instanceof Container nested) {
+                JButton nestedButton = findFirstButton(nested);
+                if (nestedButton != null) {
+                    return nestedButton;
+                }
+            }
+        }
+        throw new AssertionError("Combo box button child not found");
+    }
+
+    private static JButton findFirstButton(Container root) {
+        for (Component child : root.getComponents()) {
+            if (child instanceof JButton button) {
+                return button;
+            }
+            if (child instanceof Container nested) {
+                JButton nestedButton = findFirstButton(nested);
+                if (nestedButton != null) {
+                    return nestedButton;
+                }
+            }
+        }
+        return null;
     }
 
     @FunctionalInterface

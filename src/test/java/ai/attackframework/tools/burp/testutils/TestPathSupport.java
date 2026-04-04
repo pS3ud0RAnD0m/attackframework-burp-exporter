@@ -21,6 +21,12 @@ public final class TestPathSupport {
     private static final Path DEFAULT_UI_FILE_ROOT = Path.of("/path/to/directory");
     private static final AtomicBoolean DEFAULT_UI_ROOT_CLEANED = new AtomicBoolean(false);
 
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(
+                TestPathSupport::cleanReservedDefaultUiRootContents,
+                "attackframework-test-path-cleanup"));
+    }
+
     private TestPathSupport() { }
 
     /**
