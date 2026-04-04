@@ -69,6 +69,9 @@ public final class IndexingRetryCoordinator {
         if (!RuntimeConfig.isExportReady()) {
             return false;
         }
+        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            return false;
+        }
         ensureDrainThreadStarted();
         String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
 
@@ -116,6 +119,9 @@ public final class IndexingRetryCoordinator {
             return 0;
         }
         if (!RuntimeConfig.isExportReady()) {
+            return 0;
+        }
+        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
             return 0;
         }
         ensureDrainThreadStarted();
@@ -205,6 +211,7 @@ public final class IndexingRetryCoordinator {
         if (consecutiveFails != CONSECUTIVE_FAILURES_BEFORE_CHECK) {
             return false;
         }
+        Logger.logWarnPanelOnly("[OpenSearch] Repeated push failures detected; testing destination health.");
         OpenSearchClientWrapper.OpenSearchStatus status = testConnectionWithRuntimeConfig(baseUrl);
         if (!status.success()) {
             outageMode.set(true);
@@ -256,7 +263,7 @@ public final class IndexingRetryCoordinator {
                 sb.append(key).append("=").append(size).append(", ");
             }
         }
-        Logger.logErrorPanelOnly(sb.toString().replaceAll(", $", ""));
+        Logger.logWarnPanelOnly(sb.toString().replaceAll(", $", ""));
     }
 
     private void checkRecoveryAndLog(String baseUrl) {
@@ -264,7 +271,7 @@ public final class IndexingRetryCoordinator {
         if (status.success() && queue.allEmpty()) {
             outageMode.set(false);
             consecutiveFailures.set(0);
-            Logger.logErrorPanelOnly("[OpenSearch] Reachable again; retry queue drained.");
+            Logger.logInfoPanelOnly("[OpenSearch] Reachable again; retry queue drained.");
         }
     }
 
@@ -300,7 +307,8 @@ public final class IndexingRetryCoordinator {
             if (outageMode.get() && queue.totalSize() > 0) {
                 if (System.currentTimeMillis() - lastOutageLogTime >= OUTAGE_LOG_THROTTLE_MS) {
                     lastOutageLogTime = System.currentTimeMillis();
-                    Logger.logErrorPanelOnly("[OpenSearch] Still unreachable. Queued: " + queue.totalSize() + ". Will retry.");
+                    Logger.logWarnPanelOnly("[OpenSearch] Still unreachable. Queued: "
+                            + queue.totalSize() + ". Will retry.");
                 }
             }
 

@@ -32,6 +32,16 @@ class FileUtilTest {
     }
 
     @Test
+    void requireAbsoluteDirectoryPath_throwsWhenRootIsRelative() {
+        IOException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IOException.class,
+                () -> FileUtil.requireAbsoluteDirectoryPath("%^&%^&")
+        );
+
+        assertThat(ex.getMessage()).contains("absolute path");
+    }
+
+    @Test
     void ensureJsonFiles_createsMissingFiles_thenReportsExistsOnSecondRun() throws IOException {
         Path tmp = TestPathSupport.createDirectory("af-json-root");
         Path f1 = tmp.resolve("alpha.json");

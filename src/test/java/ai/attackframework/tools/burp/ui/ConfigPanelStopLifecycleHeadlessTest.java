@@ -82,11 +82,12 @@ class ConfigPanelStopLifecycleHeadlessTest {
             });
 
             runEdt(startStop::doClick);
-            waitForControlStatus(controlStatus, "Running: Files.");
+            String expectedRunning = "Files: Running -> " + TestPathSupport.defaultUiFileRoot().toAbsolutePath().normalize();
+            waitForControlStatus(controlStatus, expectedRunning);
 
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
-            assertThat(controlStatus.getText()).isEqualTo("Running: Files.");
+            assertThat(controlStatus.getText()).isEqualTo(expectedRunning);
 
             runEdt(startStop::doClick);
             waitForControlStatus(controlStatus, "Stopped");

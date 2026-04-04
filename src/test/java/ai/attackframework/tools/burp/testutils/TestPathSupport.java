@@ -18,12 +18,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class TestPathSupport {
 
     private static final Path ROOT = Path.of("build", "tmp", "attackframework-burp-exporter-tests");
+    private static final Path DEFAULT_UI_FILE_ROOT_PARENT = Path.of("/path");
     private static final Path DEFAULT_UI_FILE_ROOT = Path.of("/path/to/directory");
     private static final AtomicBoolean DEFAULT_UI_ROOT_CLEANED = new AtomicBoolean(false);
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(
-                TestPathSupport::cleanReservedDefaultUiRootContents,
+                TestPathSupport::cleanReservedDefaultUiRootTree,
                 "attackframework-test-path-cleanup"));
     }
 
@@ -82,6 +83,10 @@ public final class TestPathSupport {
 
     /** Deletes attackframework export artifacts from the provided directory when they exist. */
     public static void cleanupExportArtifacts(Path root) throws IOException {
+        if (DEFAULT_UI_FILE_ROOT.equals(root)) {
+            cleanReservedDefaultUiRootTree();
+            return;
+        }
         if (root == null || !Files.isDirectory(root)) {
             return;
         }
@@ -102,12 +107,18 @@ public final class TestPathSupport {
      * Prepares the reserved default UI export root once per JVM.
      *
      * <p>This is the file-side equivalent of centralized test OpenSearch cleanup: before the suite
-     * uses {@code /path/to/directory}, remove leftover content from earlier runs. Cleanup is
-     * intentionally scoped to this exact synthetic test path and is best-effort.</p>
+     * uses {@code /path/to/directory}, remove the synthetic {@code /path} tree from earlier runs
+     * and then recreate the configured directory. Cleanup is intentionally scoped to this exact
+     * synthetic test path and is best-effort.</p>
      */
     public static void ensureDefaultUiFileRootPrepared() {
         if (DEFAULT_UI_ROOT_CLEANED.compareAndSet(false, true)) {
-            cleanReservedDefaultUiRootContents();
+            cleanReservedDefaultUiRootTree();
+        }
+        try {
+            Files.createDirectories(DEFAULT_UI_FILE_ROOT);
+        } catch (IOException | RuntimeException ignored) {
+            // Best-effort preparation for the reserved synthetic default UI root.
         }
     }
 
@@ -116,18 +127,11 @@ public final class TestPathSupport {
         DEFAULT_UI_ROOT_CLEANED.set(false);
     }
 
-    private static void cleanReservedDefaultUiRootContents() {
+    private static void cleanReservedDefaultUiRootTree() {
         try {
-            Files.createDirectories(DEFAULT_UI_FILE_ROOT);
-            List<Path> toDelete = new ArrayList<>();
-            try (var stream = Files.list(DEFAULT_UI_FILE_ROOT)) {
-                stream.forEach(toDelete::add);
-            }
-            for (Path path : toDelete) {
-                deleteRecursively(path);
-            }
+            deleteRecursively(DEFAULT_UI_FILE_ROOT_PARENT);
         } catch (IOException | RuntimeException ignored) {
-            // Best-effort cleanup for the reserved synthetic default UI root.
+            // Best-effort cleanup for the reserved synthetic default UI tree.
         }
     }
 

@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.utils;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.InvalidPathException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileAlreadyExistsException;
@@ -44,7 +45,7 @@ public final class FileUtil {
      * @return results per file
      */
     public static List<CreateResult> ensureJsonFiles(String rootDir, List<String> fileNames) {
-        return ensureJsonFiles(Path.of(rootDir), fileNames);
+        return ensureFiles(Path.of(rootDir), fileNames);
     }
 
     /**
@@ -56,6 +57,18 @@ public final class FileUtil {
      * @return creation results
      */
     public static List<CreateResult> ensureJsonFiles(Path rootDir, List<String> fileNames) {
+        return ensureFiles(rootDir, fileNames);
+    }
+
+    /**
+     * Ensure a set of files exist under {@code rootDir}. Creates parent dirs as needed.
+     * For each file, returns CREATED, EXISTS, or FAILED with error message.
+     *
+     * @param rootDir base directory
+     * @param fileNames file names to create
+     * @return creation results
+     */
+    public static List<CreateResult> ensureFiles(Path rootDir, List<String> fileNames) {
         List<CreateResult> out = new ArrayList<>(fileNames.size());
 
         try {
@@ -93,6 +106,33 @@ public final class FileUtil {
             java.nio.file.Files.writeString(probe, "\n", StandardCharsets.UTF_8);
         } finally {
             java.nio.file.Files.deleteIfExists(probe);
+        }
+    }
+
+    /**
+     * Parses and validates a file-export root entered in the UI.
+     *
+     * <p>The exporter expects an absolute directory path so operators always know exactly where
+     * files are being written. Relative paths are rejected instead of being resolved against the
+     * host process working directory.</p>
+     *
+     * @param rootDir raw UI path string
+     * @return normalized absolute path
+     * @throws IOException when the path is blank, invalid, or not absolute
+     */
+    public static Path requireAbsoluteDirectoryPath(String rootDir) throws IOException {
+        if (rootDir == null || rootDir.trim().isEmpty()) {
+            throw new IOException("file export root is blank.");
+        }
+        String raw = rootDir.trim();
+        try {
+            Path path = Path.of(raw);
+            if (!path.isAbsolute() && !raw.startsWith("/") && !raw.startsWith("\\")) {
+                throw new IOException("file export root must be an absolute path.");
+            }
+            return path.toAbsolutePath().normalize();
+        } catch (InvalidPathException e) {
+            throw new IOException("file export root is invalid: " + e.getMessage(), e);
         }
     }
 

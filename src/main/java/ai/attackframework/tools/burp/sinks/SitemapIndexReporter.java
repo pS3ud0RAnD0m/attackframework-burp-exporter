@@ -71,7 +71,6 @@ public final class SitemapIndexReporter {
             if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SITEMAP)) {
                 return;
@@ -83,7 +82,7 @@ public final class SitemapIndexReporter {
             if (scheduler != null) {
                 scheduler.submit(() -> {
                     try {
-                        pushItems(api, baseUrl, true);
+                        pushItems(api, true);
                     } catch (Throwable ignored) {
                         // Startup/lifecycle races in Burp can transiently null sub-APIs.
                     }
@@ -91,7 +90,7 @@ public final class SitemapIndexReporter {
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Sitemap index: push failed: " + msg);
+            Logger.logWarnPanelOnly("[Sitemap] Snapshot push failed: " + msg);
         }
     }
 
@@ -145,7 +144,6 @@ public final class SitemapIndexReporter {
             if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SITEMAP)) {
                 return;
@@ -154,14 +152,14 @@ public final class SitemapIndexReporter {
             if (api == null) {
                 return;
             }
-            pushItems(api, baseUrl, false);
+            pushItems(api, false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Sitemap index: push failed: " + msg);
+            Logger.logWarnPanelOnly("[Sitemap] Periodic push failed: " + msg);
         }
     }
 
-    private static void pushItems(MontoyaApi api, String baseUrl, boolean pushAll) {
+    private static void pushItems(MontoyaApi api, boolean pushAll) {
         if (runInProgress) {
             return;
         }
@@ -207,14 +205,14 @@ public final class SitemapIndexReporter {
                 runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
 
                 if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize() || runningBatchBytes >= BULK_MAX_BYTES) {
-                    flushBatch(baseUrl, batchKeys, batchDocs);
+                    flushBatch(batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();
                     runningBatchBytes = 0;
                 }
             }
             if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
-                flushBatch(baseUrl, batchKeys, batchDocs);
+                flushBatch(batchKeys, batchDocs);
             }
         } finally {
             runInProgress = false;
@@ -252,9 +250,10 @@ public final class SitemapIndexReporter {
         }
     }
 
-    private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
-        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
-        int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, sitemapIndexName(), batchDocs);
+    private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
+        String activeBaseUrl = RuntimeConfig.openSearchUrl();
+        boolean openSearchActive = !activeBaseUrl.isBlank();
+        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, sitemapIndexName(), batchDocs);
         int failureCount = batchDocs.size() - successCount;
         if (openSearchActive) {
             ExportStats.recordSuccess("sitemap", successCount);
@@ -262,6 +261,7 @@ public final class SitemapIndexReporter {
         }
         if (openSearchActive && failureCount > 0) {
             ExportStats.recordLastError("sitemap", "Bulk had " + failureCount + " failure(s)");
+            Logger.logWarnPanelOnly("[Sitemap] Bulk push completed with " + failureCount + " failure(s).");
         }
         if (successCount == batchDocs.size()) {
             pushedItemKeys.addAll(batchKeys);

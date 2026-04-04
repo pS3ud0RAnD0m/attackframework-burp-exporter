@@ -70,7 +70,6 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_FINDINGS)) {
                 return;
@@ -80,11 +79,11 @@ public final class FindingsIndexReporter {
                 return;
             }
             if (scheduler != null) {
-                scheduler.submit(() -> pushIssues(api, baseUrl, true));
+                scheduler.submit(() -> pushIssues(api, true));
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Findings index: push failed: " + msg);
+            Logger.logWarnPanelOnly("[Findings] Snapshot push failed: " + msg);
         }
     }
 
@@ -138,7 +137,6 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_FINDINGS)) {
                 return;
@@ -147,14 +145,14 @@ public final class FindingsIndexReporter {
             if (api == null) {
                 return;
             }
-            pushIssues(api, baseUrl, false);
+            pushIssues(api, false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Findings index: push failed: " + msg);
+            Logger.logWarnPanelOnly("[Findings] Periodic push failed: " + msg);
         }
     }
 
-    private static void pushIssues(MontoyaApi api, String baseUrl, boolean pushAll) {
+    private static void pushIssues(MontoyaApi api, boolean pushAll) {
         if (runInProgress) {
             return;
         }
@@ -202,14 +200,14 @@ public final class FindingsIndexReporter {
                 runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
 
                 if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize() || runningBatchBytes >= BULK_MAX_BYTES) {
-                    flushBatch(baseUrl, batchKeys, batchDocs);
+                    flushBatch(batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();
                     runningBatchBytes = 0;
                 }
             }
             if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
-                flushBatch(baseUrl, batchKeys, batchDocs);
+                flushBatch(batchKeys, batchDocs);
             }
         } finally {
             runInProgress = false;
@@ -247,9 +245,10 @@ public final class FindingsIndexReporter {
         }
     }
 
-    private static void flushBatch(String baseUrl, List<String> batchKeys, List<Map<String, Object>> batchDocs) {
-        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
-        int successCount = OpenSearchClientWrapper.pushBulk(baseUrl, findingsIndexName(), batchDocs);
+    private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
+        String activeBaseUrl = RuntimeConfig.openSearchUrl();
+        boolean openSearchActive = !activeBaseUrl.isBlank();
+        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, findingsIndexName(), batchDocs);
         int failureCount = batchDocs.size() - successCount;
         if (openSearchActive) {
             ExportStats.recordSuccess("findings", successCount);
@@ -257,6 +256,7 @@ public final class FindingsIndexReporter {
         }
         if (openSearchActive && failureCount > 0) {
             ExportStats.recordLastError("findings", "Bulk had " + failureCount + " failure(s)");
+            Logger.logWarnPanelOnly("[Findings] Bulk push completed with " + failureCount + " failure(s).");
         }
         if (successCount == batchDocs.size()) {
             pushedIssueKeys.addAll(batchKeys);

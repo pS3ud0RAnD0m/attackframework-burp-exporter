@@ -82,7 +82,7 @@ public final class ProxyHistoryIndexReporter {
             });
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Proxy History index: push failed: " + msg);
+            Logger.logWarnPanelOnly("[Traffic] Proxy history snapshot push failed: " + msg);
         }
     }
 
@@ -135,6 +135,8 @@ public final class ProxyHistoryIndexReporter {
                     int failureChunk = attemptedChunk - sent;
                     ExportStats.recordFailure("traffic", failureChunk);
                     ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
+                    Logger.logWarnPanelOnly("[Traffic] Proxy history chunk completed with "
+                            + failureChunk + " failure(s).");
                 }
                 chunkTarget = adjustSnapshotBatchTarget(chunkTarget, attemptedChunk, sent);
                 chunk.clear();
@@ -157,6 +159,8 @@ public final class ProxyHistoryIndexReporter {
                 int failureChunk = attemptedChunk - sent;
                 ExportStats.recordFailure("traffic", failureChunk);
                 ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
+                Logger.logWarnPanelOnly("[Traffic] Proxy history chunk completed with "
+                        + failureChunk + " failure(s).");
             }
         }
 

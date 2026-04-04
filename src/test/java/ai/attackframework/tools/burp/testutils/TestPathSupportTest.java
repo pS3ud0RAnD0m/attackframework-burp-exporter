@@ -13,6 +13,7 @@ class TestPathSupportTest {
     @Test
     void defaultUiFileRoot_preparesReservedRootByDeletingExistingContents() throws Exception {
         Path root = TestPathSupport.defaultUiFileRoot();
+        Path reservedParent = root.getParent().getParent();
         Assumptions.assumeTrue(TestPathSupport.isWritableDirectory(root),
                 "Reserved default UI root is not writable in this environment");
         Files.createDirectories(root);
@@ -24,6 +25,7 @@ class TestPathSupportTest {
         Path prepared = TestPathSupport.defaultUiFileRoot();
 
         assertThat(prepared).isEqualTo(root);
+        assertThat(Files.exists(reservedParent)).isTrue();
         assertThat(Files.list(prepared).toList()).isEmpty();
     }
 }

@@ -134,6 +134,20 @@ public final class Logger {
     }
 
     /**
+     * Logs at WARN to SLF4J and UI listeners only; does not send to Burp's output/error consoles.
+     *
+     * <p>Use for recoverable degradation or operator-visible warning conditions that should be easy
+     * to spot in the extension Log tab without adding noise to Burp's global console.</p>
+     *
+     * @param msg message to log
+     */
+    public static void logWarnPanelOnly(String msg) {
+        final String m = safe(msg);
+        LOG.warn(m);
+        notifyListeners("WARN", m);
+    }
+
+    /**
      * Logs at ERROR to SLF4J and UI listeners only; does not send to Burp's error console.
      *
      * @param msg message to log

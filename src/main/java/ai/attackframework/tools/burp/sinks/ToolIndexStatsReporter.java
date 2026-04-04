@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -113,9 +114,11 @@ public final class ToolIndexStatsReporter {
             } else if (!ok && openSearchActive) {
                 ExportStats.recordFailure("tool", 1);
                 ExportStats.recordLastError("tool", "Tool stats snapshot push failed");
+                Logger.logWarnPanelOnly("[Tool] Stats snapshot push failed.");
             }
-        } catch (Exception ignored) {
-            // Fire-and-forget; avoid feedback loop with tool index
+        } catch (Exception e) {
+            Logger.logWarnPanelOnly("[Tool] Stats snapshot push failed: "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
 

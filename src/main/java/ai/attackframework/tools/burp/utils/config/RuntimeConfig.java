@@ -15,6 +15,8 @@ public final class RuntimeConfig {
     private static volatile ConfigState.State state = defaultState();
     private static volatile boolean exportRunning = false;
     private static volatile boolean exportStarting = false;
+    private static volatile boolean fileExportDisabledForCurrentRun = false;
+    private static volatile boolean openSearchDisabledForCurrentRun = false;
     private static final CopyOnWriteArrayList<StateListener> listeners = new CopyOnWriteArrayList<>();
 
     @FunctionalInterface
@@ -59,9 +61,15 @@ public final class RuntimeConfig {
      * @param running new running state
      */
     public static void setExportRunning(boolean running) {
+        boolean wasRunning = exportRunning;
         exportRunning = running;
         if (!running) {
             exportStarting = false;
+            fileExportDisabledForCurrentRun = false;
+            openSearchDisabledForCurrentRun = false;
+        } else if (!wasRunning) {
+            fileExportDisabledForCurrentRun = false;
+            openSearchDisabledForCurrentRun = false;
         }
     }
 
@@ -77,7 +85,7 @@ public final class RuntimeConfig {
 
     /** Updates the runtime config state with a normalized, non-null value. */
     public static void updateState(ConfigState.State newState) {
-        state = normalize(newState);
+        state = applyCurrentRunDestinationSuppression(normalize(newState));
         notifyListeners(state);
     }
 
@@ -85,8 +93,8 @@ public final class RuntimeConfig {
      * Disables only the OpenSearch destination in the current runtime state.
      *
      * <p>This is used for runtime shutdown of a failing destination while allowing any configured
-     * file export destination to continue. Later UI changes can intentionally re-enable
-     * OpenSearch by pushing a fresh runtime state from the current form values.</p>
+     * file export destination to continue. The disable remains sticky for the active export run so
+     * later UI refreshes do not silently re-enable OpenSearch until export is stopped.</p>
      *
      * @return {@code true} when OpenSearch was enabled and is now disabled; {@code false} otherwise
      */
@@ -96,30 +104,43 @@ public final class RuntimeConfig {
         if (sinks == null || !sinks.osEnabled()) {
             return false;
         }
-        updateState(new ConfigState.State(
-                current.dataSources(),
-                current.scopeType(),
-                current.customEntries(),
-                new ConfigState.Sinks(
-                        sinks.filesEnabled(),
-                        sinks.filesPath(),
-                        sinks.fileJsonlEnabled(),
-                        sinks.fileBulkNdjsonEnabled(),
-                        sinks.fileTotalCapEnabled(),
-                        sinks.fileTotalCapGb(),
-                        sinks.fileDiskUsagePercentEnabled(),
-                        sinks.fileDiskUsagePercent(),
-                        false,
-                        sinks.openSearchUrl(),
-                        sinks.openSearchUser(),
-                        sinks.openSearchPassword(),
-                        sinks.openSearchTlsMode()),
-                current.settingsSub(),
-                current.trafficToolTypes(),
-                current.findingsSeverities(),
-                current.enabledExportFieldsByIndex(),
-                current.uiPreferences()));
+        if (exportRunning || exportStarting) {
+            openSearchDisabledForCurrentRun = true;
+        }
+        updateState(withOpenSearchEnabled(current, false));
         return true;
+    }
+
+    /**
+     * Disables only the file destination in the current runtime state.
+     *
+     * <p>This is used for runtime shutdown of a failing file destination while allowing any
+     * configured OpenSearch destination to continue. The disable remains sticky for the active
+     * export run so later UI refreshes do not silently re-enable Files until export is stopped.</p>
+     *
+     * @return {@code true} when Files were enabled and are now disabled; {@code false} otherwise
+     */
+    public static boolean disableFileDestination() {
+        ConfigState.State current = normalize(state);
+        ConfigState.Sinks sinks = current.sinks();
+        if (sinks == null || !sinks.filesEnabled()) {
+            return false;
+        }
+        if (exportRunning || exportStarting) {
+            fileExportDisabledForCurrentRun = true;
+        }
+        updateState(withFilesEnabled(current, false));
+        return true;
+    }
+
+    /** True when Files export has been suppressed for the active export run. */
+    public static boolean isFileExportDisabledForCurrentRun() {
+        return fileExportDisabledForCurrentRun;
+    }
+
+    /** True when OpenSearch has been suppressed for the active export run. */
+    public static boolean isOpenSearchDisabledForCurrentRun() {
+        return openSearchDisabledForCurrentRun;
     }
 
     /** Registers a listener for runtime-state changes and immediately replays the current state. */
@@ -346,6 +367,86 @@ public final class RuntimeConfig {
                 null,  // all export fields enabled
                 ConfigState.defaultUiPreferences()
         );
+    }
+
+    private static ConfigState.State applyCurrentRunDestinationSuppression(ConfigState.State candidate) {
+        if (candidate == null) {
+            return candidate;
+        }
+        ConfigState.State suppressed = candidate;
+        if (fileExportDisabledForCurrentRun) {
+            ConfigState.Sinks sinks = suppressed.sinks();
+            if (sinks != null && sinks.filesEnabled()) {
+                suppressed = withFilesEnabled(suppressed, false);
+            }
+        }
+        if (openSearchDisabledForCurrentRun) {
+            ConfigState.Sinks sinks = suppressed.sinks();
+            if (sinks != null && sinks.osEnabled()) {
+                suppressed = withOpenSearchEnabled(suppressed, false);
+            }
+        }
+        return suppressed;
+    }
+
+    private static ConfigState.State withOpenSearchEnabled(ConfigState.State current, boolean enabled) {
+        ConfigState.Sinks sinks = current.sinks();
+        if (sinks == null) {
+            return current;
+        }
+        return new ConfigState.State(
+                current.dataSources(),
+                current.scopeType(),
+                current.customEntries(),
+                new ConfigState.Sinks(
+                        sinks.filesEnabled(),
+                        sinks.filesPath(),
+                        sinks.fileJsonlEnabled(),
+                        sinks.fileBulkNdjsonEnabled(),
+                        sinks.fileTotalCapEnabled(),
+                        sinks.fileTotalCapGb(),
+                        sinks.fileDiskUsagePercentEnabled(),
+                        sinks.fileDiskUsagePercent(),
+                        enabled,
+                        sinks.openSearchUrl(),
+                        sinks.openSearchUser(),
+                        sinks.openSearchPassword(),
+                        sinks.openSearchTlsMode()),
+                current.settingsSub(),
+                current.trafficToolTypes(),
+                current.findingsSeverities(),
+                current.enabledExportFieldsByIndex(),
+                current.uiPreferences());
+    }
+
+    private static ConfigState.State withFilesEnabled(ConfigState.State current, boolean enabled) {
+        ConfigState.Sinks sinks = current.sinks();
+        if (sinks == null) {
+            return current;
+        }
+        return new ConfigState.State(
+                current.dataSources(),
+                current.scopeType(),
+                current.customEntries(),
+                new ConfigState.Sinks(
+                        enabled,
+                        sinks.filesPath(),
+                        sinks.fileJsonlEnabled(),
+                        sinks.fileBulkNdjsonEnabled(),
+                        sinks.fileTotalCapEnabled(),
+                        sinks.fileTotalCapGb(),
+                        sinks.fileDiskUsagePercentEnabled(),
+                        sinks.fileDiskUsagePercent(),
+                        sinks.osEnabled(),
+                        sinks.openSearchUrl(),
+                        sinks.openSearchUser(),
+                        sinks.openSearchPassword(),
+                        sinks.openSearchTlsMode()),
+                current.settingsSub(),
+                current.trafficToolTypes(),
+                current.findingsSeverities(),
+                current.enabledExportFieldsByIndex(),
+                current.uiPreferences());
     }
 
     private static void notifyListeners(ConfigState.State currentState) {

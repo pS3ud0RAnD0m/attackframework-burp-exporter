@@ -114,6 +114,8 @@ public final class ChunkedBulkSender {
         } catch (IOException | RuntimeException e) {
             long attemptedBytes = attemptedBytesRef.get();
             Logger.logDebug("ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
+            Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk push failed for " + indexName + ": "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             return new Result(0, attemptedRef.get(), attemptedBytes, 0);
         }
     }
@@ -138,6 +140,8 @@ public final class ChunkedBulkSender {
             long attemptedBytes = attemptedBytesRef.get();
             if (status < 200 || status >= 300) {
                 Logger.logDebug("ChunkedBulkSender bulk request failed: " + status + " " + responseBody);
+                Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk request failed for "
+                        + indexName + ": HTTP " + status + ".");
                 return new Result(0, attempted, attemptedBytes, 0);
             }
             Result parsed = parseBulkResponse(responseBody, attempted);
@@ -217,6 +221,8 @@ public final class ChunkedBulkSender {
             return new Result(successCount, attemptedCount, 0, 0);
         } catch (IOException | RuntimeException e) {
             Logger.logDebug("ChunkedBulkSender parse response failed: " + e.getMessage());
+            Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk response parsing failed: "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             return new Result(0, attemptedCount, 0, 0);
         }
     }

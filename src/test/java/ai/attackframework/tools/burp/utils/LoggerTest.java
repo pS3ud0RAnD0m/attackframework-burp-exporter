@@ -34,6 +34,23 @@ class LoggerTest {
         }
     }
 
+    @Test
+    void registerListener_receivesPanelOnlyWarnLogs() throws Exception {
+        try {
+            List<String> seen = new ArrayList<>();
+            Logger.LogListener listener = (level, msg) -> seen.add(level + ":" + msg);
+
+            Logger.registerListener(listener);
+
+            SwingUtilities.invokeAndWait(() -> Logger.logWarnPanelOnly("recoverable-warning"));
+
+            assertThat(seen).hasSize(1);
+            assertThat(seen.getFirst()).startsWith("WARN:").contains("recoverable-warning");
+        } finally {
+            Logger.resetState();
+        }
+    }
+
     /**
      * ReplayableLogListener receives buffered messages when registered (e.g. LogPanel after tab switch).
      * Plain LogListener does not receive replay, so tests and other listeners are not spammed.

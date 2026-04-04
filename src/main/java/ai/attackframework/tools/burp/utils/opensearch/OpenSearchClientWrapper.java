@@ -149,7 +149,7 @@ public class OpenSearchClientWrapper {
     public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, document);
         FileExportService.emit(prepared);
-        if (baseUrl == null || baseUrl.isBlank()) {
+        if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
             return RuntimeConfig.isAnyFileExportEnabled();
         }
         boolean success = IndexingRetryCoordinator.getInstance().pushDocument(
@@ -182,7 +182,7 @@ public class OpenSearchClientWrapper {
             totalEstimatedBytes += BulkPayloadEstimator.estimateBytes(preparedDoc.document());
         }
         FileExportService.emitBatch(prepared);
-        if (baseUrl == null || baseUrl.isBlank()) {
+        if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
             return RuntimeConfig.isAnyFileExportEnabled() ? prepared.size() : 0;
         }
         String indexKey = indexKeyFromIndexName(indexName);

@@ -1,14 +1,20 @@
 package ai.attackframework.tools.burp.ui;
 
-import org.junit.jupiter.api.Test;
+import java.util.prefs.Preferences;
 
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JTextField;
-import java.util.prefs.Preferences;
 
-import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.check;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.click;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.combo;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.field;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.newPanel;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.setText;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
@@ -24,7 +30,7 @@ class LogPanelPersistenceHeadlessTest {
 
         LogPanel panel = newPanel();
         JComboBox<?> level = combo(panel, "log.filter.level");
-        assertThat(level.getSelectedItem()).isEqualTo("Trace");
+        assertThat(level.getSelectedItem()).isEqualTo("TRACE");
     }
 
     @Test
@@ -33,7 +39,7 @@ class LogPanelPersistenceHeadlessTest {
         LogPanel a = newPanel();
 
         JComboBox<?> level = combo(a, "log.filter.level");
-        level.setSelectedItem("Warn");
+        level.setSelectedItem("WARN");
 
         JCheckBox pause = check(a, "Pause autoscroll");
         if (!pause.isSelected()) click(pause);
@@ -51,7 +57,7 @@ class LogPanelPersistenceHeadlessTest {
         LogPanel b = newPanel();
 
         JComboBox<?> levelB = combo(b, "log.filter.level");
-        assertThat(levelB.getSelectedItem()).isEqualTo("Warn");
+        assertThat(levelB.getSelectedItem()).isEqualTo("WARN");
 
         JCheckBox pauseB = check(b, "Pause autoscroll");
         assertThat(pauseB.isSelected()).isTrue();
@@ -70,7 +76,7 @@ class LogPanelPersistenceHeadlessTest {
             LogPanel panel = newPanel();
 
             JComboBox<?> level = combo(panel, "log.filter.level");
-            level.setSelectedItem("Error");
+            level.setSelectedItem("ERROR");
 
             JCheckBox pause = check(panel, "Pause autoscroll");
             if (!pause.isSelected()) click(pause);

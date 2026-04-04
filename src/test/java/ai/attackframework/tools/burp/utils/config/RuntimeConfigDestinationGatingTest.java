@@ -13,6 +13,7 @@ class RuntimeConfigDestinationGatingTest {
     private void restoreRuntimeState() {
         RuntimeConfig.updateState(previous);
         RuntimeConfig.setExportRunning(false);
+        RuntimeConfig.setExportStarting(false);
     }
 
     @Test
@@ -122,6 +123,64 @@ class RuntimeConfigDestinationGatingTest {
                     null
             ));
             assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("OpenSearch");
+        } finally {
+            restoreRuntimeState();
+        }
+    }
+
+    @Test
+    void disableOpenSearchDestination_staysStickyUntilExportStops() {
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_SETTINGS),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                            true, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null
+            ));
+            RuntimeConfig.setExportRunning(true);
+            RuntimeConfig.setExportStarting(false);
+
+            assertThat(RuntimeConfig.disableOpenSearchDestination()).isTrue();
+            assertThat(RuntimeConfig.isOpenSearchExportEnabled()).isFalse();
+            assertThat(RuntimeConfig.isOpenSearchDisabledForCurrentRun()).isTrue();
+            assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("Files");
+
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_SETTINGS),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                            true, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null
+            ));
+
+            assertThat(RuntimeConfig.isOpenSearchExportEnabled()).isFalse();
+            assertThat(RuntimeConfig.openSearchUrl()).isEmpty();
+
+            RuntimeConfig.setExportRunning(false);
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_SETTINGS),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                            true, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null
+            ));
+
+            assertThat(RuntimeConfig.isOpenSearchDisabledForCurrentRun()).isFalse();
+            assertThat(RuntimeConfig.isOpenSearchExportEnabled()).isTrue();
+            assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("Files and OpenSearch");
         } finally {
             restoreRuntimeState();
         }

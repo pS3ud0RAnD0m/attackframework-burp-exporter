@@ -94,7 +94,6 @@ public final class ProxyWebSocketIndexReporter {
             if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isAnyTrafficExportEnabled()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
             if (!trafficSelectionAllowsWebSockets()) {
                 return;
             }
@@ -105,7 +104,7 @@ public final class ProxyWebSocketIndexReporter {
             if (scheduler != null) {
                 scheduler.submit(() -> {
                     try {
-                        pushItems(api, baseUrl, true);
+                        pushItems(api, true);
                     } catch (Throwable ignored) {
                         // Startup/lifecycle races in Burp can transiently null sub-APIs.
                     }
@@ -113,7 +112,7 @@ public final class ProxyWebSocketIndexReporter {
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Proxy WebSocket index: push failed: " + msg);
+            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket snapshot push failed: " + msg);
         }
     }
 
@@ -122,7 +121,6 @@ public final class ProxyWebSocketIndexReporter {
             if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isAnyTrafficExportEnabled()) {
                 return;
             }
-            String baseUrl = RuntimeConfig.openSearchUrl();
             if (!trafficSelectionAllowsWebSockets()) {
                 return;
             }
@@ -130,14 +128,14 @@ public final class ProxyWebSocketIndexReporter {
             if (api == null) {
                 return;
             }
-            pushItems(api, baseUrl, false);
+            pushItems(api, false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logDebug("Proxy WebSocket index: periodic push failed: " + msg);
+            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket periodic push failed: " + msg);
         }
     }
 
-    private static void pushItems(MontoyaApi api, String baseUrl, boolean pushAll) {
+    private static void pushItems(MontoyaApi api, boolean pushAll) {
         if (runInProgress) {
             return;
         }
@@ -165,13 +163,13 @@ public final class ProxyWebSocketIndexReporter {
                 batchKeys.add(key);
                 batchDocs.add(doc);
                 if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize()) {
-                    flushBatch(baseUrl, batchKeys, batchDocs);
+                    flushBatch(batchKeys, batchDocs);
                     batchKeys.clear();
                     batchDocs.clear();
                 }
             }
             if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
-                flushBatch(baseUrl, batchKeys, batchDocs);
+                flushBatch(batchKeys, batchDocs);
             }
         } finally {
             runInProgress = false;
@@ -195,9 +193,10 @@ public final class ProxyWebSocketIndexReporter {
         }
     }
 
-    private static void flushBatch(String baseUrl, List<String> keys, List<Map<String, Object>> docs) {
-        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
-        int success = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), docs);
+    private static void flushBatch(List<String> keys, List<Map<String, Object>> docs) {
+        String activeBaseUrl = RuntimeConfig.openSearchUrl();
+        boolean openSearchActive = !activeBaseUrl.isBlank();
+        int success = OpenSearchClientWrapper.pushBulk(activeBaseUrl, trafficIndexName(), docs);
         int failure = docs.size() - success;
         if (openSearchActive) {
             ExportStats.recordSuccess("traffic", success);
@@ -209,6 +208,8 @@ public final class ProxyWebSocketIndexReporter {
             pushedKeys.addAll(keys);
         } else if (openSearchActive && failure > 0) {
             ExportStats.recordLastError("traffic", "Proxy WebSocket bulk had " + failure + " failure(s)");
+            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket bulk push completed with "
+                    + failure + " failure(s).");
         }
     }
 

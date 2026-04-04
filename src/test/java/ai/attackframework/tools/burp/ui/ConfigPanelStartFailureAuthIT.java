@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
@@ -13,6 +16,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JPasswordField;
+import javax.swing.JRadioButton;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -24,6 +28,8 @@ import org.junit.jupiter.api.Test;
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.TrafficExportQueue;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
+import ai.attackframework.tools.burp.testutils.OpenSearchTestConfig;
+import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -92,6 +98,83 @@ class ConfigPanelStartFailureAuthIT {
         }
     }
 
+    @Test
+    void start_withFilesPreflightFailure_butValidOpenSearch_keepsOpenSearchRunning() throws Exception {
+        Path invalidFileRoot = TestPathSupport.createFile("af-files-partial-start-not-dir", ".tmp");
+        OpenSearchTestConfig config = OpenSearchTestConfig.get();
+        Logger.resetState();
+        List<String> events = new CopyOnWriteArrayList<>();
+        Logger.LogListener listener = (level, message) -> events.add(level + "|" + message);
+        Logger.registerListener(listener);
+        try {
+            Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                if (!bulkNdjsonEnabled.isSelected()) {
+                    bulkNdjsonEnabled.doClick();
+                }
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText(invalidFileRoot.toAbsolutePath().normalize().toString());
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (!openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+                JTextField openSearchUrlField = get(p, "openSearchUrlField");
+                openSearchUrlField.setText(config.baseUrl());
+
+                JComboBox<String> authCombo = get(p, "openSearchAuthTypeCombo");
+                JTextField userField = get(p, "openSearchUserField");
+                JPasswordField passwordField = get(p, "openSearchPasswordField");
+                if (config.hasCredentials()) {
+                    authCombo.setSelectedItem("Basic");
+                    userField.setText(config.username());
+                    passwordField.setText(config.password());
+                } else {
+                    authCombo.setSelectedItem("None");
+                    userField.setText("");
+                    passwordField.setText("");
+                }
+
+                ref.set(p);
+            });
+            panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStartedUi(startStop);
+            waitForLogMessage(events, "Files failed during start: File export preflight failed:");
+            waitForLogMessage(events, "OpenSearch export will continue.");
+            waitForLogMessage(events, "[OpenSearch] Initializing indexes for selected sources.");
+            waitForLogMessage(events, "[Export] Started. Destinations: OpenSearch.");
+
+            assertThat(RuntimeConfig.isExportRunning()).isTrue();
+            assertThat(RuntimeConfig.isAnyFileExportEnabled()).isFalse();
+            assertThat(RuntimeConfig.isOpenSearchExportEnabled()).isTrue();
+            assertThat(controlStatus.getText()).contains("Files: Start failed (");
+            assertThat(controlStatus.getText()).contains("OpenSearch: Running -> " + config.baseUrl());
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
+        } finally {
+            Logger.unregisterListener(listener);
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
+
     private static void waitForStoppedUi(JButton startStop) {
         long deadline = System.currentTimeMillis() + 10_000;
         while (System.currentTimeMillis() < deadline) {
@@ -109,6 +192,36 @@ class ConfigPanelStartFailureAuthIT {
             LockSupport.parkNanos(100_000_000L);
         }
         throw new AssertionError("Start button did not revert to stopped state within timeout");
+    }
+
+    private static void waitForStartedUi(JButton startStop) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                SwingUtilities.invokeAndWait(() -> { });
+            } catch (java.lang.InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+            if (RuntimeConfig.isExportRunning() && "Stop".equals(startStop.getText())) {
+                return;
+            }
+            LockSupport.parkNanos(100_000_000L);
+        }
+        throw new AssertionError("Start button did not reach running state within timeout");
+    }
+
+    private static void waitForLogMessage(List<String> events, String snippet) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (events.stream().anyMatch(message -> message.contains(snippet))) {
+                return;
+            }
+            LockSupport.parkNanos(100_000_000L);
+        }
+        throw new AssertionError("Expected log message containing: " + snippet);
     }
 
     private static <T extends Component> T findByName(Container root, String name, Class<T> type) {

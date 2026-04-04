@@ -8,9 +8,12 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.FileExportStats;
+import ai.attackframework.tools.burp.utils.FileUtil;
+import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
@@ -93,6 +96,7 @@ public final class FileExportService {
         if (root == null || root.isBlank() || reason == null || reason.isBlank()) {
             return;
         }
+        RuntimeConfig.disableFileDestination();
         rootState(Path.of(root)).disableAll(reason.trim(), false);
     }
 
@@ -107,6 +111,53 @@ public final class FileExportService {
     public static void resetForTests() {
         resetForRuntime();
         FileExportStats.resetForTests();
+    }
+
+    /** Creates export files for the selected sources and enabled file formats. */
+    public static List<FileInitResult> createSelectedExportFiles(List<String> selectedSources) {
+        return createSelectedExportFiles(selectedSources, () -> true);
+    }
+
+    /** Creates export files for the selected sources and enabled file formats. */
+    public static List<FileInitResult> createSelectedExportFiles(
+            List<String> selectedSources,
+            BooleanSupplier shouldContinue
+    ) {
+        Path rootPath;
+        try {
+            rootPath = FileUtil.requireAbsoluteDirectoryPath(RuntimeConfig.fileExportRoot());
+        } catch (IOException e) {
+            return List.of(new FileInitResult(
+                    "files",
+                    "(invalid path)",
+                    null,
+                    FileUtil.Status.FAILED,
+                    e.getMessage()));
+        }
+
+        List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
+        List<FileInitResult> results = new java.util.ArrayList<>();
+        for (String baseName : baseNames) {
+            if (shouldContinue != null && !shouldContinue.getAsBoolean()) {
+                break;
+            }
+            String shortName = IndexNaming.shortNameForIndexName(baseName);
+            if (RuntimeConfig.isFileJsonlEnabled()) {
+                String fileName = baseName + ".jsonl";
+                Logger.logInfoPanelOnly("[Files] Creating file for " + shortName + " (.jsonl).");
+                FileUtil.CreateResult created = FileUtil.ensureFiles(rootPath, List.of(fileName)).getFirst();
+                Logger.logInfoPanelOnly("[Files] File result for " + shortName + " (.jsonl): " + created.status() + ".");
+                results.add(new FileInitResult(shortName, ".jsonl", created.path(), created.status(), created.error()));
+            }
+            if (RuntimeConfig.isFileBulkNdjsonEnabled()) {
+                String fileName = baseName + ".ndjson";
+                Logger.logInfoPanelOnly("[Files] Creating file for " + shortName + " (.ndjson).");
+                FileUtil.CreateResult created = FileUtil.ensureFiles(rootPath, List.of(fileName)).getFirst();
+                Logger.logInfoPanelOnly("[Files] File result for " + shortName + " (.ndjson): " + created.status() + ".");
+                results.add(new FileInitResult(shortName, ".ndjson", created.path(), created.status(), created.error()));
+            }
+        }
+        return results;
     }
 
     private static FileSink jsonlSink(String root, String indexName) {
@@ -127,6 +178,14 @@ public final class FileExportService {
         FileExportStats.recordLastError(document.indexKey(), message);
         recordTrafficFailure(document);
     }
+
+    public record FileInitResult(
+            String shortName,
+            String format,
+            Path path,
+            FileUtil.Status status,
+            String error
+    ) { }
 
     private static void recordTrafficSuccess(PreparedExportDocument document) {
         if (!"traffic".equals(document.indexKey())) {

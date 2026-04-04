@@ -63,8 +63,8 @@ public class OpenSearchSink {
 
         final String mappingFile = resourceRoot + shortName + ".json";
 
-        Logger.logDebug("Attempting to create index: " + fullIndexName);
-        Logger.logDebug("Using mapping file: " + mappingFile);
+        Logger.logDebug("[OpenSearch] Attempting to create index: " + fullIndexName);
+        Logger.logDebug("[OpenSearch] Using mapping file: " + mappingFile);
 
         String jsonBody = null;
 
@@ -73,14 +73,14 @@ public class OpenSearchSink {
 
             boolean exists = client.indices().exists(b -> b.index(fullIndexName)).value();
             if (exists) {
-                Logger.logDebug("Index already exists: " + fullIndexName);
+                Logger.logDebug("[OpenSearch] Index already exists: " + fullIndexName);
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.EXISTS, null);
             }
 
             try (InputStream is = OpenSearchSink.class.getResourceAsStream(mappingFile)) {
                 if (is == null) {
                     String reason = "Mapping file not found: " + mappingFile;
-                    Logger.logErrorPanelOnly(reason);
+                    Logger.logErrorPanelOnly("[OpenSearch] " + reason);
                     return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
                 }
                 jsonBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
@@ -96,7 +96,7 @@ public class OpenSearchSink {
 
             if (settingsJson == null || mappingsJson == null) {
                 String reason = "Mapping JSON must contain both 'settings' and 'mappings'.";
-                Logger.logErrorPanelOnly(reason);
+                Logger.logErrorPanelOnly("[OpenSearch] " + reason);
                 return new IndexResult(shortName, fullIndexName, IndexResult.Status.FAILED, reason);
             }
 
@@ -131,8 +131,8 @@ public class OpenSearchSink {
             );
 
         } catch (IOException | RuntimeException e) {
-            Logger.logErrorPanelOnly("Exception while creating index: " + fullIndexName);
-            if (jsonBody != null) Logger.logErrorPanelOnly("Mapping JSON: " + compactJson(jsonBody));
+            Logger.logErrorPanelOnly("[OpenSearch] Exception while creating index: " + fullIndexName);
+            if (jsonBody != null) Logger.logErrorPanelOnly("[OpenSearch] Mapping JSON: " + compactJson(jsonBody));
             StringWriter sw = new StringWriter();
             e.printStackTrace(new PrintWriter(sw));
             Logger.logErrorPanelOnly(sw.toString().stripTrailing());
@@ -161,7 +161,7 @@ public class OpenSearchSink {
      */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources,
             String username, String password, BooleanSupplier shouldContinue) {
-        Logger.logDebug("Entered createSelectedIndexes with sources: " + selectedSources);
+        Logger.logDebug("[OpenSearch] createSelectedIndexes sources=" + selectedSources);
 
         List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
         LinkedHashSet<String> shortNames = new LinkedHashSet<>();
@@ -174,9 +174,9 @@ public class OpenSearchSink {
             if (shouldContinue != null && !shouldContinue.getAsBoolean()) {
                 break;
             }
-            Logger.logInfoPanelOnly("Creating index for: " + shortName);
+            Logger.logInfoPanelOnly("[OpenSearch] Creating index for " + shortName + ".");
             IndexResult result = createIndexFromResource(baseUrl, shortName, null, username, password);
-            Logger.logInfoPanelOnly("Result for " + shortName + ": " + result.status());
+            Logger.logInfoPanelOnly("[OpenSearch] Index result for " + shortName + ": " + result.status() + ".");
             results.add(result);
         }
         return results;

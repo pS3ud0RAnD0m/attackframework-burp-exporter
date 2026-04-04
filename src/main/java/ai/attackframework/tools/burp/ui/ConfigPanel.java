@@ -64,6 +64,7 @@ import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
+import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchTlsSupport;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.BurpSuiteEdition;
@@ -317,7 +318,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::startExportAsync,
                 () -> {
                     ExportReporterLifecycle.stopAndClearPendingExportWork();
-                    Logger.logInfoPanelOnly("Export stopped.");
+                    Logger.logInfoPanelOnly("[Export] Stopped.");
                 }
         ).build(), MIG_FILL_WRAP);
 
@@ -403,6 +404,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         syncSelectedAuthStateFromUi();
+        boolean filesSelected = fileSinkCheckbox.isSelected();
+        boolean openSearchSelected = openSearchSinkCheckbox.isSelected();
         if (fileSinkCheckbox.isSelected() && !hasSelectedFileFormat()) {
             abortStartOnEdt(
                     "select at least one file format when Files export is enabled.",
@@ -421,8 +424,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         String url = openSearchUrlField.getText().trim();
         List<String> sources = List.copyOf(getSelectedSources());
         ExportStats.recordExportStartRequested();
+        Logger.logInfoPanelOnly("[Export] Starting. Selected destinations: "
+                + summarizeSelectedDestinations(filesSelected, openSearchSelected) + ".");
         RuntimeConfig.setExportRunning(true);
-        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(url, sources, uiCallbacks, startupIssues));
+        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(
+                url, sources, uiCallbacks, startupIssues, filesSelected, openSearchSelected));
     }
 
     /** Returns whether at least one file-export format checkbox is selected. */
@@ -444,7 +450,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             String url,
             List<String> sources,
             ConfigControlPanel.StartUiCallbacks uiCallbacks,
-            List<String> startupIssues
+            List<String> startupIssues,
+            boolean filesSelected,
+            boolean openSearchSelected
     ) {
         if (!RuntimeConfig.isExportRunning()) {
             return;
@@ -457,8 +465,30 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (RuntimeConfig.isAnyFileExportEnabled()) {
             try {
                 String fileRoot = RuntimeConfig.fileExportRoot();
-                Logger.logDebug("[Start] File export preflight for " + fileRoot);
-                FileUtil.ensureDirectoryWritable(Path.of(fileRoot), "file export root");
+                Logger.logDebug("[Files] Preflight check for " + fileRoot);
+                Path fileRootPath = FileUtil.requireAbsoluteDirectoryPath(fileRoot);
+                FileUtil.ensureDirectoryWritable(fileRootPath, "file export root");
+                Logger.logInfoPanelOnly("[Files] Initializing files for selected sources.");
+                Logger.logDebug("[Files] Ensuring files for sources: " + sources);
+                List<FileExportService.FileInitResult> fileResults =
+                        FileExportService.createSelectedExportFiles(sources, RuntimeConfig::isExportRunning);
+                for (FileExportService.FileInitResult result : fileResults) {
+                    Logger.logDebug("[Files] File "
+                            + (result.path() != null ? result.path().getFileName() : result.shortName())
+                            + ": " + result.status()
+                            + (result.error() != null ? " (" + result.error() + ")" : ""));
+                }
+                if (fileResults.stream().anyMatch(r -> r.status() == FileUtil.Status.FAILED)) {
+                    String reason = "one or more export files failed to initialize.";
+                    logFileInitializationFailures(fileResults);
+                    if (!openSearchEnabled) {
+                        ExportReporterLifecycle.stopAndClearPendingExportWork();
+                        abortStartFromWorker(reason, uiCallbacks);
+                        return;
+                    }
+                    recordStartIssue(runtimeStartIssues, "Files failed during start: " + reason);
+                    FileExportService.disableCurrentRoot("File export initialization failed. OpenSearch export will continue.");
+                }
             } catch (IOException | RuntimeException e) {
                 String reason = e.getMessage() == null || e.getMessage().isBlank()
                         ? "File export preflight failed."
@@ -473,12 +503,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
         }
         if (openSearchEnabled && !url.isEmpty()) {
-            Logger.logDebug("[Start] OpenSearch preflight test for " + url);
+            Logger.logDebug("[OpenSearch] Preflight connection test for " + url);
             var preflight = ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper.safeTestConnection(
                     url,
                     RuntimeConfig.openSearchUser(),
                     RuntimeConfig.openSearchPassword());
-            Logger.logDebug("[Start] OpenSearch preflight result: success=" + preflight.success()
+            Logger.logDebug("[OpenSearch] Preflight result: success=" + preflight.success()
                     + ", message=" + preflight.message());
             if (!RuntimeConfig.isExportRunning()) {
                 return;
@@ -498,11 +528,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
 
             if (openSearchEnabled) {
-                Logger.logDebug("[Start] Ensuring OpenSearch indexes for sources: " + sources);
+                Logger.logInfoPanelOnly("[OpenSearch] Initializing indexes for selected sources.");
+                Logger.logDebug("[OpenSearch] Ensuring indexes for sources: " + sources);
                 List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
                         RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword(), RuntimeConfig::isExportRunning);
                 for (OpenSearchSink.IndexResult r : results) {
-                    Logger.logDebug("[Start] Index " + r.fullName() + ": " + r.status()
+                    Logger.logDebug("[OpenSearch] Index " + r.fullName() + ": " + r.status()
                             + (r.error() != null ? " (" + r.error() + ")" : ""));
                 }
                 if (!RuntimeConfig.isExportRunning()) {
@@ -510,7 +541,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 }
                 if (results.stream().anyMatch(r -> r.status() == OpenSearchSink.IndexResult.Status.FAILED)) {
                     String reason = "one or more OpenSearch indexes failed to initialize.";
-                    Logger.logErrorPanelOnly("[Start] Ensure indexes: one or more failed; see log above.");
+                    logOpenSearchIndexInitializationFailures(results);
                     if (!RuntimeConfig.isAnyFileExportEnabled()) {
                         ExportReporterLifecycle.stopAndClearPendingExportWork();
                         abortStartFromWorker(reason, uiCallbacks);
@@ -528,7 +559,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         RuntimeConfig.setExportStarting(false);
-        String runningStatus = buildRunningStatusMessage(runtimeStartIssues);
+        String runningStatus = buildRunningStatusMessage(runtimeStartIssues, filesSelected, openSearchSelected);
         SwingUtilities.invokeLater(() -> {
             uiCallbacks.onStartSuccess().run();
             onControlStatus(runningStatus);
@@ -579,12 +610,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        Logger.logInfoPanelOnly("Export started to " + RuntimeConfig.activeSinkSummary() + ".");
+        Logger.logInfoPanelOnly("[Export] Started. Destinations: " + RuntimeConfig.activeSinkSummary() + ".");
     }
 
     private void disableOpenSearchForCurrentRun(String reason) {
         if (RuntimeConfig.disableOpenSearchDestination()) {
-            Logger.logErrorPanelOnly("[Start] " + reason);
+            IndexingRetryCoordinator.getInstance().clearPendingWork();
+            Logger.logErrorPanelOnly("[OpenSearch] " + reason);
         }
     }
 
@@ -601,18 +633,18 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void recordStartIssue(List<String> startupIssues, String issue) {
         startupIssues.add(issue);
-        Logger.logErrorPanelOnly("[Start] " + issue);
+        Logger.logErrorPanelOnly("[Export] " + issue);
     }
 
     private void abortStartOnEdt(String reason, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
-        Logger.logErrorPanelOnly("[Start] " + reason);
+        Logger.logErrorPanelOnly("[Export] Start aborted: " + reason);
         RuntimeConfig.setExportStarting(false);
         onControlStatus("Start aborted: " + reason);
         uiCallbacks.onStartFailure().run();
     }
 
     private void abortStartFromWorker(String reason, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
-        Logger.logErrorPanelOnly("[Start] " + reason);
+        Logger.logErrorPanelOnly("[Export] Start aborted: " + reason);
         RuntimeConfig.setExportStarting(false);
         SwingUtilities.invokeLater(() -> {
             onControlStatus("Start aborted: " + reason);
@@ -620,12 +652,149 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         });
     }
 
-    private static String buildRunningStatusMessage(List<String> startupIssues) {
-        String runningSummary = "Running: " + RuntimeConfig.activeSinkSummary() + ".";
-        if (startupIssues == null || startupIssues.isEmpty()) {
-            return runningSummary;
+    private static String summarizeSelectedDestinations(boolean filesSelected, boolean openSearchSelected) {
+        if (filesSelected && openSearchSelected) {
+            return "Files and OpenSearch";
         }
-        return runningSummary + " " + String.join(" ", startupIssues);
+        if (filesSelected) {
+            return "Files";
+        }
+        if (openSearchSelected) {
+            return "OpenSearch";
+        }
+        return "none";
+    }
+
+    private static void logOpenSearchIndexInitializationFailures(List<OpenSearchSink.IndexResult> results) {
+        Logger.logErrorPanelOnly("[OpenSearch] Index initialization failed for one or more selected indexes.");
+        if (results == null) {
+            return;
+        }
+        for (OpenSearchSink.IndexResult result : results) {
+            if (result == null || result.status() != OpenSearchSink.IndexResult.Status.FAILED) {
+                continue;
+            }
+            String detail = result.error() == null || result.error().isBlank() ? "unknown error" : result.error();
+            Logger.logErrorPanelOnly("[OpenSearch] Index initialization failed for "
+                    + result.fullName() + ": " + detail);
+        }
+    }
+
+    private static void logFileInitializationFailures(List<FileExportService.FileInitResult> results) {
+        Logger.logErrorPanelOnly("[Files] Export file initialization failed for one or more selected files.");
+        if (results == null) {
+            return;
+        }
+        for (FileExportService.FileInitResult result : results) {
+            if (result == null || result.status() != FileUtil.Status.FAILED) {
+                continue;
+            }
+            String detail = result.error() == null || result.error().isBlank() ? "unknown error" : result.error();
+            String path = result.path() == null ? result.shortName() + result.format() : result.path().toString();
+            Logger.logErrorPanelOnly("[Files] Export file initialization failed for " + path + ": " + detail);
+        }
+    }
+
+    private static String buildRunningStatusMessage(
+            List<String> startupIssues,
+            boolean filesSelected,
+            boolean openSearchSelected
+    ) {
+        String filesStatus = filesSelected
+                ? (RuntimeConfig.isAnyFileExportEnabled()
+                ? "Running -> " + activeFilesDestination()
+                : "Not running")
+                : null;
+        String openSearchStatus = openSearchSelected
+                ? (RuntimeConfig.isOpenSearchExportEnabled()
+                ? "Running -> " + activeOpenSearchDestination()
+                : "Not running")
+                : null;
+        if (startupIssues != null) {
+            for (String issue : startupIssues) {
+                if (issue == null || issue.isBlank()) {
+                    continue;
+                }
+                if (issue.startsWith("Files not started: ")) {
+                    filesStatus = "Not started (" + shortStatusDetail(issue.substring("Files not started: ".length())) + ")";
+                } else if (issue.startsWith("OpenSearch not started: ")) {
+                    openSearchStatus = "Not started (" + shortStatusDetail(issue.substring("OpenSearch not started: ".length())) + ")";
+                } else if (issue.startsWith("Files failed during start: ")) {
+                    filesStatus = "Start failed (" + shortStatusDetail(issue.substring("Files failed during start: ".length())) + ")";
+                } else if (issue.startsWith("OpenSearch failed during start: ")) {
+                    openSearchStatus = "Start failed (" + shortStatusDetail(issue.substring("OpenSearch failed during start: ".length())) + ")";
+                }
+            }
+        }
+        return buildDestinationStatusMessage(filesStatus, openSearchStatus);
+    }
+
+    private static String formatControlStatusMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return message;
+        }
+        if (message.startsWith("OpenSearch export disabled after repeated ")
+                && message.endsWith(" Files export will continue.")) {
+            String detail = message.substring(
+                    "OpenSearch export disabled after repeated ".length(),
+                    message.length() - " Files export will continue.".length());
+            return buildDestinationStatusMessage("Running", "Stopped (" + shortStatusDetail(detail) + ")");
+        }
+        if (message.startsWith("File export stopped: ")
+                && message.endsWith(" OpenSearch export continues.")) {
+            String detail = message.substring(
+                    "File export stopped: ".length(),
+                    message.length() - " OpenSearch export continues.".length());
+            return buildDestinationStatusMessage("Stopped (" + shortStatusDetail(detail) + ")", "Running");
+        }
+        if (message.startsWith("Local disk writes stopped")
+                && message.endsWith("OpenSearch export continues.")) {
+            return buildDestinationStatusMessage("Stopped (" + shortStatusDetail(message) + ")", "Running");
+        }
+        return message;
+    }
+
+    private static String buildDestinationStatusMessage(String filesStatus, String openSearchStatus) {
+        List<String> lines = new ArrayList<>(2);
+        if (filesStatus != null && !filesStatus.isBlank()) {
+            lines.add("Files: " + filesStatus);
+        }
+        if (openSearchStatus != null && !openSearchStatus.isBlank()) {
+            lines.add("OpenSearch: " + openSearchStatus);
+        }
+        return lines.isEmpty() ? "Running" : String.join("\n", lines);
+    }
+
+    private static String shortStatusDetail(String detail) {
+        if (detail == null || detail.isBlank()) {
+            return "unknown error";
+        }
+        String shortened = detail.trim();
+        shortened = shortened.replaceFirst("^OpenSearch preflight failed:\\s*", "");
+        shortened = shortened.replaceFirst("^File export preflight failed:\\s*", "");
+        shortened = shortened.replaceFirst("^OpenSearch index initialization failed\\.\\s*", "");
+        shortened = shortened.replaceFirst("^(?:(?:[a-zA-Z_$][\\w$]*\\.)+[A-Za-z_$][\\w$]*Exception:\\s*)+", "");
+        if (shortened.length() > 180) {
+            shortened = shortened.substring(0, 177) + "...";
+        }
+        return shortened;
+    }
+
+    private static String activeFilesDestination() {
+        String fileRoot = RuntimeConfig.fileExportRoot();
+        if (fileRoot == null || fileRoot.isBlank()) {
+            return "(path unavailable)";
+        }
+        try {
+            return FileUtil.requireAbsoluteDirectoryPath(fileRoot).toString();
+        } catch (IOException e) {
+            return fileRoot.trim();
+        }
+    }
+
+    private static String activeOpenSearchDestination() {
+        String url = RuntimeConfig.openSearchUrl();
+        return (url == null || url.isBlank()) ? "(url unavailable)" : url.trim();
     }
 
     /**
@@ -676,9 +845,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param message status text to display (nullable)
      */
     @Override public void onControlStatus(String message) {
+        String formattedMessage = formatControlStatusMessage(message);
         Runnable r = () -> {
             StatusViews.setStatus(
-                    controlStatus, controlStatusWrapper, message, STATUS_MIN_COLS, STATUS_MAX_COLS);
+                    controlStatus, controlStatusWrapper, formattedMessage, STATUS_MIN_COLS, STATUS_MAX_COLS);
         };
         if (SwingUtilities.isEventDispatchThread()) r.run();
         else {

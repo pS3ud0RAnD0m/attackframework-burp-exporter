@@ -40,26 +40,25 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter.HighlightPainter;
 
-import net.miginfocom.swing.MigLayout;
-
 import ai.attackframework.tools.burp.ui.log.LogRenderer;
 import ai.attackframework.tools.burp.ui.log.LogStore;
-import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
-import ai.attackframework.tools.burp.ui.text.IndentedWrappedTextAreaUI;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
+import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
 import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.ui.text.HighlighterManager;
+import ai.attackframework.tools.burp.ui.text.IndentedWrappedTextAreaUI;
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
+import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.text.TextQuery;
 import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
+import net.miginfocom.swing.MigLayout;
 
 /**
  * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex),
@@ -88,7 +87,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
     private static final String DEFAULT_MIN_LEVEL  = "trace";
-    private static final String[] LEVEL_LABELS = {"Trace", "Debug", "Info", "Warn", "Error"};
+    private static final String[] LEVEL_LABELS = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR"};
     private static final int MAX_MODEL_ENTRIES     = 5000;
 
     // Editor and renderer (JTextArea for reliable line wrap; no horizontal scroll)
@@ -486,12 +485,12 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     private static String displayLogMinLevel(String normalizedLevel) {
         return switch (ConfigState.normalizeLogMinLevel(normalizedLevel)) {
-            case "trace" -> "Trace";
-            case "debug" -> "Debug";
-            case "info" -> "Info";
-            case "warn" -> "Warn";
-            case "error" -> "Error";
-            default -> "Trace";
+            case "trace" -> "TRACE";
+            case "debug" -> "DEBUG";
+            case "info" -> "INFO";
+            case "warn" -> "WARN";
+            case "error" -> "ERROR";
+            default -> "TRACE";
         };
     }
 

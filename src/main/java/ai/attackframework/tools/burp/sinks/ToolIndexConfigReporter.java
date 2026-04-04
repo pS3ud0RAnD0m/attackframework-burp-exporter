@@ -9,6 +9,7 @@ import java.util.Map;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -47,9 +48,11 @@ public final class ToolIndexConfigReporter {
             } else if (!ok && openSearchActive) {
                 ExportStats.recordFailure("tool", 1);
                 ExportStats.recordLastError("tool", "Tool config snapshot push failed");
+                Logger.logWarnPanelOnly("[Tool] Config snapshot push failed.");
             }
-        } catch (Exception ignored) {
-            // Fire-and-forget; avoid feedback loop with tool index
+        } catch (Exception e) {
+            Logger.logWarnPanelOnly("[Tool] Config snapshot push failed: "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
 

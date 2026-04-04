@@ -205,6 +205,26 @@ class FileExportServiceTest {
         assertThat(FileExportStats.getFailureCount("traffic")).isEqualTo(1L);
     }
 
+    @Test
+    void createSelectedExportFiles_createsExpectedFilesForSelectedSourcesAndTool() throws Exception {
+        Path root = TestPathSupport.createDirectory("file-export-init");
+        Path rootAbs = root.toAbsolutePath().normalize();
+        RuntimeConfig.updateState(fileExportState(rootAbs, true, Long.MAX_VALUE, false, 95));
+
+        List<FileExportService.FileInitResult> results =
+                FileExportService.createSelectedExportFiles(List.of("settings", "traffic"));
+
+        assertThat(results)
+                .extracting(FileExportService.FileInitResult::status)
+                .containsOnly(ai.attackframework.tools.burp.utils.FileUtil.Status.CREATED);
+        assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("settings") + ".jsonl")).exists();
+        assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("settings") + ".ndjson")).exists();
+        assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("traffic") + ".jsonl")).exists();
+        assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("traffic") + ".ndjson")).exists();
+        assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl")).exists();
+        assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson")).exists();
+    }
+
     private static ConfigState.State fileExportState(Path root, boolean totalEnabled, long totalBytes,
                                                      boolean diskPercentEnabled, int diskPercent) {
         return fileExportState(root, totalEnabled, totalBytes, diskPercentEnabled, diskPercent, false);

@@ -49,8 +49,8 @@ public final class ConfigController {
      * @param json serialized configuration payload
      */
     public void exportConfigAsync(Path out, String json) {
-        Logger.logDebug("[ConfigPanel] exportConfigAsync invoked; out=" + out);
-        Logger.logInfoPanelOnly("[ConfigPanel] exportConfigAsync payload prepared");
+        Logger.logDebug("[Config] Export requested: " + out);
+        Logger.logInfoPanelOnly("[Config] Exporting configuration to " + out + ".");
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
@@ -62,12 +62,21 @@ public final class ConfigController {
             }
             @Override protected void done() {
                 try {
-                    ui.onControlStatus(get());
+                    String status = get();
+                    ui.onControlStatus(status);
+                    if (status.startsWith("Exported configuration")) {
+                        Logger.logInfoPanelOnly("[Config] " + status);
+                    } else {
+                        Logger.logErrorPanelOnly("[Config] " + status);
+                    }
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onControlStatus("Export interrupted.");
+                    Logger.logWarnPanelOnly("[Config] Export interrupted.");
                 } catch (ExecutionException ex) {
-                    ui.onControlStatus("Export failed: " + rootMessage(ex));
+                    String status = "Export failed: " + rootMessage(ex);
+                    ui.onControlStatus(status);
+                    Logger.logErrorPanelOnly("[Config] " + status);
                 }
             }
         }.execute();
@@ -82,17 +91,19 @@ public final class ConfigController {
      * @param in config file to load
      */
     public void importConfigAsync(Path in) {
-        Logger.logDebug("[ConfigPanel] importConfigAsync invoked; in=" + in);
+        Logger.logDebug("[Config] Import requested: " + in);
         new SwingWorker<ConfigState.State, Void>() {
             @Override protected ConfigState.State doInBackground() throws Exception {
                 String json = FileUtil.readString(in);
-                Logger.logInfoPanelOnly("[ConfigPanel] importConfigAsync payload loaded");
+                Logger.logInfoPanelOnly("[Config] Importing configuration from " + in + ".");
                 return ConfigJsonMapper.parse(json);
             }
             @Override protected void done() {
                 try {
                     ConfigState.State state = get();
-                    ui.onControlStatus("Imported configuration from: " + in);
+                    String status = "Imported configuration from: " + in;
+                    ui.onControlStatus(status);
+                    Logger.logInfoPanelOnly("[Config] " + status);
                     SwingUtilities.invokeLater(() -> {
                         if (ui instanceof ai.attackframework.tools.burp.ui.ConfigPanel p) {
                             p.onImportResult(state);
@@ -101,8 +112,11 @@ public final class ConfigController {
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     ui.onControlStatus("Import interrupted.");
+                    Logger.logWarnPanelOnly("[Config] Import interrupted.");
                 } catch (ExecutionException ex) {
-                    ui.onControlStatus("Import failed: " + rootMessage(ex));
+                    String status = "Import failed: " + rootMessage(ex);
+                    ui.onControlStatus(status);
+                    Logger.logErrorPanelOnly("[Config] " + status);
                 }
             }
         }.execute();
@@ -120,31 +134,41 @@ public final class ConfigController {
      * @param url base URL of the OpenSearch cluster
      */
     public void testConnectionAsync(String url) {
-        Logger.logDebug("[ConfigPanel] testConnectionAsync invoked; url=" + url);
+        Logger.logDebug("[Config] OpenSearch test connection requested: " + url);
         String user = RuntimeConfig.openSearchUser();
         String pass = RuntimeConfig.openSearchPassword();
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() {
                 try {
                     var s = OpenSearchClientWrapper.safeTestConnection(url, user, pass);
-                    Logger.logDebug("[ConfigPanel] testConnection result: success=" + s.success()
+                    Logger.logDebug("[Config] OpenSearch test result: success=" + s.success()
                             + ", message=" + s.message());
                     return s.formattedStatus();
                 } catch (Exception ex) {
-                    Logger.logError("[ConfigPanel] Test connection failed: " + rootMessage(ex));
+                    Logger.logError("[Config] OpenSearch test connection failed: " + rootMessage(ex));
                     return "Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: "
                             + rootMessage(ex);
                 }
             }
             @Override protected void done() {
                 try {
-                    ui.onOpenSearchStatus(get());
+                    String status = get();
+                    ui.onOpenSearchStatus(status);
+                    if (status.startsWith("Connection: Success")) {
+                        Logger.logInfoPanelOnly("[OpenSearch] Test connection result\n" + status);
+                    } else {
+                        Logger.logWarnPanelOnly("[OpenSearch] Test connection result\n" + status);
+                    }
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    ui.onOpenSearchStatus("Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: interrupted.");
+                    String status = "Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: interrupted.";
+                    ui.onOpenSearchStatus(status);
+                    Logger.logWarnPanelOnly("[OpenSearch] Test connection interrupted\n" + status);
                 } catch (ExecutionException ex) {
-                    ui.onOpenSearchStatus("Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: "
-                            + rootMessage(ex));
+                    String status = "Connection: Failed\nAuthentication: Not tested\nTrust: Not tested\nOpenSearch version: unknown\nDetails: "
+                            + rootMessage(ex);
+                    ui.onOpenSearchStatus(status);
+                    Logger.logWarnPanelOnly("[OpenSearch] Test connection result\n" + status);
                 }
             }
         }.execute();
