@@ -1863,10 +1863,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         Tooltips.apply(fileSinkCheckbox, Tooltips.html("Enable file-based export."));
         Tooltips.apply(filePathField, Tooltips.htmlRaw(
-                "Root directory for generated files.",
-                "Examples:",
-                "&nbsp;&nbsp;/path/to/directory",
-                "&nbsp;&nbsp;c:\\path\\to\\directory"
+                "Root directory for generated files. Examples:",
+                "  /path/to/directory",
+                "  c:\\path\\to\\directory"
         ));
         Tooltips.apply(fileJsonlCheckbox, Tooltips.html(
                 "JSONL (JSON Lines): write one filtered JSON document per line.",
@@ -1894,7 +1893,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ));
 
         Tooltips.apply(openSearchSinkCheckbox, Tooltips.html("Enable OpenSearch export."));
-        Tooltips.apply(openSearchUrlField, Tooltips.html("Base URL of the OpenSearch cluster."));
+        Tooltips.apply(openSearchUrlField, Tooltips.html("Base URL of the OpenSearch cluster. Examples:",
+                "  https://opensearch.url:9200",
+                "  http://10.0.0.1:9200"));
         Tooltips.apply(testConnectionButton, Tooltips.html(
                 "Test connectivity and authentication against OpenSearch.",
                 "Status output includes connection, authentication, trust, and reported version.",

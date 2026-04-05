@@ -1,9 +1,5 @@
 package ai.attackframework.tools.burp.ui;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.call;
-import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.awt.Component;
 import java.awt.Container;
 import java.io.InputStream;
@@ -24,8 +20,11 @@ import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -259,7 +258,7 @@ class ConfigPanelAuthStorageHeadlessTest {
                 assertThat(settings.getToolTipText()).isEqualTo("<html>All settings.</html>");
                 assertThat(issues.getToolTipText()).isEqualTo("<html>All findings (aka issues).</html>");
                 assertThat(filePathField.getToolTipText()).isEqualTo(
-                        "<html>Root directory for generated files.<br>Examples:<br>&nbsp;&nbsp;/path/to/directory<br>&nbsp;&nbsp;c:\\path\\to\\directory</html>");
+                        "<html>Root directory for generated files. Examples:<br>/path/to/directory<br>c:\\path\\to\\directory</html>");
                 assertThat(((javax.swing.JLabel) destinationsHeader).getToolTipText())
                         .isEqualTo("<html>Configure export destination(s).</html>");
             });

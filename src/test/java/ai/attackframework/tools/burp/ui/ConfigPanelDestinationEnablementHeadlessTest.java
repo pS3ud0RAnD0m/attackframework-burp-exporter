@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
 import java.awt.event.KeyEvent;
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JComponent;
@@ -42,8 +43,13 @@ class ConfigPanelDestinationEnablementHeadlessTest {
                 ref.set(p);
             });
             return ref.get();
-        } catch (Exception e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException("Failed to create ConfigPanel test fixture", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            throw new RuntimeException(
+                    "Failed to create ConfigPanel test fixture", cause != null ? cause : e);
         }
     }
 
