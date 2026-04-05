@@ -628,6 +628,8 @@ public class StatsPanel extends JPanel {
             sectionLabel.setFont(CARD_KEY_FONT.deriveFont(Font.BOLD));
             sectionLabel.setBorder(BorderFactory.createEmptyBorder(rowIndex == 0 ? 0 : 4, 6, 2, 6));
             sectionLabel.setAlignmentX(LEFT_ALIGNMENT);
+            Dimension sectionPref = sectionLabel.getPreferredSize();
+            sectionLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, sectionPref.height));
             card.add(sectionLabel);
             List<Component> components = new ArrayList<>();
             components.add(sectionLabel);
@@ -654,11 +656,14 @@ public class StatsPanel extends JPanel {
 
                 row.add(keyLabel, BorderLayout.WEST);
                 row.add(valueLabel, BorderLayout.CENTER);
+                Dimension rowPref = row.getPreferredSize();
+                row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowPref.height));
                 card.add(row);
                 components.add(row);
                 rowIndex++;
             }
         }
+        card.add(javax.swing.Box.createVerticalGlue());
         Dimension preferred = card.getPreferredSize();
         card.setPreferredSize(new Dimension(Math.max(520, preferred.width), preferred.height));
         card.setMinimumSize(new Dimension(420, preferred.height));
@@ -733,9 +738,10 @@ public class StatsPanel extends JPanel {
                 : 0;
         chartsPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, chartsHeight));
 
-        int cardsHeight = Math.max(220, preferredHeightOf(cardsRow));
+        int cardsHeight = preferredHeightOf(cardsRow);
         cardsRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, cardsHeight));
         cardsRow.setMinimumSize(new Dimension(800, cardsHeight));
+        cardsRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, cardsHeight));
 
         int lowerHeight = preferredHeightOf(lowerPanel);
         lowerPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, lowerHeight));
