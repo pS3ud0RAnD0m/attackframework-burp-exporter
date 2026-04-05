@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import java.awt.event.KeyEvent;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JComponent;
@@ -8,6 +9,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -169,6 +172,18 @@ class ConfigPanelDestinationEnablementHeadlessTest {
     void per_index_cap_controls_are_not_present() {
         assertThat(findByName(panel, "files.limit.perIndex.enable")).isNull();
         assertThat(findByName(panel, "files.limit.perIndex.gib")).isNull();
+    }
+
+    @Test
+    void tls_mode_combo_binds_enter_to_test_connection_action() throws Exception {
+        String actionKey = getStatic(ConfigPanel.class, "TLS_MODE_ENTER_TEST_CONNECTION");
+        SwingUtilities.invokeAndWait(() -> {
+            JComboBox<?> tlsMode = get(panel, "openSearchTlsModeCombo");
+            Object mapped = tlsMode.getInputMap(JComponent.WHEN_FOCUSED)
+                    .get(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
+            assertThat(mapped).isEqualTo(actionKey);
+            assertThat(tlsMode.getActionMap().get(actionKey)).isNotNull();
+        });
     }
 
     @Test

@@ -1,7 +1,9 @@
 package ai.attackframework.tools.burp.ui;
 
 import java.awt.Component;
+import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import javax.swing.AbstractAction;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -28,6 +31,7 @@ import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -87,6 +91,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final String MIG_STATUS_INSETS = "insets 5, novisualpadding";
     private static final String MIG_PREF_COL = "[pref!]";
     private static final String MIG_FILL_WRAP = "growx, wrap";
+    /** ActionMap key: Enter on the OpenSearch TLS mode combo runs Test Connection. */
+    private static final String TLS_MODE_ENTER_TEST_CONNECTION = "os.tlsMode.enterTestConnection";
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
     /** Background executor for Start-path OpenSearch bootstrap work. */
@@ -1543,9 +1549,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Installs undo/redo bindings and enter-key shortcuts on text fields.
+     * Installs undo/redo bindings and enter-key shortcuts on text fields and the TLS mode combo.
      *
-     * <p>EDT only. Enter triggers the most relevant action for each field.</p>
+     * <p>EDT only. Enter triggers the most relevant action for each field; on the OpenSearch TLS
+     * mode dropdown it runs Test Connection when that button is enabled.</p>
      */
     private void wireTextFieldEnhancements() {
         TextFieldUndo.install(filePathField);
@@ -1553,6 +1560,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         TextFieldUndo.install(fileTotalCapField);
         TextFieldUndo.install(fileDiskUsagePercentField);
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
+
+        openSearchTlsModeCombo.getInputMap(JComponent.WHEN_FOCUSED).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), TLS_MODE_ENTER_TEST_CONNECTION);
+        openSearchTlsModeCombo.getActionMap().put(TLS_MODE_ENTER_TEST_CONNECTION, new AbstractAction() {
+            @Serial private static final long serialVersionUID = 1L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (testConnectionButton.isEnabled()) {
+                    testConnectionButton.doClick();
+                }
+            }
+        });
     }
 
     private JPanel buildFileLimitsPanel() {
