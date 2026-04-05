@@ -45,6 +45,7 @@ public class AboutPanel extends JPanel {
                 This Burp Suite extension continuously exports settings, sitemap, issues, and traffic into OpenSearch for embedding into vector databases to support agentic penetration testing.
                 """);
         area.setEditable(false);
+        area.setFocusable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         area.setOpaque(false);
