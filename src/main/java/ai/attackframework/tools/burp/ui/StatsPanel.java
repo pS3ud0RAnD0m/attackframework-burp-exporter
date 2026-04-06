@@ -639,7 +639,7 @@ public class StatsPanel extends JPanel {
                 JComponent row = new JPanel(new BorderLayout(10, 0));
                 row.setName("miscStats.row." + section.title() + "." + i);
                 row.setOpaque(true);
-                row.setBackground(rowBackground(i));
+                row.setBackground(rowBackground(rowIndex));
                 row.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
                 row.setAlignmentX(LEFT_ALIGNMENT);
 

@@ -105,19 +105,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final TriStateCheckBox settingsCheckbox = new TriStateCheckBox("Settings", TriStateCheckBox.State.SELECTED);
     private final JCheckBox sitemapCheckbox  = new Tooltips.HtmlCheckBox("Sitemap",  true);
     private final TriStateCheckBox issuesCheckbox   = new TriStateCheckBox("Issues",   TriStateCheckBox.State.SELECTED);
-    private final TriStateCheckBox trafficCheckbox  = new TriStateCheckBox("Traffic",  TriStateCheckBox.State.DESELECTED);
+    private final TriStateCheckBox trafficCheckbox  = new TriStateCheckBox("Traffic",  TriStateCheckBox.State.SELECTED);
 
     private final JCheckBox settingsProjectCheckbox = new Tooltips.HtmlCheckBox("Project", true);
     private final JCheckBox settingsUserCheckbox    = new Tooltips.HtmlCheckBox("User", true);
 
-    private final JCheckBox trafficBurpAiCheckbox       = new Tooltips.HtmlCheckBox("Burp AI", false);
-    private final JCheckBox trafficExtensionsCheckbox   = new Tooltips.HtmlCheckBox("Extensions", false);
-    private final JCheckBox trafficIntruderCheckbox    = new Tooltips.HtmlCheckBox("Intruder", false);
-    private final JCheckBox trafficProxyCheckbox        = new Tooltips.HtmlCheckBox("Proxy", false);
-    private final JCheckBox trafficProxyHistoryCheckbox  = new Tooltips.HtmlCheckBox("Proxy History", false);
-    private final JCheckBox trafficRepeaterCheckbox    = new Tooltips.HtmlCheckBox("Repeater", false);
-    private final JCheckBox trafficScannerCheckbox      = new Tooltips.HtmlCheckBox("Scanner", false);
-    private final JCheckBox trafficSequencerCheckbox     = new Tooltips.HtmlCheckBox("Sequencer", false);
+    private final JCheckBox trafficBurpAiCheckbox       = new Tooltips.HtmlCheckBox("Burp AI", true);
+    private final JCheckBox trafficExtensionsCheckbox   = new Tooltips.HtmlCheckBox("Extensions", true);
+    private final JCheckBox trafficIntruderCheckbox    = new Tooltips.HtmlCheckBox("Intruder", true);
+    private final JCheckBox trafficProxyCheckbox        = new Tooltips.HtmlCheckBox("Proxy", true);
+    private final JCheckBox trafficProxyHistoryCheckbox  = new Tooltips.HtmlCheckBox("Proxy History", true);
+    private final JCheckBox trafficRepeaterCheckbox    = new Tooltips.HtmlCheckBox("Repeater", true);
+    private final JCheckBox trafficScannerCheckbox      = new Tooltips.HtmlCheckBox("Scanner", true);
+    private final JCheckBox trafficSequencerCheckbox     = new Tooltips.HtmlCheckBox("Sequencer", true);
 
     private final JCheckBox issuesCriticalCheckbox      = new Tooltips.HtmlCheckBox("Critical", true);
     private final JCheckBox issuesHighCheckbox          = new Tooltips.HtmlCheckBox("High", true);
@@ -130,6 +130,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JButton settingsExpandButton = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
     private final JButton issuesExpandButton   = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
     private final JButton trafficExpandButton  = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
+    private final JPanel issuesCommunityIndicator = ConfigSourcesPanel.buildCommunityEditionIndicator(
+            "src.issues.communityNotice",
+            "src.issues.communityNotice.icon");
+    private final JPanel trafficBurpAiCommunityIndicator = ConfigSourcesPanel.buildCommunityEditionIndicator(
+            "src.traffic.burp_ai.communityNotice",
+            "src.traffic.burp_ai.communityNotice.icon");
+    private final JPanel trafficScannerCommunityIndicator = ConfigSourcesPanel.buildCommunityEditionIndicator(
+            "src.traffic.scanner.communityNotice",
+            "src.traffic.scanner.communityNotice.icon");
 
     private final JRadioButton allRadio       = new Tooltips.HtmlRadioButton("All");
     private final JRadioButton burpSuiteRadio = new Tooltips.HtmlRadioButton("Burp Suite's", true);
@@ -238,7 +247,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox,
                 settingsExpandButton, settingsSubPanel, issuesExpandButton, issuesSubPanel,
-                trafficExpandButton, trafficSubPanel, INDENT).build(),
+                trafficExpandButton, trafficSubPanel, issuesCommunityIndicator, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_FILL_WRAP);
 
@@ -804,21 +813,64 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Disables the Issues checkbox when Burp is Community edition (Scanner/issues
-     * not populated). Call after panel is built; no-op if API is not yet available.
+     * Applies Burp edition-specific source availability without changing the base tooltips.
+     *
+     * <p>Community edition forces Findings off and disables the Burp AI and Scanner traffic
+     * tool-type checkboxes. Professional re-enables those controls and hides the inline Community
+     * notices.</p>
      */
     private void applyEditionRestrictions() {
-        MontoyaApi api = MontoyaApiProvider.get();
-        if (api == null) {
-            return;
-        }
-        if (api.burpSuite().version().edition() == BurpSuiteEdition.COMMUNITY_EDITION) {
-            issuesCheckbox.setEnabled(false);
-            Tooltips.apply(issuesCheckbox, Tooltips.html("Not available with Community license."));
+        boolean communityEdition = isCommunityEdition();
+
+        issuesCheckbox.setEnabled(!communityEdition);
+        issuesExpandButton.setEnabled(!communityEdition);
+        issuesCommunityIndicator.setVisible(communityEdition);
+        if (communityEdition) {
+            issuesCheckbox.setSelected(false);
+            for (JCheckBox checkbox : issueSeverityCheckboxes()) {
+                checkbox.setSelected(false);
+                checkbox.setEnabled(false);
+            }
         } else {
-            issuesCheckbox.setEnabled(true);
-            Tooltips.apply(issuesCheckbox, Tooltips.html("All findings (aka issues)."));
+            for (JCheckBox checkbox : issueSeverityCheckboxes()) {
+                checkbox.setEnabled(true);
+            }
         }
+
+        for (JCheckBox checkbox : communityLimitedTrafficCheckboxes()) {
+            checkbox.setEnabled(!communityEdition);
+            if (communityEdition) {
+                checkbox.setSelected(false);
+            }
+        }
+        for (JPanel indicator : communityLimitedTrafficIndicators()) {
+            indicator.setVisible(communityEdition);
+        }
+
+        refreshFieldsSectionsEnabled();
+        updateRuntimeConfig();
+    }
+
+    private boolean isCommunityEdition() {
+        MontoyaApi api = MontoyaApiProvider.get();
+        return api != null && api.burpSuite().version().edition() == BurpSuiteEdition.COMMUNITY_EDITION;
+    }
+
+    private List<JCheckBox> issueSeverityCheckboxes() {
+        return List.of(
+                issuesCriticalCheckbox,
+                issuesHighCheckbox,
+                issuesMediumCheckbox,
+                issuesLowCheckbox,
+                issuesInformationalCheckbox);
+    }
+
+    private List<JCheckBox> communityLimitedTrafficCheckboxes() {
+        return List.of(trafficBurpAiCheckbox, trafficScannerCheckbox);
+    }
+
+    private List<JPanel> communityLimitedTrafficIndicators() {
+        return List.of(trafficBurpAiCommunityIndicator, trafficScannerCommunityIndicator);
     }
 
     /**
@@ -932,6 +984,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             applyExportFieldsState(state.enabledExportFieldsByIndex());
             refreshFieldsSectionsEnabled();
             refreshEnabledStates();
+            applyEditionRestrictions();
             syncSelectedAuthStateFromUi(state.uiPreferences());
         };
         runOnEdt(r);
@@ -1414,15 +1467,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private JPanel buildTrafficSubPanel() {
         JPanel p = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
-        p.add(trafficBurpAiCheckbox);
+        p.add(buildTrafficToolRow(trafficBurpAiCheckbox, trafficBurpAiCommunityIndicator));
         p.add(trafficExtensionsCheckbox);
         p.add(trafficIntruderCheckbox);
         p.add(trafficProxyCheckbox);
         p.add(trafficProxyHistoryCheckbox);
         p.add(trafficRepeaterCheckbox);
-        p.add(trafficScannerCheckbox);
+        p.add(buildTrafficToolRow(trafficScannerCheckbox, trafficScannerCommunityIndicator));
         p.add(trafficSequencerCheckbox);
         return p;
+    }
+
+    private static JPanel buildTrafficToolRow(JCheckBox checkbox, JPanel communityIndicator) {
+        JPanel row = new JPanel(new MigLayout("insets 0, aligny center, hidemode 3", "[left]8[pref!]"));
+        row.setOpaque(false);
+        row.add(checkbox, "aligny center");
+        row.add(communityIndicator, "aligny center, hidemode 3");
+        return row;
     }
 
     private void wireSourcesExpandCollapse(JButton expandButton, JPanel subPanel) {
@@ -1444,14 +1505,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 return;
             }
             int selected = 0;
+            int enabledChildren = 0;
             for (JCheckBox c : safeChildren) {
+                if (!c.isEnabled()) {
+                    continue;
+                }
+                enabledChildren++;
                 if (c.isSelected()) {
                     selected++;
                 }
             }
-            if (selected == 0) {
+            if (enabledChildren == 0 || selected == 0) {
                 parent.setState(TriStateCheckBox.State.DESELECTED);
-            } else if (selected == safeChildren.size()) {
+            } else if (selected == enabledChildren) {
                 parent.setState(TriStateCheckBox.State.SELECTED);
             } else {
                 parent.setState(TriStateCheckBox.State.INDETERMINATE);
@@ -1480,6 +1546,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             try {
                 boolean selectAll = parent.getState() != TriStateCheckBox.State.DESELECTED;
                 for (JCheckBox child : safeChildren) {
+                    if (!child.isEnabled()) {
+                        continue;
+                    }
                     child.setSelected(selectAll);
                 }
                 syncParentFromChildren.run();
@@ -1864,8 +1933,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Tooltips.apply(fileSinkCheckbox, Tooltips.html("Enable file-based export."));
         Tooltips.apply(filePathField, Tooltips.htmlRaw(
                 "Root directory for generated files. Examples:",
-                "  /path/to/directory",
-                "  c:\\path\\to\\directory"
+                "&nbsp;&nbsp;/path/to/directory",
+                "&nbsp;&nbsp;c:\\path\\to\\directory"
         ));
         Tooltips.apply(fileJsonlCheckbox, Tooltips.html(
                 "JSONL (JSON Lines): write one filtered JSON document per line.",
@@ -1893,9 +1962,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ));
 
         Tooltips.apply(openSearchSinkCheckbox, Tooltips.html("Enable OpenSearch export."));
-        Tooltips.apply(openSearchUrlField, Tooltips.html("Base URL of the OpenSearch cluster. Examples:",
-                "  https://opensearch.url:9200",
-                "  http://10.0.0.1:9200"));
+        Tooltips.apply(openSearchUrlField, Tooltips.htmlRaw("Base URL of the OpenSearch cluster. Examples:",
+                "&nbsp;&nbsp;https://opensearch.url:9200",
+                "&nbsp;&nbsp;http://10.0.0.1:9200"));
         Tooltips.apply(testConnectionButton, Tooltips.html(
                 "Test connectivity and authentication against OpenSearch.",
                 "Status output includes connection, authentication, trust, and reported version.",

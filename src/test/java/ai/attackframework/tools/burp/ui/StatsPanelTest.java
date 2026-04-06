@@ -396,6 +396,9 @@ class StatsPanelTest {
             assertThat(labels).contains("OpenSearch Total Size Exported");
             assertThat(labels).contains("OpenSearch Total Docs Exported");
             assertThat(labels).contains("OpenSearch Total Failures");
+            assertThat(openSearchRow0.getBackground()).isNotEqualTo(openSearchRow1.getBackground());
+            assertThat(openSearchRow1.getBackground()).isNotEqualTo(openSearchRow2.getBackground());
+            assertThat(openSearchRow0.getBackground()).isEqualTo(openSearchRow2.getBackground());
             assertThat(labels).contains("File Total Size Exported");
             assertThat(labels).contains("File Total Docs Exported");
             assertThat(labels).contains("File Total Failures");

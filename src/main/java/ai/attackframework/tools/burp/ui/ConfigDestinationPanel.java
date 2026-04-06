@@ -111,9 +111,12 @@ public final class ConfigDestinationPanel {
         fileRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel formatsLabel = Tooltips.label("Format:",
                 Tooltips.html("Select the on-disk export format."));
+        formatsLabel.setName("files.format.label");
         JLabel safetyLabel = Tooltips.label("Disk Usage Limits:",
                 Tooltips.html("Configure file-export safety limits.", "These controls stop file export before the destination grows too large."));
+        safetyLabel.setName("files.limits.label");
         JSeparator formatsSafetySeparator = buildInlineVerticalSeparator();
+        formatsSafetySeparator.setName("files.format.separator");
 
         fileRow.add(fileSinkCheckbox, GAPLEFT + indentPx + ", " + ALIGN_LEFT_TOP);
         fileRow.add(filePathField,    ALIGN_LEFT_TOP);
@@ -124,6 +127,16 @@ public final class ConfigDestinationPanel {
         fileRow.add(safetyLabel, ALIGN_LEFT_TOP);
         fileRow.add(fileLimitsPanel, ALIGN_LEFT_TOP);
         panel.add(fileRow, "growx, wrap");
+
+        Runnable syncFileRowDecorations = () -> {
+            boolean enabled = fileSinkCheckbox.isSelected();
+            formatsLabel.setEnabled(enabled);
+            formatsSafetySeparator.setEnabled(enabled);
+            safetyLabel.setEnabled(enabled);
+            setEnabledRecursively(fileLimitsPanel, enabled);
+        };
+        fileSinkCheckbox.getModel().addChangeListener(e -> syncFileRowDecorations.run());
+        syncFileRowDecorations.run();
 
         // OpenSearch row: URL + auth/TLS controls inline, with test button at the end
         JPanel openSearchRow = new JPanel(new MigLayout("insets 0", "[150!, left]20[pref]14[pref]12[pref]16[pref]"));
@@ -152,5 +165,14 @@ public final class ConfigDestinationPanel {
         separator.setPreferredSize(new Dimension(8, 18));
         separator.setMinimumSize(new Dimension(8, 18));
         return separator;
+    }
+
+    private static void setEnabledRecursively(Component component, boolean enabled) {
+        component.setEnabled(enabled);
+        if (component instanceof java.awt.Container container) {
+            for (Component child : container.getComponents()) {
+                setEnabledRecursively(child, enabled);
+            }
+        }
     }
 }

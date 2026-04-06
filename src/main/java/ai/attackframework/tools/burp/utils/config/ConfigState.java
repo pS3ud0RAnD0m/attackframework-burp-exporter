@@ -19,8 +19,16 @@ public final class ConfigState {
     public static final List<String> DEFAULT_SETTINGS_SUB =
             List.of(ConfigKeys.SRC_SETTINGS_PROJECT, ConfigKeys.SRC_SETTINGS_USER);
 
-    /** Default traffic tool types: empty (no traffic exported by default). */
-    public static final List<String> DEFAULT_TRAFFIC_TOOL_TYPES = List.of();
+    /** Default traffic tool types: all traffic sources enabled by default. */
+    public static final List<String> DEFAULT_TRAFFIC_TOOL_TYPES = List.of(
+            "burp_ai",
+            "extensions",
+            "intruder",
+            "proxy",
+            "proxy_history",
+            "repeater",
+            "scanner",
+            "sequencer");
 
     /** Default findings severities: all five. */
     public static final List<String> DEFAULT_FINDINGS_SEVERITIES =

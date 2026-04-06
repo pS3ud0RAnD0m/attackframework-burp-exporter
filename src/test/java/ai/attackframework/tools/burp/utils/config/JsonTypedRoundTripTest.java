@@ -125,7 +125,9 @@ class JsonTypedRoundTripTest {
             {"version":"1.0","dataSources":["traffic"],"scope":["burp"],"sinks":{}}
             """;
         ConfigState.State parsed = ConfigJsonMapper.parse(legacy);
-        assertThat(parsed.trafficToolTypes()).isEmpty();
+        assertThat(parsed.trafficToolTypes()).containsExactly(
+                "burp_ai", "extensions", "intruder", "proxy",
+                "proxy_history", "repeater", "scanner", "sequencer");
         assertThat(parsed.settingsSub()).containsExactlyInAnyOrder(ConfigKeys.SRC_SETTINGS_PROJECT, ConfigKeys.SRC_SETTINGS_USER);
         assertThat(parsed.findingsSeverities()).containsExactlyInAnyOrder("critical", "high", "medium", "low", "informational");
     }

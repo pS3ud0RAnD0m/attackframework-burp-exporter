@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -19,6 +20,7 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
@@ -251,14 +253,20 @@ class ConfigPanelAuthStorageHeadlessTest {
             ConfigPanel panel = newPanelOnEdt();
             JCheckBox settings = get(panel, "settingsCheckbox");
             JCheckBox issues = get(panel, "issuesCheckbox");
+            JCheckBox traffic = get(panel, "trafficCheckbox");
             JTextField filePathField = get(panel, "filePathField");
+            JTextField openSearchUrlField = get(panel, "openSearchUrlField");
             Component destinationsHeader = findLabelByText(panel, "Destinations");
 
             runEdt(() -> {
                 assertThat(settings.getToolTipText()).isEqualTo("<html>All settings.</html>");
                 assertThat(issues.getToolTipText()).isEqualTo("<html>All findings (aka issues).</html>");
+                assertThat(traffic.getToolTipText()).isEqualTo("<html>All in-scope traffic.</html>");
+                assertThat(Arrays.stream(traffic.getMouseListeners()).anyMatch(ToolTipManager.class::isInstance)).isTrue();
                 assertThat(filePathField.getToolTipText()).isEqualTo(
-                        "<html>Root directory for generated files. Examples:<br>/path/to/directory<br>c:\\path\\to\\directory</html>");
+                        "<html>Root directory for generated files. Examples:<br>&nbsp;&nbsp;/path/to/directory<br>&nbsp;&nbsp;c:\\path\\to\\directory</html>");
+                assertThat(openSearchUrlField.getToolTipText()).isEqualTo(
+                        "<html>Base URL of the OpenSearch cluster. Examples:<br>&nbsp;&nbsp;https://opensearch.url:9200<br>&nbsp;&nbsp;http://10.0.0.1:9200</html>");
                 assertThat(((javax.swing.JLabel) destinationsHeader).getToolTipText())
                         .isEqualTo("<html>Configure export destination(s).</html>");
             });

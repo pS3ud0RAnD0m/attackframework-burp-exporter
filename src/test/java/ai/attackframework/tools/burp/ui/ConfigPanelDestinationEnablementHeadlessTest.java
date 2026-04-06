@@ -64,6 +64,9 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         JTextField totalField = get(panel, "fileTotalCapField");
         JCheckBox diskPercentEnable = get(panel, "fileDiskUsagePercentCheckbox");
         JTextField diskPercentField = get(panel, "fileDiskUsagePercentField");
+        JComponent formatsLabel = findByName(panel, "files.format.label");
+        JComponent limitsLabel = findByName(panel, "files.limits.label");
+        JComponent formatsSeparator = findByName(panel, "files.format.separator");
 
         // OpenSearch row
         JCheckBox osEnable  = get(panel, "openSearchSinkCheckbox");
@@ -85,6 +88,9 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(totalField.isEnabled()).isTrue();
         assertThat(diskPercentEnable.isEnabled()).isTrue();
         assertThat(diskPercentField.isEnabled()).isTrue();
+        assertThat(formatsLabel.isEnabled()).isTrue();
+        assertThat(limitsLabel.isEnabled()).isTrue();
+        assertThat(formatsSeparator.isEnabled()).isTrue();
         assertThat(osUrl.isEnabled()).isTrue();
         assertThat(osAuthType.isEnabled()).isTrue();
         assertThat(osTlsMode.isEnabled()).isTrue();
@@ -102,6 +108,9 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         assertThat(totalField.isEnabled()).isFalse();
         assertThat(diskPercentEnable.isEnabled()).isFalse();
         assertThat(diskPercentField.isEnabled()).isFalse();
+        assertThat(formatsLabel.isEnabled()).isFalse();
+        assertThat(limitsLabel.isEnabled()).isFalse();
+        assertThat(formatsSeparator.isEnabled()).isFalse();
         assertThat(osUrl.isEnabled()).isFalse();
         assertThat(osAuthType.isEnabled()).isFalse();
         assertThat(osTlsMode.isEnabled()).isFalse();

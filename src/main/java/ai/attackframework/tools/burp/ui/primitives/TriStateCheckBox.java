@@ -18,6 +18,7 @@ import javax.swing.Icon;
 import javax.swing.JCheckBox;
 import javax.swing.JToolTip;
 import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.plaf.ActionMapUIResource;
@@ -156,7 +157,9 @@ public final class TriStateCheckBox extends JCheckBox {
     // Prevent external mouse listeners from interfering with tri-state behaviour.
     @Override
     public void addMouseListener(MouseListener l) {
-        // no-op
+        if (l instanceof ToolTipManager) {
+            super.addMouseListener(l);
+        }
     }
 
     public TriStateButtonModel getTriStateModel() {

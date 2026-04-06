@@ -1,12 +1,12 @@
 package ai.attackframework.tools.burp.ui;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,20 +20,27 @@ import ai.attackframework.tools.burp.ui.controller.ConfigController;
  */
 class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
-    private ConfigPanel panel;
+    private final ConfigPanel panel = createPanel();
 
-    @BeforeEach
-    void setup() throws Exception {
-        var ref = new java.util.concurrent.atomic.AtomicReference<ConfigPanel>();
-        SwingUtilities.invokeAndWait(() -> {
-            ConfigPanel p = new ConfigPanel(new ConfigController(new NoopUi()));
-            if (p.getWidth() <= 0 || p.getHeight() <= 0) {
-                p.setSize(1000, 700);
-            }
-            p.doLayout();
-            ref.set(p);
-        });
-        panel = ref.get();
+    private static ConfigPanel createPanel() {
+        AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel(new ConfigController(new NoopUi()));
+                if (p.getWidth() <= 0 || p.getHeight() <= 0) {
+                    p.setSize(1000, 700);
+                }
+                p.doLayout();
+                ref.set(p);
+            });
+            return ref.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to create ConfigPanel test fixture", e);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            throw new RuntimeException("Failed to create ConfigPanel test fixture", cause != null ? cause : e);
+        }
     }
 
     @Test
@@ -41,7 +48,10 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
         Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
         Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        JCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
         JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
+        String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
+                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
 
         // Start with at least one Traffic option selected; section should be enabled
         SwingUtilities.invokeAndWait(() -> {
@@ -52,7 +62,8 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
         // Deselect all Traffic options and refresh; section disabled
         SwingUtilities.invokeAndWait(() -> {
-            trafficProxyCheckbox.setSelected(false);
+            trafficCheckbox.setSelected(false);
+            for (String name : trafficChildNames) ((JCheckBox) Reflect.get(panel, name)).setSelected(false);
             runRefresh(panel);
         });
         assertThat(sectionEnabled("traffic", headerRows, subPanels, fieldCheckboxesByIndex)).isFalse();
