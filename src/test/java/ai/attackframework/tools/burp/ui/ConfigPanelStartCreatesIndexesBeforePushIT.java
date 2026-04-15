@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.ui;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
@@ -11,9 +12,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.opensearch.client.opensearch.OpenSearchClient;
@@ -69,14 +68,11 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
         @Override public void onControlStatus(String m) { }
     }
 
-    private ConfigPanel panel;
-
     private static String findingsIndexName() {
         return IndexNaming.indexNameForShortName("findings");
     }
 
-    @BeforeEach
-    void setup() throws Exception {
+    private ConfigPanel createPanel() throws Exception {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         deleteFindingsIndex();
@@ -117,11 +113,10 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
             }
             ref.set(p);
         });
-        panel = ref.get();
+        return ref.get();
     }
 
-    @AfterEach
-    void tearDown() {
+    private void tearDown() {
         RuntimeConfig.setExportRunning(false);
         MontoyaApiProvider.set(null);
         deleteFindingsIndex();
@@ -129,27 +124,33 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
 
     @Test
     void start_click_createsFindingsIndexWithExplicitMapping_beforeDocsPushed() throws Exception {
-        JButton startStop = findByName(panel, "control.startStop", JButton.class);
-        assertThat(startStop).as("Start button").isNotNull();
-        assertThat(startStop.getText()).isEqualTo("Start");
+        ConfigPanel panel = createPanel();
+        try {
+            JButton startStop = findByName(panel, "control.startStop", JButton.class);
+            assertThat(startStop).as("Start button").isNotNull();
+            JButton startButton = startStop;
+            assertThat(startButton.getText()).isEqualTo("Start");
 
-        SwingUtilities.invokeAndWait(startStop::doClick);
-        SwingUtilities.invokeAndWait(() -> { /* flush EDT so deferred start action runs */ });
+            SwingUtilities.invokeAndWait(startButton::doClick);
+            SwingUtilities.invokeAndWait(() -> { /* flush EDT so deferred start action runs */ });
 
-        awaitFindingsIndexWithAtLeastOneDoc();
+            awaitFindingsIndexWithAtLeastOneDoc();
 
-        OpenSearchClient client = OpenSearchReachable.getClient();
-        GetMappingResponse mappingResp = client.indices()
-                .getMapping(new GetMappingRequest.Builder().index(findingsIndexName()).build());
-        assertThat(mappingResp.result()).containsKey(findingsIndexName());
+            OpenSearchClient client = OpenSearchReachable.getClient();
+            GetMappingResponse mappingResp = client.indices()
+                    .getMapping(new GetMappingRequest.Builder().index(findingsIndexName()).build());
+            assertThat(mappingResp.result()).containsKey(findingsIndexName());
 
-        var indexMapping = mappingResp.result().get(findingsIndexName());
-        assertThat(indexMapping).isNotNull();
-        assertThat(indexMapping.mappings()).isNotNull();
-        var properties = indexMapping.mappings().properties();
-        assertThat(properties).as("explicit mapping").containsKey("request_responses");
-        Property reqRespProp = properties.get("request_responses");
-        assertThat(reqRespProp).isNotNull();
+            var indexMapping = mappingResp.result().get(findingsIndexName());
+            assertThat(indexMapping).isNotNull();
+            assertThat(indexMapping.mappings()).isNotNull();
+            var properties = indexMapping.mappings().properties();
+            assertThat(properties).as("explicit mapping").containsKey("request_responses");
+            Property reqRespProp = properties.get("request_responses");
+            assertThat(reqRespProp).isNotNull();
+        } finally {
+            tearDown();
+        }
     }
 
     private static MontoyaApi mockMontoyaApiWithOneIssue() {
@@ -166,7 +167,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
         when(api.scope()).thenReturn(scope);
         when(api.burpSuite()).thenReturn(burpSuite);
         when(burpSuite.version()).thenReturn(version);
-        when(version.edition()).thenReturn(BurpSuiteEdition.COMMUNITY_EDITION);
+        when(version.edition()).thenReturn(BurpSuiteEdition.PROFESSIONAL);
         when(scope.isInScope(anyString())).thenReturn(true);
         when(siteMap.issues()).thenReturn(List.of(issue));
 
@@ -204,7 +205,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
                 if (resp.hits().hits().size() >= 1) {
                     return;
                 }
-            } catch (Exception ignored) {
+            } catch (IOException | RuntimeException ignored) {
                 // index may not exist yet
             }
             LockSupport.parkNanos(200_000_000L);
@@ -216,22 +217,28 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
         try {
             OpenSearchClient client = OpenSearchReachable.getClient();
             client.indices().delete(new DeleteIndexRequest.Builder().index(findingsIndexName()).build());
-        } catch (Exception ignored) {
+        } catch (IOException | RuntimeException ignored) {
             // index may not exist
         }
     }
 
     private static <T extends Component> T findByName(Container root, String name, Class<T> type) {
-        if (type.isInstance(root) && name.equals(root.getName())) {
-            return type.cast(root);
+        if (type.isInstance(root)) {
+            T typedRoot = type.cast(root);
+            if (name.equals(typedRoot.getName())) {
+                return typedRoot;
+            }
         }
         for (Component c : root.getComponents()) {
             if (c instanceof Container cont) {
                 T found = findByName(cont, name, type);
                 if (found != null) return found;
             }
-            if (type.isInstance(c) && name.equals(c.getName())) {
-                return type.cast(c);
+            if (type.isInstance(c)) {
+                T typedComponent = type.cast(c);
+                if (name.equals(typedComponent.getName())) {
+                    return typedComponent;
+                }
             }
         }
         return null;

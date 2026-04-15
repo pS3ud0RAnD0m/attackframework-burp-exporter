@@ -22,7 +22,9 @@ class ConfigPanelFieldTooltipsHeadlessTest {
 
         JLabel header = (JLabel) findLabelByText(panel, "Index Fields");
         JLabel settingsLabel = (JLabel) findLabelByTextAndTooltipPrefix(panel, "Settings", "<html><b>Settings fields</b>");
+        JLabel findingsLabel = (JLabel) findLabelByText(panel, "Findings");
         JButton settingsExpand = findByName(panel, "fields.settings.expand", JButton.class);
+        JButton findingsExpand = findByName(panel, "fields.findings.expand", JButton.class);
         JCheckBox settingsProjectId = findByName(panel, "fields.settings.project_id", JCheckBox.class);
         JCheckBox sitemapUrl = findByName(panel, "fields.sitemap.url", JCheckBox.class);
         JCheckBox findingsSeverity = findByName(panel, "fields.findings.severity", JCheckBox.class);
@@ -32,7 +34,9 @@ class ConfigPanelFieldTooltipsHeadlessTest {
         runEdt(() -> {
             assertThat(header).isNotNull();
             assertThat(settingsLabel).isNotNull();
+            assertThat(findingsLabel).isNotNull();
             assertThat(settingsExpand).isNotNull();
+            assertThat(findingsExpand).isNotNull();
             assertThat(settingsProjectId).isNotNull();
             assertThat(sitemapUrl).isNotNull();
             assertThat(findingsSeverity).isNotNull();
@@ -42,6 +46,8 @@ class ConfigPanelFieldTooltipsHeadlessTest {
             assertThat(settingsLabel.getToolTipText())
                     .isEqualTo("<html><b>Settings fields</b><br>Configure fields exported to <code>attackframework-tool-burp-settings</code>.<br>Use these toggles to trim the settings document payload.</html>");
             assertThat(settingsExpand.getToolTipText()).isEqualTo("<html>Show or hide Settings field options.</html>");
+            assertThat(findingsLabel.getToolTipText()).isEqualTo("<html>All findings (aka issues) fields.</html>");
+            assertThat(findingsExpand.getToolTipText()).isEqualTo("<html>Show or hide fields for all findings (aka issues).</html>");
             assertThat(settingsProjectId.getText()).isEqualTo("project_id");
             assertThat(settingsProjectId.getToolTipText())
                     .isEqualTo("<html>Burp project identifier.<br><b>Source:</b> SettingsIndexReporter uses MontoyaApi.project().id().</html>");

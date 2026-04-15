@@ -1,8 +1,15 @@
 package ai.attackframework.tools.burp.utils.config;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
+import ai.attackframework.tools.burp.utils.Logger;
+import burp.api.montoya.core.BurpSuiteEdition;
 
 /**
  * Holds the current runtime configuration for export pipelines.
@@ -12,6 +19,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * in the UI toggle this without changing saved config.</p>
  */
 public final class RuntimeConfig {
+    private static final Set<String> COMMUNITY_DISABLED_SOURCES = Set.of(ConfigKeys.SRC_FINDINGS);
+    private static final Set<String> COMMUNITY_DISABLED_TRAFFIC_TOOL_TYPES = Set.of("burp_ai", "scanner");
+
     private static volatile ConfigState.State state = defaultState();
     private static volatile boolean exportRunning = false;
     private static volatile boolean exportStarting = false;
@@ -40,6 +50,20 @@ public final class RuntimeConfig {
      */
     public static boolean isExportRunning() {
         return exportRunning;
+    }
+
+    /** Returns whether the active Burp instance is Community Edition. */
+    public static boolean isCommunityEdition() {
+        try {
+            var api = MontoyaApiProvider.get();
+            if (api == null || api.burpSuite() == null) {
+                return false;
+            }
+            var version = api.burpSuite().version();
+            return version != null && version.edition() == BurpSuiteEdition.COMMUNITY_EDITION;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /**
@@ -173,7 +197,7 @@ public final class RuntimeConfig {
         ConfigState.State current = state;
         return current != null
                 && isOpenSearchExportEnabled()
-                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
+                && isDataSourceEnabled(ConfigKeys.SRC_TRAFFIC)
                 && current.trafficToolTypes() != null
                 && !current.trafficToolTypes().isEmpty();
     }
@@ -215,10 +239,40 @@ public final class RuntimeConfig {
     public static boolean isAnyTrafficExportEnabled() {
         ConfigState.State current = state;
         return current != null
-                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
+                && isDataSourceEnabled(ConfigKeys.SRC_TRAFFIC)
                 && current.trafficToolTypes() != null
                 && !current.trafficToolTypes().isEmpty()
                 && (isOpenSearchTrafficEnabled() || isAnyFileExportEnabled());
+    }
+
+    /** Returns whether the named data source is currently enabled after edition normalization. */
+    public static boolean isDataSourceEnabled(String source) {
+        if (source == null || source.isBlank()) {
+            return false;
+        }
+        String normalizedSource = source.trim().toLowerCase(Locale.ROOT);
+        if (isCommunityEdition() && COMMUNITY_DISABLED_SOURCES.contains(normalizedSource)) {
+            return false;
+        }
+        ConfigState.State current = state;
+        return current != null
+                && current.dataSources() != null
+                && current.dataSources().contains(normalizedSource);
+    }
+
+    /** Returns whether the given traffic tool type is currently enabled after edition normalization. */
+    public static boolean isTrafficToolTypeEnabled(String toolType) {
+        if (toolType == null || toolType.isBlank()) {
+            return false;
+        }
+        String normalizedToolType = toolType.trim().toLowerCase(Locale.ROOT);
+        if (isCommunityEdition() && COMMUNITY_DISABLED_TRAFFIC_TOOL_TYPES.contains(normalizedToolType)) {
+            return false;
+        }
+        ConfigState.State current = state;
+        return current != null
+                && current.trafficToolTypes() != null
+                && current.trafficToolTypes().contains(normalizedToolType);
     }
 
     /** Current OpenSearch URL for runtime exports; blank when OpenSearch export is disabled. */
@@ -304,6 +358,7 @@ public final class RuntimeConfig {
         List<String> sources = incoming.dataSources() == null
                 ? List.of()
                 : List.copyOf(incoming.dataSources());
+        List<String> normalizedSources = normalizeSourcesForEdition(sources);
         List<ConfigState.ScopeEntry> custom = incoming.customEntries() == null
                 ? List.of()
                 : List.copyOf(incoming.customEntries());
@@ -338,14 +393,39 @@ public final class RuntimeConfig {
         List<String> trafficToolTypes = incoming.trafficToolTypes() != null
                 ? ConfigState.normalizeTrafficToolTypes(incoming.trafficToolTypes())
                 : ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES;
+        List<String> normalizedTrafficToolTypes = normalizeTrafficToolTypesForEdition(trafficToolTypes);
         List<String> findingsSeverities = incoming.findingsSeverities() != null && !incoming.findingsSeverities().isEmpty()
                 ? ConfigState.normalizeFindingsSeverities(incoming.findingsSeverities())
                 : ConfigState.DEFAULT_FINDINGS_SEVERITIES;
 
+        logCommunityNormalizationIfNeeded(sources, normalizedSources, trafficToolTypes, normalizedTrafficToolTypes);
+
         Map<String, java.util.Set<String>> enabledFields = incoming.enabledExportFieldsByIndex();
-        return new ConfigState.State(sources, scopeType, custom, normalizedSinks,
-                settingsSub, trafficToolTypes, findingsSeverities, enabledFields,
+        return new ConfigState.State(normalizedSources, scopeType, custom, normalizedSinks,
+                settingsSub, normalizedTrafficToolTypes, findingsSeverities, enabledFields,
                 incoming.uiPreferences());
+    }
+
+    private static List<String> normalizeSourcesForEdition(List<String> sources) {
+        if (!isCommunityEdition() || sources == null || sources.isEmpty()) {
+            return sources == null ? List.of() : sources;
+        }
+        return sources.stream()
+                .map(source -> source == null ? "" : source.trim().toLowerCase(Locale.ROOT))
+                .filter(source -> !source.isBlank())
+                .filter(source -> !COMMUNITY_DISABLED_SOURCES.contains(source))
+                .toList();
+    }
+
+    private static List<String> normalizeTrafficToolTypesForEdition(List<String> trafficToolTypes) {
+        if (!isCommunityEdition() || trafficToolTypes == null || trafficToolTypes.isEmpty()) {
+            return trafficToolTypes == null ? List.of() : trafficToolTypes;
+        }
+        return trafficToolTypes.stream()
+                .map(toolType -> toolType == null ? "" : toolType.trim().toLowerCase(Locale.ROOT))
+                .filter(toolType -> !toolType.isBlank())
+                .filter(toolType -> !COMMUNITY_DISABLED_TRAFFIC_TOOL_TYPES.contains(toolType))
+                .toList();
     }
 
     private static String safe(String value) {
@@ -362,11 +442,36 @@ public final class RuntimeConfig {
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
                         false, "", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                normalizeTrafficToolTypesForEdition(ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null,  // all export fields enabled
                 ConfigState.defaultUiPreferences()
         );
+    }
+
+    private static void logCommunityNormalizationIfNeeded(
+            List<String> originalSources,
+            List<String> normalizedSources,
+            List<String> originalTrafficToolTypes,
+            List<String> normalizedTrafficToolTypes) {
+        if (!isCommunityEdition()) {
+            return;
+        }
+        Set<String> removedSources = new LinkedHashSet<>(originalSources != null ? originalSources : List.of());
+        removedSources.removeAll(normalizedSources != null ? normalizedSources : List.of());
+        Set<String> removedTrafficToolTypes = new LinkedHashSet<>(originalTrafficToolTypes != null ? originalTrafficToolTypes : List.of());
+        removedTrafficToolTypes.removeAll(normalizedTrafficToolTypes != null ? normalizedTrafficToolTypes : List.of());
+        if (removedSources.isEmpty() && removedTrafficToolTypes.isEmpty()) {
+            return;
+        }
+        StringBuilder msg = new StringBuilder("[Community] Stripped unsupported selections from runtime config:");
+        if (!removedSources.isEmpty()) {
+            msg.append(" sources=").append(removedSources);
+        }
+        if (!removedTrafficToolTypes.isEmpty()) {
+            msg.append(" traffic=").append(removedTrafficToolTypes);
+        }
+        Logger.logDebug(msg.toString());
     }
 
     private static ConfigState.State applyCurrentRunDestinationSuppression(ConfigState.State candidate) {

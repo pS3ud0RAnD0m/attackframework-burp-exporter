@@ -3,9 +3,13 @@ package ai.attackframework.tools.burp.ui;
 import java.awt.Component;
 import java.awt.Container;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -16,6 +20,7 @@ import javax.swing.SwingUtilities;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
@@ -59,6 +64,14 @@ class ConfigPanelCommunityEditionHeadlessTest {
             JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
             JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox");
             TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
+            Map<?, ?> fieldsExpandButtons = Reflect.get(panel, "fieldsExpandButtons", Map.class);
+            JButton findingsExpandButton = (JButton) fieldsExpandButtons.get("findings");
+            Map<?, ?> fieldCheckboxesByIndexRaw = Reflect.get(panel, "fieldCheckboxesByIndex", Map.class);
+            Map<?, ?> findingsFieldCheckboxes = fieldCheckboxesByIndexRaw.get("findings") instanceof Map<?, ?> findingsMap ? findingsMap : null;
+            JCheckBox findingsSeverityField = findingsFieldCheckboxes != null
+                    ? (JCheckBox) findingsFieldCheckboxes.get("severity")
+                    : null;
+            JLabel findingsLabel = findLabelByText(panel, "Findings");
             JPanel issuesNotice = findByName(panel, "src.issues.communityNotice", JPanel.class);
             JLabel issuesNoticeIcon = findByName(panel, "src.issues.communityNotice.icon", JLabel.class);
             JPanel trafficBurpAiNotice = findByName(panel, "src.traffic.burp_ai.communityNotice", JPanel.class);
@@ -73,7 +86,7 @@ class ConfigPanelCommunityEditionHeadlessTest {
                 assertThat(issuesCheckbox.isEnabled()).isFalse();
                 assertThat(issuesCheckbox.isSelected()).isFalse();
                 assertThat(issuesExpandButton.isEnabled()).isFalse();
-                assertThat(issuesCheckbox.getToolTipText()).isEqualTo("<html>All findings (aka issues).</html>");
+                assertThat(issuesCheckbox.getToolTipText()).isEqualTo("<html>Unsupported in Community Edition.</html>");
 
                 for (JCheckBox checkbox : List.of(
                         issuesCriticalCheckbox,
@@ -96,6 +109,14 @@ class ConfigPanelCommunityEditionHeadlessTest {
                 assertThat(trafficScannerCheckbox.isSelected()).isFalse();
                 assertThat(trafficSequencerCheckbox.isSelected()).isTrue();
                 assertThat(trafficCheckbox.getState()).isEqualTo(TriStateCheckBox.State.SELECTED);
+                JLabel findingsLabelRef = java.util.Objects.requireNonNull(findingsLabel);
+                assertThat(findingsLabelRef.getToolTipText()).isEqualTo("<html>Unsupported in Community Edition.</html>");
+                JButton findingsExpandButtonRef = java.util.Objects.requireNonNull(findingsExpandButton);
+                assertThat(findingsExpandButtonRef.isEnabled()).isFalse();
+                assertThat(findingsExpandButtonRef.getToolTipText()).isEqualTo("<html>Unsupported in Community Edition.</html>");
+                JCheckBox findingsSeverityFieldRef = java.util.Objects.requireNonNull(findingsSeverityField);
+                assertThat(findingsSeverityFieldRef.isEnabled()).isFalse();
+                assertThat(findingsSeverityFieldRef.isSelected()).isFalse();
 
                 assertThat(issuesNotice.isVisible()).isTrue();
                 assertThat(issuesNoticeIcon.getToolTipText()).isEqualTo("<html>Unsupported in Community Edition.</html>");
@@ -165,6 +186,13 @@ class ConfigPanelCommunityEditionHeadlessTest {
             JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox");
             JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
             JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
+            Map<?, ?> fieldsExpandButtons = Reflect.get(panel, "fieldsExpandButtons", Map.class);
+            JButton findingsExpandButton = (JButton) fieldsExpandButtons.get("findings");
+            Map<?, ?> fieldCheckboxesByIndexRaw = Reflect.get(panel, "fieldCheckboxesByIndex", Map.class);
+            Map<?, ?> findingsFieldCheckboxes = fieldCheckboxesByIndexRaw.get("findings") instanceof Map<?, ?> findingsMap ? findingsMap : null;
+            JCheckBox findingsSeverityField = findingsFieldCheckboxes != null
+                    ? (JCheckBox) findingsFieldCheckboxes.get("severity")
+                    : null;
 
             ConfigState.State imported = new ConfigState.State(
                     List.of(ConfigKeys.SRC_FINDINGS, ConfigKeys.SRC_TRAFFIC),
@@ -185,6 +213,11 @@ class ConfigPanelCommunityEditionHeadlessTest {
                 assertThat(issuesCheckbox.isSelected()).isFalse();
                 assertThat(issuesCriticalCheckbox.isEnabled()).isFalse();
                 assertThat(issuesCriticalCheckbox.isSelected()).isFalse();
+                JButton findingsExpandButtonRef = java.util.Objects.requireNonNull(findingsExpandButton);
+                assertThat(findingsExpandButtonRef.isEnabled()).isFalse();
+                JCheckBox findingsSeverityFieldRef = java.util.Objects.requireNonNull(findingsSeverityField);
+                assertThat(findingsSeverityFieldRef.isEnabled()).isFalse();
+                assertThat(findingsSeverityFieldRef.isSelected()).isFalse();
 
                 assertThat(trafficCheckbox.isSelected()).isTrue();
                 assertThat(trafficBurpAiCheckbox.isEnabled()).isFalse();
@@ -207,6 +240,52 @@ class ConfigPanelCommunityEditionHeadlessTest {
                 assertThat(trafficProxyCheckbox.isSelected()).isTrue();
             });
         } finally {
+            cleanupState();
+        }
+    }
+
+    @Test
+    void importing_professional_config_then_starting_in_community_keeps_runtime_state_stripped() throws Exception {
+        Path exportRoot = Files.createTempDirectory("af-community-import-start");
+        try {
+            ConfigPanel panel = createPanel(BurpSuiteEdition.COMMUNITY_EDITION);
+            JButton startStop = findByName(panel, "control.startStop", JButton.class);
+
+            ConfigState.State imported = new ConfigState.State(
+                    List.of(ConfigKeys.SRC_FINDINGS, ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(
+                            true,
+                            exportRoot.toAbsolutePath().normalize().toString(),
+                            false,
+                            true,
+                            false,
+                            "",
+                            "",
+                            "",
+                            ConfigState.OPEN_SEARCH_TLS_VERIFY),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    List.of("burp_ai", "scanner", "proxy"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null,
+                    null
+            );
+
+            runEdt(() -> panel.onImportResult(imported));
+            runEdt(startStop::doClick);
+            waitForStartedUi(startStop);
+
+            assertThat(RuntimeConfig.isExportRunning()).isTrue();
+            assertThat(RuntimeConfig.getState().dataSources()).containsExactly(ConfigKeys.SRC_TRAFFIC);
+            assertThat(RuntimeConfig.getState().trafficToolTypes()).containsExactly("proxy");
+            assertThat(RuntimeConfig.isDataSourceEnabled(ConfigKeys.SRC_FINDINGS)).isFalse();
+            assertThat(RuntimeConfig.isTrafficToolTypeEnabled("burp_ai")).isFalse();
+            assertThat(RuntimeConfig.isTrafficToolTypeEnabled("scanner")).isFalse();
+            assertThat(RuntimeConfig.activeSinkSummary()).isEqualTo("Files");
+        } finally {
+            ExportReporterLifecycle.resetForTests();
+            deleteRecursively(exportRoot);
             cleanupState();
         }
     }
@@ -251,6 +330,25 @@ class ConfigPanelCommunityEditionHeadlessTest {
         }
     }
 
+    private static void waitForStartedUi(JButton startStop) {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                SwingUtilities.invokeAndWait(() -> { });
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } catch (InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+            if (RuntimeConfig.isExportRunning() && "Stop".equals(startStop.getText())) {
+                return;
+            }
+            LockSupport.parkNanos(100_000_000L);
+        }
+        throw new AssertionError("Start button did not reach running state within timeout");
+    }
+
     private static <T extends Component> T findByName(Container root, String name, Class<T> type) {
         String componentName = root.getName();
         if (name.equals(componentName) && type.isInstance(root)) {
@@ -268,6 +366,46 @@ class ConfigPanelCommunityEditionHeadlessTest {
             }
         }
         return null;
+    }
+
+    private static JLabel findLabelByText(Container root, String text) {
+        if (root instanceof JLabel label && text.equals(label.getText())) {
+            return label;
+        }
+        for (Component component : root.getComponents()) {
+            if (component instanceof JLabel label && text.equals(label.getText())) {
+                return label;
+            }
+            if (component instanceof Container child) {
+                JLabel nested = findLabelByText(child, text);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void deleteRecursively(Path root) {
+        if (root == null) {
+            return;
+        }
+        try {
+            if (!Files.exists(root)) {
+                return;
+            }
+            Files.walk(root)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (java.io.IOException ignored) {
+                            // Best-effort temp cleanup for tests.
+                        }
+                    });
+        } catch (java.io.IOException ignored) {
+            // Best-effort temp cleanup for tests.
+        }
     }
 
     private static boolean sectionEnabled(

@@ -11,11 +11,13 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
@@ -42,6 +44,9 @@ public final class SettingsIndexReporter {
     private static volatile ScheduledExecutorService scheduler;
     private static volatile String lastPushedHash;
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final AtomicBoolean projectOptionsFailureLogged = new AtomicBoolean();
+    private static final AtomicBoolean userOptionsFailureLogged = new AtomicBoolean();
+    private static final AtomicBoolean projectIdFallbackLogged = new AtomicBoolean();
 
     private SettingsIndexReporter() {}
 
@@ -73,13 +78,10 @@ public final class SettingsIndexReporter {
             if (api == null) {
                 return;
             }
-            String projectJson = api.burpSuite().exportProjectOptionsAsJson();
-            String userJson = api.burpSuite().exportUserOptionsAsJson();
+            String projectJson = safeProjectOptionsJson(api);
+            String userJson = safeUserOptionsJson(api);
             ConfigState.State state = RuntimeConfig.getState();
             Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
-            if (doc == null) {
-                return;
-            }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
             if (ok) {
                 if (openSearchActive) {
@@ -146,6 +148,9 @@ public final class SettingsIndexReporter {
         }
         ReporterExecutors.shutdownNowAndAwait(exec);
         lastPushedHash = null;
+        projectOptionsFailureLogged.set(false);
+        userOptionsFailureLogged.set(false);
+        projectIdFallbackLogged.set(false);
     }
 
     /**
@@ -170,17 +175,14 @@ public final class SettingsIndexReporter {
             if (api == null) {
                 return;
             }
-            String projectJson = api.burpSuite().exportProjectOptionsAsJson();
-            String userJson = api.burpSuite().exportUserOptionsAsJson();
+            String projectJson = safeProjectOptionsJson(api);
+            String userJson = safeUserOptionsJson(api);
             ConfigState.State state = RuntimeConfig.getState();
             String currentHash = hashSettingsForEnabled(state, projectJson, userJson);
             if (currentHash.equals(lastPushedHash)) {
                 return;
             }
             Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
-            if (doc == null) {
-                return;
-            }
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
             if (ok) {
                 if (openSearchActive) {
@@ -228,12 +230,7 @@ public final class SettingsIndexReporter {
     }
 
     private static Map<String, Object> buildSettingsDoc(MontoyaApi api, String projectOptionsJson, String userOptionsJson, ConfigState.State state) {
-        String projectId;
-        try {
-            projectId = api.project().id();
-        } catch (Exception e) {
-            return null;
-        }
+        String projectId = safeProjectId(api);
         var sub = state != null && state.settingsSub() != null ? state.settingsSub() : java.util.List.<String>of();
         Map<String, Object> settingsProject = sub.contains(ConfigKeys.SRC_SETTINGS_PROJECT) ? parseJsonToMap(projectOptionsJson) : Map.of();
         Map<String, Object> settingsUser = sub.contains(ConfigKeys.SRC_SETTINGS_USER) ? parseJsonToMap(userOptionsJson) : Map.of();
@@ -248,6 +245,55 @@ public final class SettingsIndexReporter {
         meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
+    }
+
+    private static String safeProjectOptionsJson(MontoyaApi api) {
+        try {
+            if (api == null || api.burpSuite() == null) {
+                return null;
+            }
+            return api.burpSuite().exportProjectOptionsAsJson();
+        } catch (RuntimeException e) {
+            logSettingsCapabilityFailureOnce(projectOptionsFailureLogged, "project options export", e);
+            return null;
+        }
+    }
+
+    private static String safeUserOptionsJson(MontoyaApi api) {
+        try {
+            if (api == null || api.burpSuite() == null) {
+                return null;
+            }
+            return api.burpSuite().exportUserOptionsAsJson();
+        } catch (RuntimeException e) {
+            logSettingsCapabilityFailureOnce(userOptionsFailureLogged, "user options export", e);
+            return null;
+        }
+    }
+
+    private static String safeProjectId(MontoyaApi api) {
+        try {
+            if (api != null && api.project() != null) {
+                String projectId = api.project().id();
+                if (projectId != null && !projectId.isBlank()) {
+                    return projectId;
+                }
+            }
+        } catch (RuntimeException e) {
+            logSettingsCapabilityFailureOnce(projectIdFallbackLogged, "project id lookup", e);
+        }
+        if (projectIdFallbackLogged.compareAndSet(false, true)) {
+            Logger.logDebug("[Settings] Project id unavailable; using fallback label for settings export.");
+        }
+        return BurpRuntimeMetadata.projectIdOrUnknown();
+    }
+
+    private static void logSettingsCapabilityFailureOnce(AtomicBoolean logged, String capability, RuntimeException e) {
+        if (!logged.compareAndSet(false, true)) {
+            return;
+        }
+        String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        Logger.logDebug("[Settings] " + capability + " unavailable; continuing with fallback values: " + msg);
     }
 
     private static Map<String, Object> parseJsonToMap(String json) {

@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.IndexNaming;
@@ -49,6 +50,7 @@ public final class FindingsIndexReporter {
     private static volatile ScheduledExecutorService scheduler;
     /** Keys of issues already pushed this session; only push new on 30s run. */
     private static final Set<String> pushedIssueKeys = ConcurrentHashMap.newKeySet();
+    private static final AtomicBoolean issuesAccessFailureLogged = new AtomicBoolean();
     private static volatile boolean runInProgress;
 
     private FindingsIndexReporter() {}
@@ -70,8 +72,7 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
-            List<String> sources = RuntimeConfig.getState().dataSources();
-            if (sources == null || !sources.contains(ConfigKeys.SRC_FINDINGS)) {
+            if (!RuntimeConfig.isDataSourceEnabled(ConfigKeys.SRC_FINDINGS)) {
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();
@@ -126,6 +127,7 @@ public final class FindingsIndexReporter {
         }
         ReporterExecutors.shutdownNowAndAwait(exec);
         pushedIssueKeys.clear();
+        issuesAccessFailureLogged.set(false);
         runInProgress = false;
     }
 
@@ -137,8 +139,7 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isAnySinkEnabled()) {
                 return;
             }
-            List<String> sources = RuntimeConfig.getState().dataSources();
-            if (sources == null || !sources.contains(ConfigKeys.SRC_FINDINGS)) {
+            if (!RuntimeConfig.isDataSourceEnabled(ConfigKeys.SRC_FINDINGS)) {
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();
@@ -225,9 +226,18 @@ public final class FindingsIndexReporter {
                 return null;
             }
             return siteMap.issues();
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            logIssuesAccessFailureOnce(t);
             return null;
         }
+    }
+
+    private static void logIssuesAccessFailureOnce(Throwable t) {
+        if (!issuesAccessFailureLogged.compareAndSet(false, true)) {
+            return;
+        }
+        String msg = t != null && t.getMessage() != null ? t.getMessage() : t != null ? t.getClass().getSimpleName() : "unknown error";
+        Logger.logDebug("[Findings] siteMap().issues() unavailable; skipping findings export until access succeeds: " + msg);
     }
 
     private static boolean safeBurpInScope(MontoyaApi api, String url) {

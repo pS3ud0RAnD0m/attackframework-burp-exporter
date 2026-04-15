@@ -11,6 +11,8 @@ import burp.api.montoya.MontoyaApi;
  * good {@link MontoyaApi} instance.</p>
  */
 public final class BurpRuntimeMetadata {
+    public static final String UNKNOWN_PROJECT_ID = "unknown-project";
+
     private static volatile String burpVersion;
     private static volatile String projectId;
 
@@ -86,6 +88,12 @@ public final class BurpRuntimeMetadata {
             projectId = resolved;
         }
         return resolved;
+    }
+
+    /** Returns the cached project id, or a stable fallback label when unavailable. */
+    public static String projectIdOrUnknown() {
+        String resolved = projectId();
+        return resolved == null || resolved.isBlank() ? UNKNOWN_PROJECT_ID : resolved;
     }
 
     /** Clears all cached metadata. */

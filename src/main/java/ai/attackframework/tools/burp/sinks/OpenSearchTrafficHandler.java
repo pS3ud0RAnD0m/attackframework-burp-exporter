@@ -76,8 +76,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         if (toolType == null) {
             return false;
         }
-        var types = RuntimeConfig.getState().trafficToolTypes();
-        return types != null && types.contains(toolType.name().toLowerCase(java.util.Locale.ROOT));
+        return RuntimeConfig.isTrafficToolTypeEnabled(toolType.name());
     }
 
     /**
@@ -87,8 +86,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * events when Proxy export is enabled so normal browser-driven Proxy traffic is not dropped.</p>
      */
     private static boolean shouldExportNullToolSourceTraffic() {
-        var types = RuntimeConfig.getState().trafficToolTypes();
-        return types != null && types.contains("proxy");
+        return RuntimeConfig.isTrafficToolTypeEnabled("proxy");
     }
 
     /**

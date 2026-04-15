@@ -813,7 +813,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
-     * Applies Burp edition-specific source availability without changing the base tooltips.
+     * Applies Burp edition-specific source availability and Community-only tooltip overrides.
      *
      * <p>Community edition forces Findings off and disables the Burp AI and Scanner traffic
      * tool-type checkboxes. Professional re-enables those controls and hides the inline Community
@@ -824,6 +824,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         issuesCheckbox.setEnabled(!communityEdition);
         issuesExpandButton.setEnabled(!communityEdition);
+        Tooltips.apply(issuesCheckbox, communityEdition
+                ? Tooltips.html("Unsupported in Community Edition.")
+                : Tooltips.html("All findings (aka issues)."));
         issuesCommunityIndicator.setVisible(communityEdition);
         if (communityEdition) {
             issuesCheckbox.setSelected(false);
@@ -831,8 +834,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 checkbox.setSelected(false);
                 checkbox.setEnabled(false);
             }
+            for (JCheckBox checkbox : findingsFieldCheckboxes()) {
+                checkbox.setSelected(false);
+                checkbox.setEnabled(false);
+            }
         } else {
             for (JCheckBox checkbox : issueSeverityCheckboxes()) {
+                checkbox.setEnabled(true);
+            }
+            for (JCheckBox checkbox : findingsFieldCheckboxes()) {
                 checkbox.setEnabled(true);
             }
         }
@@ -852,8 +862,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     private boolean isCommunityEdition() {
-        MontoyaApi api = MontoyaApiProvider.get();
-        return api != null && api.burpSuite().version().edition() == BurpSuiteEdition.COMMUNITY_EDITION;
+        try {
+            MontoyaApi api = MontoyaApiProvider.get();
+            if (api == null || api.burpSuite() == null) {
+                return false;
+            }
+            var version = api.burpSuite().version();
+            return version != null && version.edition() == BurpSuiteEdition.COMMUNITY_EDITION;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private List<JCheckBox> issueSeverityCheckboxes() {
@@ -863,6 +881,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 issuesMediumCheckbox,
                 issuesLowCheckbox,
                 issuesInformationalCheckbox);
+    }
+
+    private List<JCheckBox> findingsFieldCheckboxes() {
+        if (fieldCheckboxesByIndex == null) {
+            return List.of();
+        }
+        java.util.Map<String, JCheckBox> findings = fieldCheckboxesByIndex.get("findings");
+        return findings == null ? List.of() : List.copyOf(findings.values());
     }
 
     private List<JCheckBox> communityLimitedTrafficCheckboxes() {
@@ -1037,13 +1063,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (fieldsSectionHeaderRows == null || fieldsExpandButtons == null || fieldsSubPanels == null || fieldCheckboxesByIndex == null) return;
         for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL) {
             boolean enabled = isAnySourceOptionSelectedForFieldsIndex(indexName);
+            boolean disableExpandForCommunity = "findings".equals(indexName) && isCommunityEdition();
             JPanel headerRow = fieldsSectionHeaderRows.get(indexName);
             if (headerRow != null) {
                 headerRow.setEnabled(enabled);
                 for (java.awt.Component c : headerRow.getComponents()) c.setEnabled(enabled);
             }
             JButton expandBtn = fieldsExpandButtons.get(indexName);
-            if (expandBtn != null) expandBtn.setEnabled(true); // keep expand/collapse always enabled
+            if (expandBtn != null) expandBtn.setEnabled(!disableExpandForCommunity);
             JPanel sub = fieldsSubPanels.get(indexName);
             if (sub != null) sub.setEnabled(enabled);
             java.util.Map<String, JCheckBox> checkboxes = fieldCheckboxesByIndex.get(indexName);

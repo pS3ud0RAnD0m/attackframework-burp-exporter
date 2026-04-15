@@ -12,6 +12,7 @@ import javax.swing.JPanel;
 import ai.attackframework.tools.burp.ui.primitives.ButtonStyles;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.config.ExportFieldRegistry;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
 /**
@@ -103,11 +104,7 @@ public final class ConfigFieldsPanel {
                     "Configure fields exported to <code>attackframework-tool-burp-sitemap</code>.",
                     "Field names follow the request/response document shape."
             );
-            case "findings" -> Tooltips.htmlRaw(
-                    "<b>Findings fields</b>",
-                    "Configure fields exported to <code>attackframework-tool-burp-findings</code>.",
-                    "Tooltips below trace each value back to the producing code path."
-            );
+            case "findings" -> findingsTooltip();
             case "traffic" -> Tooltips.htmlRaw(
                     "<b>Traffic fields</b>",
                     "Configure fields exported to <code>attackframework-tool-burp-traffic</code>.",
@@ -121,10 +118,24 @@ public final class ConfigFieldsPanel {
         return switch (indexShortName) {
             case "settings" -> Tooltips.html("Show or hide Settings field options.");
             case "sitemap" -> Tooltips.html("Show or hide Sitemap field options.");
-            case "findings" -> Tooltips.html("Show or hide Findings field options.");
+            case "findings" -> findingsExpandTooltip();
             case "traffic" -> Tooltips.html("Show or hide Traffic field options.");
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
+    }
+
+    private static String findingsTooltip() {
+        if (RuntimeConfig.isCommunityEdition()) {
+            return Tooltips.html("Unsupported in Community Edition.");
+        }
+        return Tooltips.html("All findings (aka issues) fields.");
+    }
+
+    private static String findingsExpandTooltip() {
+        if (RuntimeConfig.isCommunityEdition()) {
+            return Tooltips.html("Unsupported in Community Edition.");
+        }
+        return Tooltips.html("Show or hide fields for all findings (aka issues).");
     }
 
     /** Configures expand button style (match Data Sources). */

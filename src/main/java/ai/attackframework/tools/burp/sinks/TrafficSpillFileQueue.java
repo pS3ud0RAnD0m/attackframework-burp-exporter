@@ -23,6 +23,7 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
+import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ManagedDiskPaths;
 
 /**
@@ -361,12 +362,12 @@ final class TrafficSpillFileQueue {
         } catch (Throwable ignored) {
             // Keep spill path resilient during Burp startup lifecycle transitions.
         }
-        return "unknown-project";
+        return BurpRuntimeMetadata.projectIdOrUnknown();
     }
 
     private static String sanitizeProjectId(String raw) {
         if (raw == null || raw.isBlank()) {
-            return "unknown-project";
+            return BurpRuntimeMetadata.UNKNOWN_PROJECT_ID;
         }
         StringBuilder sb = new StringBuilder(raw.length());
         for (int i = 0; i < raw.length(); i++) {
@@ -379,7 +380,7 @@ final class TrafficSpillFileQueue {
         }
         String normalized = sb.toString().replaceAll("-{2,}", "-");
         normalized = normalized.replaceAll("^-+", "").replaceAll("-+$", "");
-        return normalized.isBlank() ? "unknown-project" : normalized;
+        return normalized.isBlank() ? BurpRuntimeMetadata.UNKNOWN_PROJECT_ID : normalized;
     }
 
     private Map<String, Object> buildSpillEnvelope(Map<String, Object> document) {
