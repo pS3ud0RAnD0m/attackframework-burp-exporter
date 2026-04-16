@@ -19,17 +19,21 @@ import ch.qos.logback.core.AppenderBase;
 import org.slf4j.LoggerFactory;
 
 /**
- * - Delegates to SLF4J so levels/appenders are configurable.
- * - Mirrors to Burp's Logging when available.
- * - Exposes a listener bus consumed by LogPanel and tests.
- * - Keeps a bounded replay buffer so newly registered listeners (e.g. after tab switch)
- *   receive recent messages and the Log panel shows full history.
- * - Contains a Logback appender (nested class) that forwards non-internal SLF4J events to the listener bus.
+ * Centralizes extension logging for SLF4J, Burp, and Swing listeners.
+ *
+ * <p>This helper writes to SLF4J, mirrors selected messages to Burp's logging APIs when available,
+ * and exposes a listener bus used by the Log panel and tests.</p>
+ *
+ * <p>A bounded replay buffer lets newly registered listeners reconstruct recent history after UI
+ * removal or recreation. Listener callbacks are always delivered on the EDT.</p>
  */
 public final class Logger {
 
     /**
-     * Listener contract used by LogPanel and tests.
+     * Receives log events emitted through {@link Logger}.
+     *
+     * <p>Callbacks are invoked on the EDT, even when the originating log call comes from a worker
+     * thread.</p>
      */
     public interface LogListener { void onLog(String level, String message); }
 
@@ -55,8 +59,8 @@ public final class Logger {
     private Logger() {}
 
     /**
-     * Wires Burp's Logging sink.
-     * <p>
+     * Wires Burp's logging sink.
+     *
      * @param montoyaLogging Burp logging handle
      */
     public static void initialize(Logging montoyaLogging) { BURP_LOGGER.set(montoyaLogging); }
@@ -110,7 +114,7 @@ public final class Logger {
 
     /**
      * Logs at INFO and mirrors to Burp and UI listeners.
-     * <p>
+     *
      * @param msg message to log
      */
     public static void logInfo(String msg)  {
@@ -160,7 +164,7 @@ public final class Logger {
 
     /**
      * Logs at WARN and mirrors to Burp and UI listeners.
-     * <p>
+     *
      * @param msg message to log
      */
     public static void logWarn(String msg)  {
@@ -172,7 +176,7 @@ public final class Logger {
 
     /**
      * Logs at DEBUG (when enabled) and mirrors to UI listeners only (not Burp console).
-     * <p>
+     *
      * @param msg message to log
      */
     public static void logDebug(String msg) {
@@ -183,7 +187,7 @@ public final class Logger {
 
     /**
      * Logs at TRACE (when enabled) and mirrors to UI listeners only (not Burp console).
-     * <p>
+     *
      * @param msg message to log
      */
     public static void logTrace(String msg) {
@@ -194,7 +198,7 @@ public final class Logger {
 
     /**
      * Logs at ERROR and mirrors to Burp and UI listeners.
-     * <p>
+     *
      * @param msg message to log
      */
     public static void logError(String msg) {
@@ -206,7 +210,7 @@ public final class Logger {
 
     /**
      * Logs at ERROR with throwable, mirrors concise summary to Burp/UI listeners.
-     * <p>
+     *
      * @param msg message to log
      * @param t   throwable (nullable)
      */
@@ -221,7 +225,7 @@ public final class Logger {
 
     /**
      * Allows logging backends to forward events into the UI listener bus.
-     * <p>
+     *
      * @param level   level string
      * @param message message to emit
      */
@@ -245,7 +249,7 @@ public final class Logger {
 
     /**
      * Sends a message to Burp's standard output log if available.
-     * <p>
+     *
      * @param m message to log
      */
     private static void toBurpOut(String m) {
@@ -260,7 +264,7 @@ public final class Logger {
 
     /**
      * Sends a message to Burp's error log if available.
-     * <p>
+     *
      * @param m message to log
      */
     private static void toBurpErr(String m) {
@@ -359,7 +363,7 @@ public final class Logger {
 
     /**
      * Null-safe string conversion.
-     * <p>
+     *
      * @param s input string
      * @return non-null string
      */
@@ -375,7 +379,7 @@ public final class Logger {
     public static final class UiAppender extends AppenderBase<ILoggingEvent> {
         /**
          * Forwards the event to UI listeners, skipping internal logger entries.
-         * <p>
+         *
          * @param event logback event
          */
         @Override

@@ -15,13 +15,10 @@ public final class ButtonStyles {
 
     private static final float EXPAND_BUTTON_SIZE = 22f;
 
-    private ButtonStyles() {
-        // utility class
-    }
+    private ButtonStyles() {}
 
     /**
-     * Narrows a button by reducing left/right padding while keeping vertical padding,
-     * and forces plain (non-bold) font.
+     * Narrows a button while preserving vertical padding and plain text weight.
      */
     public static void normalize(JButton button) {
         if (button == null) {
@@ -43,7 +40,7 @@ public final class ButtonStyles {
     }
 
     /**
-     * Recursively normalizes all JButton instances in a component tree.
+     * Recursively normalizes all {@link JButton} instances in a component tree.
      */
     public static void normalizeTree(Component root) {
         if (root == null) {

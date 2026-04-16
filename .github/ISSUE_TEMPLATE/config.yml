@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/security/advisories/new
+    about: Use private reporting for security issues. Do not open a public issue.
+
+  - name: Ask a question or discuss
+    url: https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/discussions
+    about: Use Discussions for questions and general conversation.
+
+  - name: Documentation
+    url: https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/wiki
+    about: Check the wiki for setup and usage information.

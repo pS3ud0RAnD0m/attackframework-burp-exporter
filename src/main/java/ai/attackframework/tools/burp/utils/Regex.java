@@ -9,21 +9,15 @@ import java.util.regex.Pattern;
  */
 public final class Regex {
 
-    /**
-     * Utility class; not instantiable.
-     */
-    private Regex() {
-        // utility class
-    }
+    private Regex() {}
 
     /**
-     * Derive {@link Pattern} flags from UI toggles.
-     * <p>
+     * Derives {@link Pattern} flags from the UI toggles.
+     *
      * @param caseSensitive whether matching is case-sensitive
      * @param multiline     whether {@link Pattern#MULTILINE} should be applied
      * @return integer bitmask for {@link Pattern#compile(String, int)}
      */
-    // returns only combinations of Pattern flags
     public static int flags(boolean caseSensitive, boolean multiline) {
         int flags = 0;
         if (!caseSensitive) {
@@ -37,7 +31,7 @@ public final class Regex {
 
     /**
      * Compile a pattern with flags derived from the provided toggles.
-     * <p>
+     *
      * @param pattern       the regex pattern text
      * @param caseSensitive whether the match is case-sensitive
      * @param multiline     whether {@link Pattern#MULTILINE} should be applied
@@ -51,10 +45,10 @@ public final class Regex {
 
     /**
      * Returns whether the supplied pattern compiles with the derived flags.
-     * <p>
+     *
      * This is a convenience for UI validation paths that should not rely on
      * exception-driven control flow while the user is typing.
-     * <p>
+     *
      * @param pattern       the pattern text (may be {@code null})
      * @param caseSensitive whether the match is case-sensitive
      * @param multiline     whether {@link Pattern#MULTILINE} should be applied
@@ -74,7 +68,7 @@ public final class Regex {
 
     /**
      * Compile a pattern or return {@code null} if invalid.
-     * <p>
+     *
      * @param pattern       the pattern text (may be {@code null})
      * @param caseSensitive whether the match is case-sensitive
      * @param multiline     whether {@link Pattern#MULTILINE} should be applied

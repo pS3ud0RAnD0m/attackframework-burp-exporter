@@ -72,7 +72,7 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Constructs the grid with optional seed entries.
-     * <p>
+     *
      * @param initial ordered initial entries; blank row created when {@code null} or empty
      */
     public ScopeGrid(List<ScopeEntryInit> initial) {
@@ -104,7 +104,6 @@ public class ScopeGrid implements Serializable {
      * <p>This is an intentional exposure of a UI primitive so callers can
      * place the grid into their layouts; the panel is not shared across
      * independent owners.</p>
-     * <p>
      * @return grid component to embed in layouts
      */
     @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "ScopeGrid is a UI primitive; callers must embed the internal JPanel in their layouts.")
@@ -112,7 +111,7 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Current text values across rows (in order).
-     * <p>
+     *
      * @return list of row values
      */
     public List<String> values() {
@@ -123,7 +122,7 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Current kinds across rows (in order).
-     * <p>
+     *
      * @return list of regex flags ({@code true} means regex)
      */
     public List<Boolean> regexKinds() {
@@ -134,8 +133,9 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Replaces all rows with the provided entries.
-     * A single blank row is created when {@code null} or empty.
-     * <p>
+     *
+     * <p>A single blank row is created when {@code null} or empty.</p>
+     *
      * @param entries new entries to apply
      */
     public void setEntries(List<ScopeEntryInit> entries) {
@@ -152,8 +152,9 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Enables/disables the entire grid (fields, toggles, Add/Delete).
-     * The Add button is also constrained by the MAX_ROWS rule.
-     * <p>
+     *
+     * <p>The Add button remains constrained by the {@link #MAX_ROWS} rule.</p>
+     *
      * @param enabled whether controls should be enabled
      */
     public void setEnabled(boolean enabled) {
@@ -183,8 +184,8 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Rebuilds the visual rows.
-     * <p>
-     * Caller must invoke on the EDT.
+     *
+     * <p>Caller must invoke on the EDT.</p>
      */
     private void rebuild() {
         grid.removeAll();
@@ -223,7 +224,7 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Ensures row-level tooltips are applied consistently.
-     * <p>
+     *
      * @param r row to update
      */
     private static void assignRowToolTips(Row r) {
@@ -248,7 +249,7 @@ public class ScopeGrid implements Serializable {
 
     /**
      * Standardizes toggle text and tooltip.
-     * <p>
+     *
      * @param r row to adjust
      */
     private static void ensureToggleTextAndTip(Row r) {
@@ -270,7 +271,7 @@ public class ScopeGrid implements Serializable {
 
         /**
          * Creates a row with provided value and regex flag.
-         * <p>
+         *
          * @param value    initial field text
          * @param isRegex  whether regex toggle is selected
          */
@@ -303,7 +304,7 @@ public class ScopeGrid implements Serializable {
 
         /**
          * Assigns deterministic component names for headless tests.
-         * <p>
+         *
          * @param index1 1-based row index
          */
         void assignNamesForIndex(int index1) {
@@ -320,7 +321,7 @@ public class ScopeGrid implements Serializable {
 
         /**
          * Binds the delete handler once, closing regex binding before removal.
-         * <p>
+         *
          * @param onDelete callback invoked after cleanup
          */
         void ensureDeleteHandler(Runnable onDelete) {

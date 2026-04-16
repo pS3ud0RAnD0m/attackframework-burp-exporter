@@ -40,6 +40,13 @@ public class OpenSearchCleanupIT {
         assertIndexMissing(client, IndexNaming.indexNameForShortName("traffic"));
     }
 
+    /**
+     * Deletes all exporter-managed indices from the dedicated integration-test cluster.
+     *
+     * <p>This cleanup is best-effort by design. It first resets recurring exporter lifecycle state
+     * and then deletes every index matching {@code attackframework-tool-burp*} so later tests
+     * start from a clean cluster.</p>
+     */
     @AfterAll
     public static void deleteAttackFrameworkIndexesNow() {
         try {

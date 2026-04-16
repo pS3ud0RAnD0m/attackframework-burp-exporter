@@ -17,6 +17,13 @@ import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.Registration;
 
+/**
+ * Burp extension entry point for the exporter.
+ *
+ * <p>This type wires lifecycle hooks, logging, runtime metadata, and the suite-tab UI. Swing UI
+ * registration is delegated to the EDT during {@link #initialize(MontoyaApi)} when Burp invokes
+ * startup from a background thread.</p>
+ */
 public class Exporter implements BurpExtension {
     private volatile Registration unloadRegistration;
     private volatile Registration suiteTabRegistration;

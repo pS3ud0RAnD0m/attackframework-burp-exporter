@@ -21,8 +21,8 @@ public final class FileUtil {
     public enum Status { CREATED, EXISTS, FAILED }
 
     /**
-     * Outcome of ensuring a JSON file exists.
-     * <p>
+     * Describes the outcome of ensuring a JSON file exists.
+     *
      * @param path   target path
      * @param status creation status
      * @param error  error message when {@link Status#FAILED}
@@ -31,15 +31,11 @@ public final class FileUtil {
 
     private static final String JSON_EXTENSION = ".json";
 
-    /**
-     * Utility class; not instantiable.
-     */
     private FileUtil() {}
 
     /**
-     * Convenience overload to keep panel code free of Path construction.
-     * Delegates to the Path-based variant.
-     * <p>
+     * Convenience overload that keeps UI code free of {@link Path} construction.
+     *
      * @param rootDir   root directory string
      * @param fileNames file names to ensure
      * @return results per file
@@ -49,9 +45,11 @@ public final class FileUtil {
     }
 
     /**
-     * Ensure a set of JSON files exist under {@code rootDir}. Creates parent dirs as needed.
-     * For each file, returns CREATED, EXISTS, or FAILED with error message.
-     * <p>
+     * Ensures JSON files exist under {@code rootDir}.
+     *
+     * <p>Parent directories are created as needed. Each result reports
+     * {@link Status#CREATED}, {@link Status#EXISTS}, or {@link Status#FAILED}.</p>
+     *
      * @param rootDir   base directory
      * @param fileNames file names to create
      * @return creation results
@@ -138,7 +136,7 @@ public final class FileUtil {
 
     /**
      * Ensures a single JSON file exists, creating parent directories as needed.
-     * <p>
+     *
      * @param p target path
      * @return result describing outcome
      */
@@ -175,8 +173,8 @@ public final class FileUtil {
     // ---------- Generic helpers used by ConfigPanel import/export ----------
 
     /**
-     * Ensure a {@code .json} extension on the provided file name (case-insensitive).
-     * <p>
+     * Ensures a {@code .json} extension on the provided file name.
+     *
      * @param f file to normalize
      * @return file with .json suffix ensured
      */
@@ -210,7 +208,7 @@ public final class FileUtil {
 
     /**
      * Read UTF-8 text from a file.
-     * <p>
+     *
      * @param file file to read
      * @return file contents as string
      * @throws IOException when reading fails

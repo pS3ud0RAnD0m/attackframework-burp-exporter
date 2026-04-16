@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.ui;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.event.ActionEvent;
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.AbstractButton;
@@ -48,7 +49,7 @@ import static ai.attackframework.tools.burp.testutils.Reflect.call;
  */
 public class LogPanelTestHarness {
 
-    /** Public no-arg constructor so tests can instantiate freely. */
+    /** Creates a reusable harness instance for headless Log panel tests. */
     public LogPanelTestHarness() { /* intentional no-op */ }
 
     // ---------- EDT helpers ----------
@@ -67,8 +68,9 @@ public class LogPanelTestHarness {
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(ie);
-        } catch (Exception ite) {
-            throw asRuntime(ite.getCause() == null ? ite : ite.getCause());
+        } catch (InvocationTargetException ite) {
+            Throwable cause = ite.getCause();
+            throw asRuntime(cause != null ? cause : ite);
         }
     }
 
@@ -146,14 +148,19 @@ public class LogPanelTestHarness {
     public static Component findByNameOrTooltipOrText(LogPanel root, String key) {
         return findBy(root, c -> {
             String nm = null, tip = null, txt = null;
-            if (c instanceof JComponent jc) {
-                nm = jc.getName();
-                tip = jc.getToolTipText();
+            switch (c) {
+                case JComponent jc -> {
+                    nm = jc.getName();
+                    tip = jc.getToolTipText();
+                }
+                case null, default -> {
+                }
             }
-            if (c instanceof AbstractButton ab) {
-                txt = ab.getText();
-            } else if (c instanceof JLabel lbl) {
-                txt = lbl.getText();
+            switch (c) {
+                case AbstractButton ab -> txt = ab.getText();
+                case JLabel lbl -> txt = lbl.getText();
+                case null, default -> {
+                }
             }
             return Objects.equals(nm, key) || Objects.equals(tip, key) || Objects.equals(txt, key);
         });
@@ -161,24 +168,56 @@ public class LogPanelTestHarness {
 
     // ---------- Named finders ----------
 
+    /**
+     * Finds a text field by name, tooltip, or visible text.
+     *
+     * @param root panel under test
+     * @param nameOrTooltipOrText lookup key matched against component metadata
+     * @return matching text field
+     * @throws IllegalStateException when no matching text field exists
+     */
     public static JTextField field(LogPanel root, String nameOrTooltipOrText) {
         Component c = findByNameOrTooltipOrText(root, nameOrTooltipOrText);
         if (!(c instanceof JTextField)) throw new IllegalStateException("No JTextField: " + nameOrTooltipOrText);
         return (JTextField) c;
     }
 
+    /**
+     * Finds a button by name, tooltip, or visible text.
+     *
+     * @param root panel under test
+     * @param nameOrTooltipOrText lookup key matched against component metadata
+     * @return matching button
+     * @throws IllegalStateException when no matching button exists
+     */
     public static JButton button(LogPanel root, String nameOrTooltipOrText) {
         Component c = findByNameOrTooltipOrText(root, nameOrTooltipOrText);
         if (!(c instanceof JButton)) throw new IllegalStateException("No JButton: " + nameOrTooltipOrText);
         return (JButton) c;
     }
 
+    /**
+     * Finds a checkbox by name, tooltip, or visible text.
+     *
+     * @param root panel under test
+     * @param nameOrTooltipOrText lookup key matched against component metadata
+     * @return matching checkbox
+     * @throws IllegalStateException when no matching checkbox exists
+     */
     public static JCheckBox check(LogPanel root, String nameOrTooltipOrText) {
         Component c = findByNameOrTooltipOrText(root, nameOrTooltipOrText);
         if (!(c instanceof JCheckBox)) throw new IllegalStateException("No JCheckBox: " + nameOrTooltipOrText);
         return (JCheckBox) c;
     }
 
+    /**
+     * Finds a combo box by name, tooltip, or visible text.
+     *
+     * @param root panel under test
+     * @param nameOrTooltipOrText lookup key matched against component metadata
+     * @return matching combo box
+     * @throws IllegalStateException when no matching combo box exists
+     */
     public static JComboBox<?> combo(LogPanel root, String nameOrTooltipOrText) {
         Component c = findByNameOrTooltipOrText(root, nameOrTooltipOrText);
         if (!(c instanceof JComboBox)) throw new IllegalStateException("No JComboBox: " + nameOrTooltipOrText);

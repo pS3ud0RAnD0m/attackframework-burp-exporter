@@ -26,6 +26,9 @@ import org.junit.platform.suite.api.Suite;
 })
 public class OpenSearchIntegrationSuite {
 
+    /**
+     * Keeps suite discovery stable when external test filters exclude the selected IT classes.
+     */
     @Test
     void suiteDiscoveryBridge_forFilteredRuns() {
         // Keeps suite discovery stable when filters exclude every selected IT class.

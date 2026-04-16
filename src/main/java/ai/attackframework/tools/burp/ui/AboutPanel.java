@@ -18,9 +18,14 @@ import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
 import ai.attackframework.tools.burp.utils.Version;
 import net.miginfocom.swing.MigLayout;
 
+/**
+ * Renders the About tab content for the extension UI.
+ *
+ * <p>Caller must construct this panel on the EDT because it creates and wires Swing components.</p>
+ */
 public class AboutPanel extends JPanel {
 
-    /** Creates a new AboutPanel. */
+    /** Creates the About panel UI on the EDT. */
     public AboutPanel() {
         setLayout(new BorderLayout());
 

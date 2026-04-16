@@ -18,6 +18,16 @@ public final class SecureStoreMontoyaMock {
 
     private SecureStoreMontoyaMock() {}
 
+    /**
+     * Creates a minimal {@link MontoyaApi} proxy backed by the provided string store.
+     *
+     * <p>The returned proxy implements only the persistence paths used by secure-store tests:
+     * {@code persistence().extensionData()} and {@code persistence().preferences()}. All other
+     * methods return default stub values based on their declared return type.</p>
+     *
+     * @param backing mutable string store used by the persistence proxies
+     * @return proxy Montoya API suitable for secure-store tests
+     */
     public static MontoyaApi create(Map<String, String> backing) {
         Objects.requireNonNull(backing, "backing");
         Class<?> persistenceType = methodReturnType(MontoyaApi.class, "persistence");

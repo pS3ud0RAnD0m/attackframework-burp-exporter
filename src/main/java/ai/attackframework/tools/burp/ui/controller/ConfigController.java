@@ -16,11 +16,12 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Coordinates long-running operations for the Config UI: export/import and OpenSearch
- * connectivity/index management.
- * <p>
- * Each async method runs work on a {@link SwingWorker} background thread and marshals UI updates to
- * the EDT via the {@link Ui} callbacks. Callers may invoke methods from any thread.
+ * Coordinates long-running operations for the Config UI.
+ *
+ * <p>This controller handles config export/import plus OpenSearch connectivity and index
+ * management. Each async method runs work on a {@link SwingWorker} background thread and marshals
+ * UI updates to the EDT via the {@link Ui} callbacks. Callers may invoke these methods from any
+ * thread.</p>
  */
 public final class ConfigController {
 
@@ -41,9 +42,9 @@ public final class ConfigController {
 
     /**
      * Writes the provided config JSON to disk asynchronously.
-     * <p>
-     * Work is performed on a background thread; status is published to {@link Ui#onControlStatus}
-     * on the EDT.
+     *
+     * <p>Work is performed on a background thread; status is published to
+     * {@link Ui#onControlStatus} on the EDT.</p>
      *
      * @param out  destination path (will be created with parent directories)
      * @param json serialized configuration payload
@@ -84,9 +85,9 @@ public final class ConfigController {
 
     /**
      * Reads and parses a configuration file asynchronously.
-     * <p>
-     * On success, forwards the parsed state to the UI on the EDT and reports status through
-     * {@link Ui#onControlStatus}. Errors are surfaced as status strings.
+     *
+     * <p>On success, forwards the parsed state to the UI on the EDT and reports status through
+     * {@link Ui#onControlStatus}. Errors are surfaced as status strings.</p>
      *
      * @param in config file to load
      */
@@ -126,10 +127,10 @@ public final class ConfigController {
 
     /**
      * Tests connectivity to an OpenSearch cluster asynchronously.
-     * <p>
-     * The result message is sent to {@link Ui#onOpenSearchStatus} on the EDT.
-     * Uses current RuntimeConfig for credentials and insecure-SSL (caller should call
-     * updateRuntimeConfig / buildCurrentState before this so the checkbox and current session auth apply).
+     *
+     * <p>The result message is sent to {@link Ui#onOpenSearchStatus} on the EDT. This method uses
+     * the current {@link RuntimeConfig} credentials and TLS mode, so callers should update runtime
+     * config before invoking it.</p>
      *
      * @param url base URL of the OpenSearch cluster
      */

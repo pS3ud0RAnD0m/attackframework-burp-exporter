@@ -10,8 +10,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Typed configuration model for import/export and UI binding.
- * Immutable records with defensive copying where lists are provided.
+ * Defines the typed configuration model used by the UI and JSON import/export.
+ *
+ * <p>The nested records normalize nullable inputs and defensively copy collections so callers can
+ * treat each instance as an immutable snapshot.</p>
  */
 public final class ConfigState {
 
@@ -158,7 +160,7 @@ public final class ConfigState {
         }
     }
 
-    /** Top-level state. */
+    /** Persisted preferences for the Log panel UI. */
     public record LogPanelPreferences(
             String minLevel,
             boolean pauseAutoscroll,
@@ -183,6 +185,26 @@ public final class ConfigState {
         }
     }
 
+    /**
+     * Captures the full persisted exporter configuration.
+     *
+     * <p>Collection components are normalized to immutable snapshots. Missing exporter settings are
+     * normalized to the current defaults so legacy imports retain the intended Tool-index behavior.</p>
+     *
+     * @param dataSources selected top-level source keys such as {@code settings} or
+     *                    {@code exporter}
+     * @param scopeType scope mode: {@code all}, {@code burp}, or {@code custom}
+     * @param customEntries ordered custom-scope entries used when {@code scopeType=custom}
+     * @param sinks destination configuration for Files and OpenSearch
+     * @param settingsSub selected Settings source sub-options
+     * @param trafficToolTypes selected traffic-producing Burp tool types
+     * @param findingsSeverities selected finding severities
+     * @param exporterSubOptions selected exporter log/config/stats sub-options
+     * @param exporterStatsIntervalSeconds stats snapshot interval in seconds
+     * @param enabledExportFieldsByIndex enabled optional field keys by index; {@code null} means
+     *                                   all optional fields are enabled
+     * @param uiPreferences persisted UI-only preferences that should survive save/import cycles
+     */
     public record State(List<String> dataSources,
                         String scopeType,               // "all" | "burp" | "custom"
                         List<ScopeEntry> customEntries, // ordered; used when scopeType=custom

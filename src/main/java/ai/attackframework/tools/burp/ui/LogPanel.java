@@ -378,7 +378,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Assigns tooltips for all toolbar controls in one place.
-     * <p>
+     *
      * @param searchPrevBtn jump-to-previous button
      * @param searchNextBtn jump-to-next button
      * @param clearBtn      clear action button
@@ -522,7 +522,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Ingests a log event, rendering incrementally when visible.
-     * <p>
+     *
      * @param levelStr level string (parsed via {@link LogStore.Level#fromString(String)})
      * @param message  log message (nullable)
      */
@@ -557,7 +557,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Applies current filters to determine whether a log should render.
-     * <p>
+     *
      * @param lvl     level to evaluate
      * @param message log message
      * @return {@code true} when the entry passes level and text filters
@@ -568,7 +568,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Checks whether a level meets or exceeds the selected minimum.
-     * <p>
+     *
      * @param lvl level to evaluate
      * @return {@code true} when the level is visible
      */
@@ -579,10 +579,10 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Text filter (regex or substring). Invalid regex results in WARN and non-match.
-     * <p>
+     *
      * Regex flag rules (case/UNICODE) are centralized; substring matching lowers both
      * sides when case-insensitive to avoid locale pitfalls.
-     * <p>
+     *
      * @param msg message to test
      * @return {@code true} when the message passes the text filter
      */
@@ -679,7 +679,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Moves the current match index by the provided delta, wrapping around.
-     * <p>
+     *
      * @param delta offset to apply (positive for next, negative for previous)
      */
     private void jumpMatch(int delta) {
@@ -692,7 +692,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Ensures the indexed match is visible in the viewport.
-     * <p>
+     *
      * @param i match index to reveal
      */
     private void revealMatch(int i) {
@@ -703,7 +703,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Scrolls the viewport to the given document offset.
-     * <p>
+     *
      * @param offset document offset to reveal
      */
     private void ensureVisible(int offset) {
@@ -786,8 +786,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     /**
      * Saves the currently visible log to a user-selected file.
-     * <p>
-     * EDT only.
+     *
+     * <p>Caller must invoke on the EDT.</p>
      */
     private void saveVisible() {
         JFileChooser chooser = new JFileChooser();

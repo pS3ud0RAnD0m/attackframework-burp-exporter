@@ -26,8 +26,20 @@ import org.opensearch.client.opensearch.core.IndexResponse;
 
 import ai.attackframework.tools.burp.utils.Logger;
 
+/**
+ * Wraps OpenSearch connection tests and document push operations for the exporter.
+ *
+ * <p>This facade coordinates OpenSearch writes with file export, retry handling, and runtime
+ * authentication settings so callers can use a small API surface.</p>
+ */
 public class OpenSearchClientWrapper {
 
+    /**
+     * Tests OpenSearch connectivity without authentication.
+     *
+     * @param baseUrl OpenSearch base URL
+     * @return structured connection status
+     */
     public static OpenSearchStatus testConnection(String baseUrl) {
         return testConnection(baseUrl, null, null);
     }
@@ -37,6 +49,11 @@ public class OpenSearchClientWrapper {
     /**
      * Tests connectivity with optional basic auth. Performs a raw GET / so logs show the actual
      * HTTP version and status line from the wire; on 200 parses the response body for version/distribution.
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param username optional basic-auth username
+     * @param password optional basic-auth password
+     * @return structured connection status
      */
     public static OpenSearchStatus testConnection(String baseUrl, String username, String password) {
         boolean credentialsProvided = username != null && !username.isBlank() && password != null && !password.isBlank();
@@ -108,10 +125,25 @@ public class OpenSearchClientWrapper {
         );
     }
 
+    /**
+     * Tests OpenSearch connectivity without authentication, converting runtime failures into a
+     * failed status result.
+     *
+     * @param baseUrl OpenSearch base URL
+     * @return structured connection status
+     */
     public static OpenSearchStatus safeTestConnection(String baseUrl) {
         return safeTestConnection(baseUrl, null, null);
     }
 
+    /**
+     * Tests OpenSearch connectivity and converts runtime failures into a failed status result.
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param username optional basic-auth username
+     * @param password optional basic-auth password
+     * @return structured connection status
+     */
     public static OpenSearchStatus safeTestConnection(String baseUrl, String username, String password) {
         try {
             return testConnection(baseUrl, username, password);

@@ -12,11 +12,14 @@ import ai.attackframework.tools.burp.utils.Logger;
 import burp.api.montoya.core.BurpSuiteEdition;
 
 /**
- * Holds the current runtime configuration for export pipelines.
+ * Holds the current runtime configuration used by live export pipelines.
  *
- * <p>UI actions update this state, and runtime exporters read from it. The export-running
- * flag gates whether traffic (and future sources) are actually sent to sinks; Start/Stop
- * in the UI toggle this without changing saved config.</p>
+ * <p>UI actions update this state, and runtime exporters read it from worker threads. The core
+ * state and run-suppression flags are kept in volatile fields so readers can consume the latest
+ * snapshot without additional locking.</p>
+ *
+ * <p>The export-running flag gates whether traffic and reporter pipelines may send documents to
+ * sinks. Start and Stop update that runtime gate without mutating the persisted config snapshot.</p>
  */
 public final class RuntimeConfig {
     private static final Set<String> COMMUNITY_DISABLED_SOURCES = Set.of(ConfigKeys.SRC_FINDINGS);
@@ -29,6 +32,7 @@ public final class RuntimeConfig {
     private static volatile boolean openSearchDisabledForCurrentRun = false;
     private static final CopyOnWriteArrayList<StateListener> listeners = new CopyOnWriteArrayList<>();
 
+    /** Listener notified when the normalized runtime state changes. */
     @FunctionalInterface
     public interface StateListener {
         void onStateChanged(ConfigState.State newState);

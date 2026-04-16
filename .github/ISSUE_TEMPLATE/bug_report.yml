@@ -1,28 +1,59 @@
 name: Bug report
-description: Report an issue with extension behavior
+description: Report a bug in Attack Vectors: Burp Exporter
 title: "[BUG] "
-labels: ["bug"]
+labels:
+  - bug
 body:
-  - type: textarea
-    id: what-happened
+  - type: markdown
     attributes:
-      label: What went wrong?
-      description: Describe the bug and how to reproduce it
-      placeholder: e.g. Clicking "Save" crashes if OpenSearch URL is blank
+      value: |
+        Before submitting:
+        - Confirm you're using the latest version
+        - Search existing issues
+        - Do NOT use this form for security issues (see Security tab)
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: e.g. v0.0.1 or commit hash
     validations:
       required: true
+
   - type: input
-    id: burp-version
+    id: burp
     attributes:
       label: Burp Suite version
-      placeholder: e.g. 2025.6.1
-  - type: input
-    id: java-version
+      placeholder: e.g. 2025.6
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
     attributes:
-      label: Java version
-      placeholder: e.g. OpenJDK 21
+      label: Current behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
   - type: textarea
     id: logs
     attributes:
-      label: Relevant logs/output
-      placeholder: Paste error messages here if available
+      label: Logs / screenshots

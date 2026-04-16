@@ -17,10 +17,11 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
- * Coordinates retries and a bounded per-index queue for OpenSearch indexing.
- * Single-doc: one attempt, then offer to queue on failure (no blocking).
- * Bulk: up to 3 attempts with backoff, then queue failed items. A drain thread
- * periodically sends queued documents.
+ * Coordinates OpenSearch retries and bounded fallback queues for failed writes.
+ *
+ * <p>Single-document writes make one immediate attempt and then offer the document to a retry
+ * queue. Bulk writes retry with backoff before queueing only the failed items. A dedicated drain
+ * thread periodically retries queued work.</p>
  */
 public final class IndexingRetryCoordinator {
 
@@ -41,10 +42,17 @@ public final class IndexingRetryCoordinator {
     private volatile String lastDrainBaseUrl = "";
     private final Object drainThreadLock = new Object();
 
+    /**
+     * Creates a coordinator with a fresh bounded retry queue.
+     *
+     * <p>Production code should normally use {@link #getInstance()}. This constructor remains
+     * public so focused tests can create isolated coordinators.</p>
+     */
     public IndexingRetryCoordinator() {
         this.queue = new RetryQueue(MAX_QUEUE_SIZE_PER_INDEX);
     }
 
+    /** Returns the shared coordinator used by production export paths. */
     public static IndexingRetryCoordinator getInstance() {
         return Holder.INSTANCE;
     }

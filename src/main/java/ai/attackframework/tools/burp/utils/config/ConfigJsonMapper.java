@@ -21,7 +21,16 @@ public final class ConfigJsonMapper {
         return Json.buildFromState(state);
     }
 
-    /** Parse JSON into a typed state via {@link Json#parseConfigJson(String)}. */
+    /**
+     * Parses config JSON into a normalized typed state.
+     *
+     * <p>Legacy payloads that predate explicit exporter options are normalized to include the
+     * {@code exporter} source so Tool-index export remains enabled by default.</p>
+     *
+     * @param json raw config JSON
+     * @return normalized typed state
+     * @throws IOException when the JSON cannot be parsed
+     */
     public static State parse(String json) throws IOException {
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         List<ScopeEntry> entries = entriesFrom(cfg);

@@ -220,7 +220,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /** Fields panel: index -> header row panel (label + expand button); used for enable/disable when Data Source is toggled. */
     private java.util.Map<String, JPanel> fieldsSectionHeaderRows;
 
-    /** Public no-arg constructor (EDT). */
+    /** Creates the panel with its default controller. Caller must invoke on the EDT. */
     public ConfigPanel() { this(null); }
 
     /** Dependency-injected constructor (tests). */
@@ -935,7 +935,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Updates the OpenSearch status area on the EDT with the provided message.
      *
-     * <p>
      * @param message status text to display (nullable)
      */
     @Override public void onOpenSearchStatus(String message) {
@@ -946,7 +945,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Updates the Control status area on the EDT.
      *
-     * <p>
      * @param message status text to display (nullable)
      */
     @Override public void onControlStatus(String message) {
@@ -1723,7 +1721,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Collects the currently selected data sources.
      *
-     * <p>
      * @return ordered list of source keys suitable for {@link ConfigKeys}
      */
     private List<String> getSelectedSources() {
@@ -1786,7 +1783,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Builds the current UI state into a serializable config object.
      *
-     * <p>
      * @return assembled {@link ConfigState.State} reflecting user selections
      */
     private ConfigState.State buildCurrentState() {
@@ -2148,7 +2144,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     /**
      * Runs a task on the EDT, executing immediately when already on the EDT.
      *
-     * <p>
      * @param r task to run
      */
     private void runOnEdt(Runnable r) {

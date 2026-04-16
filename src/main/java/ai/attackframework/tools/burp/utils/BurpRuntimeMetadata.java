@@ -11,6 +11,7 @@ import burp.api.montoya.MontoyaApi;
  * good {@link MontoyaApi} instance.</p>
  */
 public final class BurpRuntimeMetadata {
+    /** Stable fallback project identifier used when Burp does not expose a project id. */
     public static final String UNKNOWN_PROJECT_ID = "unknown-project";
 
     private static volatile String burpVersion;
