@@ -10,8 +10,9 @@ Describe what changed and why.
 
 ## Testing
 
-- [ ] `opensearch.url` resolves to the test instance (for example via the hosts file)
-- [ ] Passed full build: `.\gradlew.bat clean build -DOPENSEARCH_USER=admin -DOPENSEARCH_PASSWORD=...`
+- [ ] Passed full build:
+  - Add opensearch.url to your host file and point to your configured OpenSearch instance.
+  - Run `gradle clean build -DOPENSEARCH_USER=admin -DOPENSEARCH_PASSWORD=<yourPassword>`
 - [ ] Loaded successfully in Burp Suite
 - [ ] UI changes validated visually
 - [ ] No unrelated files were modified
