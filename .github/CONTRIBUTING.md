@@ -8,6 +8,7 @@ Thanks for your interest in contributing.
 - Use Issues for bugs and feature requests
 - Use GitHub Private Vulnerability Reporting for security issues
 - Read the [README](../README.md) for project context and the repository wiki for user-facing documentation
+- Prefer the issue forms so reports include the triage details maintainers need
 
 ## Contribution Guidelines
 
@@ -20,13 +21,30 @@ Thanks for your interest in contributing.
 
 ## Testing
 
-- For code changes, run the full build from the repository root:
-  - `.\gradlew.bat clean build -DOPENSEARCH_USER=admin -DOPENSEARCH_PASSWORD=admin`
-- Use `opensearch.url` (or your configured OpenSearch URL) for testing instead of `localhost`
+- For code changes, run the full test and build from the repository root:
+- Add opensearch.url to your host file and point to your configured OpenSearch instance.
+  - `gradle clean build -DOPENSEARCH_USER=admin -DOPENSEARCH_PASSWORD=<yourPassword>`
 - Ensure the extension loads in Burp Suite without errors
 - Validate UI changes visually
 - Include reproduction steps for bug fixes where applicable
 - Prefer `build/tmp/...` for test-created files and directories instead of raw OS temp locations
+
+## Good Reports and PRs
+
+- Good bug reports usually include:
+  - Burp version and edition
+  - Java version and OS
+  - Whether export was running
+  - Whether the issue affected OpenSearch, file export, or both
+  - Sanitized logs, screenshots, and relevant config details
+- Good feature requests usually explain:
+  - The operator problem or workflow gap
+  - The expected user value
+  - Which areas are affected, such as UI, export destinations, or schema
+- Good pull requests usually call out:
+  - User-facing impact
+  - Config or schema changes
+  - Any Burp-edition-specific behavior
 
 ## Pull Requests
 

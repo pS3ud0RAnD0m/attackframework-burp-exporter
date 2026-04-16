@@ -11,8 +11,17 @@ By externalizing Burp’s insights into searchable, semantically indexed stores,
 We welcome ideas, feedback, and pull requests. Feel free to open a discussion, issue, or submit a PR.
 
 ## Documentation
-- Usage: https://wiki.attackframework.ai/tools/burp-exporter (Coming soon!)
-- Javadocs: https://ps3ud0rand0m.github.io/attackframework-burp-exporter/
+
+- User guide and wiki: [wiki.attackframework.ai/tools/burp-exporter](https://wiki.attackframework.ai/tools/burp-exporter)
+- Javadocs: [ps3ud0rand0m.github.io/attackframework-burp-exporter](https://ps3ud0rand0m.github.io/attackframework-burp-exporter/)
+- Contributing: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
+- Security policy: [`.github/SECURITY.md`](.github/SECURITY.md)
+
+## Support
+
+- Questions and design discussion: [GitHub Discussions](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/discussions)
+- Bugs and feature requests: [GitHub Issues](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/issues)
+- Security reports: [GitHub Private Vulnerability Reporting](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/security/advisories/new)
 
 ## License
 

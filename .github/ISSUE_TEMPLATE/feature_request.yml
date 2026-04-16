@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an enhancement
+description: "Suggest an enhancement for Attack Framework: Burp Exporter"
 title: "[FEATURE] "
 labels:
   - enhancement
@@ -7,19 +7,71 @@ body:
   - type: markdown
     attributes:
       value: |
-        Describe the problem and the value of the proposed feature.
+        Before submitting:
+        - Search existing issues and discussions first
+        - Use Discussions for open-ended design questions
+        - Explain the operator or workflow value, not just the implementation idea
 
   - type: textarea
     id: problem
     attributes:
       label: Problem / use case
+      description: What operator pain point, workflow gap, or analysis limitation are you trying to solve?
     validations:
       required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: Expected user value
+      description: Describe the practical value for Burp users, analysts, or downstream AI/data workflows.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Config UI
+        - Traffic export
+        - Findings export
+        - Settings export
+        - Sitemap export
+        - Tool / exporter index
+        - OpenSearch integration
+        - File export
+        - Schema / mappings
+        - Documentation
+        - CI / release automation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: burp_workflow
+    attributes:
+      label: Burp workflow or source involved
+      description: Optional, but useful when the idea is tied to a specific Burp tool or source.
+      placeholder: e.g. Proxy, Repeater, Scanner, project settings, extension logs
+
+  - type: dropdown
+    id: destination
+    attributes:
+      label: Export destination involved
+      options:
+        - OpenSearch
+        - Files
+        - Both
+        - Neither / UI only
+        - Not sure
 
   - type: textarea
     id: solution
     attributes:
       label: Proposed solution
+      description: Describe the behavior you want, even if you are not sure how it should be implemented.
     validations:
       required: true
 
@@ -28,7 +80,23 @@ body:
     attributes:
       label: Alternatives considered
 
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Potential impact
+      multiple: true
+      options:
+        - User-facing UI behavior
+        - Config shape or defaults
+        - Exported document fields
+        - OpenSearch mappings or index semantics
+        - File export behavior
+        - Burp edition differences
+        - Documentation only
+        - Not sure
+
   - type: textarea
     id: context
     attributes:
       label: Additional context
+      description: Add screenshots, mockups, sample output, or related issues/discussions.

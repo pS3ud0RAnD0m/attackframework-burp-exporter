@@ -6,8 +6,8 @@ contact_links:
 
   - name: Ask a question or discuss
     url: https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/discussions
-    about: Use Discussions for questions and general conversation.
+    about: Use Discussions for setup questions, design discussion, and general conversation.
 
   - name: Documentation
     url: https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/wiki
-    about: Check the wiki for setup and usage information.
+    about: Browse the wiki for installation, configuration, testing, and usage guidance.

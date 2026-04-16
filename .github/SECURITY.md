@@ -15,6 +15,9 @@ Instead, use GitHub’s [Private Vulnerability Reporting](https://github.com/pS3
 
 This ensures the issue is reviewed without public exposure.
 
+For non-security bugs or feature requests, use the issue forms. For setup questions or broader
+discussion, use GitHub Discussions.
+
 ## What to Include
 
 Please include as much detail as possible:

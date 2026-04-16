@@ -42,7 +42,7 @@ jobs:
       - name: Read Gradle properties
         id: props
         run: |
-          python <<'PY'
+          python3 <<'PY'
           import os
           from pathlib import Path
 
@@ -73,6 +73,7 @@ jobs:
           name: v${{ steps.props.outputs.version }}
           allowUpdates: true
           replacesArtifacts: true
+          artifactErrorsFailBuild: true
           artifacts: build/libs/${{ steps.props.outputs.basename }}-${{ steps.props.outputs.version }}.jar
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
