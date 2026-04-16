@@ -26,6 +26,7 @@ class JsonTypedRoundTripTest {
                         true, 91,
                         true, "https://opensearch.url:9200", "", "", false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS, ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                 null
         );
 
@@ -87,6 +88,8 @@ class JsonTypedRoundTripTest {
                 List.of(ConfigKeys.SRC_SETTINGS_PROJECT),
                 List.of("proxy", "repeater"),
                 List.of("high", "critical"),
+                List.of(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS),
+                45,
                 null
         );
 
@@ -99,9 +102,13 @@ class JsonTypedRoundTripTest {
         assertThat(json).contains("\"findings\"");
         assertThat(json).contains("\"high\"");
         assertThat(json).contains("\"critical\"");
+        assertThat(json).contains("\"exporter\"");
+        assertThat(json).contains("\"exporterStatsIntervalSeconds\" : 45");
         assertThat(parsed.settingsSub()).containsExactly(ConfigKeys.SRC_SETTINGS_PROJECT);
         assertThat(parsed.trafficToolTypes()).containsExactly("proxy", "repeater");
         assertThat(parsed.findingsSeverities()).containsExactlyInAnyOrder("high", "critical");
+        assertThat(parsed.exporterSubOptions()).containsExactly(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS);
+        assertThat(parsed.exporterStatsIntervalSeconds()).isEqualTo(45);
     }
 
     @Test
@@ -112,6 +119,8 @@ class JsonTypedRoundTripTest {
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("proxy", "proxy_history", "repeater"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                 null
         );
         String json = ConfigJsonMapper.build(state);
@@ -125,11 +134,39 @@ class JsonTypedRoundTripTest {
             {"version":"1.0","dataSources":["traffic"],"scope":["burp"],"sinks":{}}
             """;
         ConfigState.State parsed = ConfigJsonMapper.parse(legacy);
+        assertThat(parsed.dataSources()).contains("traffic", ConfigKeys.SRC_EXPORTER);
         assertThat(parsed.trafficToolTypes()).containsExactly(
                 "burp_ai", "extensions", "intruder", "proxy",
                 "proxy_history", "repeater", "scanner", "sequencer");
         assertThat(parsed.settingsSub()).containsExactlyInAnyOrder(ConfigKeys.SRC_SETTINGS_PROJECT, ConfigKeys.SRC_SETTINGS_USER);
         assertThat(parsed.findingsSeverities()).containsExactlyInAnyOrder("critical", "high", "medium", "low", "informational");
+        assertThat(parsed.exporterSubOptions()).containsExactlyElementsOf(ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS);
+        assertThat(parsed.exporterStatsIntervalSeconds()).isEqualTo(ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS);
+    }
+
+    @Test
+    void parse_json_with_explicit_empty_exporter_options_preserves_disabled_exporter_sub_options() throws IOException {
+        String json = """
+            {
+              "version": "1.0",
+              "dataSources": ["exporter"],
+              "scope": ["all"],
+              "sinks": {},
+              "dataSourceOptions": {
+                "settings": ["project", "user"],
+                "traffic": [],
+                "findings": ["critical", "high", "medium", "low", "informational"],
+                "exporter": [],
+                "exporterStatsIntervalSeconds": 15
+              }
+            }
+            """;
+
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(parsed.dataSources()).containsExactly(ConfigKeys.SRC_EXPORTER);
+        assertThat(parsed.exporterSubOptions()).isEmpty();
+        assertThat(parsed.exporterStatsIntervalSeconds()).isEqualTo(15);
     }
 
     @Test
@@ -142,6 +179,7 @@ class JsonTypedRoundTripTest {
                 List.of("settings", "traffic"), "all", List.of(),
                 new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS, ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                 enabledByIndex
         );
         String json = ConfigJsonMapper.build(state);
@@ -171,6 +209,8 @@ class JsonTypedRoundTripTest {
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                 null,
                 new ConfigState.UiPreferences(
                         2,

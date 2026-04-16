@@ -19,24 +19,24 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 
 /**
- * Integration tests for index lifecycle using OpenSearchSink against a live test cluster.
- * Tests create, existence reporting, deletion, and re-creation of the standard indices.
- * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
+ * Exercises index lifecycle operations against a live OpenSearch test cluster.
+ *
+ * <p>These tests verify index creation, existence reporting, deletion, and re-creation through
+ * {@link OpenSearchSink}. Run them through {@link OpenSearchIntegrationSuite}.</p>
  */
 class OpenSearchSinkIT {
 
     /**
-     * Verifies full lifecycle for the standard index set using the sink:
-     * 1) Create or detect existing indices
-     * 2) Delete all reported indices
-     * 3) Re-create indices and verify creation status
-     * 4) Validate full index naming
+     * Verifies the full lifecycle for the standard index set.
+     *
+     * <p>The test creates or discovers the expected indices, deletes them with best-effort
+     * cleanup, recreates them, and then validates their full names.</p>
      */
     @Test
     void create_delete_recreate_standardIndices_viaSink() throws IOException {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        List<String> sources = List.of("settings", "sitemap", "findings", "traffic", "tool");
+        List<String> sources = List.of("settings", "sitemap", "findings", "traffic", "exporter");
 
         // Pass 1: create or report existing
         List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(sources);
@@ -56,13 +56,7 @@ class OpenSearchSinkIT {
         List<String> fullNames = first.stream().map(IndexResult::fullName).toList();
         OpenSearchClient client = OpenSearchReachable.getClient();
         for (String index : fullNames) {
-            try {
-                client.indices().delete(new DeleteIndexRequest.Builder().index(index).build());
-            } catch (Exception e) {
-                // Best-effort cleanup: index may already be missing or the dev cluster may have been reset.
-                // Log instead of failing the lifecycle assertions above.
-                Logger.logError("[OpenSearchSinkIT] Failed to delete index during test cleanup: " + index, e);
-            }
+            deleteIndexQuietly(client, index, "test cleanup");
         }
 
         // Verify deletion
@@ -83,14 +77,16 @@ class OpenSearchSinkIT {
     }
 
     /**
-     * Verifies lifecycle for a single source ("traffic") using the sink:
-     * create (or exist), delete, re-create, and full name validation.
+     * Verifies the lifecycle for the traffic and exporter source combination.
+     *
+     * <p>The exporter source is included because traffic-only selection now omits the Tool index.
+     * This test ensures both reported indices can be deleted and recreated cleanly.</p>
      */
     @Test
     void create_delete_recreate_singleSource_traffic_viaSink() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("traffic", "tool"));
+        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("traffic", "exporter"));
         assertThat(first).isNotEmpty();
 
         // Validate expected short names and full names
@@ -102,17 +98,21 @@ class OpenSearchSinkIT {
         // Delete both indices reported (best-effort cleanup of dev cluster)
         OpenSearchClient client2 = OpenSearchReachable.getClient();
         for (IndexResult r : first) {
-            try {
-                client2.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-            } catch (Exception e) {
-                Logger.logError("[OpenSearchSinkIT] Failed to delete index during single-source test cleanup: " + r.fullName(), e);
-            }
+            deleteIndexQuietly(client2, r.fullName(), "single-source test cleanup");
         }
 
         // Re-create and verify CREATED status
-        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(List.of("traffic", "tool"));
+        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(List.of("traffic", "exporter"));
         assertThat(second)
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED));
+    }
+
+    private static void deleteIndexQuietly(OpenSearchClient client, String index, String context) {
+        try {
+            client.indices().delete(new DeleteIndexRequest.Builder().index(index).build());
+        } catch (IOException | RuntimeException e) {
+            Logger.logError("[OpenSearchSinkIT] Failed to delete index during " + context + ": " + index, e);
+        }
     }
 }

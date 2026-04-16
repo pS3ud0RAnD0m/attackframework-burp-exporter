@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -16,8 +17,10 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 
 /**
- * Integration test: tool-only index creation lifecycle.
- * Run via {@link OpenSearchIntegrationSuite}; tag "integration" is on the suite.
+ * Exercises the Tool-index lifecycle against a live OpenSearch test cluster.
+ *
+ * <p>The Tool index is created through the {@code exporter} source selection. Run this test
+ * through {@link OpenSearchIntegrationSuite}.</p>
  */
 class OpenSearchSinkToolOnlyIT {
 
@@ -25,7 +28,7 @@ class OpenSearchSinkToolOnlyIT {
     void create_delete_recreate_toolOnly_viaSink() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
-        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("tool"));
+        List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("exporter"));
         assertThat(first).isNotEmpty();
 
         EnumSet<IndexResult.Status> allowed = EnumSet.of(IndexResult.Status.CREATED, IndexResult.Status.EXISTS);
@@ -40,19 +43,23 @@ class OpenSearchSinkToolOnlyIT {
         // Delete reported index (best-effort cleanup of dev cluster)
         OpenSearchClient client = OpenSearchReachable.getClient();
         for (IndexResult r : first) {
-            try {
-                client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-            } catch (Exception e) {
-                Logger.logError("[OpenSearchSinkToolOnlyIT] Failed to delete index during tool-only test cleanup: " + r.fullName(), e);
-            }
+            deleteIndexQuietly(client, r.fullName());
         }
 
         // Re-create and verify CREATED status
-        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(List.of("tool"));
+        List<IndexResult> second = OpenSearchReachable.createSelectedIndexes(List.of("exporter"));
         assertThat(second)
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r)
                         .extracting(IndexResult::shortName, IndexResult::fullName, IndexResult::status)
                         .containsExactly("tool", IndexNaming.indexNameForShortName("tool"), IndexResult.Status.CREATED));
+    }
+
+    private static void deleteIndexQuietly(OpenSearchClient client, String index) {
+        try {
+            client.indices().delete(new DeleteIndexRequest.Builder().index(index).build());
+        } catch (IOException | RuntimeException e) {
+            Logger.logError("[OpenSearchSinkToolOnlyIT] Failed to delete index during tool-only test cleanup: " + index, e);
+        }
     }
 }

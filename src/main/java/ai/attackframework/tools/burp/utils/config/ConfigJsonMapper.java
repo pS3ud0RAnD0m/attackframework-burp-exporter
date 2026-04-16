@@ -25,6 +25,10 @@ public final class ConfigJsonMapper {
     public static State parse(String json) throws IOException {
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
         List<ScopeEntry> entries = entriesFrom(cfg);
+        List<String> dataSources = new ArrayList<>(cfg.dataSources());
+        if (!cfg.exporterOptionsPresent() && !dataSources.contains(ConfigKeys.SRC_EXPORTER)) {
+            dataSources.add(ConfigKeys.SRC_EXPORTER);
+        }
 
         Sinks sinks = new Sinks(
                 cfg.filesPath() != null && !cfg.filesPath().isBlank(), cfg.filesPath(),
@@ -36,8 +40,9 @@ public final class ConfigJsonMapper {
                 cfg.openSearchTlsMode()
         );
 
-        return new State(cfg.dataSources(), cfg.scopeType(), entries, sinks,
+        return new State(dataSources, cfg.scopeType(), entries, sinks,
                 cfg.settingsSub(), cfg.trafficToolTypes(), cfg.findingsSeverities(),
+                cfg.exporterSubOptions(), cfg.exporterStatsIntervalSeconds(),
                 cfg.enabledExportFieldsByIndex(), cfg.uiPreferences());
     }
 

@@ -206,6 +206,40 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         assertThat(sectionEnabled("traffic", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
     }
 
+    @Test
+    void unselecting_exporter_source_disables_tool_fields_section() throws Exception {
+        JCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox");
+        JCheckBox exporterInfoCheckbox = Reflect.get(panel, "exporterInfoCheckbox");
+        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
+        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        String[] exporterChildNames = {
+                "exporterTraceCheckbox", "exporterDebugCheckbox", "exporterInfoCheckbox",
+                "exporterWarnCheckbox", "exporterErrorCheckbox", "exporterStatsCheckbox", "exporterConfigCheckbox"
+        };
+
+        SwingUtilities.invokeAndWait(() -> {
+            exporterInfoCheckbox.setSelected(true);
+            runRefresh(panel);
+        });
+        assertThat(sectionEnabled("tool", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
+
+        SwingUtilities.invokeAndWait(() -> {
+            exporterCheckbox.setSelected(false);
+            for (String name : exporterChildNames) {
+                ((JCheckBox) Reflect.get(panel, name)).setSelected(false);
+            }
+            runRefresh(panel);
+        });
+        assertThat(sectionEnabled("tool", headerRows, subPanels, fieldCheckboxesByIndex)).isFalse();
+
+        SwingUtilities.invokeAndWait(() -> {
+            exporterInfoCheckbox.setSelected(true);
+            runRefresh(panel);
+        });
+        assertThat(sectionEnabled("tool", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
+    }
+
     private static void runRefresh(ConfigPanel panel) {
         Reflect.call(panel, "refreshFieldsSectionsEnabled");
     }

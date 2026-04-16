@@ -68,6 +68,9 @@ public final class Json {
         private final List<String> settingsSub;
         private final List<String> trafficToolTypes;
         private final List<String> findingsSeverities;
+        private final List<String> exporterSubOptions;
+        private final int exporterStatsIntervalSeconds;
+        private final boolean exporterOptionsPresent;
         private final Map<String, Set<String>> enabledExportFieldsByIndex;
         private final ConfigState.UiPreferences uiPreferences;
 
@@ -90,6 +93,9 @@ public final class Json {
                 List<String> settingsSub,
                 List<String> trafficToolTypes,
                 List<String> findingsSeverities,
+                List<String> exporterSubOptions,
+                int exporterStatsIntervalSeconds,
+                boolean exporterOptionsPresent,
                 Map<String, Set<String>> enabledExportFieldsByIndex,
                 ConfigState.UiPreferences uiPreferences
         ) {
@@ -111,6 +117,9 @@ public final class Json {
             this.settingsSub = ConfigState.normalizeSettingsSub(settingsSub);
             this.trafficToolTypes = ConfigState.normalizeTrafficToolTypes(trafficToolTypes);
             this.findingsSeverities = ConfigState.normalizeFindingsSeverities(findingsSeverities);
+            this.exporterSubOptions = ConfigState.normalizeExporterSubOptions(exporterSubOptions);
+            this.exporterStatsIntervalSeconds = ConfigState.normalizeExporterStatsIntervalSeconds(exporterStatsIntervalSeconds);
+            this.exporterOptionsPresent = exporterOptionsPresent;
             this.enabledExportFieldsByIndex = copyMapOfSets(enabledExportFieldsByIndex);
             this.uiPreferences = uiPreferences == null ? ConfigState.defaultUiPreferences() : uiPreferences;
         }
@@ -198,6 +207,18 @@ public final class Json {
             return findingsSeverities;
         }
 
+        public List<String> exporterSubOptions() {
+            return exporterSubOptions;
+        }
+
+        public int exporterStatsIntervalSeconds() {
+            return exporterStatsIntervalSeconds;
+        }
+
+        public boolean exporterOptionsPresent() {
+            return exporterOptionsPresent;
+        }
+
         /** Null when absent or empty (all fields enabled). */
         public Map<String, Set<String>> enabledExportFieldsByIndex() {
             return enabledExportFieldsByIndex;
@@ -256,6 +277,13 @@ public final class Json {
                 if (s != null) findingsArr.add(s);
             }
         }
+        ArrayNode exporterArr = opts.putArray("exporter");
+        if (state.exporterSubOptions() != null) {
+            for (String s : state.exporterSubOptions()) {
+                if (s != null) exporterArr.add(s);
+            }
+        }
+        opts.put("exporterStatsIntervalSeconds", state.exporterStatsIntervalSeconds());
     }
 
     private static void buildScope(ObjectNode root, ConfigState.State state) {
@@ -387,6 +415,9 @@ public final class Json {
                 opts.settingsSub(),
                 opts.trafficToolTypes(),
                 opts.findingsSeverities(),
+                opts.exporterSubOptions(),
+                opts.exporterStatsIntervalSeconds(),
+                opts.exporterOptionsPresent(),
                 exportFields,
                 ui.uiPreferences()
         );
@@ -433,16 +464,25 @@ public final class Json {
             return new DataSourceOptionsParts(
                     ConfigState.DEFAULT_SETTINGS_SUB,
                     ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
-                    ConfigState.DEFAULT_FINDINGS_SEVERITIES
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    false
             );
         }
         List<String> settings = arrayToStringList(opts.path("settings"));
         List<String> traffic = arrayToStringList(opts.path("traffic"));
         List<String> findings = arrayToStringList(opts.path("findings"));
+        boolean exporterSpecified = opts.has("exporter");
+        List<String> exporter = arrayToStringList(opts.path("exporter"));
+        boolean exporterOptionsPresent = opts.has("exporter") || opts.has("exporterStatsIntervalSeconds");
         return new DataSourceOptionsParts(
                 settings.isEmpty() ? ConfigState.DEFAULT_SETTINGS_SUB : settings,
                 traffic,
-                findings.isEmpty() ? ConfigState.DEFAULT_FINDINGS_SEVERITIES : findings
+                findings.isEmpty() ? ConfigState.DEFAULT_FINDINGS_SEVERITIES : findings,
+                exporterSpecified ? exporter : ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                intOr(opts.get("exporterStatsIntervalSeconds"), ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS),
+                exporterOptionsPresent
         );
     }
 
@@ -623,6 +663,12 @@ public final class Json {
                               boolean fileTotalCapEnabled, double fileTotalCapGb,
                               boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
                               String os, String osUser, String osPass, String openSearchTlsMode) { }
-    private record DataSourceOptionsParts(List<String> settingsSub, List<String> trafficToolTypes, List<String> findingsSeverities) { }
+    private record DataSourceOptionsParts(
+            List<String> settingsSub,
+            List<String> trafficToolTypes,
+            List<String> findingsSeverities,
+            List<String> exporterSubOptions,
+            int exporterStatsIntervalSeconds,
+            boolean exporterOptionsPresent) { }
     private record UiParts(ConfigState.UiPreferences uiPreferences) { }
 }

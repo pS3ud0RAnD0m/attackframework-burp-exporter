@@ -26,7 +26,7 @@ public class OpenSearchCleanupIT {
 
         deleteAttackFrameworkIndexesNow();
 
-        OpenSearchReachable.createSelectedIndexes(java.util.List.of("tool", "settings", "traffic"));
+        OpenSearchReachable.createSelectedIndexes(java.util.List.of("exporter", "settings", "traffic"));
 
         OpenSearchClient client = OpenSearchReachable.getClient();
         assertIndexExists(client, IndexNaming.INDEX_PREFIX);

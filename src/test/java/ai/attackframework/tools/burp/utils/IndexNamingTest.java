@@ -7,12 +7,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class IndexNamingTest {
 
     @Test
-    void computeIndexBaseNames_includesPrefixAndTrafficWhenSelected() {
-        // When we request "traffic", expect base prefix plus traffic-specific index
-        List<String> bases = IndexNaming.computeIndexBaseNames(List.of("traffic"));
+    void computeIndexBaseNames_includesToolOnlyWhenExporterSelected() {
+        List<String> bases = IndexNaming.computeIndexBaseNames(List.of("traffic", "exporter"));
 
         String p = IndexNaming.INDEX_PREFIX;
         assertThat(bases).contains(p, p + "-traffic");
+    }
+
+    @Test
+    void computeIndexBaseNames_omitsToolWhenExporterNotSelected() {
+        List<String> bases = IndexNaming.computeIndexBaseNames(List.of("traffic"));
+
+        assertThat(bases).containsExactly(IndexNaming.INDEX_PREFIX + "-traffic");
     }
 
     @Test

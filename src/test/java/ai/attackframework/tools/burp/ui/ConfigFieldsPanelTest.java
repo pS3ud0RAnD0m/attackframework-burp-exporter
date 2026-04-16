@@ -63,6 +63,26 @@ class ConfigFieldsPanelTest {
         }
     }
 
+    @Test
+    void toolRow_usesToolIndexCopy() throws Exception {
+        MontoyaApi previousApi = MontoyaApiProvider.get();
+        try {
+            MontoyaApiProvider.set(mockEditionApi(BurpSuiteEdition.PROFESSIONAL));
+            JPanel panel = buildPanelOnEdt();
+
+            JLabel toolLabel = findLabelByText(panel, "Tool");
+            JButton toolExpand = findByName(panel, "fields.tool.expand", JButton.class);
+
+            assertThat(toolLabel).isNotNull();
+            assertThat(toolExpand).isNotNull();
+            assertThat(toolLabel.getToolTipText()).contains("attackframework-tool-burp");
+            assertThat(toolLabel.getToolTipText()).contains("runtime stats snapshots");
+            assertThat(toolExpand.getToolTipText()).isEqualTo("<html>Show or hide Tool field options.</html>");
+        } finally {
+            MontoyaApiProvider.set(previousApi);
+        }
+    }
+
     private static JPanel buildPanelOnEdt() throws Exception {
         AtomicReference<JPanel> ref = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -72,6 +92,10 @@ class ConfigFieldsPanelTest {
             findingsExpand.setName("fields.findings.expand");
             expandButtons.put("findings", findingsExpand);
             subPanels.put("findings", new JPanel());
+            JButton toolExpand = new JButton("+");
+            toolExpand.setName("fields.tool.expand");
+            expandButtons.put("tool", toolExpand);
+            subPanels.put("tool", new JPanel());
             JPanel panel = new ConfigFieldsPanel(expandButtons, subPanels, 12).build(new LinkedHashMap<>());
             panel.doLayout();
             ref.set(panel);

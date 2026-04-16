@@ -1,10 +1,12 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +32,7 @@ class ToolIndexConfigReporterFileExportTest {
         try {
             Path root = TestPathSupport.createDirectory("tool-config-file-only");
             RuntimeConfig.updateState(new ConfigState.State(
-                    List.of(ConfigKeys.SRC_SETTINGS),
+                    List.of(ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_EXPORTER),
                     ConfigKeys.SCOPE_ALL,
                     List.of(),
                     new ConfigState.Sinks(true, root.toString(), true, true,
@@ -40,6 +42,8 @@ class ToolIndexConfigReporterFileExportTest {
                     ConfigState.DEFAULT_SETTINGS_SUB,
                     ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                     null));
             RuntimeConfig.setExportRunning(true);
             long openSearchToolSuccessBefore = ExportStats.getSuccessCount("tool");
@@ -55,5 +59,66 @@ class ToolIndexConfigReporterFileExportTest {
         } finally {
             tearDown();
         }
+    }
+
+    @Test
+    void pushConfigSnapshot_doesNotWriteToolDocument_whenExporterSourceDisabled() throws Exception {
+        try {
+            Path root = TestPathSupport.createDirectory("tool-config-disabled");
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_SETTINGS),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, root.toString(), true, true,
+                            true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
+                            true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            ToolIndexConfigReporter.pushConfigSnapshot();
+
+            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
+            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
+            assertThat(jsonlPath).doesNotExist();
+            assertThat(ndjsonPath).doesNotExist();
+        } finally {
+            tearDown();
+        }
+    }
+
+    @Test
+    void buildConfigDoc_includesExporterOptionsAndStatsInterval() {
+        ConfigState.State state = new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_EXPORTER),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(false, "", false, false,
+                        false, "https://opensearch.url:9200", "", "", false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                List.of("high"),
+                List.of(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS),
+                45,
+                null);
+
+        Map<?, ?> doc = (Map<?, ?>) callStatic(ToolIndexConfigReporter.class, "buildConfigDoc", state);
+        Map<?, ?> message = nestedMap(doc, "message");
+        Map<?, ?> options = nestedMap(message, "data_source_options");
+
+        assertThat(doc.get("event_type")).isEqualTo("config_snapshot");
+        assertThat(options.get("exporter")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class))
+                .containsExactly(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS);
+        assertThat(options.get("exporter_stats_interval_seconds")).isEqualTo(45);
+    }
+
+    private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {
+        assertThat(parent.get(key)).isInstanceOf(Map.class);
+        return (Map<?, ?>) parent.get(key);
     }
 }

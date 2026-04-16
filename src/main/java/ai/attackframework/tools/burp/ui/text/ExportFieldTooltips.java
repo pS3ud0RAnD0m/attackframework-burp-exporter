@@ -9,6 +9,7 @@ public final class ExportFieldTooltips {
 
     public static String displayNameFor(String indexShortName, String fieldKey) {
         return switch (indexShortName) {
+            case "tool" -> toolDisplayName(fieldKey);
             case "settings" -> settingsDisplayName(fieldKey);
             case "sitemap" -> sitemapDisplayName(fieldKey);
             case "findings" -> findingsDisplayName(fieldKey);
@@ -19,10 +20,51 @@ public final class ExportFieldTooltips {
 
     public static String tooltipFor(String indexShortName, String fieldKey) {
         return switch (indexShortName) {
+            case "tool" -> toolTooltip(fieldKey);
             case "settings" -> settingsTooltip(fieldKey);
             case "sitemap" -> sitemapTooltip(fieldKey);
             case "findings" -> findingsTooltip(fieldKey);
             case "traffic" -> trafficTooltip(fieldKey);
+            default -> fieldKey;
+        };
+    }
+
+    private static String toolDisplayName(String fieldKey) {
+        return switch (fieldKey) {
+            case "level" -> "event.level";
+            case "message_text" -> "message_text";
+            case "message" -> "message";
+            case "thread" -> "thread";
+            case "extension_version" -> "extension.version";
+            case "burp_version" -> "burp.version";
+            case "project_id" -> "project_id";
+            default -> fieldKey;
+        };
+    }
+
+    private static String toolTooltip(String fieldKey) {
+        return switch (fieldKey) {
+            case "level" -> Tooltips.textWithSource(
+                    "Event severity or verbosity level.",
+                    "ToolIndexLogForwarder forwards Logger levels; ToolIndexStatsReporter and ToolIndexConfigReporter write INFO.");
+            case "message_text" -> Tooltips.textWithSource(
+                    "Concise human-readable summary.",
+                    "ToolIndexLogForwarder stores the original log text; ToolIndexStatsReporter and ToolIndexConfigReporter build summary strings.");
+            case "message" -> Tooltips.textWithSource(
+                    "Structured event payload when present.",
+                    "ToolIndexStatsReporter writes runtime metrics; ToolIndexConfigReporter writes the normalized exporter configuration; log events do not populate this field.");
+            case "thread" -> Tooltips.textWithSource(
+                    "Producer thread name.",
+                    "Tool reporters use Thread.currentThread().getName().");
+            case "extension_version" -> Tooltips.textWithSource(
+                    "Burp Exporter extension version.",
+                    "All tool reporters use Version.get().");
+            case "burp_version" -> Tooltips.textWithSource(
+                    "Burp Suite version string.",
+                    "All tool reporters use BurpRuntimeMetadata.burpVersion().");
+            case "project_id" -> Tooltips.textWithSource(
+                    "Burp project identifier.",
+                    "All tool reporters use BurpRuntimeMetadata.projectId().");
             default -> fieldKey;
         };
     }

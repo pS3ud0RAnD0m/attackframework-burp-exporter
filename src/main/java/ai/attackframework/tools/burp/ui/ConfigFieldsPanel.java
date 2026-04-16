@@ -16,8 +16,10 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Builds the "Index Fields" section panel: per-index expand/collapse groups with checkboxes
- * for toggleable export fields. Layout uses wrapping so all fields are in view when expanded.
+ * Builds the "Index Fields" section used by {@link ConfigPanel}.
+ *
+ * <p>Each index is rendered as an expandable group of toggleable export-field checkboxes. The
+ * layout wraps so all controls remain visible when a section expands.</p>
  */
 public final class ConfigFieldsPanel {
 
@@ -39,9 +41,14 @@ public final class ConfigFieldsPanel {
     }
 
     /**
-     * Builds the Index Fields section: title and one expandable group per index with checkboxes.
-     * Sub-panels start collapsed. Caller must invoke on the EDT.
-     * If {@code sectionHeaderRowsOut} is non-null, it is filled with index name -> header row panel for enable/disable.
+     * Builds the Index Fields panel.
+     *
+     * <p>Caller must invoke on the EDT. Sub-panels start collapsed. When
+     * {@code sectionHeaderRowsOut} is non-null, this method fills it with the header row for each
+     * index so callers can enable or disable entire sections.</p>
+     *
+     * @param sectionHeaderRowsOut optional destination for index-name to header-row mappings
+     * @return assembled panel containing the section header and per-index groups
      */
     public JPanel build(java.util.Map<String, JPanel> sectionHeaderRowsOut) {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[grow,left]"));
@@ -88,6 +95,7 @@ public final class ConfigFieldsPanel {
             case "sitemap" -> "Sitemap";
             case "findings" -> "Findings";
             case "traffic" -> "Traffic";
+            case "tool" -> "Tool";
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }
@@ -110,6 +118,11 @@ public final class ConfigFieldsPanel {
                     "Configure fields exported to <code>attackframework-tool-burp-traffic</code>.",
                     "Traffic field labels are shown hierarchically to match the mapped document shape."
             );
+            case "tool" -> Tooltips.htmlRaw(
+                    "<b>Tool fields</b>",
+                    "Configure fields exported to <code>attackframework-tool-burp</code>.",
+                    "These fields cover Burp Exporter logs, runtime stats snapshots, and config snapshots."
+            );
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }
@@ -120,6 +133,7 @@ public final class ConfigFieldsPanel {
             case "sitemap" -> Tooltips.html("Show or hide Sitemap field options.");
             case "findings" -> findingsExpandTooltip();
             case "traffic" -> Tooltips.html("Show or hide Traffic field options.");
+            case "tool" -> Tooltips.html("Show or hide Tool field options.");
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }
@@ -138,12 +152,12 @@ public final class ConfigFieldsPanel {
         return Tooltips.html("Show or hide fields for all findings (aka issues).");
     }
 
-    /** Configures expand button style (match Data Sources). */
+    /** Configures the shared expand-button style used in the sources and fields sections. */
     public static void configureExpandButton(JButton b) {
         ButtonStyles.configureExpandButton(b);
     }
 
-    /** Sets expand button label and sub-panel visibility. */
+    /** Updates the expand button label and the matching sub-panel visibility. */
     public static void setExpanded(JButton expandButton, JPanel subPanel, boolean expanded) {
         expandButton.setText(expanded ? EXPAND_EXPANDED : EXPAND_COLLAPSED);
         subPanel.setVisible(expanded);

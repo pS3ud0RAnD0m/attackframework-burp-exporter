@@ -23,10 +23,13 @@ import ai.attackframework.tools.burp.ui.text.Tooltips;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Builds the "Burp Suite Sources" section panel used by ConfigPanel.
- * State (checkbox instances and component names) is owned by ConfigPanel
- * and injected here to keep a single source of truth.
- * Sections Settings, Issues, and Traffic have collapsible sub-checkboxes.
+ * Builds the "Burp Suite Sources" section used by {@link ConfigPanel}.
+ *
+ * <p>{@link ConfigPanel} owns the checkbox instances, names, and listeners. This builder receives
+ * those components so the UI layout stays centralized without duplicating state.</p>
+ *
+ * <p>Settings, Findings, Traffic, and Exporter expose collapsible sub-options. Sitemap remains a
+ * single row.</p>
  */
 public final class ConfigSourcesPanel {
     private static final String COMMUNITY_ICON_TOOLTIP = Tooltips.html("Unsupported in Community Edition.");
@@ -36,12 +39,15 @@ public final class ConfigSourcesPanel {
     private final JCheckBox sitemapCheckbox;
     private final JCheckBox issuesCheckbox;
     private final JCheckBox trafficCheckbox;
+    private final JCheckBox exporterCheckbox;
     private final JButton settingsExpandButton;
     private final JPanel settingsSubPanel;
     private final JButton issuesExpandButton;
     private final JPanel issuesSubPanel;
     private final JButton trafficExpandButton;
     private final JPanel trafficSubPanel;
+    private final JButton exporterExpandButton;
+    private final JPanel exporterSubPanel;
     private final JComponent issuesCommunityIndicator;
     private final int indentPx;
     private static final String GAPLEFT = "gapleft ";
@@ -50,24 +56,30 @@ public final class ConfigSourcesPanel {
                               JCheckBox sitemapCheckbox,
                               JCheckBox issuesCheckbox,
                               JCheckBox trafficCheckbox,
+                              JCheckBox exporterCheckbox,
                               JButton settingsExpandButton,
                               JPanel settingsSubPanel,
                               JButton issuesExpandButton,
                               JPanel issuesSubPanel,
                               JButton trafficExpandButton,
                               JPanel trafficSubPanel,
+                              JButton exporterExpandButton,
+                              JPanel exporterSubPanel,
                               JComponent issuesCommunityIndicator,
                               int indentPx) {
         this.settingsCheckbox = Objects.requireNonNull(settingsCheckbox, "settingsCheckbox");
         this.sitemapCheckbox = Objects.requireNonNull(sitemapCheckbox, "sitemapCheckbox");
         this.issuesCheckbox = Objects.requireNonNull(issuesCheckbox, "issuesCheckbox");
         this.trafficCheckbox = Objects.requireNonNull(trafficCheckbox, "trafficCheckbox");
+        this.exporterCheckbox = Objects.requireNonNull(exporterCheckbox, "exporterCheckbox");
         this.settingsExpandButton = Objects.requireNonNull(settingsExpandButton, "settingsExpandButton");
         this.settingsSubPanel = Objects.requireNonNull(settingsSubPanel, "settingsSubPanel");
         this.issuesExpandButton = Objects.requireNonNull(issuesExpandButton, "issuesExpandButton");
         this.issuesSubPanel = Objects.requireNonNull(issuesSubPanel, "issuesSubPanel");
         this.trafficExpandButton = Objects.requireNonNull(trafficExpandButton, "trafficExpandButton");
         this.trafficSubPanel = Objects.requireNonNull(trafficSubPanel, "trafficSubPanel");
+        this.exporterExpandButton = Objects.requireNonNull(exporterExpandButton, "exporterExpandButton");
+        this.exporterSubPanel = Objects.requireNonNull(exporterSubPanel, "exporterSubPanel");
         this.issuesCommunityIndicator = issuesCommunityIndicator;
         this.indentPx = indentPx;
     }
@@ -89,12 +101,12 @@ public final class ConfigSourcesPanel {
     }
 
     /**
-     * Builds the Burp Suite Sources section with the four source checkboxes and
-     * collapsible sub-rows for Settings, Issues, and Traffic.
+     * Builds the Burp Suite Sources panel.
      *
-     * <p>Caller must invoke on the EDT. Sub-panels start collapsed.</p>
+     * <p>Caller must invoke on the EDT. The assembled panel includes rows for Settings, Sitemap,
+     * Findings, Traffic, and Exporter. Collapsible sub-panels start hidden.</p>
      *
-     * @return assembled panel containing header and source checkboxes
+     * @return assembled panel containing the section header and source controls
      */
     public JPanel build() {
         JPanel panel = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[left]"));
@@ -113,13 +125,17 @@ public final class ConfigSourcesPanel {
 
         panel.add(sitemapCheckbox, GAPLEFT + indentPx);
 
-        // Issues: main checkbox + inline +/-; then sub-panel
+        // Findings: main checkbox + inline +/-; then sub-panel
         panel.add(parentRow(issuesCheckbox, issuesExpandButton, issuesCommunityIndicator, indentPx), "wrap");
         panel.add(issuesSubPanel, GAPLEFT + subIndent + ", wrap");
 
         // Traffic: main checkbox + inline +/-; then sub-panel
         panel.add(parentRow(trafficCheckbox, trafficExpandButton, null, indentPx), "wrap");
         panel.add(trafficSubPanel, GAPLEFT + subIndent + ", wrap");
+
+        // Exporter: main checkbox + inline +/-; then sub-panel
+        panel.add(parentRow(exporterCheckbox, exporterExpandButton, null, indentPx), "wrap");
+        panel.add(exporterSubPanel, GAPLEFT + subIndent + ", wrap");
 
         return panel;
     }

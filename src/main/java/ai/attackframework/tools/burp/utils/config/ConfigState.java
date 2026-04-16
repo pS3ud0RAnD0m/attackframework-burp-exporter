@@ -34,6 +34,19 @@ public final class ConfigState {
     public static final List<String> DEFAULT_FINDINGS_SEVERITIES =
             List.of("critical", "high", "medium", "low", "informational");
 
+    /** Default exporter sub-options: all tool documents enabled by default. */
+    public static final List<String> DEFAULT_EXPORTER_SUB_OPTIONS = List.of(
+            ConfigKeys.SRC_EXPORTER_TRACE,
+            ConfigKeys.SRC_EXPORTER_DEBUG,
+            ConfigKeys.SRC_EXPORTER_INFO,
+            ConfigKeys.SRC_EXPORTER_WARN,
+            ConfigKeys.SRC_EXPORTER_ERROR,
+            ConfigKeys.SRC_EXPORTER_STATS,
+            ConfigKeys.SRC_EXPORTER_CONFIG);
+
+    /** Default interval for exporter stats snapshots. */
+    public static final int DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS = 30;
+
     /** Default total cap across exporter files under the selected root, stored as human-friendly GB. */
     public static final double DEFAULT_FILE_TOTAL_CAP_GB = 5d;
 
@@ -177,6 +190,8 @@ public final class ConfigState {
                         List<String> settingsSub,       // "project", "user"; default both
                         List<String> trafficToolTypes,  // ToolType names; default empty (no traffic)
                         List<String> findingsSeverities, // AuditIssueSeverity names; default all five
+                        List<String> exporterSubOptions, // trace/debug/info/warn/error/stats/config
+                        int exporterStatsIntervalSeconds, // seconds; default 30
                         Map<String, Set<String>> enabledExportFieldsByIndex, // index shortName -> enabled toggleable field keys; null = all enabled
                         UiPreferences uiPreferences) {
 
@@ -187,6 +202,8 @@ public final class ConfigState {
             settingsSub       = normalizeSettingsSub(settingsSub);
             trafficToolTypes  = normalizeTrafficToolTypes(trafficToolTypes);
             findingsSeverities = normalizeFindingsSeverities(findingsSeverities);
+            exporterSubOptions = normalizeExporterSubOptions(exporterSubOptions);
+            exporterStatsIntervalSeconds = normalizeExporterStatsIntervalSeconds(exporterStatsIntervalSeconds);
             enabledExportFieldsByIndex = enabledExportFieldsByIndex == null ? null : copyMapOfSets(enabledExportFieldsByIndex);
             uiPreferences = uiPreferences == null ? defaultUiPreferences() : uiPreferences;
         }
@@ -198,9 +215,39 @@ public final class ConfigState {
                      List<String> settingsSub,
                      List<String> trafficToolTypes,
                      List<String> findingsSeverities,
+                     List<String> exporterSubOptions,
+                     int exporterStatsIntervalSeconds,
                      Map<String, Set<String>> enabledExportFieldsByIndex) {
             this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
-                    findingsSeverities, enabledExportFieldsByIndex, defaultUiPreferences());
+                    findingsSeverities, exporterSubOptions, exporterStatsIntervalSeconds,
+                    enabledExportFieldsByIndex, defaultUiPreferences());
+        }
+
+        public State(List<String> dataSources,
+                     String scopeType,
+                     List<ScopeEntry> customEntries,
+                     Sinks sinks,
+                     List<String> settingsSub,
+                     List<String> trafficToolTypes,
+                     List<String> findingsSeverities,
+                     Map<String, Set<String>> enabledExportFieldsByIndex,
+                     UiPreferences uiPreferences) {
+            this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
+                    findingsSeverities, DEFAULT_EXPORTER_SUB_OPTIONS, DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    enabledExportFieldsByIndex, uiPreferences);
+        }
+
+        public State(List<String> dataSources,
+                     String scopeType,
+                     List<ScopeEntry> customEntries,
+                     Sinks sinks,
+                     List<String> settingsSub,
+                     List<String> trafficToolTypes,
+                     List<String> findingsSeverities,
+                     Map<String, Set<String>> enabledExportFieldsByIndex) {
+            this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
+                    findingsSeverities, DEFAULT_EXPORTER_SUB_OPTIONS, DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    enabledExportFieldsByIndex, defaultUiPreferences());
         }
 
         private static Map<String, Set<String>> copyMapOfSets(Map<String, Set<String>> map) {
@@ -292,6 +339,16 @@ public final class ConfigState {
     /** Normalizes finding severity ids to lowercase. */
     public static List<String> normalizeFindingsSeverities(List<String> values) {
         return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes exporter sub-option ids to lowercase. */
+    public static List<String> normalizeExporterSubOptions(List<String> values) {
+        return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes the exporter stats interval to a positive number of seconds. */
+    public static int normalizeExporterStatsIntervalSeconds(int value) {
+        return value > 0 ? value : DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS;
     }
 
     /** Normalizes persisted scope type values to lowercase supported ids. */

@@ -12,10 +12,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ExportFieldRegistryTest {
 
     @Test
-    void index_order_for_fields_panel_excludes_tool_and_matches_config_sources_order() {
+    void index_order_for_fields_panel_includes_tool_and_matches_config_sources_order() {
         assertThat(ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL)
-                .containsExactly("settings", "sitemap", "findings", "traffic");
-        assertThat(ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL).doesNotContain("tool");
+                .containsExactly("settings", "sitemap", "findings", "traffic", "tool");
     }
 
     @Test

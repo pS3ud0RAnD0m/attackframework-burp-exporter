@@ -17,19 +17,23 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Periodically pushes a stats snapshot document to the tool index
- * ({@link IndexNaming#INDEX_PREFIX}) for resource and export metrics in OpenSearch.
+ * Periodically pushes exporter stats snapshots to the Tool index.
  *
- * <p>Started when export startup reaches the tool-stats phase; runs on a daemon thread.
- * Only pushes when export is running and {@link RuntimeConfig#openSearchUrl()} is set.
- * Fire-and-forget; failures are not pushed back to the tool index to avoid feedback loops.</p>
+ * <p>Started when export startup reaches the tool-stats phase; runs on a single daemon scheduler.
+ * Snapshots are emitted only while export is running, the {@code exporter} source is enabled, the
+ * {@code stats} sub-option is selected, and at least one sink is active. The interval is read
+ * from {@link RuntimeConfig#exporterStatsIntervalSeconds()} so UI changes can reschedule the
+ * reporter without restarting the extension.</p>
  *
- * <p>Set {@link #ENABLED} to {@code false} to disable the reporter (e.g. to test
- * whether periodic OpenSearch pushes contribute to memory growth).</p>
+ * <p>Delivery is fire-and-forget: failures are not pushed back into the Tool index to avoid
+ * feedback loops. Set {@link #ENABLED} to {@code false} to disable the reporter for diagnostics or
+ * focused testing.</p>
  */
 public final class ToolIndexStatsReporter {
 
@@ -37,18 +41,18 @@ public final class ToolIndexStatsReporter {
     public static final boolean ENABLED = true;
 
     private static final String SCHEMA_VERSION = "1";
-    private static final int INTERVAL_SECONDS = 30;
     private static final String EVENT_TYPE = "stats_snapshot";
 
     private static volatile ScheduledExecutorService scheduler;
+    private static volatile int scheduledIntervalSeconds = ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS;
 
     private ToolIndexStatsReporter() {}
 
     /**
-     * Pushes one stats snapshot immediately so the tool index can reflect the
-     * current runtime state without waiting for the next interval.
+     * Pushes one stats snapshot immediately.
      *
-     * <p>Safe to call from any thread. No-op if export is not running or no sink is enabled.</p>
+     * <p>Safe to call from any thread. Returns immediately when export is stopped, the exporter
+     * stats sub-option is disabled, or no sink is enabled.</p>
      */
     public static void pushSnapshotNow() {
         if (!ENABLED) return;
@@ -58,17 +62,19 @@ public final class ToolIndexStatsReporter {
     /**
      * Starts the periodic stats reporter if not already running.
      *
-     * <p>Safe to call from any thread. Uses a single daemon scheduler.
-     * No-op if {@link #ENABLED} is false.</p>
+     * <p>Safe to call from any thread. Uses a single daemon scheduler and the current runtime
+     * interval from {@link RuntimeConfig#exporterStatsIntervalSeconds()}. Returns immediately when
+     * {@link #ENABLED} is {@code false} or exporter stats are disabled.</p>
      */
     public static void start() {
-        if (!ENABLED || scheduler != null) {
+        if (!ENABLED || scheduler != null || !RuntimeConfig.isExporterStatsEnabled()) {
             return;
         }
         synchronized (ToolIndexStatsReporter.class) {
-            if (scheduler != null) {
+            if (scheduler != null || !RuntimeConfig.isExporterStatsEnabled()) {
                 return;
             }
+            int intervalSeconds = RuntimeConfig.exporterStatsIntervalSeconds();
             ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "attackframework-tool-stats");
                 t.setDaemon(true);
@@ -76,10 +82,11 @@ public final class ToolIndexStatsReporter {
             });
             exec.scheduleAtFixedRate(
                     ToolIndexStatsReporter::pushSnapshot,
-                    INTERVAL_SECONDS,
-                    INTERVAL_SECONDS,
+                    intervalSeconds,
+                    intervalSeconds,
                     TimeUnit.SECONDS);
             scheduler = exec;
+            scheduledIntervalSeconds = intervalSeconds;
         }
     }
 
@@ -97,9 +104,34 @@ public final class ToolIndexStatsReporter {
         ReporterExecutors.shutdownNowAndAwait(exec);
     }
 
+    /**
+     * Reconciles the scheduler with the current runtime exporter configuration.
+     *
+     * <p>Safe to call from any thread. Stops the scheduler when exporter stats are disabled or
+     * export is stopped, starts it when newly enabled, and recreates it when the interval changes.</p>
+     */
+    public static void refreshScheduleForCurrentState() {
+        if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isExporterStatsEnabled()) {
+            stop();
+            return;
+        }
+        int currentIntervalSeconds = RuntimeConfig.exporterStatsIntervalSeconds();
+        if (scheduler == null) {
+            start();
+            return;
+        }
+        if (scheduledIntervalSeconds != currentIntervalSeconds) {
+            stop();
+            start();
+        }
+    }
+
     private static void pushSnapshot() {
         try {
             if (!RuntimeConfig.isExportRunning()) {
+                return;
+            }
+            if (!RuntimeConfig.isDataSourceEnabled(ConfigKeys.SRC_EXPORTER) || !RuntimeConfig.isExporterStatsEnabled()) {
                 return;
             }
             if (!RuntimeConfig.isAnySinkEnabled()) {

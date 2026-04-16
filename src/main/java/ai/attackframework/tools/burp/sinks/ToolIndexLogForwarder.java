@@ -18,14 +18,16 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Forwards extension log events to the {@link IndexNaming#INDEX_PREFIX} (attackframework-tool-burp)
- * index so the Attack Framework can analyze extension/OpenSearch issues centrally.
+ * Forwards selected exporter log events to the Tool index.
  *
  * <p>Registers as a {@link Logger.LogListener}; each log event is queued and pushed asynchronously
- * by a single worker thread. Pushes when export is running and at least one sink
- * is enabled.
- * Fire-and-forget; failures are not logged back to avoid feedback loops. If the queue is full,
- * the oldest event is dropped to make room.</p>
+ * by a single worker thread. Events are forwarded only when export is ready, the
+ * {@code exporter} source is enabled, the corresponding exporter log level is selected, and at
+ * least one sink is active.</p>
+ *
+ * <p>Delivery is fire-and-forget: failures are not logged back into the same stream to avoid
+ * feedback loops. If the queue is full, the oldest event is dropped to make room for the newest
+ * event.</p>
  */
 public final class ToolIndexLogForwarder implements Logger.LogListener {
 
@@ -58,6 +60,12 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
     @Override
     public void onLog(String level, String message) {
         if (!RuntimeConfig.isExportReady()) {
+            return;
+        }
+        if (!RuntimeConfig.isDataSourceEnabled(ai.attackframework.tools.burp.utils.config.ConfigKeys.SRC_EXPORTER)) {
+            return;
+        }
+        if (!RuntimeConfig.isExporterLogLevelEnabled(normalizeLevel(level))) {
             return;
         }
         if (!RuntimeConfig.isAnySinkEnabled()) {
@@ -103,9 +111,22 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
                     TimeUnit.SECONDS.sleep(1);
                     continue;
                 }
+                if (!RuntimeConfig.isDataSourceEnabled(ai.attackframework.tools.burp.utils.config.ConfigKeys.SRC_EXPORTER)) {
+                    queue.clear();
+                    TimeUnit.SECONDS.sleep(1);
+                    continue;
+                }
+                if (!RuntimeConfig.isAnyExporterLogLevelEnabled()) {
+                    queue.clear();
+                    TimeUnit.SECONDS.sleep(1);
+                    continue;
+                }
 
                 Map<String, Object> doc = queue.poll(1, TimeUnit.SECONDS);
                 if (doc == null) continue;
+                if (!RuntimeConfig.isExporterLogLevelEnabled(normalizeLevel((String) doc.get("level")))) {
+                    continue;
+                }
 
                 String baseUrl = RuntimeConfig.openSearchUrl();
                 boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
@@ -131,5 +152,9 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
 
     private static String projectId() {
         return BurpRuntimeMetadata.projectId();
+    }
+
+    private static String normalizeLevel(String level) {
+        return level == null ? "" : level.trim().toLowerCase(java.util.Locale.ROOT);
     }
 }

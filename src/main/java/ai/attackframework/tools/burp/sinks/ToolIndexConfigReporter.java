@@ -12,12 +12,16 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Pushes the current runtime configuration as a document to the tool index
- * when export startup completes.
+ * Pushes the current runtime configuration to the Tool index.
+ *
+ * <p>This reporter emits a single {@code config_snapshot} document when export startup completes.
+ * The snapshot is sent only while export is running, the {@code exporter} source is enabled, the
+ * {@code config} sub-option is selected, and at least one sink is active.</p>
  */
 public final class ToolIndexConfigReporter {
 
@@ -28,12 +32,17 @@ public final class ToolIndexConfigReporter {
     private ToolIndexConfigReporter() {}
 
     /**
-     * Pushes one config snapshot to enabled sinks if export is running.
-     * Safe to call from any thread. Fire-and-forget.
+     * Pushes one configuration snapshot to the enabled sinks.
+     *
+     * <p>Safe to call from any thread. Returns immediately when export is stopped, the exporter
+     * config sub-option is disabled, or no sink is enabled. Delivery is fire-and-forget.</p>
      */
     public static void pushConfigSnapshot() {
         try {
             if (!RuntimeConfig.isExportRunning()) {
+                return;
+            }
+            if (!RuntimeConfig.isExporterConfigEnabled()) {
                 return;
             }
             if (!RuntimeConfig.isAnySinkEnabled()) {
@@ -63,6 +72,8 @@ public final class ToolIndexConfigReporter {
         opts.put("settings", state.settingsSub() != null ? new ArrayList<>(state.settingsSub()) : List.of());
         opts.put("traffic", state.trafficToolTypes() != null ? new ArrayList<>(state.trafficToolTypes()) : List.of());
         opts.put("findings", state.findingsSeverities() != null ? new ArrayList<>(state.findingsSeverities()) : List.of());
+        opts.put("exporter", state.exporterSubOptions() != null ? new ArrayList<>(state.exporterSubOptions()) : List.of());
+        opts.put("exporter_stats_interval_seconds", state.exporterStatsIntervalSeconds());
         message.put("data_source_options", opts);
         message.put("scope_type", state.scopeType());
         List<Map<String, Object>> custom = new ArrayList<>();
@@ -88,7 +99,8 @@ public final class ToolIndexConfigReporter {
         }
 
         String messageText = "config_snapshot scope=" + state.scopeType()
-                + " sources=" + (state.dataSources() != null ? state.dataSources().size() : 0);
+                + " sources=" + (state.dataSources() != null ? state.dataSources().size() : 0)
+                + " exporter=" + (state.dataSources() != null && state.dataSources().contains(ConfigKeys.SRC_EXPORTER));
 
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("level", "INFO");

@@ -141,7 +141,13 @@ public class OpenSearchSink {
         }
     }
 
-    /** Creates all indices required by the selected sources; always includes "tool". */
+    /**
+     * Creates all indices required by the selected sources.
+     *
+     * <p>Only source keys recognized by {@link IndexNaming#computeIndexBaseNames(List)} produce
+     * indices. For example, the Tool index is created only when the {@code exporter} source is
+     * selected.</p>
+     */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
         return createSelectedIndexes(baseUrl, selectedSources, null, null);
     }

@@ -245,6 +245,16 @@ public final class RuntimeConfig {
                 && (isOpenSearchTrafficEnabled() || isAnyFileExportEnabled());
     }
 
+    /** Returns whether the exporter source is enabled with at least one sub-option selected. */
+    public static boolean isAnyExporterExportEnabled() {
+        ConfigState.State current = state;
+        return current != null
+                && isDataSourceEnabled(ConfigKeys.SRC_EXPORTER)
+                && current.exporterSubOptions() != null
+                && !current.exporterSubOptions().isEmpty()
+                && (isOpenSearchExportEnabled() || isAnyFileExportEnabled());
+    }
+
     /** Returns whether the named data source is currently enabled after edition normalization. */
     public static boolean isDataSourceEnabled(String source) {
         if (source == null || source.isBlank()) {
@@ -273,6 +283,53 @@ public final class RuntimeConfig {
         return current != null
                 && current.trafficToolTypes() != null
                 && current.trafficToolTypes().contains(normalizedToolType);
+    }
+
+    /** Returns whether the named exporter sub-option is currently enabled. */
+    public static boolean isExporterSubOptionEnabled(String option) {
+        if (option == null || option.isBlank() || !isDataSourceEnabled(ConfigKeys.SRC_EXPORTER)) {
+            return false;
+        }
+        String normalizedOption = option.trim().toLowerCase(Locale.ROOT);
+        ConfigState.State current = state;
+        return current != null
+                && current.exporterSubOptions() != null
+                && current.exporterSubOptions().contains(normalizedOption);
+    }
+
+    /** Returns whether any exporter log level is currently enabled. */
+    public static boolean isAnyExporterLogLevelEnabled() {
+        return isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_TRACE)
+                || isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_DEBUG)
+                || isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_INFO)
+                || isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_WARN)
+                || isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_ERROR);
+    }
+
+    /** Returns whether the given exporter log level is enabled. */
+    public static boolean isExporterLogLevelEnabled(String level) {
+        if (level == null || level.isBlank()) {
+            return false;
+        }
+        return isExporterSubOptionEnabled(level);
+    }
+
+    /** Returns whether exporter stats snapshots are enabled. */
+    public static boolean isExporterStatsEnabled() {
+        return isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_STATS);
+    }
+
+    /** Returns whether exporter config snapshots are enabled. */
+    public static boolean isExporterConfigEnabled() {
+        return isExporterSubOptionEnabled(ConfigKeys.SRC_EXPORTER_CONFIG);
+    }
+
+    /** Returns the configured exporter stats interval in seconds. */
+    public static int exporterStatsIntervalSeconds() {
+        ConfigState.State current = state;
+        return current == null
+                ? ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS
+                : ConfigState.normalizeExporterStatsIntervalSeconds(current.exporterStatsIntervalSeconds());
     }
 
     /** Current OpenSearch URL for runtime exports; blank when OpenSearch export is disabled. */
@@ -346,6 +403,8 @@ public final class RuntimeConfig {
                 current.settingsSub(),
                 current.trafficToolTypes(),
                 current.findingsSeverities(),
+                current.exporterSubOptions(),
+                current.exporterStatsIntervalSeconds(),
                 current.enabledExportFieldsByIndex(),
                 uiPreferences));
     }
@@ -397,12 +456,18 @@ public final class RuntimeConfig {
         List<String> findingsSeverities = incoming.findingsSeverities() != null && !incoming.findingsSeverities().isEmpty()
                 ? ConfigState.normalizeFindingsSeverities(incoming.findingsSeverities())
                 : ConfigState.DEFAULT_FINDINGS_SEVERITIES;
+        List<String> exporterSubOptions = incoming.exporterSubOptions() != null && !incoming.exporterSubOptions().isEmpty()
+                ? ConfigState.normalizeExporterSubOptions(incoming.exporterSubOptions())
+                : ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS;
+        int exporterStatsIntervalSeconds = ConfigState.normalizeExporterStatsIntervalSeconds(
+                incoming.exporterStatsIntervalSeconds());
 
         logCommunityNormalizationIfNeeded(sources, normalizedSources, trafficToolTypes, normalizedTrafficToolTypes);
 
         Map<String, java.util.Set<String>> enabledFields = incoming.enabledExportFieldsByIndex();
         return new ConfigState.State(normalizedSources, scopeType, custom, normalizedSinks,
-                settingsSub, normalizedTrafficToolTypes, findingsSeverities, enabledFields,
+                settingsSub, normalizedTrafficToolTypes, findingsSeverities,
+                exporterSubOptions, exporterStatsIntervalSeconds, enabledFields,
                 incoming.uiPreferences());
     }
 
@@ -434,7 +499,7 @@ public final class RuntimeConfig {
 
     private static ConfigState.State defaultState() {
         return new ConfigState.State(
-                List.of(),
+                List.of(ConfigKeys.SRC_EXPORTER),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
                 new ConfigState.Sinks(false, "", false, false,
@@ -444,6 +509,8 @@ public final class RuntimeConfig {
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 normalizeTrafficToolTypesForEdition(ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                 null,  // all export fields enabled
                 ConfigState.defaultUiPreferences()
         );
@@ -520,6 +587,8 @@ public final class RuntimeConfig {
                 current.settingsSub(),
                 current.trafficToolTypes(),
                 current.findingsSeverities(),
+                current.exporterSubOptions(),
+                current.exporterStatsIntervalSeconds(),
                 current.enabledExportFieldsByIndex(),
                 current.uiPreferences());
     }
@@ -550,6 +619,8 @@ public final class RuntimeConfig {
                 current.settingsSub(),
                 current.trafficToolTypes(),
                 current.findingsSeverities(),
+                current.exporterSubOptions(),
+                current.exporterStatsIntervalSeconds(),
                 current.enabledExportFieldsByIndex(),
                 current.uiPreferences());
     }

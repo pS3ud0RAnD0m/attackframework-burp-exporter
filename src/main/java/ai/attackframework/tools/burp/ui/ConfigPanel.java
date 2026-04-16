@@ -106,6 +106,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JCheckBox sitemapCheckbox  = new Tooltips.HtmlCheckBox("Sitemap",  true);
     private final TriStateCheckBox issuesCheckbox   = new TriStateCheckBox("Issues",   TriStateCheckBox.State.SELECTED);
     private final TriStateCheckBox trafficCheckbox  = new TriStateCheckBox("Traffic",  TriStateCheckBox.State.SELECTED);
+    private final TriStateCheckBox exporterCheckbox = new TriStateCheckBox("Exporter", TriStateCheckBox.State.SELECTED);
 
     private final JCheckBox settingsProjectCheckbox = new Tooltips.HtmlCheckBox("Project", true);
     private final JCheckBox settingsUserCheckbox    = new Tooltips.HtmlCheckBox("User", true);
@@ -125,11 +126,22 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JCheckBox issuesLowCheckbox           = new Tooltips.HtmlCheckBox("Low", true);
     private final JCheckBox issuesInformationalCheckbox = new Tooltips.HtmlCheckBox("Informational", true);
 
+    private final JCheckBox exporterTraceCheckbox  = new Tooltips.HtmlCheckBox("Trace", true);
+    private final JCheckBox exporterDebugCheckbox  = new Tooltips.HtmlCheckBox("Debug", true);
+    private final JCheckBox exporterInfoCheckbox   = new Tooltips.HtmlCheckBox("Info", true);
+    private final JCheckBox exporterWarnCheckbox   = new Tooltips.HtmlCheckBox("Warn", true);
+    private final JCheckBox exporterErrorCheckbox  = new Tooltips.HtmlCheckBox("Error", true);
+    private final JCheckBox exporterStatsCheckbox  = new Tooltips.HtmlCheckBox("Stats", true);
+    private final JCheckBox exporterConfigCheckbox = new Tooltips.HtmlCheckBox("Config", true);
+    private final JTextField exporterStatsIntervalField = new AutoSizingTextField(
+            String.valueOf(ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS));
+
     private static final String EXPAND_COLLAPSED = "+";
     private static final String EXPAND_EXPANDED = "−";
     private final JButton settingsExpandButton = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
     private final JButton issuesExpandButton   = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
     private final JButton trafficExpandButton  = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
+    private final JButton exporterExpandButton = new Tooltips.HtmlButton(EXPAND_COLLAPSED);
     private final JPanel issuesCommunityIndicator = ConfigSourcesPanel.buildCommunityEditionIndicator(
             "src.issues.communityNotice",
             "src.issues.communityNotice.icon");
@@ -224,19 +236,24 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ButtonStyles.configureExpandButton(settingsExpandButton);
         ButtonStyles.configureExpandButton(issuesExpandButton);
         ButtonStyles.configureExpandButton(trafficExpandButton);
+        ButtonStyles.configureExpandButton(exporterExpandButton);
 
         JPanel settingsSubPanel = buildSettingsSubPanel();
         JPanel issuesSubPanel = buildIssuesSubPanel();
         JPanel trafficSubPanel = buildTrafficSubPanel();
+        JPanel exporterSubPanel = buildExporterSubPanel();
         settingsSubPanel.setOpaque(false);
         issuesSubPanel.setOpaque(false);
         trafficSubPanel.setOpaque(false);
+        exporterSubPanel.setOpaque(false);
         settingsSubPanel.setVisible(false);
         issuesSubPanel.setVisible(false);
         trafficSubPanel.setVisible(false);
+        exporterSubPanel.setVisible(false);
         wireSourcesExpandCollapse(settingsExpandButton, settingsSubPanel);
         wireSourcesExpandCollapse(issuesExpandButton, issuesSubPanel);
         wireSourcesExpandCollapse(trafficExpandButton, trafficSubPanel);
+        wireSourcesExpandCollapse(exporterExpandButton, exporterSubPanel);
 
         wireTriStateParentChild(settingsCheckbox, java.util.List.of(settingsProjectCheckbox, settingsUserCheckbox));
         wireTriStateParentChild(issuesCheckbox, java.util.List.of(
@@ -244,10 +261,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         wireTriStateParentChild(trafficCheckbox, java.util.List.of(
                 trafficBurpAiCheckbox, trafficExtensionsCheckbox, trafficIntruderCheckbox, trafficProxyCheckbox,
                 trafficProxyHistoryCheckbox, trafficRepeaterCheckbox, trafficScannerCheckbox, trafficSequencerCheckbox));
+        wireTriStateParentChild(exporterCheckbox, java.util.List.of(
+                exporterTraceCheckbox, exporterDebugCheckbox, exporterInfoCheckbox, exporterWarnCheckbox,
+                exporterErrorCheckbox, exporterStatsCheckbox, exporterConfigCheckbox));
 
-        add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox,
+        add(new ConfigSourcesPanel(settingsCheckbox, sitemapCheckbox, issuesCheckbox, trafficCheckbox, exporterCheckbox,
                 settingsExpandButton, settingsSubPanel, issuesExpandButton, issuesSubPanel,
-                trafficExpandButton, trafficSubPanel, issuesCommunityIndicator, INDENT).build(),
+                trafficExpandButton, trafficSubPanel, exporterExpandButton, exporterSubPanel,
+                issuesCommunityIndicator, INDENT).build(),
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_FILL_WRAP);
 
@@ -956,6 +977,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             sitemapCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_SITEMAP));
             issuesCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_FINDINGS));
             trafficCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_TRAFFIC));
+            exporterCheckbox.setSelected(state.dataSources().contains(ConfigKeys.SRC_EXPORTER));
 
             List<String> settingsSub = state.settingsSub() != null ? state.settingsSub() : List.of();
             settingsProjectCheckbox.setSelected(settingsSub.contains(ConfigKeys.SRC_SETTINGS_PROJECT));
@@ -977,6 +999,17 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             issuesMediumCheckbox.setSelected(severities.contains("medium"));
             issuesLowCheckbox.setSelected(severities.contains("low"));
             issuesInformationalCheckbox.setSelected(severities.contains("informational"));
+
+            List<String> exporterOptions = state.exporterSubOptions() != null ? state.exporterSubOptions() : List.of();
+            exporterTraceCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_TRACE));
+            exporterDebugCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_DEBUG));
+            exporterInfoCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_INFO));
+            exporterWarnCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_WARN));
+            exporterErrorCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_ERROR));
+            exporterStatsCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_STATS));
+            exporterConfigCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_CONFIG));
+            exporterStatsIntervalField.setText(String.valueOf(state.exporterStatsIntervalSeconds()));
+            refreshExporterStatsIntervalEnabledState();
 
             ConfigState.Sinks sinks = state.sinks();
             if (sinks != null) {
@@ -1046,6 +1079,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void updateRuntimeConfig() {
         RuntimeConfig.updateState(buildCurrentState());
+        ToolIndexStatsReporter.refreshScheduleForCurrentState();
     }
 
     private void syncSelectedAuthStateFromUi() {
@@ -1090,6 +1124,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             case "traffic" -> trafficCheckbox.isSelected() || trafficBurpAiCheckbox.isSelected() || trafficExtensionsCheckbox.isSelected() || trafficIntruderCheckbox.isSelected()
                     || trafficProxyCheckbox.isSelected() || trafficProxyHistoryCheckbox.isSelected() || trafficRepeaterCheckbox.isSelected()
                     || trafficScannerCheckbox.isSelected() || trafficSequencerCheckbox.isSelected();
+            case "tool" -> exporterCheckbox.isSelected() || exporterTraceCheckbox.isSelected() || exporterDebugCheckbox.isSelected()
+                    || exporterInfoCheckbox.isSelected() || exporterWarnCheckbox.isSelected() || exporterErrorCheckbox.isSelected()
+                    || exporterStatsCheckbox.isSelected() || exporterConfigCheckbox.isSelected();
             default -> false;
         };
     }
@@ -1113,12 +1150,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.addActionListener(runtimeUpdater);
         issuesCheckbox.addActionListener(runtimeUpdater);
         trafficCheckbox.addActionListener(runtimeUpdater);
+        exporterCheckbox.addActionListener(runtimeUpdater);
         // Defer so checkbox model and other listeners run first, avoiding flakiness when toggling source
         ActionListener refreshFieldsSections = e -> SwingUtilities.invokeLater(this::refreshFieldsSectionsEnabled);
         settingsCheckbox.addActionListener(refreshFieldsSections);
         sitemapCheckbox.addActionListener(refreshFieldsSections);
         issuesCheckbox.addActionListener(refreshFieldsSections);
         trafficCheckbox.addActionListener(refreshFieldsSections);
+        exporterCheckbox.addActionListener(refreshFieldsSections);
         settingsProjectCheckbox.addActionListener(runtimeUpdater);
         settingsProjectCheckbox.addActionListener(refreshFieldsSections);
         settingsUserCheckbox.addActionListener(runtimeUpdater);
@@ -1149,6 +1188,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         issuesLowCheckbox.addActionListener(refreshFieldsSections);
         issuesInformationalCheckbox.addActionListener(runtimeUpdater);
         issuesInformationalCheckbox.addActionListener(refreshFieldsSections);
+        exporterTraceCheckbox.addActionListener(runtimeUpdater);
+        exporterTraceCheckbox.addActionListener(refreshFieldsSections);
+        exporterDebugCheckbox.addActionListener(runtimeUpdater);
+        exporterDebugCheckbox.addActionListener(refreshFieldsSections);
+        exporterInfoCheckbox.addActionListener(runtimeUpdater);
+        exporterInfoCheckbox.addActionListener(refreshFieldsSections);
+        exporterWarnCheckbox.addActionListener(runtimeUpdater);
+        exporterWarnCheckbox.addActionListener(refreshFieldsSections);
+        exporterErrorCheckbox.addActionListener(runtimeUpdater);
+        exporterErrorCheckbox.addActionListener(refreshFieldsSections);
+        exporterStatsCheckbox.addActionListener(e -> {
+            refreshExporterStatsIntervalEnabledState();
+            updateRuntimeConfig();
+        });
+        exporterStatsCheckbox.addActionListener(refreshFieldsSections);
+        exporterConfigCheckbox.addActionListener(runtimeUpdater);
+        exporterConfigCheckbox.addActionListener(refreshFieldsSections);
 
         allRadio.addActionListener(runtimeUpdater);
         burpSuiteRadio.addActionListener(runtimeUpdater);
@@ -1182,12 +1238,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         DocumentListener relayout = Doc.onChange(() -> {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
+            exporterStatsIntervalField.revalidate();
             updateRuntimeConfig();
         });
         filePathField.getDocument().addDocumentListener(relayout);
         openSearchUrlField.getDocument().addDocumentListener(relayout);
         fileTotalCapField.getDocument().addDocumentListener(relayout);
         fileDiskUsagePercentField.getDocument().addDocumentListener(relayout);
+        exporterStatsIntervalField.getDocument().addDocumentListener(relayout);
 
         DocumentListener authUpdater = Doc.onChange(() -> {
             if (!suppressAuthSync) {
@@ -1219,6 +1277,37 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         p.add(issuesLowCheckbox);
         p.add(issuesInformationalCheckbox);
         return p;
+    }
+
+    private JPanel buildExporterSubPanel() {
+        JPanel p = new JPanel(new MigLayout("insets 0, wrap 1", "[left]"));
+        p.add(exporterTraceCheckbox);
+        p.add(exporterDebugCheckbox);
+        p.add(exporterInfoCheckbox);
+        p.add(exporterWarnCheckbox);
+        p.add(exporterErrorCheckbox);
+        p.add(buildExporterStatsRow());
+        p.add(exporterConfigCheckbox);
+        refreshExporterStatsIntervalEnabledState();
+        return p;
+    }
+
+    private JPanel buildExporterStatsRow() {
+        JPanel row = new JPanel(new MigLayout("insets 0, gapx 8, gapy 0, novisualpadding", "[left][pref][40!][left]", "[]"));
+        row.setOpaque(false);
+        row.add(exporterStatsCheckbox);
+        row.add(Tooltips.label("Interval:",
+                Tooltips.html(
+                        "Frequency for exporter stats snapshots.",
+                        "This controls how often the Tool index receives stats documents."
+                )));
+        row.add(exporterStatsIntervalField, "w 40!");
+        row.add(new JLabel("sec"));
+        return row;
+    }
+
+    private void refreshExporterStatsIntervalEnabledState() {
+        exporterStatsIntervalField.setEnabled(exporterStatsCheckbox.isSelected());
     }
 
     /** Builds inline OpenSearch authentication controls (auth type + type-specific credential fields). */
@@ -1598,6 +1687,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * <p>EDT only. Keeps paired text fields and buttons in sync with their enable toggles.</p>
      */
     private void refreshEnabledStates() {
+        refreshExporterStatsIntervalEnabledState();
+
         boolean files = fileSinkCheckbox.isSelected();
         filePathField.setEnabled(files);
         fileJsonlCheckbox.setEnabled(files);
@@ -1641,6 +1732,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (sitemapCheckbox.isSelected())  selected.add(ConfigKeys.SRC_SITEMAP);
         if (issuesCheckbox.isSelected())   selected.add(ConfigKeys.SRC_FINDINGS);
         if (trafficCheckbox.isSelected())  selected.add(ConfigKeys.SRC_TRAFFIC);
+        if (exporterCheckbox.isSelected()) selected.add(ConfigKeys.SRC_EXPORTER);
         return selected;
     }
 
@@ -1655,6 +1747,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         TextFieldUndo.install(openSearchUrlField);
         TextFieldUndo.install(fileTotalCapField);
         TextFieldUndo.install(fileDiskUsagePercentField);
+        TextFieldUndo.install(exporterStatsIntervalField);
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
 
         openSearchTlsModeCombo.getInputMap(JComponent.WHEN_FOCUSED).put(
@@ -1751,6 +1844,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (issuesLowCheckbox.isSelected()) findingsSeverities.add("low");
         if (issuesInformationalCheckbox.isSelected()) findingsSeverities.add("informational");
 
+        List<String> exporterSubOptions = new ArrayList<>();
+        if (exporterTraceCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_TRACE);
+        if (exporterDebugCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_DEBUG);
+        if (exporterInfoCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_INFO);
+        if (exporterWarnCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_WARN);
+        if (exporterErrorCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_ERROR);
+        if (exporterStatsCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_STATS);
+        if (exporterConfigCheckbox.isSelected()) exporterSubOptions.add(ConfigKeys.SRC_EXPORTER_CONFIG);
+
         String authType = openSearchAuthTypeCombo != null
                 ? String.valueOf(openSearchAuthTypeCombo.getSelectedItem())
                 : "None";
@@ -1774,6 +1876,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 settingsSub,
                 trafficToolTypes,
                 findingsSeverities,
+                exporterSubOptions,
+                parsePositiveSeconds(exporterStatsIntervalField.getText(),
+                        ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS),
                 buildEnabledExportFieldsByIndex(),
                 uiPreferences
         );
@@ -1846,6 +1951,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
     }
 
+    private static int parsePositiveSeconds(String raw, int defaultSeconds) {
+        try {
+            int seconds = Integer.parseInt(nonBlankOr(raw, ""));
+            return seconds > 0 ? seconds : defaultSeconds;
+        } catch (NumberFormatException e) {
+            return defaultSeconds;
+        }
+    }
+
     /**
      * Prompts for a save location and exports the current config to JSON asynchronously.
      *
@@ -1885,6 +1999,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         sitemapCheckbox.setName("src.sitemap");
         issuesCheckbox.setName("src.issues");
         trafficCheckbox.setName("src.traffic");
+        exporterCheckbox.setName("src.exporter");
         settingsProjectCheckbox.setName("src.settings.project");
         settingsUserCheckbox.setName("src.settings.user");
         settingsExpandButton.setName("src.settings.expand");
@@ -1903,6 +2018,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         trafficScannerCheckbox.setName("src.traffic.scanner");
         trafficSequencerCheckbox.setName("src.traffic.sequencer");
         trafficExpandButton.setName("src.traffic.expand");
+        exporterTraceCheckbox.setName("src.exporter.trace");
+        exporterDebugCheckbox.setName("src.exporter.debug");
+        exporterInfoCheckbox.setName("src.exporter.info");
+        exporterWarnCheckbox.setName("src.exporter.warn");
+        exporterErrorCheckbox.setName("src.exporter.error");
+        exporterStatsCheckbox.setName("src.exporter.stats");
+        exporterStatsIntervalField.setName("src.exporter.stats.intervalSeconds");
+        exporterConfigCheckbox.setName("src.exporter.config");
+        exporterExpandButton.setName("src.exporter.expand");
 
         allRadio.setName("scope.all");
         burpSuiteRadio.setName("scope.burp");
@@ -1935,9 +2059,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Tooltips.apply(sitemapCheckbox, Tooltips.html("All in-scope sitemaps."));
         Tooltips.apply(issuesCheckbox, Tooltips.html("All findings (aka issues)."));
         Tooltips.apply(trafficCheckbox, Tooltips.html("All in-scope traffic."));
+        Tooltips.apply(exporterCheckbox, Tooltips.html(
+                "Burp Exporter runtime telemetry.",
+                "Controls logs, stats snapshots, and config snapshots exported to the Tool index."
+        ));
         Tooltips.apply(settingsExpandButton, Tooltips.html("Settings sub-options."));
         Tooltips.apply(issuesExpandButton, Tooltips.html("Issues sub-options."));
         Tooltips.apply(trafficExpandButton, Tooltips.html("Traffic sub-options."));
+        Tooltips.apply(exporterExpandButton, Tooltips.html("Exporter sub-options."));
         Tooltips.apply(settingsProjectCheckbox, Tooltips.html("Project settings."));
         Tooltips.apply(settingsUserCheckbox, Tooltips.html("User settings."));
         Tooltips.apply(trafficBurpAiCheckbox, Tooltips.html("All in-scope traffic sent from Burp AI."));
@@ -1952,6 +2081,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Tooltips.apply(trafficRepeaterCheckbox, Tooltips.html("All in-scope traffic sent from Repeater."));
         Tooltips.apply(trafficScannerCheckbox, Tooltips.html("All in-scope traffic sent from Scanner."));
         Tooltips.apply(trafficSequencerCheckbox, Tooltips.html("All in-scope traffic sent from Sequencer."));
+        Tooltips.apply(exporterTraceCheckbox, Tooltips.html("Exporter trace-level log events."));
+        Tooltips.apply(exporterDebugCheckbox, Tooltips.html("Exporter debug-level log events."));
+        Tooltips.apply(exporterInfoCheckbox, Tooltips.html("Exporter info-level log events."));
+        Tooltips.apply(exporterWarnCheckbox, Tooltips.html("Exporter warning log events."));
+        Tooltips.apply(exporterErrorCheckbox, Tooltips.html("Exporter error log events."));
+        Tooltips.apply(exporterStatsCheckbox, Tooltips.html(
+                "Periodic exporter runtime stats snapshots.",
+                "These documents include resource usage and exporter counters."
+        ));
+        Tooltips.apply(exporterStatsIntervalField, Tooltips.html(
+                "Stats snapshot interval in seconds.",
+                "Default: 30 seconds."
+        ));
+        Tooltips.apply(exporterConfigCheckbox, Tooltips.html(
+                "Exporter config snapshots when Start completes.",
+                "Includes the normalized source, scope, and destination selections."
+        ));
 
         Tooltips.apply(allRadio, Tooltips.html("Export all observed."));
         Tooltips.apply(burpSuiteRadio, Tooltips.html("Export Burp Suite's project scope."));

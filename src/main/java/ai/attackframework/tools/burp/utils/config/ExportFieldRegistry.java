@@ -7,9 +7,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Canonical list of export fields per index for the Fields panel and document filtering.
- * "Is required" column: toggleable = No or No*, required = Yes.
- * Keep this class as the single source of truth when adding or changing index fields.
+ * Defines the canonical export fields for each index.
+ *
+ * <p>This registry backs both the Fields panel and document filtering. Fields marked required in
+ * the reference documentation always remain enabled; toggleable fields map to the optional
+ * checkboxes shown in the UI.</p>
  */
 public final class ExportFieldRegistry {
 
@@ -17,7 +19,7 @@ public final class ExportFieldRegistry {
     private static final Map<String, List<String>> REQUIRED_BY_INDEX = new LinkedHashMap<>();
 
     static {
-        // Traffic index: toggleable fields (No* and No). Required (Yes): status, request, response, document_meta.*
+        // Traffic index toggleable fields. Required fields remain in REQUIRED_BY_INDEX.
         TOGGLEABLE_BY_INDEX.put("traffic", List.of(
                 "url", "host", "port", "scheme", "protocol_transport", "protocol_application", "protocol_sub",
                 "http_version", "tool", "tool_type", "burp_in_scope", "message_id", "time_start", "time_end", "duration_ms",
@@ -31,17 +33,17 @@ public final class ExportFieldRegistry {
                 "document_meta"  // whole object; subfields schema_version, extension_version, indexed_at
         ));
 
-        // Tool index
+        // Tool index fields.
         TOGGLEABLE_BY_INDEX.put("tool", List.of(
                 "level", "message_text", "message", "thread", "extension_version", "burp_version", "project_id"
         ));
         REQUIRED_BY_INDEX.put("tool", List.of("event_type", "source", "document_meta"));
 
-        // Settings index
+        // Settings index fields.
         TOGGLEABLE_BY_INDEX.put("settings", List.of("project_id", "settings_user", "settings_project"));
         REQUIRED_BY_INDEX.put("settings", List.of("document_meta"));
 
-        // Sitemap index
+        // Sitemap index fields.
         TOGGLEABLE_BY_INDEX.put("sitemap", List.of(
                 "url", "host", "port", "protocol_transport", "protocol_application", "protocol_sub",
                 "method", "status_code", "status_reason", "content_type", "content_length", "title",
@@ -49,7 +51,7 @@ public final class ExportFieldRegistry {
         ));
         REQUIRED_BY_INDEX.put("sitemap", List.of("request", "response", "document_meta"));
 
-        // Findings index
+        // Findings index fields.
         TOGGLEABLE_BY_INDEX.put("findings", List.of(
                 "name", "severity", "confidence", "host", "port", "protocol_transport", "protocol_application", "protocol_sub",
                 "url", "param", "issue_type_id", "typical_severity", "description", "background",
@@ -58,30 +60,32 @@ public final class ExportFieldRegistry {
         REQUIRED_BY_INDEX.put("findings", List.of("request_responses", "request_responses_missing", "document_meta"));
     }
 
-    /** Index short names in display order (tool, traffic, settings, sitemap, findings). */
+    /** Index short names in internal display order. */
     public static final List<String> INDEX_ORDER = List.of("tool", "traffic", "settings", "sitemap", "findings");
 
-    /** Indexes shown in the Fields panel (excludes tool, which is administrative and not user-toggleable). Order matches ConfigSourcesPanel: Settings, Sitemap, Findings, Traffic. */
-    public static final List<String> INDEX_ORDER_FOR_FIELDS_PANEL = List.of("settings", "sitemap", "findings", "traffic");
+    /** Index order shown in the Fields panel. */
+    public static final List<String> INDEX_ORDER_FOR_FIELDS_PANEL = List.of("settings", "sitemap", "findings", "traffic", "tool");
 
     private ExportFieldRegistry() { }
 
-    /** Returns an unmodifiable list of toggleable field keys for the index (No / No* in REFERENCE). */
+    /** Returns the toggleable field keys for the index as an unmodifiable list. */
     public static List<String> getToggleableFields(String indexShortName) {
         List<String> list = TOGGLEABLE_BY_INDEX.get(indexShortName);
         return list == null ? List.of() : Collections.unmodifiableList(list);
     }
 
-    /** Returns an unmodifiable list of required top-level keys for the index (Yes in REFERENCE). */
+    /** Returns the required top-level field keys for the index as an unmodifiable list. */
     public static List<String> getRequiredFields(String indexShortName) {
         List<String> list = REQUIRED_BY_INDEX.get(indexShortName);
         return list == null ? List.of() : Collections.unmodifiableList(list);
     }
 
     /**
-     * Returns the set of field keys that may be included in documents for this index:
-     * required + (enabledToggleable if provided, else all toggleable).
-     * Used for document filtering (which fields to include in pushed documents).
+     * Returns the field keys allowed for documents written to the index.
+     *
+     * <p>The result always contains the required keys. When {@code enabledToggleable} is null or
+     * empty, all toggleable keys are included. Otherwise only the selected toggleable keys are
+     * added.</p>
      */
     public static Set<String> getAllowedKeys(String indexShortName, Set<String> enabledToggleable) {
         Set<String> out = new java.util.LinkedHashSet<>(getRequiredFields(indexShortName));

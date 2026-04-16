@@ -55,7 +55,7 @@ class ToolIndexLogForwarderTest {
         try {
             Path root = TestPathSupport.createDirectory("tool-log-file-only");
             RuntimeConfig.updateState(new ConfigState.State(
-                    java.util.List.of(ConfigKeys.SRC_SETTINGS),
+                    java.util.List.of(ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_EXPORTER),
                     ConfigKeys.SCOPE_ALL,
                     java.util.List.of(),
                     new ConfigState.Sinks(true, root.toString(), false, true,
@@ -63,6 +63,8 @@ class ToolIndexLogForwarderTest {
                     ConfigState.DEFAULT_SETTINGS_SUB,
                     ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                     null
             ));
             RuntimeConfig.setExportRunning(true);
@@ -77,6 +79,43 @@ class ToolIndexLogForwarderTest {
             assertThat(ndjsonPath).exists();
             assertThat(Files.readString(ndjsonPath)).contains("file-only log");
             assertThat(ExportStats.getSuccessCount("tool")).isEqualTo(openSearchToolSuccessBefore);
+        } finally {
+            if (forwarder != null) {
+                forwarder.stop();
+            }
+            RuntimeConfig.setExportRunning(false);
+            BurpRuntimeMetadata.clear();
+            MontoyaApiProvider.set(null);
+        }
+    }
+
+    @Test
+    void onLog_skipsFileWrite_whenExporterSourceDisabled() throws Exception {
+        ToolIndexLogForwarder forwarder = null;
+        try {
+            Path root = TestPathSupport.createDirectory("tool-log-disabled");
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_SETTINGS),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(true, root.toString(), false, true,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null
+            ));
+            RuntimeConfig.setExportRunning(true);
+            RuntimeConfig.setExportStarting(false);
+            forwarder = new ToolIndexLogForwarder();
+
+            forwarder.onLog("INFO", "should not be exported");
+            Thread.sleep(250L);
+
+            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
+            assertThat(ndjsonPath).doesNotExist();
         } finally {
             if (forwarder != null) {
                 forwarder.stop();
