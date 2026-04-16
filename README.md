@@ -12,7 +12,7 @@ We welcome ideas, feedback, and pull requests. Feel free to open a discussion, i
 
 ## Documentation
 
-- User guide and wiki: [wiki.attackframework.ai/tools/burp-exporter](https://wiki.attackframework.ai/tools/burp-exporter)
+- User guide and wiki: [github.com/pS3ud0RAnD0m/attackframework-burp-exporter/wiki](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/wiki)
 - Javadocs: [ps3ud0rand0m.github.io/attackframework-burp-exporter](https://ps3ud0rand0m.github.io/attackframework-burp-exporter/)
 - Contributing: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Security policy: [`.github/SECURITY.md`](.github/SECURITY.md)
