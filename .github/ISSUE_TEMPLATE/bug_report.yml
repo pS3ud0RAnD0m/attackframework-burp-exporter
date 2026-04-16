@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a bug in Attack Framework: Burp Exporter
+description: "Report a bug in Attack Framework: Burp Exporter"
 title: "[BUG] "
 labels:
   - bug
@@ -11,6 +11,7 @@ body:
         - Confirm you're using the latest version
         - Search existing issues
         - Do NOT use this form for security issues (see Security tab)
+        - Sanitize secrets, credentials, and sensitive target data before sharing logs or config
 
   - type: input
     id: version
@@ -25,6 +26,55 @@ body:
     attributes:
       label: Burp Suite version
       placeholder: e.g. 2025.6
+    validations:
+      required: true
+
+  - type: dropdown
+    id: burp_edition
+    attributes:
+      label: Burp Suite edition
+      options:
+        - Community Edition
+        - Professional
+        - Enterprise
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: e.g. 21.0.7
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Windows 11, macOS 15, Ubuntu 24.04
+
+  - type: dropdown
+    id: destination
+    attributes:
+      label: Export destination involved
+      options:
+        - OpenSearch
+        - Files
+        - Both
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: export_running
+    attributes:
+      label: Was export running when the problem occurred?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
     validations:
       required: true
 
@@ -57,3 +107,19 @@ body:
     id: logs
     attributes:
       label: Logs / screenshots
+      description: Paste relevant log excerpts or add screenshots. Remove secrets and sensitive target data first.
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config or environment details
+      description: Include sanitized export settings, destination details, or any other context that helps reproduce the issue.
+      placeholder: |
+        Example:
+        - Source selections:
+        - Destination:
+        - Scope type:
+        - OpenSearch URL form:
+        - Any recent config changes:
+      render: yaml

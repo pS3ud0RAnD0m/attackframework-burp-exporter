@@ -3,6 +3,11 @@ name: Build & Release Burp Extension
 on:
   push:
     branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -10,6 +15,7 @@ permissions:
 jobs:
   build-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -24,29 +30,34 @@ jobs:
           java-version: '21'
           distribution: 'corretto'
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Grant Gradle execute permission
         run: chmod +x gradlew
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
       - name: Build extension
-        run: ./gradlew clean build
+        run: ./gradlew --no-daemon clean build
 
       - name: Read Gradle properties
         id: props
         run: |
-          ARCHIVES_BASENAME=$(grep '^archivesBaseName=' gradle.properties | cut -d'=' -f2)
-          VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
-          echo "basename=$ARCHIVES_BASENAME" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          python <<'PY'
+          import os
+          from pathlib import Path
+
+          props = {}
+          for line in Path("gradle.properties").read_text(encoding="utf-8").splitlines():
+              line = line.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              key, value = line.split("=", 1)
+              props[key.strip()] = value.strip()
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"basename={props['archivesBaseName']}\n")
+              fh.write(f"version={props['version']}\n")
+          PY
 
       - name: Delete existing release and tag
         run: |
