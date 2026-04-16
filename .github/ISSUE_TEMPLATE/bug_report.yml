@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a bug in Attack Vectors: Burp Exporter
+description: Report a bug in Attack Framework: Burp Exporter
 title: "[BUG] "
 labels:
   - bug
