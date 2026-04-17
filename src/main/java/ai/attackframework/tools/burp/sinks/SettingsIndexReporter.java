@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -51,7 +50,7 @@ public final class SettingsIndexReporter {
     private SettingsIndexReporter() {}
 
     private static String settingsIndexName() {
-        return IndexNaming.indexNameForShortName("settings");
+        return RuntimeConfig.indexNameForKey("settings");
     }
 
     /**
@@ -82,7 +81,7 @@ public final class SettingsIndexReporter {
             String userJson = safeUserOptionsJson(api);
             ConfigState.State state = RuntimeConfig.getState();
             Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), "settings", doc);
             if (ok) {
                 if (openSearchActive) {
                     ExportStats.recordSuccess("settings", 1);
@@ -183,7 +182,7 @@ public final class SettingsIndexReporter {
                 return;
             }
             Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), "settings", doc);
             if (ok) {
                 if (openSearchActive) {
                     ExportStats.recordSuccess("settings", 1);

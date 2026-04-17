@@ -41,7 +41,7 @@ class ExportReporterLifecycleTest {
             RuntimeConfig.setExportRunning(true);
             SecureCredentialStore.saveOpenSearchCredentials("user", "pass");
 
-            ToolIndexStatsReporter.start();
+            ExporterIndexStatsReporter.start();
             SettingsIndexReporter.start();
             FindingsIndexReporter.start();
             SitemapIndexReporter.start();
@@ -49,7 +49,7 @@ class ExportReporterLifecycleTest {
 
             ExportReporterLifecycle.resetForTests();
 
-            assertThat((ScheduledExecutorService) getStatic(ToolIndexStatsReporter.class, "scheduler")).isNull();
+            assertThat((ScheduledExecutorService) getStatic(ExporterIndexStatsReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SettingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(FindingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SitemapIndexReporter.class, "scheduler")).isNull();

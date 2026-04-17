@@ -25,6 +25,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
         JLabel findingsLabel = (JLabel) findLabelByText(panel, "Findings");
         JButton settingsExpand = findByName(panel, "fields.settings.expand", JButton.class);
         JButton findingsExpand = findByName(panel, "fields.findings.expand", JButton.class);
+        javax.swing.JTextField baseTemplateField = findByName(panel, "indexNaming.baseTemplate", javax.swing.JTextField.class);
         JCheckBox settingsProjectId = findByName(panel, "fields.settings.project_id", JCheckBox.class);
         JCheckBox sitemapUrl = findByName(panel, "fields.sitemap.url", JCheckBox.class);
         JCheckBox findingsSeverity = findByName(panel, "fields.findings.severity", JCheckBox.class);
@@ -37,17 +38,24 @@ class ConfigPanelFieldTooltipsHeadlessTest {
             assertThat(findingsLabel).isNotNull();
             assertThat(settingsExpand).isNotNull();
             assertThat(findingsExpand).isNotNull();
+            assertThat(baseTemplateField).isNotNull();
             assertThat(settingsProjectId).isNotNull();
             assertThat(sitemapUrl).isNotNull();
             assertThat(findingsSeverity).isNotNull();
             assertThat(trafficUrl).isNotNull();
             assertThat(trafficBurpInScope).isNotNull();
-            assertThat(header.getToolTipText()).isEqualTo("<html>Configure which mapped fields each exported document includes.<br>These toggles affect document contents, not index creation.</html>");
+            assertThat(header.getToolTipText()).isEqualTo("<html>Configure index naming and which mapped fields each exported document includes.<br>Naming controls affect index creation and file basenames.<br>Field toggles affect document contents.</html>");
             assertThat(settingsLabel.getToolTipText())
-                    .isEqualTo("<html><b>Settings fields</b><br>Configure fields exported to <code>attackframework-tool-burp-settings</code>.<br>Use these toggles to trim the settings document payload.</html>");
+                    .isEqualTo("<html><b>Settings fields</b><br>Configure fields exported to the Settings index.<br>The index name can be customized from the Index Base Name field.<br>Use these toggles to trim the settings document payload.</html>");
             assertThat(settingsExpand.getToolTipText()).isEqualTo("<html>Show or hide Settings field options.</html>");
-            assertThat(findingsLabel.getToolTipText()).isEqualTo("<html>All findings (aka issues) fields.</html>");
-            assertThat(findingsExpand.getToolTipText()).isEqualTo("<html>Show or hide fields for all findings (aka issues).</html>");
+            assertThat(findingsLabel.getToolTipText())
+                    .isEqualTo("<html><b>Findings fields</b><br>Configure fields exported to the Findings index.<br>The index name can be customized from the Index Base Name field.<br>These fields cover Burp findings (aka issues) documents.</html>");
+            assertThat(findingsExpand.getToolTipText()).isEqualTo("<html>Show or hide Findings field options.</html>");
+            assertThat(baseTemplateField.getToolTipText()).contains("Shared base used to derive all OpenSearch index names");
+            assertThat(baseTemplateField.getToolTipText()).contains("Enter only the shared base");
+            assertThat(baseTemplateField.getToolTipText()).contains("${now:yyyyMMdd}");
+            assertThat(baseTemplateField.getToolTipText()).contains("{NOW}");
+            assertThat(baseTemplateField.getToolTipText()).contains("remain fixed for that full run");
             assertThat(settingsProjectId.getText()).isEqualTo("project_id");
             assertThat(settingsProjectId.getToolTipText())
                     .isEqualTo("<html>Burp project identifier.<br><b>Source:</b> SettingsIndexReporter uses MontoyaApi.project().id().</html>");

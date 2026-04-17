@@ -23,7 +23,7 @@ import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
-import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
+import ai.attackframework.tools.burp.sinks.ExporterIndexStatsReporter;
 import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -34,7 +34,7 @@ class ConfigPanelStopLifecycleHeadlessTest {
     void stopButton_quiescesBackgroundReporters() throws Exception {
         try {
             RuntimeConfig.setExportRunning(true);
-            ToolIndexStatsReporter.start();
+            ExporterIndexStatsReporter.start();
             SettingsIndexReporter.start();
             FindingsIndexReporter.start();
             SitemapIndexReporter.start();
@@ -47,7 +47,7 @@ class ConfigPanelStopLifecycleHeadlessTest {
             runEdt(stopButton::doClick);
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
-            assertThat((ScheduledExecutorService) getStatic(ToolIndexStatsReporter.class, "scheduler")).isNull();
+            assertThat((ScheduledExecutorService) getStatic(ExporterIndexStatsReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SettingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(FindingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SitemapIndexReporter.class, "scheduler")).isNull();

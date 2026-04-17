@@ -8,28 +8,27 @@ import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Pushes the current runtime configuration to the Tool index.
+ * Pushes the current runtime configuration to the Exporter index.
  *
  * <p>This reporter emits a single {@code config_snapshot} document when export startup completes.
  * The snapshot is sent only while export is running, the {@code exporter} source is enabled, the
  * {@code config} sub-option is selected, and at least one sink is active.</p>
  */
-public final class ToolIndexConfigReporter {
+public final class ExporterIndexConfigReporter {
 
     private static final String SCHEMA_VERSION = "1";
     private static final String EVENT_TYPE = "config_snapshot";
     private static final String SOURCE = "burp-exporter";
 
-    private ToolIndexConfigReporter() {}
+    private ExporterIndexConfigReporter() {}
 
     /**
      * Pushes one configuration snapshot to the enabled sinks.
@@ -51,16 +50,16 @@ public final class ToolIndexConfigReporter {
             String baseUrl = RuntimeConfig.openSearchUrl();
             boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
             Map<String, Object> doc = buildConfigDoc(RuntimeConfig.getState());
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("tool"), "tool", doc);
             if (ok && openSearchActive) {
                 ExportStats.recordSuccess("tool", 1);
             } else if (!ok && openSearchActive) {
                 ExportStats.recordFailure("tool", 1);
-                ExportStats.recordLastError("tool", "Tool config snapshot push failed");
-                Logger.logWarnPanelOnly("[Tool] Config snapshot push failed.");
+                ExportStats.recordLastError("tool", "Exporter config snapshot push failed");
+                Logger.logWarnPanelOnly("[Exporter] Config snapshot push failed.");
             }
         } catch (Exception e) {
-            Logger.logWarnPanelOnly("[Tool] Config snapshot push failed: "
+            Logger.logWarnPanelOnly("[Exporter] Config snapshot push failed: "
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
@@ -75,6 +74,10 @@ public final class ToolIndexConfigReporter {
         opts.put("exporter", state.exporterSubOptions() != null ? new ArrayList<>(state.exporterSubOptions()) : List.of());
         opts.put("exporter_stats_interval_seconds", state.exporterStatsIntervalSeconds());
         message.put("data_source_options", opts);
+        Map<String, Object> indexNames = new LinkedHashMap<>();
+        indexNames.put("base_template", state.indexNameBaseTemplate());
+        indexNames.put("resolved_names", new LinkedHashMap<>(RuntimeConfig.allIndexNames()));
+        message.put("index_names", indexNames);
         message.put("scope_type", state.scopeType());
         List<Map<String, Object>> custom = new ArrayList<>();
         if (state.customEntries() != null) {

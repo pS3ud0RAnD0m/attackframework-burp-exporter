@@ -72,7 +72,7 @@ class ChunkedBulkSenderTest {
     void push_emptyQueue_returnsZeroAttempted_afterShortWait() {
         LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
         ChunkedBulkSender.Result r = ChunkedBulkSender.push(
-                "http://opensearch.url:9999", "test-index", queue, 10, 5 * 1024 * 1024, 50);
+                "http://opensearch.url:9999", "test-index", "traffic", queue, 10, 5 * 1024 * 1024, 50);
         assertThat(r.attemptedCount).isZero();
         assertThat(r.successCount).isZero();
     }

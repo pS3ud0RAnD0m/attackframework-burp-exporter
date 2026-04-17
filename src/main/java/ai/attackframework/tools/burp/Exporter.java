@@ -5,8 +5,8 @@ import java.lang.reflect.InvocationTargetException;
 import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
+import ai.attackframework.tools.burp.sinks.ExporterIndexLogForwarder;
 import ai.attackframework.tools.burp.sinks.OpenSearchTrafficHandler;
-import ai.attackframework.tools.burp.sinks.ToolIndexLogForwarder;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -28,7 +28,7 @@ public class Exporter implements BurpExtension {
     private volatile Registration unloadRegistration;
     private volatile Registration suiteTabRegistration;
     private volatile Registration httpHandlerRegistration;
-    private volatile ToolIndexLogForwarder logForwarder;
+    private volatile ExporterIndexLogForwarder logForwarder;
 
     /**
      * Registers the extension with Burp, wiring logging and UI composition.
@@ -54,7 +54,7 @@ public class Exporter implements BurpExtension {
             MontoyaApiProvider.set(api);
             BurpRuntimeMetadata.prime(api);
             Logger.initialize(api.logging());
-            logForwarder = new ToolIndexLogForwarder();
+            logForwarder = new ExporterIndexLogForwarder();
             Logger.registerListener(logForwarder);
             BatchSizeController.getInstance().setOnChangeListener(size -> Logger.logDebug("Batch size: " + size));
 
@@ -84,7 +84,7 @@ public class Exporter implements BurpExtension {
     }
 
     private void cleanupExtensionState() {
-        ToolIndexLogForwarder forwarder = logForwarder;
+        ExporterIndexLogForwarder forwarder = logForwarder;
         if (forwarder != null) {
             Logger.unregisterListener(forwarder);
             forwarder.stop();

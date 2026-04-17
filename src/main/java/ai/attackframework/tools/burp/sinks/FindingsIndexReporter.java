@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -56,7 +55,7 @@ public final class FindingsIndexReporter {
     private FindingsIndexReporter() {}
 
     private static String findingsIndexName() {
-        return IndexNaming.indexNameForShortName("findings");
+        return RuntimeConfig.indexNameForKey("findings");
     }
 
     /**
@@ -258,7 +257,7 @@ public final class FindingsIndexReporter {
     private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = !activeBaseUrl.isBlank();
-        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, findingsIndexName(), batchDocs);
+        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, findingsIndexName(), "findings", batchDocs);
         int failureCount = batchDocs.size() - successCount;
         if (openSearchActive) {
             ExportStats.recordSuccess("findings", successCount);

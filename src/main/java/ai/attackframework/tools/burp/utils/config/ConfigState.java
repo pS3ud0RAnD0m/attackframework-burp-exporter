@@ -9,6 +9,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import ai.attackframework.tools.burp.utils.IndexNaming;
+
 /**
  * Defines the typed configuration model used by the UI and JSON import/export.
  *
@@ -48,6 +50,8 @@ public final class ConfigState {
 
     /** Default interval for exporter stats snapshots. */
     public static final int DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS = 30;
+    /** Default base template used to derive default index names. */
+    public static final String DEFAULT_INDEX_NAME_BASE_TEMPLATE = IndexNaming.DEFAULT_BASE_TEMPLATE;
 
     /** Default total cap across exporter files under the selected root, stored as human-friendly GB. */
     public static final double DEFAULT_FILE_TOTAL_CAP_GB = 5d;
@@ -189,7 +193,7 @@ public final class ConfigState {
      * Captures the full persisted exporter configuration.
      *
      * <p>Collection components are normalized to immutable snapshots. Missing exporter settings are
-     * normalized to the current defaults so legacy imports retain the intended Tool-index behavior.</p>
+     * normalized to the current defaults so legacy imports retain the intended Exporter-index behavior.</p>
      *
      * @param dataSources selected top-level source keys such as {@code settings} or
      *                    {@code exporter}
@@ -201,6 +205,7 @@ public final class ConfigState {
      * @param findingsSeverities selected finding severities
      * @param exporterSubOptions selected exporter log/config/stats sub-options
      * @param exporterStatsIntervalSeconds stats snapshot interval in seconds
+     * @param indexNameBaseTemplate base template used to derive default index names
      * @param enabledExportFieldsByIndex enabled optional field keys by index; {@code null} means
      *                                   all optional fields are enabled
      * @param uiPreferences persisted UI-only preferences that should survive save/import cycles
@@ -214,6 +219,7 @@ public final class ConfigState {
                         List<String> findingsSeverities, // AuditIssueSeverity names; default all five
                         List<String> exporterSubOptions, // trace/debug/info/warn/error/stats/config
                         int exporterStatsIntervalSeconds, // seconds; default 30
+                        String indexNameBaseTemplate, // global base template used for default index names
                         Map<String, Set<String>> enabledExportFieldsByIndex, // index shortName -> enabled toggleable field keys; null = all enabled
                         UiPreferences uiPreferences) {
 
@@ -226,8 +232,26 @@ public final class ConfigState {
             findingsSeverities = normalizeFindingsSeverities(findingsSeverities);
             exporterSubOptions = normalizeExporterSubOptions(exporterSubOptions);
             exporterStatsIntervalSeconds = normalizeExporterStatsIntervalSeconds(exporterStatsIntervalSeconds);
+            indexNameBaseTemplate = normalizeIndexNameBaseTemplate(indexNameBaseTemplate);
             enabledExportFieldsByIndex = enabledExportFieldsByIndex == null ? null : copyMapOfSets(enabledExportFieldsByIndex);
             uiPreferences = uiPreferences == null ? defaultUiPreferences() : uiPreferences;
+        }
+
+        public State(List<String> dataSources,
+                     String scopeType,
+                     List<ScopeEntry> customEntries,
+                     Sinks sinks,
+                     List<String> settingsSub,
+                     List<String> trafficToolTypes,
+                     List<String> findingsSeverities,
+                     List<String> exporterSubOptions,
+                     int exporterStatsIntervalSeconds,
+                     String indexNameBaseTemplate,
+                     Map<String, Set<String>> enabledExportFieldsByIndex) {
+            this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
+                    findingsSeverities, exporterSubOptions, exporterStatsIntervalSeconds,
+                    indexNameBaseTemplate, enabledExportFieldsByIndex,
+                    defaultUiPreferences());
         }
 
         public State(List<String> dataSources,
@@ -242,7 +266,24 @@ public final class ConfigState {
                      Map<String, Set<String>> enabledExportFieldsByIndex) {
             this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
                     findingsSeverities, exporterSubOptions, exporterStatsIntervalSeconds,
-                    enabledExportFieldsByIndex, defaultUiPreferences());
+                    DEFAULT_INDEX_NAME_BASE_TEMPLATE, enabledExportFieldsByIndex,
+                    defaultUiPreferences());
+        }
+
+        public State(List<String> dataSources,
+                     String scopeType,
+                     List<ScopeEntry> customEntries,
+                     Sinks sinks,
+                     List<String> settingsSub,
+                     List<String> trafficToolTypes,
+                     List<String> findingsSeverities,
+                     List<String> exporterSubOptions,
+                     int exporterStatsIntervalSeconds,
+                     Map<String, Set<String>> enabledExportFieldsByIndex,
+                     UiPreferences uiPreferences) {
+            this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
+                    findingsSeverities, exporterSubOptions, exporterStatsIntervalSeconds,
+                    DEFAULT_INDEX_NAME_BASE_TEMPLATE, enabledExportFieldsByIndex, uiPreferences);
         }
 
         public State(List<String> dataSources,
@@ -256,7 +297,7 @@ public final class ConfigState {
                      UiPreferences uiPreferences) {
             this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
                     findingsSeverities, DEFAULT_EXPORTER_SUB_OPTIONS, DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
-                    enabledExportFieldsByIndex, uiPreferences);
+                    DEFAULT_INDEX_NAME_BASE_TEMPLATE, enabledExportFieldsByIndex, uiPreferences);
         }
 
         public State(List<String> dataSources,
@@ -269,7 +310,8 @@ public final class ConfigState {
                      Map<String, Set<String>> enabledExportFieldsByIndex) {
             this(dataSources, scopeType, customEntries, sinks, settingsSub, trafficToolTypes,
                     findingsSeverities, DEFAULT_EXPORTER_SUB_OPTIONS, DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
-                    enabledExportFieldsByIndex, defaultUiPreferences());
+                    DEFAULT_INDEX_NAME_BASE_TEMPLATE, enabledExportFieldsByIndex,
+                    defaultUiPreferences());
         }
 
         private static Map<String, Set<String>> copyMapOfSets(Map<String, Set<String>> map) {
@@ -366,6 +408,11 @@ public final class ConfigState {
     /** Normalizes exporter sub-option ids to lowercase. */
     public static List<String> normalizeExporterSubOptions(List<String> values) {
         return normalizeLowercaseList(values);
+    }
+
+    /** Normalizes the stored global index base template. */
+    public static String normalizeIndexNameBaseTemplate(String template) {
+        return IndexNaming.normalizeBaseTemplate(template);
     }
 
     /** Normalizes the exporter stats interval to a positive number of seconds. */

@@ -31,8 +31,9 @@ class FileExportServiceTest {
             Path root = TestPathSupport.createDirectory("file-export-service");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
 
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
 
             FileExportService.emit(prepared);
 
@@ -48,10 +49,11 @@ class FileExportServiceTest {
     @Test
     void prepare_returnsSameStableIdForSameLogicalDocument() throws Exception {
         withCleanup(() -> {
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
 
-            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, sampleDocument());
-            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
+            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
 
             assertThat(first.exportId()).isEqualTo(second.exportId());
         });
@@ -63,9 +65,10 @@ class FileExportServiceTest {
             Path root = TestPathSupport.createDirectory("file-export-single-file");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
 
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
-            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, sampleDocument());
-            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, sampleDocument("https://acme.com/api/2"));
+            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
+            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument("https://acme.com/api/2"));
 
             FileExportService.emit(first);
             FileExportService.emit(second);
@@ -83,8 +86,9 @@ class FileExportServiceTest {
             Path root = TestPathSupport.createDirectory("file-export-newlines");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
 
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
 
             FileExportService.emit(prepared);
 
@@ -103,9 +107,10 @@ class FileExportServiceTest {
             Path root = TestPathSupport.createDirectory("file-export-jsonl-shape");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
 
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
-            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, sampleDocument());
-            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
+            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
 
             FileExportService.emit(first);
             FileExportService.emit(second);
@@ -126,13 +131,14 @@ class FileExportServiceTest {
             Path root = TestPathSupport.createDirectory("file-export-append-existing");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
 
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
             Path jsonlPath = root.resolve(indexName + ".jsonl");
             Path ndjsonPath = root.resolve(indexName + ".ndjson");
             Files.writeString(jsonlPath, "{\"seed\":true}\n");
             Files.writeString(ndjsonPath, "{\"index\":{\"_id\":\"seed\"}}\n{\"seed\":true}\n");
 
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
             FileExportService.emit(prepared);
 
             List<String> jsonlLines = Files.readAllLines(jsonlPath);
@@ -154,8 +160,9 @@ class FileExportServiceTest {
             Path root = TestPathSupport.createDirectory("file-export-stats");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
 
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
             long beforeSuccess = FileExportStats.getSuccessCount("traffic");
             long beforeSource = FileExportStats.getTrafficToolTypeCapturedCount("PROXY");
 
@@ -171,8 +178,8 @@ class FileExportServiceTest {
     void emit_stopsAllFileExport_whenTotalCapIsHit() throws Exception {
         withCleanup(() -> {
             Path root = TestPathSupport.createDirectory("file-export-total-cap");
-            PreparedExportDocument first = ExportDocumentIdentity.prepare(IndexNaming.indexNameForShortName("traffic"), sampleDocument());
-            PreparedExportDocument second = ExportDocumentIdentity.prepare(IndexNaming.indexNameForShortName("settings"),
+            PreparedExportDocument first = ExportDocumentIdentity.prepare(IndexNaming.indexNameForShortName("traffic"), "traffic", sampleDocument());
+            PreparedExportDocument second = ExportDocumentIdentity.prepare(IndexNaming.indexNameForShortName("settings"), "settings",
                     sampleDocument("https://acme.com/settings"));
 
             long firstBytes = new JsonlFileSink(root, first.indexName()).estimateBytes(first)
@@ -193,11 +200,12 @@ class FileExportServiceTest {
     void emit_countsExistingExporterFilesTowardCap_and_reportsOpenSearchContinues() throws Exception {
         withCleanup(() -> {
             Path root = TestPathSupport.createDirectory("file-export-existing-cap");
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
             Path existingJsonl = root.resolve(indexName + ".jsonl");
             Files.writeString(existingJsonl, "{\"seed\":true}\n");
 
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
             long plannedBytes = new JsonlFileSink(root, indexName).estimateBytes(prepared)
                     + new BulkNdjsonFileSink(root, indexName).estimateBytes(prepared);
             long existingBytes = Files.size(existingJsonl);

@@ -46,6 +46,7 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(parsed.fileDiskUsagePercent()).isEqualTo(91);
         assertThat(parsed.openSearchUrl()).isEqualTo("https://opensearch.url:9200");
+        assertThat(parsed.indexNameBaseTemplate()).isEqualTo(ConfigState.DEFAULT_INDEX_NAME_BASE_TEMPLATE);
     }
 
     @Test
@@ -126,6 +127,29 @@ class JsonTypedRoundTripTest {
         String json = ConfigJsonMapper.build(state);
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
         assertThat(parsed.trafficToolTypes()).containsExactlyInAnyOrder("proxy", "proxy_history", "repeater");
+    }
+
+    @Test
+    void build_and_parse_preserves_index_naming_base_template() throws IOException {
+        var state = new ConfigState.State(
+                List.of("exporter", "traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                "${now:yyyyMMdd}-attackframework-tool-burp",
+                null);
+
+        String json = ConfigJsonMapper.build(state);
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(json).contains("\"indexNames\"");
+        assertThat(json).contains("\"baseTemplate\" : \"${now:yyyyMMdd}-attackframework-tool-burp\"");
+        assertThat(parsed.indexNameBaseTemplate()).isEqualTo("${now:yyyyMMdd}-attackframework-tool-burp");
     }
 
     @Test

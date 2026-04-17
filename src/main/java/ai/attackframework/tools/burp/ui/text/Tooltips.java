@@ -29,6 +29,19 @@ public final class Tooltips {
 
     private Tooltips() {}
 
+    /**
+     * Configures the shared Swing tooltip manager for hover-friendly behavior.
+     *
+     * <p>Tooltips appear immediately, reshow immediately when moving between related controls, and
+     * stay visible while the cursor remains over the hover target.</p>
+     */
+    public static void configureSharedToolTipManager() {
+        ToolTipManager manager = ToolTipManager.sharedInstance();
+        manager.setInitialDelay(0);
+        manager.setReshowDelay(0);
+        manager.setDismissDelay(Integer.MAX_VALUE);
+    }
+
     public static JToolTip createHtmlToolTip(JComponent owner) {
         JToolTip toolTip = new JToolTip();
         toolTip.putClientProperty(HTML_DISABLE, Boolean.FALSE);

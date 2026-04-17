@@ -71,6 +71,7 @@ public final class Json {
         private final List<String> exporterSubOptions;
         private final int exporterStatsIntervalSeconds;
         private final boolean exporterOptionsPresent;
+        private final String indexNameBaseTemplate;
         private final Map<String, Set<String>> enabledExportFieldsByIndex;
         private final ConfigState.UiPreferences uiPreferences;
 
@@ -96,6 +97,7 @@ public final class Json {
                 List<String> exporterSubOptions,
                 int exporterStatsIntervalSeconds,
                 boolean exporterOptionsPresent,
+                String indexNameBaseTemplate,
                 Map<String, Set<String>> enabledExportFieldsByIndex,
                 ConfigState.UiPreferences uiPreferences
         ) {
@@ -120,6 +122,7 @@ public final class Json {
             this.exporterSubOptions = ConfigState.normalizeExporterSubOptions(exporterSubOptions);
             this.exporterStatsIntervalSeconds = ConfigState.normalizeExporterStatsIntervalSeconds(exporterStatsIntervalSeconds);
             this.exporterOptionsPresent = exporterOptionsPresent;
+            this.indexNameBaseTemplate = ConfigState.normalizeIndexNameBaseTemplate(indexNameBaseTemplate);
             this.enabledExportFieldsByIndex = copyMapOfSets(enabledExportFieldsByIndex);
             this.uiPreferences = uiPreferences == null ? ConfigState.defaultUiPreferences() : uiPreferences;
         }
@@ -219,6 +222,10 @@ public final class Json {
             return exporterOptionsPresent;
         }
 
+        public String indexNameBaseTemplate() {
+            return indexNameBaseTemplate;
+        }
+
         /** Null when absent or empty (all fields enabled). */
         public Map<String, Set<String>> enabledExportFieldsByIndex() {
             return enabledExportFieldsByIndex;
@@ -240,6 +247,7 @@ public final class Json {
         buildDataSourceOptions(root, state);
         buildScope(root, state);
         buildSinks(root, state);
+        buildIndexNames(root, state);
         buildUi(root, state);
         buildExportFields(root, state);
 
@@ -371,6 +379,11 @@ public final class Json {
         logNode.put("searchRegex", log.searchRegex());
     }
 
+    private static void buildIndexNames(ObjectNode root, ConfigState.State state) {
+        ObjectNode indexNames = root.putObject("indexNames");
+        indexNames.put("baseTemplate", state.indexNameBaseTemplate());
+    }
+
     private static void buildExportFields(ObjectNode root, ConfigState.State state) {
         Map<String, Set<String>> byIndex = state.enabledExportFieldsByIndex();
         if (byIndex == null || byIndex.isEmpty()) return;
@@ -393,6 +406,7 @@ public final class Json {
         DataSourceOptionsParts opts = parseDataSourceOptions(root);
         ScopeParts scope = parseScope(root);
         SinksParts sinks = parseSinks(root);
+        IndexNamesParts indexNames = parseIndexNames(root);
         UiParts ui = parseUi(root);
         Map<String, Set<String>> exportFields = parseExportFields(root);
 
@@ -418,6 +432,7 @@ public final class Json {
                 opts.exporterSubOptions(),
                 opts.exporterStatsIntervalSeconds(),
                 opts.exporterOptionsPresent(),
+                indexNames.baseTemplate(),
                 exportFields,
                 ui.uiPreferences()
         );
@@ -622,6 +637,15 @@ public final class Json {
                 os, "", "", tlsMode);
     }
 
+    private static IndexNamesParts parseIndexNames(JsonNode root) {
+        JsonNode indexNames = root.path("indexNames");
+        if (!indexNames.isObject()) {
+            return new IndexNamesParts(ConfigState.DEFAULT_INDEX_NAME_BASE_TEMPLATE);
+        }
+        String baseTemplate = textOrNull(indexNames.get("baseTemplate"));
+        return new IndexNamesParts(ConfigState.normalizeIndexNameBaseTemplate(baseTemplate));
+    }
+
     /** Returns null when absent or empty (all fields enabled). */
     private static Map<String, Set<String>> parseExportFields(JsonNode root) {
         JsonNode exportFields = root.path("exportFields");
@@ -670,5 +694,6 @@ public final class Json {
             List<String> exporterSubOptions,
             int exporterStatsIntervalSeconds,
             boolean exporterOptionsPresent) { }
+    private record IndexNamesParts(String baseTemplate) { }
     private record UiParts(ConfigState.UiPreferences uiPreferences) { }
 }

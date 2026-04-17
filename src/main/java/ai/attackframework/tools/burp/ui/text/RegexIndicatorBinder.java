@@ -1,10 +1,6 @@
 package ai.attackframework.tools.burp.ui.text;
 
-import java.awt.Color;
 import java.awt.Container;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.FontMetrics;
 import java.awt.event.ActionListener;
 import java.awt.event.ItemListener;
 import java.util.Objects;
@@ -66,9 +62,6 @@ public final class RegexIndicatorBinder {
     /* ----------------------------- internals ----------------------------- */
 
     private static final class ListenerGroup {
-        private static final Color GREEN = new Color(0, 153, 0);
-        private static final Color RED = new Color(200, 0, 0);
-
         private final JTextField field;
         private final JCheckBox regexToggle;
         private final JCheckBox caseToggleOrNull;
@@ -104,12 +97,7 @@ public final class RegexIndicatorBinder {
                 caseToggleOrNull.addItemListener(itemListener);
                 caseToggleOrNull.addActionListener(actionListener);
             }
-
-            // Ensure consistent font/size with a safety check for glyph coverage.
-            syncIndicatorFont();
-            fixIndicatorWidth();
-            indicator.setHorizontalAlignment(SwingConstants.CENTER);
-            indicator.setOpaque(false);
+            ValidationIndicator.hide(indicator, field.getFont());
         }
 
         void uninstall() {
@@ -125,18 +113,12 @@ public final class RegexIndicatorBinder {
         }
 
         void refresh() {
-            // keep font/width in sync in case LAF or font changes dynamically
-            syncIndicatorFont();
-            fixIndicatorWidth();
-
             final boolean regex = regexToggle.isSelected();
             final String txt = field.getText();
             final boolean show = regex && txt != null && !txt.isBlank();
 
             if (!show) {
-                indicator.setText("");
-                indicator.setToolTipText(null);
-                indicator.setVisible(false);
+                ValidationIndicator.hide(indicator, field.getFont());
                 revalidateAndRepaint();
                 return;
             }
@@ -144,61 +126,11 @@ public final class RegexIndicatorBinder {
             final boolean caseSensitive = caseToggleOrNull != null && caseToggleOrNull.isSelected();
             final boolean valid = Regex.isValid(txt, caseSensitive, multiline);
             if (valid) {
-                good(indicator);
+                ValidationIndicator.good(indicator, field.getFont(), Tooltips.html("Valid regex."));
             } else {
-                bad(indicator);
+                ValidationIndicator.bad(indicator, field.getFont(), Tooltips.html("Invalid regex."));
             }
-            indicator.setVisible(true);
             revalidateAndRepaint();
-        }
-
-        private void syncIndicatorFont() {
-            final Font fieldFont = field.getFont();
-            final Font current = indicator.getFont();
-
-            if (fieldFont != null && canRenderSymbols(fieldFont)) {
-                if (!fieldFont.equals(current)) {
-                    indicator.setFont(fieldFont);
-                }
-            } else if (current == null || !canRenderSymbols(current)) {
-                final int size = deriveFontSize(fieldFont, current);
-                indicator.setFont(new Font("Dialog", Font.PLAIN, size));
-            }
-        }
-
-        private static int deriveFontSize(Font fieldFont, Font current) {
-            if (fieldFont != null) return fieldFont.getSize();
-            if (current != null) return current.getSize();
-            return 12;
-        }
-
-        private static boolean canRenderSymbols(Font f) {
-            return f.canDisplay('✓') && f.canDisplay('✖');
-        }
-
-        private void fixIndicatorWidth() {
-            final FontMetrics fm = indicator.getFontMetrics(indicator.getFont());
-            final int w = Math.max(fm.stringWidth("✓"), fm.stringWidth("✖")) + fm.charWidth(' ');
-            final int h = fm.getHeight(); // always a non-zero height
-            final Dimension d = new Dimension(w, h);
-
-            final Dimension pref = indicator.getPreferredSize();
-            if (pref == null || pref.width != d.width || pref.height != d.height) {
-                indicator.setMinimumSize(d);
-                indicator.setPreferredSize(d);
-            }
-        }
-
-        private static void good(JLabel label) {
-            label.setForeground(GREEN);
-            label.setText("✓");
-            Tooltips.apply(label, Tooltips.html("Valid regex."));
-        }
-
-        private static void bad(JLabel label) {
-            label.setForeground(RED);
-            label.setText("✖");
-            Tooltips.apply(label, Tooltips.html("Invalid regex."));
         }
 
         private void revalidateAndRepaint() {

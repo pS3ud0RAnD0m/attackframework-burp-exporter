@@ -46,25 +46,25 @@ public final class ExportFieldTooltips {
         return switch (fieldKey) {
             case "level" -> Tooltips.textWithSource(
                     "Event severity or verbosity level.",
-                    "ToolIndexLogForwarder forwards Logger levels; ToolIndexStatsReporter and ToolIndexConfigReporter write INFO.");
+                    "ExporterIndexLogForwarder forwards Logger levels; ExporterIndexStatsReporter and ExporterIndexConfigReporter write INFO.");
             case "message_text" -> Tooltips.textWithSource(
                     "Concise human-readable summary.",
-                    "ToolIndexLogForwarder stores the original log text; ToolIndexStatsReporter and ToolIndexConfigReporter build summary strings.");
+                    "ExporterIndexLogForwarder stores the original log text; ExporterIndexStatsReporter and ExporterIndexConfigReporter build summary strings.");
             case "message" -> Tooltips.textWithSource(
                     "Structured event payload when present.",
-                    "ToolIndexStatsReporter writes runtime metrics; ToolIndexConfigReporter writes the normalized exporter configuration; log events do not populate this field.");
+                    "ExporterIndexStatsReporter writes runtime metrics; ExporterIndexConfigReporter writes the normalized exporter configuration; log events do not populate this field.");
             case "thread" -> Tooltips.textWithSource(
                     "Producer thread name.",
-                    "Tool reporters use Thread.currentThread().getName().");
+                    "Exporter reporters use Thread.currentThread().getName().");
             case "extension_version" -> Tooltips.textWithSource(
                     "Burp Exporter extension version.",
-                    "All tool reporters use Version.get().");
+                    "All exporter reporters use Version.get().");
             case "burp_version" -> Tooltips.textWithSource(
                     "Burp Suite version string.",
-                    "All tool reporters use BurpRuntimeMetadata.burpVersion().");
+                    "All exporter reporters use BurpRuntimeMetadata.burpVersion().");
             case "project_id" -> Tooltips.textWithSource(
                     "Burp project identifier.",
-                    "All tool reporters use BurpRuntimeMetadata.projectId().");
+                    "All exporter reporters use BurpRuntimeMetadata.projectId().");
             default -> fieldKey;
         };
     }

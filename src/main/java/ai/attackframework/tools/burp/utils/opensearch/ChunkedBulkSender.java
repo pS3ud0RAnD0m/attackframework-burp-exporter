@@ -82,6 +82,7 @@ public final class ChunkedBulkSender {
      *
      * @param baseUrl    OpenSearch base URL (e.g. {@code https://opensearch.url:9200})
      * @param indexName  target index name (e.g. {@code attackframework-tool-burp-traffic})
+     * @param indexKey   logical index key (for example {@code traffic})
      * @param queue      source of documents; each element is a {@code Map} to index
      * @param maxBatch   maximum documents per bulk request
      * @param maxBytes   maximum estimated payload bytes per bulk request
@@ -91,6 +92,7 @@ public final class ChunkedBulkSender {
     public static Result push(
             String baseUrl,
             String indexName,
+            String indexKey,
             BlockingQueue<Map<String, Object>> queue,
             int maxBatch,
             long maxBytes,
@@ -105,7 +107,7 @@ public final class ChunkedBulkSender {
         AtomicInteger attemptedRef = new AtomicInteger(0);
         AtomicLong attemptedBytesRef = new AtomicLong(0);
         InputStream ndjsonStream = new NdjsonQueueInputStream(
-                indexName, queue, firstDoc, maxBatch, maxBytes, maxWaitNanos, attemptedRef, attemptedBytesRef);
+                indexName, indexKey, queue, firstDoc, maxBatch, maxBytes, maxWaitNanos, attemptedRef, attemptedBytesRef);
         post.setEntity(new InputStreamEntity(ndjsonStream, -1, ContentType.create("application/x-ndjson")));
         addPreemptiveBasicAuthHeader(post);
 
@@ -234,6 +236,7 @@ public final class ChunkedBulkSender {
      */
     private static final class NdjsonQueueInputStream extends InputStream {
         private final String indexName;
+        private final String indexKey;
         private final BlockingQueue<Map<String, Object>> queue;
         private Map<String, Object> firstDoc;
         private final int maxBatch;
@@ -250,12 +253,14 @@ public final class ChunkedBulkSender {
 
         NdjsonQueueInputStream(
                 String indexName,
+                String indexKey,
                 BlockingQueue<Map<String, Object>> queue,
                 Map<String, Object> firstDoc,
                 int maxBatch,
                 long maxBytes,
                 long maxWaitNanos, AtomicInteger attemptedRef, AtomicLong attemptedBytesRef) {
             this.indexName = indexName;
+            this.indexKey = indexKey;
             this.queue = queue;
             this.firstDoc = firstDoc;
             this.maxBatch = maxBatch;
@@ -306,7 +311,7 @@ public final class ChunkedBulkSender {
                 doc = queue.poll();
             }
             if (doc == null) return false;
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, doc);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, doc);
             long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
             if (attemptedRef.get() > 0 && runningBytes + docBytes > maxBytes) {
                 queue.offer(doc);

@@ -56,28 +56,48 @@ class ConfigFieldsPanelTest {
 
             assertThat(findingsLabel).isNotNull();
             assertThat(findingsExpand).isNotNull();
-            assertThat(findingsLabel.getToolTipText()).isEqualTo("<html>All findings (aka issues) fields.</html>");
-            assertThat(findingsExpand.getToolTipText()).isEqualTo("<html>Show or hide fields for all findings (aka issues).</html>");
+            assertThat(findingsLabel.getToolTipText())
+                    .isEqualTo("<html><b>Findings fields</b><br>Configure fields exported to the Findings index.<br>The index name can be customized from the Index Base Name field.<br>These fields cover Burp findings (aka issues) documents.</html>");
+            assertThat(findingsExpand.getToolTipText()).isEqualTo("<html>Show or hide Findings field options.</html>");
         } finally {
             MontoyaApiProvider.set(previousApi);
         }
     }
 
     @Test
-    void toolRow_usesToolIndexCopy() throws Exception {
+    void exporterRow_usesExporterIndexCopy() throws Exception {
         MontoyaApi previousApi = MontoyaApiProvider.get();
         try {
             MontoyaApiProvider.set(mockEditionApi(BurpSuiteEdition.PROFESSIONAL));
             JPanel panel = buildPanelOnEdt();
 
-            JLabel toolLabel = findLabelByText(panel, "Tool");
+            JLabel toolLabel = findLabelByText(panel, "Exporter");
             JButton toolExpand = findByName(panel, "fields.tool.expand", JButton.class);
+            JLabel indexBaseNameLabel = findLabelByText(panel, "Index Base Name:");
 
             assertThat(toolLabel).isNotNull();
             assertThat(toolExpand).isNotNull();
-            assertThat(toolLabel.getToolTipText()).contains("attackframework-tool-burp");
+            assertThat(indexBaseNameLabel).isNotNull();
+            assertThat(toolLabel.getToolTipText()).contains("Exporter index");
             assertThat(toolLabel.getToolTipText()).contains("runtime stats snapshots");
-            assertThat(toolExpand.getToolTipText()).isEqualTo("<html>Show or hide Tool field options.</html>");
+            assertThat(toolExpand.getToolTipText()).isEqualTo("<html>Show or hide Exporter field options.</html>");
+        } finally {
+            MontoyaApiProvider.set(previousApi);
+        }
+    }
+
+    @Test
+    void professionalEdition_topLevelFieldTooltips_useConsistentStructuredCopy() throws Exception {
+        MontoyaApi previousApi = MontoyaApiProvider.get();
+        try {
+            MontoyaApiProvider.set(mockEditionApi(BurpSuiteEdition.PROFESSIONAL));
+            JPanel panel = buildPanelOnEdt();
+
+            assertTopLevelTooltip(panel, "Settings", "Settings", "Settings index");
+            assertTopLevelTooltip(panel, "Sitemap", "Sitemap", "Sitemap index");
+            assertTopLevelTooltip(panel, "Findings", "Findings", "Findings index");
+            assertTopLevelTooltip(panel, "Traffic", "Traffic", "Traffic index");
+            assertTopLevelTooltip(panel, "Exporter", "Exporter", "Exporter index");
         } finally {
             MontoyaApiProvider.set(previousApi);
         }
@@ -88,15 +108,14 @@ class ConfigFieldsPanelTest {
         SwingUtilities.invokeAndWait(() -> {
             Map<String, JButton> expandButtons = new LinkedHashMap<>();
             Map<String, JPanel> subPanels = new LinkedHashMap<>();
-            JButton findingsExpand = new JButton("+");
-            findingsExpand.setName("fields.findings.expand");
-            expandButtons.put("findings", findingsExpand);
-            subPanels.put("findings", new JPanel());
-            JButton toolExpand = new JButton("+");
-            toolExpand.setName("fields.tool.expand");
-            expandButtons.put("tool", toolExpand);
-            subPanels.put("tool", new JPanel());
-            JPanel panel = new ConfigFieldsPanel(expandButtons, subPanels, 12).build(new LinkedHashMap<>());
+            addIndexRow(expandButtons, subPanels, "settings");
+            addIndexRow(expandButtons, subPanels, "sitemap");
+            addIndexRow(expandButtons, subPanels, "findings");
+            addIndexRow(expandButtons, subPanels, "traffic");
+            addIndexRow(expandButtons, subPanels, "tool");
+            JPanel namingPanel = new JPanel();
+            namingPanel.add(new JLabel("Index Base Name:"));
+            JPanel panel = new ConfigFieldsPanel(expandButtons, subPanels, namingPanel, 12).build(new LinkedHashMap<>());
             panel.doLayout();
             ref.set(panel);
         });
@@ -111,6 +130,24 @@ class ConfigFieldsPanelTest {
         when(burpSuite.version()).thenReturn(version);
         when(version.edition()).thenReturn(edition);
         return api;
+    }
+
+    private static void assertTopLevelTooltip(JPanel panel, String labelText, String displayName, String indexNamePhrase) {
+        JLabel label = findLabelByText(panel, labelText);
+        JButton expand = findByName(panel, "fields." + ("Exporter".equals(displayName) ? "tool" : displayName.toLowerCase()) + ".expand", JButton.class);
+        assertThat(label).isNotNull();
+        assertThat(expand).isNotNull();
+        assertThat(label.getToolTipText()).contains("<b>" + displayName + " fields</b>");
+        assertThat(label.getToolTipText()).contains("Configure fields exported to the " + indexNamePhrase + ".");
+        assertThat(label.getToolTipText()).contains("The index name can be customized from the Index Base Name field.");
+        assertThat(expand.getToolTipText()).isEqualTo("<html>Show or hide " + displayName + " field options.</html>");
+    }
+
+    private static void addIndexRow(Map<String, JButton> expandButtons, Map<String, JPanel> subPanels, String indexKey) {
+        JButton expand = new JButton("+");
+        expand.setName("fields." + indexKey + ".expand");
+        expandButtons.put(indexKey, expand);
+        subPanels.put(indexKey, new JPanel());
     }
 
     private static JLabel findLabelByText(Container root, String text) {

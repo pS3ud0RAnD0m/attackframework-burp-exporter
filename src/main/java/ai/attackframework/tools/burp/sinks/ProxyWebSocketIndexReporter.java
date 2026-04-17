@@ -19,7 +19,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -48,7 +47,7 @@ public final class ProxyWebSocketIndexReporter {
     private ProxyWebSocketIndexReporter() {}
 
     private static String trafficIndexName() {
-        return IndexNaming.indexNameForShortName("traffic");
+        return RuntimeConfig.indexNameForKey("traffic");
     }
 
     public static void start() {
@@ -196,7 +195,7 @@ public final class ProxyWebSocketIndexReporter {
     private static void flushBatch(List<String> keys, List<Map<String, Object>> docs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = !activeBaseUrl.isBlank();
-        int success = OpenSearchClientWrapper.pushBulk(activeBaseUrl, trafficIndexName(), docs);
+        int success = OpenSearchClientWrapper.pushBulk(activeBaseUrl, trafficIndexName(), "traffic", docs);
         int failure = docs.size() - success;
         if (openSearchActive) {
             ExportStats.recordSuccess("traffic", success);

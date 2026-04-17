@@ -16,11 +16,11 @@ import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
-class ToolIndexLogForwarderTest {
+class ExporterIndexLogForwarderTest {
 
     @Test
     void onLog_noops_beforeStart_and_doesNotQueueWork() {
-        ToolIndexLogForwarder forwarder = new ToolIndexLogForwarder();
+        ExporterIndexLogForwarder forwarder = new ExporterIndexLogForwarder();
         try {
             RuntimeConfig.setExportRunning(false);
 
@@ -35,7 +35,7 @@ class ToolIndexLogForwarderTest {
 
     @Test
     void onLog_noops_duringStartupBootstrap_and_doesNotQueueWork() {
-        ToolIndexLogForwarder forwarder = new ToolIndexLogForwarder();
+        ExporterIndexLogForwarder forwarder = new ExporterIndexLogForwarder();
         try {
             RuntimeConfig.setExportRunning(true);
             RuntimeConfig.setExportStarting(true);
@@ -50,10 +50,10 @@ class ToolIndexLogForwarderTest {
     }
 
     @Test
-    void onLog_writesToolLog_whenOnlyFileExportIsEnabled_andSavedOpenSearchUrlExists() throws Exception {
-        ToolIndexLogForwarder forwarder = null;
+    void onLog_writesExporterLog_whenOnlyFileExportIsEnabled_andSavedOpenSearchUrlExists() throws Exception {
+        ExporterIndexLogForwarder forwarder = null;
         try {
-            Path root = TestPathSupport.createDirectory("tool-log-file-only");
+            Path root = TestPathSupport.createDirectory("exporter-log-file-only");
             RuntimeConfig.updateState(new ConfigState.State(
                     java.util.List.of(ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_EXPORTER),
                     ConfigKeys.SCOPE_ALL,
@@ -70,7 +70,7 @@ class ToolIndexLogForwarderTest {
             RuntimeConfig.setExportRunning(true);
             RuntimeConfig.setExportStarting(false);
             long openSearchToolSuccessBefore = ExportStats.getSuccessCount("tool");
-            forwarder = new ToolIndexLogForwarder();
+            forwarder = new ExporterIndexLogForwarder();
 
             forwarder.onLog("INFO", "file-only log");
 
@@ -91,9 +91,9 @@ class ToolIndexLogForwarderTest {
 
     @Test
     void onLog_skipsFileWrite_whenExporterSourceDisabled() throws Exception {
-        ToolIndexLogForwarder forwarder = null;
+        ExporterIndexLogForwarder forwarder = null;
         try {
-            Path root = TestPathSupport.createDirectory("tool-log-disabled");
+            Path root = TestPathSupport.createDirectory("exporter-log-disabled");
             RuntimeConfig.updateState(new ConfigState.State(
                     java.util.List.of(ConfigKeys.SRC_SETTINGS),
                     ConfigKeys.SCOPE_ALL,
@@ -109,7 +109,7 @@ class ToolIndexLogForwarderTest {
             ));
             RuntimeConfig.setExportRunning(true);
             RuntimeConfig.setExportStarting(false);
-            forwarder = new ToolIndexLogForwarder();
+            forwarder = new ExporterIndexLogForwarder();
 
             forwarder.onLog("INFO", "should not be exported");
             Thread.sleep(250L);

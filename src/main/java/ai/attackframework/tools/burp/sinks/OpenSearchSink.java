@@ -26,6 +26,7 @@ import org.opensearch.client.opensearch.indices.IndexSettings;
 
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
@@ -37,31 +38,39 @@ public class OpenSearchSink {
 
     private static final String DEFAULT_MAPPINGS_RESOURCE_ROOT = "/opensearch/mappings/";
 
-    /** Creates an index from {@code /opensearch/mappings/<shortName>.json}. */
+    /** Creates an index from the bundled mapping resource for the logical index key. */
     public static IndexResult createIndexFromResource(String baseUrl, String shortName) {
         final String root = System.getProperty("attackframework.mappings.root", DEFAULT_MAPPINGS_RESOURCE_ROOT);
-        return createIndexFromResource(baseUrl, shortName, root, null, null);
+        return createIndexFromResource(baseUrl, shortName, resolvedFullIndexName(shortName), root, null, null);
     }
 
-    /** Creates an index from {@code <mappingsResourceRoot>/<shortName>.json}. */
+    /** Creates an index from the bundled mapping resource for the logical index key. */
     public static IndexResult createIndexFromResource(String baseUrl, String shortName, String mappingsResourceRoot) {
-        return createIndexFromResource(baseUrl, shortName, mappingsResourceRoot, null, null);
+        return createIndexFromResource(baseUrl, shortName, resolvedFullIndexName(shortName), mappingsResourceRoot, null, null);
     }
 
     /**
-     * Creates an index from {@code <mappingsResourceRoot>/<shortName>.json} with optional basic auth.
+     * Creates an index from the bundled mapping resource for the logical index key with optional basic auth.
      * When username and password are non-null and non-empty, uses basic auth for the request.
      */
     public static IndexResult createIndexFromResource(String baseUrl, String shortName, String mappingsResourceRoot,
+            String username, String password) {
+        return createIndexFromResource(baseUrl, shortName, resolvedFullIndexName(shortName), mappingsResourceRoot, username, password);
+    }
+
+    /**
+     * Creates an index from the bundled mapping resource for the logical index key with an explicit full name
+     * and optional basic auth.
+     */
+    public static IndexResult createIndexFromResource(String baseUrl, String shortName, String fullIndexName, String mappingsResourceRoot,
             String username, String password) {
         final String defaultRoot = System.getProperty("attackframework.mappings.root", DEFAULT_MAPPINGS_RESOURCE_ROOT);
         final String resourceRoot = (mappingsResourceRoot == null || mappingsResourceRoot.isBlank())
                 ? defaultRoot
                 : mappingsResourceRoot;
 
-        final String fullIndexName = IndexNaming.indexNameForShortName(shortName);
-
-        final String mappingFile = resourceRoot + shortName + ".json";
+        String mappingShortName = mappingResourceShortName(shortName);
+        final String mappingFile = resourceRoot + mappingShortName + ".json";
 
         Logger.logDebug("[OpenSearch] Attempting to create index: " + fullIndexName);
         Logger.logDebug("[OpenSearch] Using mapping file: " + mappingFile);
@@ -145,7 +154,7 @@ public class OpenSearchSink {
      * Creates all indices required by the selected sources.
      *
      * <p>Only source keys recognized by {@link IndexNaming#computeIndexBaseNames(List)} produce
-     * indices. For example, the Tool index is created only when the {@code exporter} source is
+     * indices. For example, the Exporter index is created only when the {@code exporter} source is
      * selected.</p>
      */
     public static List<IndexResult> createSelectedIndexes(String baseUrl, List<String> selectedSources) {
@@ -169,20 +178,23 @@ public class OpenSearchSink {
             String username, String password, BooleanSupplier shouldContinue) {
         Logger.logDebug("[OpenSearch] createSelectedIndexes sources=" + selectedSources);
 
-        List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
-        LinkedHashSet<String> shortNames = new LinkedHashSet<>();
-        for (String base : baseNames) {
-            shortNames.add(IndexNaming.shortNameForIndexName(base));
-        }
+        LinkedHashSet<String> shortNames = new LinkedHashSet<>(IndexNaming.computeSelectedIndexKeys(selectedSources));
 
         List<IndexResult> results = new ArrayList<>();
         for (String shortName : shortNames) {
             if (shouldContinue != null && !shouldContinue.getAsBoolean()) {
                 break;
             }
-            Logger.logInfoPanelOnly("[OpenSearch] Creating index for " + shortName + ".");
-            IndexResult result = createIndexFromResource(baseUrl, shortName, null, username, password);
-            Logger.logInfoPanelOnly("[OpenSearch] Index result for " + shortName + ": " + result.status() + ".");
+            String displayName = IndexNaming.displayNameForIndexKey(shortName);
+            Logger.logInfoPanelOnly("[OpenSearch] Creating index for " + displayName + ".");
+            IndexResult result = createIndexFromResource(
+                    baseUrl,
+                    shortName,
+                    RuntimeConfig.indexNameForKey(shortName),
+                    null,
+                    username,
+                    password);
+            Logger.logInfoPanelOnly("[OpenSearch] Index result for " + displayName + ": " + result.status() + ".");
             results.add(result);
         }
         return results;
@@ -222,5 +234,18 @@ public class OpenSearchSink {
      */
     public record IndexResult(String shortName, String fullName, Status status, String error) {
         public enum Status { CREATED, EXISTS, FAILED }
+    }
+
+    private static String resolvedFullIndexName(String shortName) {
+        String normalized = shortName == null ? "" : shortName.trim().toLowerCase(java.util.Locale.ROOT);
+        if (IndexNaming.indexKeys().contains(normalized)) {
+            return RuntimeConfig.indexNameForKey(normalized);
+        }
+        return IndexNaming.normalizeBaseTemplate(RuntimeConfig.getState().indexNameBaseTemplate()) + "-" + normalized;
+    }
+
+    private static String mappingResourceShortName(String shortName) {
+        String normalized = shortName == null ? "" : shortName.trim().toLowerCase(java.util.Locale.ROOT);
+        return "tool".equals(normalized) ? "exporter" : normalized;
     }
 }

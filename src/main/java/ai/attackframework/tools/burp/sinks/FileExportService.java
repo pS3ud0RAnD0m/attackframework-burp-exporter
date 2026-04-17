@@ -1,7 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +28,6 @@ public final class FileExportService {
     private static final Map<String, FileSink> JSONL_SINKS = new ConcurrentHashMap<>();
     private static final Map<String, FileSink> BULK_SINKS = new ConcurrentHashMap<>();
     private static final Map<String, RootState> ROOT_STATES = new ConcurrentHashMap<>();
-    private static final String EXPORT_FILE_GLOB = "attackframework-tool-burp*";
 
     private FileExportService() { }
 
@@ -135,25 +133,25 @@ public final class FileExportService {
                     e.getMessage()));
         }
 
-        List<String> baseNames = IndexNaming.computeIndexBaseNames(selectedSources);
         List<FileInitResult> results = new java.util.ArrayList<>();
-        for (String baseName : baseNames) {
+        for (String shortName : IndexNaming.computeSelectedIndexKeys(selectedSources)) {
             if (shouldContinue != null && !shouldContinue.getAsBoolean()) {
                 break;
             }
-            String shortName = IndexNaming.shortNameForIndexName(baseName);
+            String baseName = RuntimeConfig.indexNameForKey(shortName);
+            String displayName = IndexNaming.displayNameForIndexKey(shortName);
             if (RuntimeConfig.isFileJsonlEnabled()) {
                 String fileName = baseName + ".jsonl";
-                Logger.logInfoPanelOnly("[Files] Creating file for " + shortName + " (.jsonl).");
+                Logger.logInfoPanelOnly("[Files] Creating file for " + displayName + " (.jsonl).");
                 FileUtil.CreateResult created = FileUtil.ensureFiles(rootPath, List.of(fileName)).getFirst();
-                Logger.logInfoPanelOnly("[Files] File result for " + shortName + " (.jsonl): " + created.status() + ".");
+                Logger.logInfoPanelOnly("[Files] File result for " + displayName + " (.jsonl): " + created.status() + ".");
                 results.add(new FileInitResult(shortName, ".jsonl", created.path(), created.status(), created.error()));
             }
             if (RuntimeConfig.isFileBulkNdjsonEnabled()) {
                 String fileName = baseName + ".ndjson";
-                Logger.logInfoPanelOnly("[Files] Creating file for " + shortName + " (.ndjson).");
+                Logger.logInfoPanelOnly("[Files] Creating file for " + displayName + " (.ndjson).");
                 FileUtil.CreateResult created = FileUtil.ensureFiles(rootPath, List.of(fileName)).getFirst();
-                Logger.logInfoPanelOnly("[Files] File result for " + shortName + " (.ndjson): " + created.status() + ".");
+                Logger.logInfoPanelOnly("[Files] File result for " + displayName + " (.ndjson): " + created.status() + ".");
                 results.add(new FileInitResult(shortName, ".ndjson", created.path(), created.status(), created.error()));
             }
         }
@@ -297,13 +295,16 @@ public final class FileExportService {
             if (!Files.isDirectory(rootPath)) {
                 return;
             }
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(rootPath, EXPORT_FILE_GLOB)) {
-                for (Path path : stream) {
-                    if (!Files.isRegularFile(path)) {
-                        continue;
+            try {
+                java.util.Set<Path> candidates = new java.util.LinkedHashSet<>();
+                for (String baseName : RuntimeConfig.allIndexNames().values()) {
+                    candidates.add(rootPath.resolve(baseName + ".jsonl"));
+                    candidates.add(rootPath.resolve(baseName + ".ndjson"));
+                }
+                for (Path path : candidates) {
+                    if (Files.isRegularFile(path)) {
+                        totalBytes += Files.size(path);
                     }
-                    long size = Files.size(path);
-                    totalBytes += size;
                 }
             } catch (IOException e) {
                 Logger.logError("File export size scan failed for " + rootPath + ": " + e.getMessage());

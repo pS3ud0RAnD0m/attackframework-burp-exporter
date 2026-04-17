@@ -271,7 +271,7 @@ class StatsPanelTest {
                     .isEqualTo("<html>Cycle chart styles: <b>Simple</b>, <b>Smooth</b>, and <b>Accessible</b>.</html>");
             assertThat(labels).containsExactly(
                     "Traffic",
-                    "Tool",
+                    "Exporter",
                     "Settings",
                     "Sitemap",
                     "Findings");

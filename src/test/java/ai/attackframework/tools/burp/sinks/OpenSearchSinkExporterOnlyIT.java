@@ -17,15 +17,15 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 
 /**
- * Exercises the Tool-index lifecycle against a live OpenSearch test cluster.
+ * Exercises the Exporter-index lifecycle against a live OpenSearch test cluster.
  *
- * <p>The Tool index is created through the {@code exporter} source selection. Run this test
+ * <p>The Exporter index is created through the {@code exporter} source selection. Run this test
  * through {@link OpenSearchIntegrationSuite}.</p>
  */
-class OpenSearchSinkToolOnlyIT {
+class OpenSearchSinkExporterOnlyIT {
 
     @Test
-    void create_delete_recreate_toolOnly_viaSink() {
+    void create_delete_recreate_exporterOnly_viaSink() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
         List<IndexResult> first = OpenSearchReachable.createSelectedIndexes(List.of("exporter"));
@@ -59,7 +59,7 @@ class OpenSearchSinkToolOnlyIT {
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(index).build());
         } catch (IOException | RuntimeException e) {
-            Logger.logError("[OpenSearchSinkToolOnlyIT] Failed to delete index during tool-only test cleanup: " + index, e);
+            Logger.logError("[OpenSearchSinkExporterOnlyIT] Failed to delete index during exporter-only test cleanup: " + index, e);
         }
     }
 }

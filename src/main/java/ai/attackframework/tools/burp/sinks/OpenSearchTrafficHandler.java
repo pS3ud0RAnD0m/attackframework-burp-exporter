@@ -12,7 +12,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.ExportStats;
@@ -55,7 +54,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
     private static final ConcurrentHashMap<Integer, PendingOrphan> pendingOrphans = new ConcurrentHashMap<>();
 
     private static String trafficIndexName() {
-        return IndexNaming.indexNameForShortName("traffic");
+        return RuntimeConfig.indexNameForKey("traffic");
     }
 
     static {
@@ -426,7 +425,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             doc.put("response_start_latency_ms", durationMs(po.timestamp, nowMs));
             doc.put("response", buildOrphanResponse());
             long startNs = System.nanoTime();
-            boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, trafficIndexName(), doc);
+            boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, trafficIndexName(), "traffic", doc);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
             boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
             if (openSearchActive) {

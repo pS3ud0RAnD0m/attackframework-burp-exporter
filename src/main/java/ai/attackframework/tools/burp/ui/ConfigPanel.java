@@ -12,6 +12,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -44,8 +45,8 @@ import ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
-import ai.attackframework.tools.burp.sinks.ToolIndexConfigReporter;
-import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
+import ai.attackframework.tools.burp.sinks.ExporterIndexConfigReporter;
+import ai.attackframework.tools.burp.sinks.ExporterIndexStatsReporter;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingPasswordField;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
@@ -58,6 +59,7 @@ import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.ui.text.Doc;
 import ai.attackframework.tools.burp.ui.text.ExportFieldTooltips;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
+import ai.attackframework.tools.burp.ui.text.ValidationIndicator;
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileUtil;
@@ -135,6 +137,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JCheckBox exporterConfigCheckbox = new Tooltips.HtmlCheckBox("Config", true);
     private final JTextField exporterStatsIntervalField = new AutoSizingTextField(
             String.valueOf(ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS));
+    private final JTextField indexNameBaseTemplateField = new AutoSizingTextField(
+            ConfigState.DEFAULT_INDEX_NAME_BASE_TEMPLATE);
+    private final JLabel indexNameBaseValidationIndicator = new Tooltips.HtmlLabel("");
 
     private static final String EXPAND_COLLAPSED = "+";
     private static final String EXPAND_EXPANDED = "−";
@@ -219,7 +224,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private java.util.Map<String, JPanel> fieldsSubPanels;
     /** Fields panel: index -> header row panel (label + expand button); used for enable/disable when Data Source is toggled. */
     private java.util.Map<String, JPanel> fieldsSectionHeaderRows;
-
     /** Creates the panel with its default controller. Caller must invoke on the EDT. */
     public ConfigPanel() { this(null); }
 
@@ -232,6 +236,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         assignToolTips();
         configureFileFormatButtons();
+        configureIndexNameBaseValidationUi();
 
         ButtonStyles.configureExpandButton(settingsExpandButton);
         ButtonStyles.configureExpandButton(issuesExpandButton);
@@ -291,11 +296,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             expBtn.setName("fields." + indexName + ".expand");
             ConfigFieldsPanel.configureExpandButton(expBtn);
             fieldsExpandButtons.put(indexName, expBtn);
-            JPanel sub = new JPanel(new MigLayout("insets 0, wrap 3", "[left][left][left]"));
+            JPanel sub = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[grow,left]"));
             sub.setOpaque(false);
+            JPanel fieldsGrid = new JPanel(new MigLayout("insets 0, wrap 3", "[left][left][left]"));
+            fieldsGrid.setOpaque(false);
             for (JCheckBox cb : perIndex.values()) {
-                sub.add(cb, "gapright 12");
+                fieldsGrid.add(cb, "gapright 12");
             }
+            sub.add(fieldsGrid, "growx, wrap");
             sub.setVisible(false);
             fieldsSubPanels.put(indexName, sub);
         }
@@ -308,7 +316,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 cb.addActionListener(fieldsRuntimeUpdater);
             }
         }
-        JPanel fieldsPanel = new ConfigFieldsPanel(fieldsExpandButtons, fieldsSubPanels, INDENT).build(fieldsSectionHeaderRows);
+        JPanel fieldsPanel = new ConfigFieldsPanel(
+                fieldsExpandButtons,
+                fieldsSubPanels,
+                buildGlobalIndexNamingPanel(),
+                INDENT).build(fieldsSectionHeaderRows);
 
         add(new ConfigScopePanel(allRadio, burpSuiteRadio, customRadio, scopeGrid, INDENT).build(),
                 "gaptop 10, gapbottom 5, wrap");
@@ -360,11 +372,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         add(Box.createVerticalGlue(), "growy, wrap");
 
+        assignToolTips();
         assignComponentNames();
         wireTextFieldEnhancements();
         loadSessionOpenSearchCredentials();
         refreshEnabledStates();
         applyEditionRestrictions();
+        refreshIndexNameBaseValidationState();
     }
 
     @Override
@@ -440,6 +454,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         syncSelectedAuthStateFromUi();
+        ai.attackframework.tools.burp.utils.IndexNaming.ResolutionResult indexNamingResolution =
+                RuntimeConfig.prepareIndexNamesForCurrentRun();
+        if (!indexNamingResolution.valid()) {
+            abortStartOnEdt("fix index naming before Start: " + String.join(" ", indexNamingResolution.errors()), uiCallbacks);
+            return;
+        }
         boolean filesSelected = fileSinkCheckbox.isSelected();
         boolean openSearchSelected = openSearchSinkCheckbox.isSelected();
         if (fileSinkCheckbox.isSelected() && !hasSelectedFileFormat()) {
@@ -601,11 +621,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             onControlStatus(runningStatus);
         });
         if (RuntimeConfig.isAnySinkEnabled()) {
-            ToolIndexConfigReporter.pushConfigSnapshot();
+            ExporterIndexConfigReporter.pushConfigSnapshot();
             if (!RuntimeConfig.isExportRunning()) {
                 return;
             }
-            ToolIndexStatsReporter.start();
+            ExporterIndexStatsReporter.start();
         }
         if (!RuntimeConfig.isExportRunning()) {
             return;
@@ -1008,6 +1028,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             exporterConfigCheckbox.setSelected(exporterOptions.contains(ConfigKeys.SRC_EXPORTER_CONFIG));
             exporterStatsIntervalField.setText(String.valueOf(state.exporterStatsIntervalSeconds()));
             refreshExporterStatsIntervalEnabledState();
+            indexNameBaseTemplateField.setText(state.indexNameBaseTemplate());
+            refreshIndexNameBaseValidationState();
 
             ConfigState.Sinks sinks = state.sinks();
             if (sinks != null) {
@@ -1077,7 +1099,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void updateRuntimeConfig() {
         RuntimeConfig.updateState(buildCurrentState());
-        ToolIndexStatsReporter.refreshScheduleForCurrentState();
+        ExporterIndexStatsReporter.refreshScheduleForCurrentState();
     }
 
     private void syncSelectedAuthStateFromUi() {
@@ -1104,7 +1126,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             JButton expandBtn = fieldsExpandButtons.get(indexName);
             if (expandBtn != null) expandBtn.setEnabled(!disableExpandForCommunity);
             JPanel sub = fieldsSubPanels.get(indexName);
-            if (sub != null) sub.setEnabled(enabled);
+            if (sub != null) setEnabledRecursively(sub, enabled);
             java.util.Map<String, JCheckBox> checkboxes = fieldCheckboxesByIndex.get(indexName);
             if (checkboxes != null) {
                 for (JCheckBox cb : checkboxes.values()) cb.setEnabled(enabled);
@@ -1237,6 +1259,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             filePathField.revalidate();
             openSearchUrlField.revalidate();
             exporterStatsIntervalField.revalidate();
+            indexNameBaseTemplateField.revalidate();
             updateRuntimeConfig();
         });
         filePathField.getDocument().addDocumentListener(relayout);
@@ -1244,6 +1267,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         fileTotalCapField.getDocument().addDocumentListener(relayout);
         fileDiskUsagePercentField.getDocument().addDocumentListener(relayout);
         exporterStatsIntervalField.getDocument().addDocumentListener(relayout);
+        indexNameBaseTemplateField.getDocument().addDocumentListener(relayout);
 
         DocumentListener authUpdater = Doc.onChange(() -> {
             if (!suppressAuthSync) {
@@ -1297,7 +1321,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         row.add(Tooltips.label("Interval:",
                 Tooltips.html(
                         "Frequency for exporter stats snapshots.",
-                        "This controls how often the Tool index receives stats documents."
+                        "This controls how often the Exporter index receives stats documents."
                 )));
         row.add(exporterStatsIntervalField, "w 40!");
         row.add(new JLabel("sec"));
@@ -1745,6 +1769,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         TextFieldUndo.install(fileTotalCapField);
         TextFieldUndo.install(fileDiskUsagePercentField);
         TextFieldUndo.install(exporterStatsIntervalField);
+        TextFieldUndo.install(indexNameBaseTemplateField);
+        indexNameBaseTemplateField.getDocument().addDocumentListener(Doc.onChange(this::refreshIndexNameBaseValidationState));
         openSearchUrlField.addActionListener(e -> testConnectionButton.doClick());
 
         openSearchTlsModeCombo.getInputMap(JComponent.WHEN_FOCUSED).put(
@@ -1773,6 +1799,107 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         panel.add(fileDiskUsagePercentField, "w 40!");
         panel.add(new JLabel("%"));
         return panel;
+    }
+
+    private JPanel buildGlobalIndexNamingPanel() {
+        JPanel panel = new JPanel(new MigLayout("insets 0, hidemode 3, gapx 8", "[pref!][pref][pref!]", "[]"));
+        panel.setOpaque(false);
+
+        String tooltip = indexBaseNameTooltip();
+        panel.add(Tooltips.label("Index Base Name:", tooltip));
+        panel.add(indexNameBaseTemplateField, "aligny center");
+        panel.add(indexNameBaseValidationIndicator, "aligny center");
+        return panel;
+    }
+
+    /** Prepares the inline Index Base Name validation indicator to match regex-style glyph feedback. */
+    private void configureIndexNameBaseValidationUi() {
+        ValidationIndicator.hide(indexNameBaseValidationIndicator, indexNameBaseTemplateField.getFont());
+    }
+
+    /** Revalidates the Index Base Name field against the same OpenSearch rules used at Start. */
+    private void refreshIndexNameBaseValidationState() {
+        ai.attackframework.tools.burp.utils.IndexNaming.BaseTemplateValidation validation =
+                ai.attackframework.tools.burp.utils.IndexNaming.validateBaseTemplateDetailed(
+                indexNameBaseTemplateField.getText(),
+                Instant.now());
+        if (validation.valid()) {
+            ValidationIndicator.good(
+                    indexNameBaseValidationIndicator,
+                    indexNameBaseTemplateField.getFont(),
+                    validIndexBaseNameTooltip());
+        } else {
+            ValidationIndicator.bad(
+                    indexNameBaseValidationIndicator,
+                    indexNameBaseTemplateField.getFont(),
+                    invalidIndexBaseNameTooltip(validation));
+        }
+        if (indexNameBaseValidationIndicator.getParent() != null) {
+            indexNameBaseValidationIndicator.getParent().revalidate();
+            indexNameBaseValidationIndicator.getParent().repaint();
+        }
+    }
+
+    private static String indexBaseNameTooltip() {
+        return Tooltips.htmlRaw(
+                "<b>Index Base Name</b>",
+                "Shared base used to derive all OpenSearch index names and file basenames.",
+                "Enter only the shared base. Fixed suffixes are appended automatically:",
+                "&nbsp;&nbsp;<code>-exporter</code>, <code>-findings</code>, <code>-settings</code>, <code>-sitemap</code>, <code>-traffic</code>",
+                "",
+                "Default:",
+                "&nbsp;&nbsp;<code>attackframework-tool-burp</code>",
+                "",
+                "Examples:",
+                "&nbsp;&nbsp;<code>attackframework-tool-burp</code>",
+                "&nbsp;&nbsp;<code>${now:yyyyMMdd}-attackframework-tool-burp</code>",
+                "&nbsp;&nbsp;<code>${now:yyyyMMdd-HHmmss}-attackframework-tool-burp</code>",
+                "",
+                "Supported date-time variables:",
+                "&nbsp;&nbsp;<code>{NOW}</code> or <code>{DATE-TIME}</code> for the built-in current local date/time value",
+                "&nbsp;&nbsp;<code>${now:yyyyMMdd}</code> or <code>${now:yyyyMMdd-HHmmss}</code> for explicit Java date-time formats",
+                "",
+                "OpenSearch requirements after suffixes are appended:",
+                "&nbsp;&nbsp;- lowercase only",
+                "&nbsp;&nbsp;- cannot start with <code>-</code>, <code>_</code>, or <code>+</code>",
+                "&nbsp;&nbsp;- cannot be <code>.</code> or <code>..</code>",
+                "&nbsp;&nbsp;- cannot contain spaces or <code>\\ / * ? \" &lt; &gt; | , # :</code>",
+                "&nbsp;&nbsp;- cannot contain unresolved variable syntax",
+                "&nbsp;&nbsp;- must stay within 255 UTF-8 bytes",
+                "",
+                "Resolution timing:",
+                "&nbsp;&nbsp;Date-time variables resolve on each <b>Start</b> and remain fixed for that full run."
+        );
+    }
+
+    private static String validIndexBaseNameTooltip() {
+        return Tooltips.htmlRaw(
+                "<b>Valid Index Base Name</b>",
+                "All resolved index names currently satisfy the OpenSearch naming rules.",
+                "Blank is also allowed and falls back to <code>attackframework-tool-burp</code>."
+        );
+    }
+
+    private static String invalidIndexBaseNameTooltip(
+            ai.attackframework.tools.burp.utils.IndexNaming.BaseTemplateValidation validation) {
+        String displayName = Tooltips.escapeHtml(validation.failingDisplayName());
+        String resolvedName = Tooltips.escapeHtml(validation.failingResolvedName());
+        String error = Tooltips.escapeHtml(validation.error());
+        return Tooltips.htmlRaw(
+                "<b>Invalid Index Base Name</b>",
+                "<b>Error:</b> " + error,
+                "<b>Failing resolved index:</b> " + displayName,
+                "<b>Resolved name:</b> <code>" + resolvedName + "</code>",
+                "",
+                "<b>Requirements</b>",
+                "All resolved index names must:",
+                "&nbsp;&nbsp;- be lowercase",
+                "&nbsp;&nbsp;- not start with <code>-</code>, <code>_</code>, or <code>+</code>",
+                "&nbsp;&nbsp;- not be <code>.</code> or <code>..</code>",
+                "&nbsp;&nbsp;- not contain spaces or <code>\\ / * ? \" &lt; &gt; | , # :</code>",
+                "&nbsp;&nbsp;- not contain unsupported or unresolved variable syntax",
+                "&nbsp;&nbsp;- stay within 255 UTF-8 bytes after the suffix is appended"
+        );
     }
 
     /** Returns {@code value} if non-null and non-blank, otherwise {@code fallback}. */
@@ -1875,6 +2002,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 exporterSubOptions,
                 parsePositiveSeconds(exporterStatsIntervalField.getText(),
                         ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS),
+                nonBlankOr(indexNameBaseTemplateField.getText(), ConfigState.DEFAULT_INDEX_NAME_BASE_TEMPLATE),
                 buildEnabledExportFieldsByIndex(),
                 uiPreferences
         );
@@ -1963,7 +2091,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * name before delegating to {@link ConfigController#exportConfigAsync(java.nio.file.Path, String)}.</p>
      */
     private void exportConfig() {
-        String json = ConfigJsonMapper.build(buildCurrentState());
+        ConfigState.State currentState = buildCurrentState();
+        ai.attackframework.tools.burp.utils.IndexNaming.ResolutionResult indexNamingResolution =
+                ai.attackframework.tools.burp.utils.IndexNaming.resolveAllConfiguredNames(
+                        currentState,
+                        java.time.Instant.now());
+        if (!indexNamingResolution.valid()) {
+            onControlStatus("Fix index naming before export: " + String.join(" ", indexNamingResolution.errors()));
+            return;
+        }
+        String json = ConfigJsonMapper.build(currentState);
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Export Config");
         chooser.setFileFilter(new FileNameExtensionFilter("JSON files (*.json)", "json"));
@@ -2023,6 +2160,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         exporterStatsIntervalField.setName("src.exporter.stats.intervalSeconds");
         exporterConfigCheckbox.setName("src.exporter.config");
         exporterExpandButton.setName("src.exporter.expand");
+        indexNameBaseTemplateField.setName("indexNaming.baseTemplate");
+        indexNameBaseValidationIndicator.setName("indexNaming.baseTemplate.indicator");
 
         allRadio.setName("scope.all");
         burpSuiteRadio.setName("scope.burp");
@@ -2056,8 +2195,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Tooltips.apply(issuesCheckbox, Tooltips.html("All findings (aka issues)."));
         Tooltips.apply(trafficCheckbox, Tooltips.html("All in-scope traffic."));
         Tooltips.apply(exporterCheckbox, Tooltips.html(
-                "Burp Exporter runtime telemetry.",
-                "Controls logs, stats snapshots, and config snapshots exported to the Tool index."
+                "Burp Exporter runtime logs and metrics.",
+                "Controls logs, stats snapshots, and config snapshots exported to the Exporter index."
         ));
         Tooltips.apply(settingsExpandButton, Tooltips.html("Settings sub-options."));
         Tooltips.apply(issuesExpandButton, Tooltips.html("Issues sub-options."));
@@ -2094,6 +2233,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 "Exporter config snapshots when Start completes.",
                 "Includes the normalized source, scope, and destination selections."
         ));
+        Tooltips.apply(indexNameBaseTemplateField, indexBaseNameTooltip());
 
         Tooltips.apply(allRadio, Tooltips.html("Export all observed."));
         Tooltips.apply(burpSuiteRadio, Tooltips.html("Export Burp Suite's project scope."));

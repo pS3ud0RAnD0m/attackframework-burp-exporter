@@ -112,8 +112,8 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStartedUi(startStop);
             waitForLogMessage(events, "[Files] Initializing files for selected sources.");
-            waitForLogMessage(events, "[Files] Creating file for tool (.ndjson).");
-            waitForLogMessage(events, "[Files] File result for tool (.ndjson):");
+            waitForLogMessage(events, "[Files] Creating file for Exporter (.ndjson).");
+            waitForLogMessage(events, "[Files] File result for Exporter (.ndjson):");
             waitForLogMessage(events, "[Export] Started. Destinations: Files.");
 
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
@@ -224,8 +224,8 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStartedUi(startStop);
             waitForLogMessage(events, "[Files] Initializing files for selected sources.");
-            waitForLogMessage(events, "[Files] Creating file for tool (.ndjson).");
-            waitForLogMessage(events, "[Files] File result for tool (.ndjson):");
+            waitForLogMessage(events, "[Files] Creating file for Exporter (.ndjson).");
+            waitForLogMessage(events, "[Files] File result for Exporter (.ndjson):");
             waitForLogMessage(events, "OpenSearch not started: base URL is blank.");
             waitForLogMessage(events, "[Export] Started. Destinations: Files.");
 
@@ -450,6 +450,57 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             assertThat(controlStatus.getText()).contains("Start aborted");
             assertThat(controlStatus.getText()).contains("select at least one file format");
         } finally {
+            ExportReporterLifecycle.resetForTests();
+            Logger.resetState();
+        }
+    }
+
+    @Test
+    void start_withInvalidResolvedIndexNames_revertsUi_and_reportsStatus() throws Exception {
+        Path exportRoot = TestPathSupport.createDirectory("af-file-root-invalid-index-name");
+        Path exportRootAbs = exportRoot.toAbsolutePath().normalize();
+        try {
+            AtomicReference<ConfigPanel> ref = new AtomicReference<>();
+            SwingUtilities.invokeAndWait(() -> {
+                ConfigPanel p = new ConfigPanel();
+                p.setSize(1000, 700);
+                p.doLayout();
+
+                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                if (openSearchEnabled.isSelected()) {
+                    openSearchEnabled.doClick();
+                }
+
+                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                if (!filesEnabled.isSelected()) {
+                    filesEnabled.doClick();
+                }
+                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                if (!bulkNdjsonEnabled.isSelected()) {
+                    bulkNdjsonEnabled.doClick();
+                }
+
+                JTextField filePathField = get(p, "filePathField");
+                filePathField.setText(exportRootAbs.toString());
+                JTextField baseTemplateField = Objects.requireNonNull(findByName(p, "indexNaming.baseTemplate", JTextField.class));
+                baseTemplateField.setText("Attackframework Tool Burp");
+                ref.set(p);
+            });
+            ConfigPanel panel = Objects.requireNonNull(ref.get());
+
+            JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
+            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+
+            SwingUtilities.invokeAndWait(startStop::doClick);
+            waitForStoppedUi(startStop);
+
+            assertThat(RuntimeConfig.isExportRunning()).isFalse();
+            assertThat(startStop.getText()).isEqualTo("Start");
+            assertThat(controlStatus.getText()).contains("Start aborted");
+            assertThat(controlStatus.getText()).contains("fix index naming before Start");
+            assertThat(controlStatus.getText()).contains("must be lowercase");
+        } finally {
+            TestPathSupport.cleanupExportArtifacts(exportRoot);
             ExportReporterLifecycle.resetForTests();
             Logger.resetState();
         }

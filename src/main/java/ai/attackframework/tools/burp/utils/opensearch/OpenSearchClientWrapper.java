@@ -10,7 +10,6 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.sinks.FileExportService;
@@ -178,8 +177,8 @@ public class OpenSearchClientWrapper {
      * @param document the document to index (filtered by {@link ai.attackframework.tools.burp.utils.config.ExportFieldFilter})
      * @return {@code true} if indexed successfully, {@code false} otherwise
      */
-    public static boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document) {
-        PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, document);
+    public static boolean pushDocument(String baseUrl, String indexName, String indexKey, Map<String, Object> document) {
+        PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, document);
         FileExportService.emit(prepared);
         if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
             return RuntimeConfig.isAnyFileExportEnabled();
@@ -202,14 +201,14 @@ public class OpenSearchClientWrapper {
      * @param documents documents to index (each filtered by {@link ai.attackframework.tools.burp.utils.config.ExportFieldFilter})
      * @return number of documents successfully indexed
      */
-    public static int pushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
+    public static int pushBulk(String baseUrl, String indexName, String indexKey, List<Map<String, Object>> documents) {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
         List<PreparedExportDocument> prepared = new ArrayList<>(documents.size());
         long totalEstimatedBytes = 0;
         for (Map<String, Object> doc : documents) {
-            PreparedExportDocument preparedDoc = ExportDocumentIdentity.prepare(indexName, doc);
+            PreparedExportDocument preparedDoc = ExportDocumentIdentity.prepare(indexName, indexKey, doc);
             prepared.add(preparedDoc);
             totalEstimatedBytes += BulkPayloadEstimator.estimateBytes(preparedDoc.document());
         }
@@ -217,7 +216,6 @@ public class OpenSearchClientWrapper {
         if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
             return RuntimeConfig.isAnyFileExportEnabled() ? prepared.size() : 0;
         }
-        String indexKey = indexKeyFromIndexName(indexName);
         List<Map<String, Object>> preparedDocs = prepared.stream().map(PreparedExportDocument::document).toList();
         int successCount = IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, preparedDocs, indexKey);
         if (successCount > 0 && !preparedDocs.isEmpty()) {
@@ -225,10 +223,6 @@ public class OpenSearchClientWrapper {
             ExportStats.recordExportedBytes(indexKey, estimatedSuccessBytes);
         }
         return successCount;
-    }
-
-    static String indexKeyFromIndexName(String indexName) {
-        return IndexNaming.shortNameForIndexName(indexName);
     }
 
     /**

@@ -13,29 +13,28 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
-import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Periodically pushes exporter stats snapshots to the Tool index.
+ * Periodically pushes exporter stats snapshots to the Exporter index.
  *
- * <p>Started when export startup reaches the tool-stats phase; runs on a single daemon scheduler.
- * Snapshots are emitted only while export is running, the {@code exporter} source is enabled, the
- * {@code stats} sub-option is selected, and at least one sink is active. The interval is read
- * from {@link RuntimeConfig#exporterStatsIntervalSeconds()} so UI changes can reschedule the
- * reporter without restarting the extension.</p>
+ * <p>Started when export startup reaches the exporter-stats phase; runs on a single daemon
+ * scheduler. Snapshots are emitted only while export is running, the {@code exporter} source is
+ * enabled, the {@code stats} sub-option is selected, and at least one sink is active. The
+ * interval is read from {@link RuntimeConfig#exporterStatsIntervalSeconds()} so UI changes can
+ * reschedule the reporter without restarting the extension.</p>
  *
- * <p>Delivery is fire-and-forget: failures are not pushed back into the Tool index to avoid
+ * <p>Delivery is fire-and-forget: failures are not pushed back into the Exporter index to avoid
  * feedback loops. Set {@link #ENABLED} to {@code false} to disable the reporter for diagnostics or
  * focused testing.</p>
  */
-public final class ToolIndexStatsReporter {
+public final class ExporterIndexStatsReporter {
 
     /** When false, no scheduler is started and no documents are pushed. */
     public static final boolean ENABLED = true;
@@ -46,7 +45,7 @@ public final class ToolIndexStatsReporter {
     private static volatile ScheduledExecutorService scheduler;
     private static volatile int scheduledIntervalSeconds = ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS;
 
-    private ToolIndexStatsReporter() {}
+    private ExporterIndexStatsReporter() {}
 
     /**
      * Pushes one stats snapshot immediately.
@@ -70,18 +69,18 @@ public final class ToolIndexStatsReporter {
         if (!ENABLED || scheduler != null || !RuntimeConfig.isExporterStatsEnabled()) {
             return;
         }
-        synchronized (ToolIndexStatsReporter.class) {
+        synchronized (ExporterIndexStatsReporter.class) {
             if (scheduler != null || !RuntimeConfig.isExporterStatsEnabled()) {
                 return;
             }
             int intervalSeconds = RuntimeConfig.exporterStatsIntervalSeconds();
             ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-tool-stats");
+                Thread t = new Thread(r, "attackframework-exporter-stats");
                 t.setDaemon(true);
                 return t;
             });
             exec.scheduleAtFixedRate(
-                    ToolIndexStatsReporter::pushSnapshot,
+                    ExporterIndexStatsReporter::pushSnapshot,
                     intervalSeconds,
                     intervalSeconds,
                     TimeUnit.SECONDS);
@@ -97,7 +96,7 @@ public final class ToolIndexStatsReporter {
      */
     public static void stop() {
         ScheduledExecutorService exec;
-        synchronized (ToolIndexStatsReporter.class) {
+        synchronized (ExporterIndexStatsReporter.class) {
             exec = scheduler;
             scheduler = null;
         }
@@ -140,16 +139,16 @@ public final class ToolIndexStatsReporter {
             String baseUrl = RuntimeConfig.openSearchUrl();
             boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
             Map<String, Object> doc = buildSnapshotDoc();
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("tool"), "tool", doc);
             if (ok && openSearchActive) {
                 ExportStats.recordSuccess("tool", 1);
             } else if (!ok && openSearchActive) {
                 ExportStats.recordFailure("tool", 1);
-                ExportStats.recordLastError("tool", "Tool stats snapshot push failed");
-                Logger.logWarnPanelOnly("[Tool] Stats snapshot push failed.");
+                ExportStats.recordLastError("tool", "Exporter stats snapshot push failed");
+                Logger.logWarnPanelOnly("[Exporter] Stats snapshot push failed.");
             }
         } catch (Exception e) {
-            Logger.logWarnPanelOnly("[Tool] Stats snapshot push failed: "
+            Logger.logWarnPanelOnly("[Exporter] Stats snapshot push failed: "
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
@@ -242,7 +241,9 @@ public final class ToolIndexStatsReporter {
         doc.put("event_type", EVENT_TYPE);
         doc.put("source", "burp-exporter");
         doc.put("message", message);
-        doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used=" + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a") + " threads=" + threadCount + " traffic_indexed=" + ExportStats.getSuccessCount("traffic"));
+        doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used="
+                + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a")
+                + " threads=" + threadCount + " traffic_indexed=" + ExportStats.getSuccessCount("traffic"));
         doc.put("thread", Thread.currentThread().getName());
         doc.put("extension_version", Version.get());
         doc.put("burp_version", burpVersion());

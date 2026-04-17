@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
@@ -54,7 +53,7 @@ public final class SitemapIndexReporter {
     private SitemapIndexReporter() {}
 
     private static String sitemapIndexName() {
-        return IndexNaming.indexNameForShortName("sitemap");
+        return RuntimeConfig.indexNameForKey("sitemap");
     }
 
     /**
@@ -253,7 +252,7 @@ public final class SitemapIndexReporter {
     private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = !activeBaseUrl.isBlank();
-        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, sitemapIndexName(), batchDocs);
+        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, sitemapIndexName(), "sitemap", batchDocs);
         int failureCount = batchDocs.size() - successCount;
         if (openSearchActive) {
             ExportStats.recordSuccess("sitemap", successCount);

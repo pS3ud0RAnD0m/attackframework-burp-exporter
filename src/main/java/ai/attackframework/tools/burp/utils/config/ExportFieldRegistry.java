@@ -33,7 +33,7 @@ public final class ExportFieldRegistry {
                 "document_meta"  // whole object; subfields schema_version, extension_version, indexed_at
         ));
 
-        // Tool index fields.
+        // Exporter index fields.
         TOGGLEABLE_BY_INDEX.put("tool", List.of(
                 "level", "message_text", "message", "thread", "extension_version", "burp_version", "project_id"
         ));

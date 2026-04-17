@@ -10,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -49,7 +48,7 @@ public final class ProxyHistoryIndexReporter {
     private ProxyHistoryIndexReporter() {}
 
     private static String trafficIndexName() {
-        return IndexNaming.indexNameForShortName("traffic");
+        return RuntimeConfig.indexNameForKey("traffic");
     }
 
     /**
@@ -124,7 +123,7 @@ public final class ProxyHistoryIndexReporter {
             if (sizeCapReached || countCapReached) {
                 chunkTarget = applyLiveBackpressure(chunkTarget);
                 int attemptedChunk = chunk.size();
-                int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), chunk);
+                int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), "traffic", chunk);
                 success += sent;
                 attempted += attemptedChunk;
                 if (openSearchActive) {
@@ -148,7 +147,7 @@ public final class ProxyHistoryIndexReporter {
         if (RuntimeConfig.isExportRunning() && !chunk.isEmpty()) {
             chunkTarget = applyLiveBackpressure(chunkTarget);
             int attemptedChunk = chunk.size();
-            int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), chunk);
+            int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), "traffic", chunk);
             success += sent;
             attempted += attemptedChunk;
             if (openSearchActive) {

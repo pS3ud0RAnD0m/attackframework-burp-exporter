@@ -1,12 +1,14 @@
 package ai.attackframework.tools.burp.utils.config;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Logger;
 import burp.api.montoya.core.BurpSuiteEdition;
@@ -30,6 +32,8 @@ public final class RuntimeConfig {
     private static volatile boolean exportStarting = false;
     private static volatile boolean fileExportDisabledForCurrentRun = false;
     private static volatile boolean openSearchDisabledForCurrentRun = false;
+    private static volatile Map<String, String> resolvedIndexNamesForCurrentRun = Map.of();
+    private static volatile Instant resolvedIndexNamesAt = Instant.EPOCH;
     private static final CopyOnWriteArrayList<StateListener> listeners = new CopyOnWriteArrayList<>();
 
     /** Listener notified when the normalized runtime state changes. */
@@ -74,7 +78,7 @@ public final class RuntimeConfig {
      * Returns whether export is fully active and allowed to emit runtime documents.
      *
      * <p>This stays {@code false} during Start/bootstrap work so background listeners do not
-     * begin pushing traffic or tool-log documents before OpenSearch preflight and index
+     * begin pushing traffic or exporter-log documents before OpenSearch preflight and index
      * bootstrap have succeeded.</p>
      */
     public static boolean isExportReady() {
@@ -95,6 +99,7 @@ public final class RuntimeConfig {
             exportStarting = false;
             fileExportDisabledForCurrentRun = false;
             openSearchDisabledForCurrentRun = false;
+            clearResolvedIndexNamesForCurrentRun();
         } else if (!wasRunning) {
             fileExportDisabledForCurrentRun = false;
             openSearchDisabledForCurrentRun = false;
@@ -336,6 +341,46 @@ public final class RuntimeConfig {
                 : ConfigState.normalizeExporterStatsIntervalSeconds(current.exporterStatsIntervalSeconds());
     }
 
+    /**
+     * Resolves and stores the index names that should remain stable for the active export run.
+     *
+     * <p>Call this exactly once during Start after the latest UI state has been pushed into runtime
+     * config. When validation fails, the previous run snapshot remains unchanged.</p>
+     */
+    public static IndexNaming.ResolutionResult prepareIndexNamesForCurrentRun() {
+        ConfigState.State current = normalize(state);
+        IndexNaming.ResolutionResult resolution = IndexNaming.resolveAllConfiguredNames(current, Instant.now());
+        if (resolution.valid()) {
+            resolvedIndexNamesForCurrentRun = resolution.namesByKey();
+            resolvedIndexNamesAt = resolution.resolvedAt();
+        }
+        return resolution;
+    }
+
+    /** Returns the effective concrete index name for the provided logical key. */
+    public static String indexNameForKey(String indexKey) {
+        String normalizedKey = indexKey == null ? "tool" : indexKey.trim().toLowerCase(Locale.ROOT);
+        Map<String, String> resolvedForRun = resolvedIndexNamesForCurrentRun;
+        if ((exportRunning || exportStarting) && resolvedForRun.containsKey(normalizedKey)) {
+            return resolvedForRun.get(normalizedKey);
+        }
+        return IndexNaming.resolveConfiguredIndexName(state, normalizedKey, Instant.now());
+    }
+
+    /** Returns all effective concrete index names for the current state or run snapshot. */
+    public static Map<String, String> allIndexNames() {
+        Map<String, String> resolvedForRun = resolvedIndexNamesForCurrentRun;
+        if ((exportRunning || exportStarting) && !resolvedForRun.isEmpty()) {
+            return resolvedForRun;
+        }
+        return IndexNaming.resolveAllConfiguredNames(state, Instant.now()).namesByKey();
+    }
+
+    /** Returns the instant used when the current run's index names were resolved. */
+    public static Instant resolvedIndexNamesAt() {
+        return resolvedIndexNamesAt;
+    }
+
     /** Current OpenSearch URL for runtime exports; blank when OpenSearch export is disabled. */
     public static String openSearchUrl() {
         if (!isOpenSearchExportEnabled()) {
@@ -409,6 +454,7 @@ public final class RuntimeConfig {
                 current.findingsSeverities(),
                 current.exporterSubOptions(),
                 current.exporterStatsIntervalSeconds(),
+                current.indexNameBaseTemplate(),
                 current.enabledExportFieldsByIndex(),
                 uiPreferences));
     }
@@ -471,7 +517,8 @@ public final class RuntimeConfig {
         Map<String, java.util.Set<String>> enabledFields = incoming.enabledExportFieldsByIndex();
         return new ConfigState.State(normalizedSources, scopeType, custom, normalizedSinks,
                 settingsSub, normalizedTrafficToolTypes, findingsSeverities,
-                exporterSubOptions, exporterStatsIntervalSeconds, enabledFields,
+                exporterSubOptions, exporterStatsIntervalSeconds,
+                incoming.indexNameBaseTemplate(), enabledFields,
                 incoming.uiPreferences());
     }
 
@@ -515,6 +562,7 @@ public final class RuntimeConfig {
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                ConfigState.DEFAULT_INDEX_NAME_BASE_TEMPLATE,
                 null,  // all export fields enabled
                 ConfigState.defaultUiPreferences()
         );
@@ -593,6 +641,7 @@ public final class RuntimeConfig {
                 current.findingsSeverities(),
                 current.exporterSubOptions(),
                 current.exporterStatsIntervalSeconds(),
+                current.indexNameBaseTemplate(),
                 current.enabledExportFieldsByIndex(),
                 current.uiPreferences());
     }
@@ -625,8 +674,14 @@ public final class RuntimeConfig {
                 current.findingsSeverities(),
                 current.exporterSubOptions(),
                 current.exporterStatsIntervalSeconds(),
+                current.indexNameBaseTemplate(),
                 current.enabledExportFieldsByIndex(),
                 current.uiPreferences());
+    }
+
+    private static void clearResolvedIndexNamesForCurrentRun() {
+        resolvedIndexNamesForCurrentRun = Map.of();
+        resolvedIndexNamesAt = Instant.EPOCH;
     }
 
     private static void notifyListeners(ConfigState.State currentState) {

@@ -20,7 +20,7 @@ import org.junit.platform.suite.api.Suite;
     OpenSearchSinkConcurrencyIT.class,
     OpenSearchSinkMappingsIT.class,
     OpenSearchSinkSubsetIT.class,
-    OpenSearchSinkToolOnlyIT.class,
+    OpenSearchSinkExporterOnlyIT.class,
     OpenSearchCleanupIT.class,
     OpenSearchIntegrationSuite.class  // include self so the suite-discovery bridge is discovered
 })

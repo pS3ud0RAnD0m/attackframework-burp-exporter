@@ -19,9 +19,9 @@ class MappingsContractTest {
 
     private static final List<String> MAPPING_FILES = List.of(
             "findings.json",
+            "exporter.json",
             "settings.json",
             "sitemap.json",
-            "tool.json",
             "traffic.json"
     );
 

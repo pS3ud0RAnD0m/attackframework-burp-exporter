@@ -91,9 +91,11 @@ public final class TestPathSupport {
             return;
         }
         List<Path> toDelete = new ArrayList<>();
-        try (var stream = Files.newDirectoryStream(root, "attackframework-tool-burp*")) {
-            for (Path path : stream) {
-                if (Files.isRegularFile(path)) {
+        try (var stream = Files.list(root)) {
+            for (Path path : stream.toList()) {
+                String fileName = path.getFileName() == null ? "" : path.getFileName().toString();
+                if (Files.isRegularFile(path)
+                        && (fileName.endsWith(".jsonl") || fileName.endsWith(".ndjson"))) {
                     toDelete.add(path);
                 }
             }

@@ -11,14 +11,13 @@ import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
 /**
- * Forwards selected exporter log events to the Tool index.
+ * Forwards selected exporter log events to the Exporter index.
  *
  * <p>Registers as a {@link Logger.LogListener}; each log event is queued and pushed asynchronously
  * by a single worker thread. Events are forwarded only when export is ready, the
@@ -29,7 +28,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  * feedback loops. If the queue is full, the oldest event is dropped to make room for the newest
  * event.</p>
  */
-public final class ToolIndexLogForwarder implements Logger.LogListener {
+public final class ExporterIndexLogForwarder implements Logger.LogListener {
 
     private static final String SCHEMA_VERSION = "1";
     private static final String EVENT_TYPE = "log";
@@ -37,12 +36,18 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
 
     private final BlockingQueue<Map<String, Object>> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "attackframework-tool-log-forwarder");
+        Thread t = new Thread(r, "attackframework-exporter-log-forwarder");
         t.setDaemon(true);
         return t;
     });
 
-    public ToolIndexLogForwarder() {
+    /**
+     * Starts the background worker that drains queued exporter log documents.
+     *
+     * <p>Safe to construct during extension startup. The worker is daemon-backed and remains idle
+     * until runtime export state allows queued events to be emitted.</p>
+     */
+    public ExporterIndexLogForwarder() {
         worker.submit(this::drainLoop);
     }
 
@@ -57,6 +62,13 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
         worker.shutdownNow();
     }
 
+    /**
+     * Queues one exporter log event when the current runtime configuration allows export.
+     *
+     * <p>Safe to call from any thread. Returns immediately when export is not ready, the
+     * {@code exporter} source is disabled, the current level is not selected, or no sink is
+     * enabled.</p>
+     */
     @Override
     public void onLog(String level, String message) {
         if (!RuntimeConfig.isExportReady()) {
@@ -130,12 +142,12 @@ public final class ToolIndexLogForwarder implements Logger.LogListener {
 
                 String baseUrl = RuntimeConfig.openSearchUrl();
                 boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
-                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, IndexNaming.indexNameForShortName("tool"), doc);
+                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("tool"), "tool", doc);
                 if (ok && openSearchActive) {
                     ExportStats.recordSuccess("tool", 1);
                 } else if (!ok && openSearchActive) {
                     ExportStats.recordFailure("tool", 1);
-                    ExportStats.recordLastError("tool", "Tool log push failed");
+                    ExportStats.recordLastError("tool", "Exporter log push failed");
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

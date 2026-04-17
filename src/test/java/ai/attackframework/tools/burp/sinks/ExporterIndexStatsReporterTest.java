@@ -16,21 +16,21 @@ import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
-class ToolIndexStatsReporterTest {
+class ExporterIndexStatsReporterTest {
 
     private final ConfigState.State previousState = RuntimeConfig.getState();
 
     private void tearDown() {
-        ToolIndexStatsReporter.stop();
+        ExporterIndexStatsReporter.stop();
         RuntimeConfig.updateState(previousState);
         RuntimeConfig.setExportRunning(false);
         FileExportService.resetForTests();
     }
 
     @Test
-    void pushSnapshotNow_writesToolStats_whenExporterStatsEnabled() throws Exception {
+    void pushSnapshotNow_writesExporterStats_whenExporterStatsEnabled() throws Exception {
         try {
-            Path root = TestPathSupport.createDirectory("tool-stats-file-only");
+            Path root = TestPathSupport.createDirectory("exporter-stats-file-only");
             RuntimeConfig.updateState(new ConfigState.State(
                     List.of(ConfigKeys.SRC_EXPORTER),
                     ConfigKeys.SCOPE_ALL,
@@ -45,7 +45,7 @@ class ToolIndexStatsReporterTest {
                     null));
             RuntimeConfig.setExportRunning(true);
 
-            ToolIndexStatsReporter.pushSnapshotNow();
+            ExporterIndexStatsReporter.pushSnapshotNow();
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
             assertThat(jsonlPath).exists();
@@ -58,7 +58,7 @@ class ToolIndexStatsReporterTest {
     @Test
     void pushSnapshotNow_skipsWrite_whenExporterStatsDisabled() throws Exception {
         try {
-            Path root = TestPathSupport.createDirectory("tool-stats-disabled");
+            Path root = TestPathSupport.createDirectory("exporter-stats-disabled");
             RuntimeConfig.updateState(new ConfigState.State(
                     List.of(ConfigKeys.SRC_EXPORTER),
                     ConfigKeys.SCOPE_ALL,
@@ -73,7 +73,7 @@ class ToolIndexStatsReporterTest {
                     null));
             RuntimeConfig.setExportRunning(true);
 
-            ToolIndexStatsReporter.pushSnapshotNow();
+            ExporterIndexStatsReporter.pushSnapshotNow();
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
             assertThat(jsonlPath).doesNotExist();
@@ -88,19 +88,19 @@ class ToolIndexStatsReporterTest {
             RuntimeConfig.updateState(stateWithInterval(30));
             RuntimeConfig.setExportRunning(true);
 
-            ToolIndexStatsReporter.refreshScheduleForCurrentState();
+            ExporterIndexStatsReporter.refreshScheduleForCurrentState();
 
-            ScheduledExecutorService firstScheduler = getStatic(ToolIndexStatsReporter.class, "scheduler");
+            ScheduledExecutorService firstScheduler = getStatic(ExporterIndexStatsReporter.class, "scheduler");
             assertThat(firstScheduler).isNotNull();
-            assertThat((Integer) getStatic(ToolIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(30);
+            assertThat((Integer) getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(30);
 
             RuntimeConfig.updateState(stateWithInterval(45));
-            ToolIndexStatsReporter.refreshScheduleForCurrentState();
+            ExporterIndexStatsReporter.refreshScheduleForCurrentState();
 
-            ScheduledExecutorService secondScheduler = getStatic(ToolIndexStatsReporter.class, "scheduler");
+            ScheduledExecutorService secondScheduler = getStatic(ExporterIndexStatsReporter.class, "scheduler");
             assertThat(secondScheduler).isNotNull();
             assertThat(secondScheduler).isNotSameAs(firstScheduler);
-            assertThat((Integer) getStatic(ToolIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(45);
+            assertThat((Integer) getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(45);
         } finally {
             tearDown();
         }

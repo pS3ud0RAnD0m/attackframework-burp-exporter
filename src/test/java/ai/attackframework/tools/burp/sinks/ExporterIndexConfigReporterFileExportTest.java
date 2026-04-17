@@ -11,13 +11,13 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.testutils.TestPathSupport;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
-class ToolIndexConfigReporterFileExportTest {
+class ExporterIndexConfigReporterFileExportTest {
 
     private final ConfigState.State previous = RuntimeConfig.getState();
 
@@ -28,9 +28,9 @@ class ToolIndexConfigReporterFileExportTest {
     }
 
     @Test
-    void pushConfigSnapshot_writesToolDocument_whenOnlyFileExportIsEnabled() throws Exception {
+    void pushConfigSnapshot_writesExporterDocument_whenOnlyFileExportIsEnabled() throws Exception {
         try {
-            Path root = TestPathSupport.createDirectory("tool-config-file-only");
+            Path root = TestPathSupport.createDirectory("exporter-config-file-only");
             RuntimeConfig.updateState(new ConfigState.State(
                     List.of(ConfigKeys.SRC_SETTINGS, ConfigKeys.SRC_EXPORTER),
                     ConfigKeys.SCOPE_ALL,
@@ -48,7 +48,7 @@ class ToolIndexConfigReporterFileExportTest {
             RuntimeConfig.setExportRunning(true);
             long openSearchToolSuccessBefore = ExportStats.getSuccessCount("tool");
 
-            ToolIndexConfigReporter.pushConfigSnapshot();
+            ExporterIndexConfigReporter.pushConfigSnapshot();
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
             Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
@@ -62,9 +62,9 @@ class ToolIndexConfigReporterFileExportTest {
     }
 
     @Test
-    void pushConfigSnapshot_doesNotWriteToolDocument_whenExporterSourceDisabled() throws Exception {
+    void pushConfigSnapshot_doesNotWriteExporterDocument_whenExporterSourceDisabled() throws Exception {
         try {
-            Path root = TestPathSupport.createDirectory("tool-config-disabled");
+            Path root = TestPathSupport.createDirectory("exporter-config-disabled");
             RuntimeConfig.updateState(new ConfigState.State(
                     List.of(ConfigKeys.SRC_SETTINGS),
                     ConfigKeys.SCOPE_ALL,
@@ -81,7 +81,7 @@ class ToolIndexConfigReporterFileExportTest {
                     null));
             RuntimeConfig.setExportRunning(true);
 
-            ToolIndexConfigReporter.pushConfigSnapshot();
+            ExporterIndexConfigReporter.pushConfigSnapshot();
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
             Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
@@ -107,7 +107,7 @@ class ToolIndexConfigReporterFileExportTest {
                 45,
                 null);
 
-        Map<?, ?> doc = (Map<?, ?>) callStatic(ToolIndexConfigReporter.class, "buildConfigDoc", state);
+        Map<?, ?> doc = (Map<?, ?>) callStatic(ExporterIndexConfigReporter.class, "buildConfigDoc", state);
         Map<?, ?> message = nestedMap(doc, "message");
         Map<?, ?> options = nestedMap(message, "data_source_options");
 

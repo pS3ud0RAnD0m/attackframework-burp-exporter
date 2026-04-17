@@ -12,7 +12,6 @@ import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
@@ -284,7 +283,7 @@ public final class IndexingRetryCoordinator {
     }
 
     private static String indexNameFromKey(String indexKey) {
-        return IndexNaming.indexNameForShortName(indexKey);
+        return RuntimeConfig.indexNameForKey(indexKey);
     }
 
     private void ensureDrainThreadStarted() {

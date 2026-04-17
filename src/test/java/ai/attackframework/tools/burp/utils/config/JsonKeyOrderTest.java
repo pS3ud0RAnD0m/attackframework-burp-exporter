@@ -34,7 +34,7 @@ class JsonKeyOrderTest {
         List<String> keys = new ArrayList<>();
         root.fieldNames().forEachRemaining(keys::add);
 
-        assertThat(keys).containsExactly("version", "dataSources", "dataSourceOptions", "scope", "sinks", "ui");
+        assertThat(keys).containsExactly("version", "dataSources", "dataSourceOptions", "scope", "sinks", "indexNames", "ui");
     }
 
     @Test

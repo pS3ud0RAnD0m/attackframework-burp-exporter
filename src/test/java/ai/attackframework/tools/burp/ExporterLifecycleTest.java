@@ -22,7 +22,7 @@ import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
-import ai.attackframework.tools.burp.sinks.ToolIndexStatsReporter;
+import ai.attackframework.tools.burp.sinks.ExporterIndexStatsReporter;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -51,7 +51,7 @@ class ExporterLifecycleTest {
             assertThat(fixture.unloadHandler.get()).isNotNull();
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(MontoyaApiProvider.get()).isSameAs(fixture.api);
-            assertThat((ScheduledExecutorService) getStatic(ToolIndexStatsReporter.class, "scheduler")).isNull();
+            assertThat((ScheduledExecutorService) getStatic(ExporterIndexStatsReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SettingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(FindingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SitemapIndexReporter.class, "scheduler")).isNull();
@@ -74,7 +74,7 @@ class ExporterLifecycleTest {
             new Exporter().initialize(fixture.api);
 
             RuntimeConfig.setExportRunning(true);
-            ToolIndexStatsReporter.start();
+            ExporterIndexStatsReporter.start();
             SettingsIndexReporter.start();
             FindingsIndexReporter.start();
             SitemapIndexReporter.start();
@@ -86,7 +86,7 @@ class ExporterLifecycleTest {
             assertThat(MontoyaApiProvider.get()).isNull();
             assertThat(BurpRuntimeMetadata.burpVersion()).isNull();
             assertThat(BurpRuntimeMetadata.projectId()).isNull();
-            assertThat((ScheduledExecutorService) getStatic(ToolIndexStatsReporter.class, "scheduler")).isNull();
+            assertThat((ScheduledExecutorService) getStatic(ExporterIndexStatsReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SettingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(FindingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SitemapIndexReporter.class, "scheduler")).isNull();
@@ -117,7 +117,7 @@ class ExporterLifecycleTest {
             assertThat(MontoyaApiProvider.get()).isNull();
             assertThat(BurpRuntimeMetadata.burpVersion()).isNull();
             assertThat(BurpRuntimeMetadata.projectId()).isNull();
-            assertThat((ScheduledExecutorService) getStatic(ToolIndexStatsReporter.class, "scheduler")).isNull();
+            assertThat((ScheduledExecutorService) getStatic(ExporterIndexStatsReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SettingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(FindingsIndexReporter.class, "scheduler")).isNull();
             assertThat((ScheduledExecutorService) getStatic(SitemapIndexReporter.class, "scheduler")).isNull();

@@ -6,7 +6,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
@@ -41,7 +40,7 @@ public final class TrafficExportQueue {
     private TrafficExportQueue() {}
 
     private static String trafficIndexName() {
-        return IndexNaming.indexNameForShortName("traffic");
+        return RuntimeConfig.indexNameForKey("traffic");
     }
 
     static {
@@ -57,7 +56,7 @@ public final class TrafficExportQueue {
     /**
      * Returns the current number of documents in the traffic export queue.
      *
-     * @return number of documents currently queued (for stats and tool index)
+     * @return number of documents currently queued (for stats and Exporter-index observability)
      */
     public static int getCurrentSize() {
         return queue.size();
@@ -192,7 +191,7 @@ public final class TrafficExportQueue {
             refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
             long startNs = System.nanoTime();
             ChunkedBulkSender.Result result = ChunkedBulkSender.push(
-                    baseUrl, trafficIndexName(), queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
+                    baseUrl, trafficIndexName(), "traffic", queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
 
             if (result.attemptedCount == 0) {
@@ -263,7 +262,7 @@ public final class TrafficExportQueue {
             if (doc == null) {
                 break;
             }
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(trafficIndexName(), doc);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(trafficIndexName(), "traffic", doc);
             long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
             if (attempted > 0 && exportedBytes + docBytes > maxBytes) {
                 queue.offer(doc);

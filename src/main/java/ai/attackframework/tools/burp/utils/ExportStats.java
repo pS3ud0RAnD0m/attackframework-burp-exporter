@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 
 /**
@@ -244,7 +245,7 @@ public final class ExportStats {
      * (0 when no retry coordinator or queue empty).
      */
     public static int getQueueSize(String indexKey) {
-        String indexName = IndexNaming.indexNameForShortName(indexKey);
+        String indexName = RuntimeConfig.indexNameForKey(indexKey);
         return IndexingRetryCoordinator.getInstance().getQueueSize(indexName);
     }
 

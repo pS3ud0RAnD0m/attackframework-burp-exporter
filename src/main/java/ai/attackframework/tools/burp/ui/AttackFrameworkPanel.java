@@ -5,9 +5,9 @@ import java.io.Serial;
 
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
-import javax.swing.ToolTipManager;
 
 import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 
 /**
  * Top-level tabbed UI for the Attack Framework extension.
@@ -22,13 +22,13 @@ public class AttackFrameworkPanel extends JPanel {
     /**
      * Constructs the top-level tab container for the extension.
      * <p>
-     * Caller must invoke on the EDT. Configures tooltip dismiss delay and mounts all major
+     * Caller must invoke on the EDT. Configures hover-friendly tooltip timing and mounts all major
      * panels inside a {@link JTabbedPane} wrapped with scroll panes.</p>
      */
     public AttackFrameworkPanel() {
         setLayout(new BorderLayout());
 
-        ToolTipManager.sharedInstance().setDismissDelay(10_000);
+        Tooltips.configureSharedToolTipManager();
 
         JTabbedPane tabbedPane = new JTabbedPane();
 

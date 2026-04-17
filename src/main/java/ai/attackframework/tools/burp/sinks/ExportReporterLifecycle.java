@@ -26,7 +26,7 @@ public final class ExportReporterLifecycle {
      * to {@code false} before invoking this method so in-flight work exits cooperatively.</p>
      */
     public static void stopBackgroundReporters() {
-        ToolIndexStatsReporter.stop();
+        ExporterIndexStatsReporter.stop();
         SettingsIndexReporter.stop();
         FindingsIndexReporter.stop();
         SitemapIndexReporter.stop();

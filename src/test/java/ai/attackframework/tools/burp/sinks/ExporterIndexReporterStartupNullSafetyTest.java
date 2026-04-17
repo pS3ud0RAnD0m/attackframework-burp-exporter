@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import burp.api.montoya.MontoyaApi;
 
-class ToolIndexReporterStartupNullSafetyTest {
+class ExporterIndexReporterStartupNullSafetyTest {
 
     @AfterEach
     void clearApiProvider() {
@@ -20,17 +20,17 @@ class ToolIndexReporterStartupNullSafetyTest {
     }
 
     @Test
-    void toolIndexHelpers_returnNull_whenBurpSubApisThrowDuringStartup() {
+    void exporterIndexHelpers_returnNull_whenBurpSubApisThrowDuringStartup() {
         MontoyaApiProvider.set(throwingMontoyaApi());
 
-        assertThat(callStatic(ToolIndexLogForwarder.class, "burpVersion")).isNull();
-        assertThat(callStatic(ToolIndexLogForwarder.class, "projectId")).isNull();
+        assertThat(callStatic(ExporterIndexLogForwarder.class, "burpVersion")).isNull();
+        assertThat(callStatic(ExporterIndexLogForwarder.class, "projectId")).isNull();
 
-        assertThat(callStatic(ToolIndexStatsReporter.class, "burpVersion")).isNull();
-        assertThat(callStatic(ToolIndexStatsReporter.class, "projectId")).isNull();
+        assertThat(callStatic(ExporterIndexStatsReporter.class, "burpVersion")).isNull();
+        assertThat(callStatic(ExporterIndexStatsReporter.class, "projectId")).isNull();
 
-        assertThat(callStatic(ToolIndexConfigReporter.class, "burpVersion")).isNull();
-        assertThat(callStatic(ToolIndexConfigReporter.class, "projectId")).isNull();
+        assertThat(callStatic(ExporterIndexConfigReporter.class, "burpVersion")).isNull();
+        assertThat(callStatic(ExporterIndexConfigReporter.class, "projectId")).isNull();
         clearApiProvider();
     }
 

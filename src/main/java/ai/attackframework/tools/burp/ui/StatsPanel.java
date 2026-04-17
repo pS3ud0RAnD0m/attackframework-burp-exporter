@@ -114,7 +114,7 @@ public class StatsPanel extends JPanel {
                     squareMarker(6f),
                     true),
             new SeriesStyle(
-                    "Tool",
+                    "Exporter",
                     new Color(174, 126, 255),
                     new Color(112, 74, 176),
                     new float[] { 8f, 4f, 1.5f, 4f },

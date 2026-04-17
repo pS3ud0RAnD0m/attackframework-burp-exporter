@@ -25,7 +25,7 @@ public final class ConfigJsonMapper {
      * Parses config JSON into a normalized typed state.
      *
      * <p>Legacy payloads that predate explicit exporter options are normalized to include the
-     * {@code exporter} source so Tool-index export remains enabled by default.</p>
+     * {@code exporter} source so Exporter-index export remains enabled by default.</p>
      *
      * @param json raw config JSON
      * @return normalized typed state
@@ -52,7 +52,7 @@ public final class ConfigJsonMapper {
         return new State(dataSources, cfg.scopeType(), entries, sinks,
                 cfg.settingsSub(), cfg.trafficToolTypes(), cfg.findingsSeverities(),
                 cfg.exporterSubOptions(), cfg.exporterStatsIntervalSeconds(),
-                cfg.enabledExportFieldsByIndex(), cfg.uiPreferences());
+                cfg.indexNameBaseTemplate(), cfg.enabledExportFieldsByIndex(), cfg.uiPreferences());
     }
 
     /** Extract ordered custom entries from the parsed config. */

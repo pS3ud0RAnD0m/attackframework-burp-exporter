@@ -29,13 +29,15 @@ public final class ExportDocumentIdentity {
 
     private ExportDocumentIdentity() { }
 
-    /** Filters, stamps, and returns a sink-ready export document. */
-    public static PreparedExportDocument prepare(String indexName, Map<String, Object> document) {
-        String indexKey = IndexNaming.shortNameForIndexName(indexName);
-        Map<String, Object> filtered = ExportFieldFilter.filterDocument(document, indexKey);
+    /** Filters, stamps, and returns a sink-ready export document for the provided logical key. */
+    public static PreparedExportDocument prepare(String indexName, String indexKey, Map<String, Object> document) {
+        String normalizedIndexKey = indexKey == null || indexKey.isBlank()
+                ? IndexNaming.requireKnownIndexKey(indexName)
+                : indexKey.trim().toLowerCase(java.util.Locale.ROOT);
+        Map<String, Object> filtered = ExportFieldFilter.filterDocument(document, normalizedIndexKey);
         String exportId = buildStableId(indexName, filtered);
         Map<String, Object> withId = withExportId(filtered, exportId);
-        return new PreparedExportDocument(indexName, indexKey, exportId, withId);
+        return new PreparedExportDocument(indexName, normalizedIndexKey, exportId, withId);
     }
 
     /** Returns the export ID stored in {@code document_meta.export_id}, or blank when absent. */

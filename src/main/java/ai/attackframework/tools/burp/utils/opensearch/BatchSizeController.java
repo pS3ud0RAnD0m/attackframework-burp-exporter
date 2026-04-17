@@ -30,13 +30,14 @@ public final class BatchSizeController {
     public BatchSizeController() {
     }
 
-    public static BatchSizeController getInstance() {
+    /**
+     * Returns the shared batch-size controller instance.
+     *
+     * <p>Safe to call from any thread. Lazily creates the singleton on first access.</p>
+     */
+    public static synchronized BatchSizeController getInstance() {
         if (instance == null) {
-            synchronized (BatchSizeController.class) {
-                if (instance == null) {
-                    instance = new BatchSizeController();
-                }
-            }
+            instance = new BatchSizeController();
         }
         return instance;
     }
@@ -119,7 +120,10 @@ public final class BatchSizeController {
     }
 
     /**
-     * Registers a listener called when the batch size changes (for StatsPanel refresh and tool index).
+     * Registers a listener called when the batch size changes.
+     *
+     * <p>Used by {@link ai.attackframework.tools.burp.ui.StatsPanel} refresh hooks and
+     * Exporter-index observability paths.</p>
      * Invoked from the thread that called {@link #recordSuccess} or {@link #recordFailure}.
      */
     public void setOnChangeListener(Consumer<Integer> listener) {

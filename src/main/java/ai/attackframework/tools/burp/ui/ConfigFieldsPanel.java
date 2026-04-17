@@ -29,14 +29,17 @@ public final class ConfigFieldsPanel {
 
     private final Map<String, JButton> expandButtonsByIndex;
     private final Map<String, JPanel> subPanelsByIndex;
+    private final JPanel namingDefaultsPanel;
     private final int indentPx;
 
     public ConfigFieldsPanel(
             Map<String, JButton> expandButtonsByIndex,
             Map<String, JPanel> subPanelsByIndex,
+            JPanel namingDefaultsPanel,
             int indentPx) {
         this.expandButtonsByIndex = Objects.requireNonNull(expandButtonsByIndex);
         this.subPanelsByIndex = Objects.requireNonNull(subPanelsByIndex);
+        this.namingDefaultsPanel = namingDefaultsPanel;
         this.indentPx = indentPx;
     }
 
@@ -56,11 +59,15 @@ public final class ConfigFieldsPanel {
 
         JLabel header = Tooltips.label("Index Fields",
                 Tooltips.html(
-                        "Configure which mapped fields each exported document includes.",
-                        "These toggles affect document contents, not index creation."
+                        "Configure index naming and which mapped fields each exported document includes.",
+                        "Naming controls affect index creation and file basenames.",
+                        "Field toggles affect document contents."
                 ));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6, wrap");
+        if (namingDefaultsPanel != null) {
+            panel.add(namingDefaultsPanel, GAPLEFT + indentPx + ", growx, wrap");
+        }
 
         int subIndent = indentPx * 2;
 
@@ -95,7 +102,7 @@ public final class ConfigFieldsPanel {
             case "sitemap" -> "Sitemap";
             case "findings" -> "Findings";
             case "traffic" -> "Traffic";
-            case "tool" -> "Tool";
+            case "tool" -> "Exporter";
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }
@@ -104,23 +111,27 @@ public final class ConfigFieldsPanel {
         return switch (indexShortName) {
             case "settings" -> Tooltips.htmlRaw(
                     "<b>Settings fields</b>",
-                    "Configure fields exported to <code>attackframework-tool-burp-settings</code>.",
+                    "Configure fields exported to the Settings index.",
+                    "The index name can be customized from the Index Base Name field.",
                     "Use these toggles to trim the settings document payload."
             );
             case "sitemap" -> Tooltips.htmlRaw(
                     "<b>Sitemap fields</b>",
-                    "Configure fields exported to <code>attackframework-tool-burp-sitemap</code>.",
+                    "Configure fields exported to the Sitemap index.",
+                    "The index name can be customized from the Index Base Name field.",
                     "Field names follow the request/response document shape."
             );
             case "findings" -> findingsTooltip();
             case "traffic" -> Tooltips.htmlRaw(
                     "<b>Traffic fields</b>",
-                    "Configure fields exported to <code>attackframework-tool-burp-traffic</code>.",
+                    "Configure fields exported to the Traffic index.",
+                    "The index name can be customized from the Index Base Name field.",
                     "Traffic field labels are shown hierarchically to match the mapped document shape."
             );
             case "tool" -> Tooltips.htmlRaw(
-                    "<b>Tool fields</b>",
-                    "Configure fields exported to <code>attackframework-tool-burp</code>.",
+                    "<b>Exporter fields</b>",
+                    "Configure fields exported to the Exporter index.",
+                    "The index name can be customized from the Index Base Name field.",
                     "These fields cover Burp Exporter logs, runtime stats snapshots, and config snapshots."
             );
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
@@ -133,7 +144,7 @@ public final class ConfigFieldsPanel {
             case "sitemap" -> Tooltips.html("Show or hide Sitemap field options.");
             case "findings" -> findingsExpandTooltip();
             case "traffic" -> Tooltips.html("Show or hide Traffic field options.");
-            case "tool" -> Tooltips.html("Show or hide Tool field options.");
+            case "tool" -> Tooltips.html("Show or hide Exporter field options.");
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }
@@ -142,14 +153,19 @@ public final class ConfigFieldsPanel {
         if (RuntimeConfig.isCommunityEdition()) {
             return Tooltips.html("Unsupported in Community Edition.");
         }
-        return Tooltips.html("All findings (aka issues) fields.");
+        return Tooltips.htmlRaw(
+                "<b>Findings fields</b>",
+                "Configure fields exported to the Findings index.",
+                "The index name can be customized from the Index Base Name field.",
+                "These fields cover Burp findings (aka issues) documents."
+        );
     }
 
     private static String findingsExpandTooltip() {
         if (RuntimeConfig.isCommunityEdition()) {
             return Tooltips.html("Unsupported in Community Edition.");
         }
-        return Tooltips.html("Show or hide fields for all findings (aka issues).");
+        return Tooltips.html("Show or hide Findings field options.");
     }
 
     /** Configures the shared expand-button style used in the sources and fields sections. */

@@ -61,12 +61,13 @@ class FileExportReimportIT {
             Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
 
             Path root = TestPathSupport.createDirectory("file-export-reimport");
+            String indexKey = "traffic";
             String indexName = IndexNaming.indexNameForShortName("traffic");
             RuntimeConfig.updateState(fileOnlyNdjsonState(root));
             OpenSearchCleanupIT.deleteAttackFrameworkIndexesNow();
             OpenSearchReachable.createSelectedIndexes(List.of("traffic"));
 
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, sampleDocument());
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
             FileExportService.emit(prepared);
 
             Path ndjsonPath = root.resolve(indexName + ".ndjson");
