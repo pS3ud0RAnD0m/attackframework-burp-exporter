@@ -115,7 +115,7 @@ public final class ConfigController {
                     ui.onControlStatus("Import interrupted.");
                     Logger.logWarnPanelOnly("[Config] Import interrupted.");
                 } catch (ExecutionException ex) {
-                    String status = "Import failed: " + rootMessage(ex);
+                    String status = formatImportFailureStatus(ex);
                     ui.onControlStatus(status);
                     Logger.logErrorPanelOnly("[Config] " + status);
                 }
@@ -190,5 +190,14 @@ public final class ConfigController {
             return lowDisk.userMessage();
         }
         return c.getMessage() == null ? c.toString() : c.getMessage();
+    }
+
+    private static String formatImportFailureStatus(Throwable t) {
+        String detail = userFacingMessage(t);
+        if (detail.contains("sinks.files") || detail.contains("sinks.openSearch")) {
+            return "Import failed: Sink settings must use nested 'sinks.files' and 'sinks.openSearch' objects "
+                    + "(for example 'sinks.files.limits.totalEnabled'). Details: " + detail;
+        }
+        return "Import failed: " + detail;
     }
 }

@@ -1,0 +1,38 @@
+{
+  "requiredTopLevelKeys": [
+    "version",
+    "dataSources",
+    "dataSourceOptions",
+    "scope",
+    "sinks",
+    "indexNames",
+    "ui"
+  ],
+  "sinks": {
+    "requiredKeys": [ "files", "openSearch" ],
+    "files": {
+      "allowedKeys": [ "enabled", "path", "formats", "limits" ],
+      "allowedFormats": [ "jsonl", "bulkNdjson" ],
+      "limits": {
+        "allowedKeys": [ "totalEnabled", "totalGb", "diskUsedPercentEnabled", "maxDiskUsedPercent" ]
+      }
+    },
+    "openSearch": {
+      "allowedKeys": [ "enabled", "url", "tlsMode", "auth", "pinnedTlsCertificate" ],
+      "auth": {
+        "allowedKeys": [ "type", "username", "apiKeyId", "certPath", "certKeyPath" ],
+        "allowedTypes": [ "API Key", "Basic", "Certificate", "JWT", "None" ],
+        "allowedFieldsByType": {
+          "API Key": [ "apiKeyId" ],
+          "Basic": [ "username" ],
+          "Certificate": [ "certPath", "certKeyPath" ],
+          "JWT": [],
+          "None": []
+        }
+      },
+      "pinnedTlsCertificate": {
+        "allowedKeys": [ "sourcePath", "fingerprintSha256", "encodedBase64" ]
+      }
+    }
+  }
+}

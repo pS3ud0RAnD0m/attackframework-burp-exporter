@@ -35,6 +35,36 @@ public final class Json {
     private static final String LIT_CUSTOM = "custom";
     private static final String LIT_REGEX  = "regex";
     private static final String LIT_STRING = "string";
+    private static final List<String> ALLOWED_FILE_FORMATS = List.of("jsonl", "bulkNdjson");
+    private static final List<String> ALLOWED_OPEN_SEARCH_AUTH_TYPES = List.of(
+            "API Key",
+            "Basic",
+            "Certificate",
+            "JWT",
+            "None");
+    private static final List<String> SINKS_KEYS = List.of("files", "openSearch");
+    private static final List<String> FILES_KEYS = List.of("enabled", "path", "formats", "limits");
+    private static final List<String> FILE_LIMITS_KEYS = List.of(
+            "totalEnabled",
+            "totalGb",
+            "diskUsedPercentEnabled",
+            "maxDiskUsedPercent");
+    private static final List<String> OPEN_SEARCH_KEYS = List.of(
+            "enabled",
+            "url",
+            "tlsMode",
+            "auth",
+            "pinnedTlsCertificate");
+    private static final List<String> OPEN_SEARCH_AUTH_KEYS = List.of(
+            "type",
+            "username",
+            "apiKeyId",
+            "certPath",
+            "certKeyPath");
+    private static final List<String> PINNED_TLS_KEYS = List.of(
+            "sourcePath",
+            "fingerprintSha256",
+            "encodedBase64");
 
     private Json() { }
 
@@ -54,6 +84,7 @@ public final class Json {
         private final String scopeType;
         private final List<String> scopeRegexes;
         private final List<String> scopeKinds;
+        private final boolean filesEnabled;
         private final String filesPath;
         private final boolean fileJsonlEnabled;
         private final boolean fileBulkNdjsonEnabled;
@@ -61,10 +92,12 @@ public final class Json {
         private final double fileTotalCapGb;
         private final boolean fileDiskUsagePercentEnabled;
         private final int fileDiskUsagePercent;
+        private final boolean openSearchEnabled;
         private final String openSearchUrl;
         private final String openSearchUser;
         private final String openSearchPassword;
         private final String openSearchTlsMode;
+        private final ConfigState.OpenSearchOptions openSearchOptions;
         private final List<String> settingsSub;
         private final List<String> trafficToolTypes;
         private final List<String> findingsSeverities;
@@ -80,6 +113,7 @@ public final class Json {
                 String scopeType,
                 List<String> scopeRegexes,
                 List<String> scopeKinds,
+                boolean filesEnabled,
                 String filesPath,
                 boolean fileJsonlEnabled,
                 boolean fileBulkNdjsonEnabled,
@@ -87,10 +121,12 @@ public final class Json {
                 double fileTotalCapGb,
                 boolean fileDiskUsagePercentEnabled,
                 int fileDiskUsagePercent,
+                boolean openSearchEnabled,
                 String openSearchUrl,
                 String openSearchUser,
                 String openSearchPassword,
                 String openSearchTlsMode,
+                ConfigState.OpenSearchOptions openSearchOptions,
                 List<String> settingsSub,
                 List<String> trafficToolTypes,
                 List<String> findingsSeverities,
@@ -105,6 +141,7 @@ public final class Json {
             this.scopeType = ConfigState.normalizeScopeType(scopeType);
             this.scopeRegexes = scopeRegexes == null ? List.of() : List.copyOf(scopeRegexes);
             this.scopeKinds = scopeKinds == null ? null : List.copyOf(scopeKinds);
+            this.filesEnabled = filesEnabled;
             this.filesPath = filesPath;
             this.fileJsonlEnabled = fileJsonlEnabled;
             this.fileBulkNdjsonEnabled = fileBulkNdjsonEnabled;
@@ -112,10 +149,12 @@ public final class Json {
             this.fileTotalCapGb = ConfigState.normalizeFileTotalCapGb(fileTotalCapGb);
             this.fileDiskUsagePercentEnabled = fileDiskUsagePercentEnabled;
             this.fileDiskUsagePercent = fileDiskUsagePercent;
+            this.openSearchEnabled = openSearchEnabled;
             this.openSearchUrl = openSearchUrl;
             this.openSearchUser = openSearchUser != null ? openSearchUser : "";
             this.openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
             this.openSearchTlsMode = ConfigState.normalizeOpenSearchTlsMode(openSearchTlsMode);
+            this.openSearchOptions = openSearchOptions == null ? ConfigState.defaultOpenSearchOptions() : openSearchOptions;
             this.settingsSub = ConfigState.normalizeSettingsSub(settingsSub);
             this.trafficToolTypes = ConfigState.normalizeTrafficToolTypes(trafficToolTypes);
             this.findingsSeverities = ConfigState.normalizeFindingsSeverities(findingsSeverities);
@@ -158,6 +197,10 @@ public final class Json {
             return filesPath;
         }
 
+        public boolean filesEnabled() {
+            return filesEnabled;
+        }
+
         public boolean fileJsonlEnabled() {
             return fileJsonlEnabled;
         }
@@ -186,6 +229,10 @@ public final class Json {
             return openSearchUrl;
         }
 
+        public boolean openSearchEnabled() {
+            return openSearchEnabled;
+        }
+
         public String openSearchUser() {
             return openSearchUser;
         }
@@ -196,6 +243,10 @@ public final class Json {
 
         public String openSearchTlsMode() {
             return openSearchTlsMode;
+        }
+
+        public ConfigState.OpenSearchOptions openSearchOptions() {
+            return openSearchOptions;
         }
 
         public List<String> settingsSub() {
@@ -336,27 +387,76 @@ public final class Json {
         ObjectNode sinksNode = root.putObject("sinks");
         if (sinks == null) return;
 
+        ObjectNode filesNode = sinksNode.putObject("files");
+        filesNode.put("enabled", sinks.filesEnabled());
         String files = sinks.filesPath();
-        if (sinks.filesEnabled() && files != null && !files.isBlank()) {
-            sinksNode.put("files", files);
-            ArrayNode fileFormats = sinksNode.putArray("fileFormats");
-            if (sinks.fileJsonlEnabled()) {
-                fileFormats.add("jsonl");
-            }
-            if (sinks.fileBulkNdjsonEnabled()) {
-                fileFormats.add("bulkNdjson");
-            }
-            ObjectNode fileLimits = sinksNode.putObject("fileLimits");
-            fileLimits.put("totalEnabled", sinks.fileTotalCapEnabled());
-            fileLimits.put("totalGb", sinks.fileTotalCapGb());
-            fileLimits.put("diskUsedPercentEnabled", sinks.fileDiskUsagePercentEnabled());
-            fileLimits.put("maxDiskUsedPercent", sinks.fileDiskUsagePercent());
+        if (files != null && !files.isBlank()) {
+            filesNode.put("path", files);
         }
+        ArrayNode fileFormats = filesNode.putArray("formats");
+        if (sinks.fileJsonlEnabled()) {
+            fileFormats.add("jsonl");
+        }
+        if (sinks.fileBulkNdjsonEnabled()) {
+            fileFormats.add("bulkNdjson");
+        }
+        ObjectNode fileLimits = filesNode.putObject("limits");
+        fileLimits.put("totalEnabled", sinks.fileTotalCapEnabled());
+        fileLimits.put("totalGb", sinks.fileTotalCapGb());
+        fileLimits.put("diskUsedPercentEnabled", sinks.fileDiskUsagePercentEnabled());
+        fileLimits.put("maxDiskUsedPercent", sinks.fileDiskUsagePercent());
+
+        ObjectNode openSearchNode = sinksNode.putObject("openSearch");
+        openSearchNode.put("enabled", sinks.osEnabled());
         String os = sinks.openSearchUrl();
-        if (sinks.osEnabled() && os != null && !os.isBlank()) {
-            sinksNode.put("openSearch", os);
+        if (os != null && !os.isBlank()) {
+            openSearchNode.put("url", os);
         }
-        sinksNode.put("openSearchTlsMode", ConfigState.normalizeOpenSearchTlsMode(sinks.openSearchTlsMode()));
+        openSearchNode.put("tlsMode", ConfigState.normalizeOpenSearchTlsMode(sinks.openSearchTlsMode()));
+        ObjectNode auth = openSearchNode.putObject("auth");
+        ConfigState.OpenSearchOptions openSearchOptions = sinks.openSearchOptions() == null
+                ? ConfigState.defaultOpenSearchOptions()
+                : sinks.openSearchOptions();
+        String authType = openSearchOptions.authType();
+        auth.put("type", authType);
+        switch (authType) {
+            case "Basic" -> {
+                if (!sinks.openSearchUser().isBlank()) {
+                    auth.put("username", sinks.openSearchUser());
+                }
+            }
+            case "API Key" -> {
+                if (!openSearchOptions.apiKeyId().isBlank()) {
+                    auth.put("apiKeyId", openSearchOptions.apiKeyId());
+                }
+            }
+            case "Certificate" -> {
+                if (!openSearchOptions.certPath().isBlank()) {
+                    auth.put("certPath", openSearchOptions.certPath());
+                }
+                if (!openSearchOptions.certKeyPath().isBlank()) {
+                    auth.put("certKeyPath", openSearchOptions.certKeyPath());
+                }
+            }
+            case "JWT", "None" -> {
+                // Persist no additional non-secret auth fields for these modes.
+            }
+            default -> throw new IllegalStateException("Unexpected OpenSearch auth type: " + authType);
+        }
+        if (!openSearchOptions.pinnedTlsCertificateSourcePath().isBlank()
+                || !openSearchOptions.pinnedTlsCertificateFingerprintSha256().isBlank()
+                || !openSearchOptions.pinnedTlsCertificateEncodedBase64().isBlank()) {
+            ObjectNode pinned = openSearchNode.putObject("pinnedTlsCertificate");
+            if (!openSearchOptions.pinnedTlsCertificateSourcePath().isBlank()) {
+                pinned.put("sourcePath", openSearchOptions.pinnedTlsCertificateSourcePath());
+            }
+            if (!openSearchOptions.pinnedTlsCertificateFingerprintSha256().isBlank()) {
+                pinned.put("fingerprintSha256", openSearchOptions.pinnedTlsCertificateFingerprintSha256());
+            }
+            if (!openSearchOptions.pinnedTlsCertificateEncodedBase64().isBlank()) {
+                pinned.put("encodedBase64", openSearchOptions.pinnedTlsCertificateEncodedBase64());
+            }
+        }
     }
 
     private static void buildUi(ObjectNode root, ConfigState.State state) {
@@ -415,6 +515,7 @@ public final class Json {
                 scope.type(),
                 scope.values(),
                 scope.kinds(),
+                sinks.filesEnabled(),
                 sinks.files(),
                 sinks.fileJsonlEnabled(),
                 sinks.fileBulkNdjsonEnabled(),
@@ -422,10 +523,12 @@ public final class Json {
                 sinks.fileTotalCapGb(),
                 sinks.fileDiskUsagePercentEnabled(),
                 sinks.fileDiskUsagePercent(),
+                sinks.openSearchEnabled(),
                 sinks.os(),
                 sinks.osUser(),
                 sinks.osPass(),
                 sinks.openSearchTlsMode(),
+                sinks.openSearchOptions(),
                 opts.settingsSub(),
                 opts.trafficToolTypes(),
                 opts.findingsSeverities(),
@@ -579,8 +682,11 @@ public final class Json {
         return new ScopeParts(LIT_CUSTOM, vals, kindsList);
     }
 
-    private static SinksParts parseSinks(JsonNode root) {
+    private static SinksParts parseSinks(JsonNode root) throws IOException {
         JsonNode sinks = root.path("sinks");
+        validateSinksShape(sinks);
+        JsonNode filesNode = sinks.path("files");
+        JsonNode openSearchNode = sinks.path("openSearch");
 
         String files = null;
         boolean fileJsonlEnabled = false;
@@ -589,26 +695,24 @@ public final class Json {
         double fileTotalCapGb = ConfigState.DEFAULT_FILE_TOTAL_CAP_GB;
         boolean fileDiskUsagePercentEnabled = true;
         int fileDiskUsagePercent = ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT;
-        JsonNode filesNode = sinks.path("files");
-        if (filesNode.isTextual()) {
-            String v = filesNode.asText();
+        JsonNode filePathNode = filesNode.get("path");
+        if (filePathNode != null && filePathNode.isTextual()) {
+            String v = filePathNode.asText();
             if (!v.isBlank()) files = v;
         }
-        JsonNode fileFormatsNode = sinks.path("fileFormats");
+        boolean filesEnabled = bool(filesNode.get("enabled"), files != null);
+        JsonNode fileFormatsNode = filesNode.path("formats");
         if (fileFormatsNode.isArray()) {
             for (JsonNode formatNode : fileFormatsNode) {
-                if (!formatNode.isTextual()) {
-                    continue;
-                }
                 String format = formatNode.asText();
-                if ("jsonl".equalsIgnoreCase(format)) {
+                if ("jsonl".equals(format)) {
                     fileJsonlEnabled = true;
-                } else if ("bulkNdjson".equalsIgnoreCase(format) || "bulk_ndjson".equalsIgnoreCase(format)) {
+                } else if ("bulkNdjson".equals(format)) {
                     fileBulkNdjsonEnabled = true;
                 }
             }
         }
-        JsonNode fileLimitsNode = sinks.path("fileLimits");
+        JsonNode fileLimitsNode = filesNode.path("limits");
         if (fileLimitsNode.isObject()) {
             fileTotalCapEnabled = fileLimitsNode.path("totalEnabled").asBoolean(true);
             JsonNode totalGbNode = fileLimitsNode.get("totalGb");
@@ -623,18 +727,165 @@ public final class Json {
         }
 
         String os = null;
-        JsonNode osNode = sinks.path("openSearch");
-        if (osNode.isTextual()) {
-            String v = osNode.asText();
+        JsonNode osUrlNode = openSearchNode.get("url");
+        if (osUrlNode != null && osUrlNode.isTextual()) {
+            String v = osUrlNode.asText();
             if (!v.isBlank()) os = v;
         }
+        boolean openSearchEnabled = bool(openSearchNode.get("enabled"), os != null);
 
-        String tlsMode = ConfigState.normalizeOpenSearchTlsMode(sinks.path("openSearchTlsMode").asText(null));
+        String tlsMode = ConfigState.normalizeOpenSearchTlsMode(textOrNull(openSearchNode.get("tlsMode")));
+        JsonNode authNode = openSearchNode.path("auth");
+        String authType = validateAndResolveOpenSearchAuthType(authNode);
+        String username = textOrNull(authNode.get("username"));
+        JsonNode pinnedTlsNode = openSearchNode.path("pinnedTlsCertificate");
+        ConfigState.OpenSearchOptions openSearchOptions = new ConfigState.OpenSearchOptions(
+                authType,
+                textOrNull(authNode.get("apiKeyId")),
+                textOrNull(authNode.get("certPath")),
+                textOrNull(authNode.get("certKeyPath")),
+                textOrNull(pinnedTlsNode.get("sourcePath")),
+                textOrNull(pinnedTlsNode.get("fingerprintSha256")),
+                textOrNull(pinnedTlsNode.get("encodedBase64")));
+        validateAuthFieldCombination(authType, username, openSearchOptions);
 
-        return new SinksParts(files, fileJsonlEnabled, fileBulkNdjsonEnabled,
+        return new SinksParts(filesEnabled, files, fileJsonlEnabled, fileBulkNdjsonEnabled,
                 fileTotalCapEnabled, fileTotalCapGb,
                 fileDiskUsagePercentEnabled, fileDiskUsagePercent,
-                os, "", "", tlsMode);
+                openSearchEnabled, os, username == null ? "" : username, "", tlsMode, openSearchOptions);
+    }
+
+    private static void validateSinksShape(JsonNode sinks) throws IOException {
+        if (sinks.isMissingNode() || sinks.isNull()) {
+            return;
+        }
+        if (!sinks.isObject()) {
+            throw new IOException("Invalid config: 'sinks' must be an object.");
+        }
+        if (hasLegacyFlatSinksKeys(sinks)) {
+            throw new IOException("Invalid config: sink settings must live under nested 'sinks.files' and "
+                    + "'sinks.openSearch' objects (for example 'sinks.files.limits.totalEnabled').");
+        }
+        validateAllowedObjectKeys(sinks, "sinks", SINKS_KEYS);
+        validateNestedSinkNode(sinks, "files", FILES_KEYS);
+        validateNestedSinkNode(sinks, "openSearch", OPEN_SEARCH_KEYS);
+        validateNestedObject(sinks.path("files").path("limits"), "sinks.files.limits", FILE_LIMITS_KEYS);
+        validateFilesFormatsNode(sinks.path("files").path("formats"));
+        validateNestedObject(sinks.path("openSearch").path("auth"), "sinks.openSearch.auth", OPEN_SEARCH_AUTH_KEYS);
+        validateNestedObject(
+                sinks.path("openSearch").path("pinnedTlsCertificate"),
+                "sinks.openSearch.pinnedTlsCertificate",
+                PINNED_TLS_KEYS);
+    }
+
+    private static boolean hasLegacyFlatSinksKeys(JsonNode sinks) {
+        return sinks.has("filesEnabled")
+                || sinks.has("fileFormats")
+                || sinks.has("fileLimits")
+                || sinks.has("openSearchEnabled")
+                || sinks.has("openSearchTlsMode")
+                || sinks.has("openSearchUser")
+                || sinks.has("openSearchPassword")
+                || sinks.has("openSearchAuth")
+                || sinks.has("openSearchPinnedTlsCertificate");
+    }
+
+    private static void validateNestedSinkNode(JsonNode sinks, String key, List<String> allowedKeys) throws IOException {
+        JsonNode node = sinks.get(key);
+        if (node != null && !node.isNull() && !node.isObject()) {
+            throw new IOException("Invalid config: 'sinks." + key + "' must be an object.");
+        }
+        validateAllowedObjectKeys(node, "sinks." + key, allowedKeys);
+    }
+
+    private static void validateNestedObject(JsonNode node, String path, List<String> allowedKeys) throws IOException {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return;
+        }
+        if (!node.isObject()) {
+            throw new IOException("Invalid config: '" + path + "' must be an object.");
+        }
+        validateAllowedObjectKeys(node, path, allowedKeys);
+    }
+
+    private static void validateAllowedObjectKeys(JsonNode node, String path, List<String> allowedKeys) throws IOException {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return;
+        }
+        for (Iterator<String> it = node.fieldNames(); it.hasNext(); ) {
+            String field = it.next();
+            if (!allowedKeys.contains(field)) {
+                throw new IOException("Invalid config: unknown field '" + path + "." + field
+                        + "'. Allowed fields: " + String.join(", ", allowedKeys) + ".");
+            }
+        }
+    }
+
+    private static void validateFilesFormatsNode(JsonNode formatsNode) throws IOException {
+        if (formatsNode == null || formatsNode.isMissingNode() || formatsNode.isNull()) {
+            return;
+        }
+        if (!formatsNode.isArray()) {
+            throw new IOException("Invalid config: 'sinks.files.formats' must be an array.");
+        }
+        for (int i = 0; i < formatsNode.size(); i++) {
+            JsonNode formatNode = formatsNode.get(i);
+            if (!formatNode.isTextual()) {
+                throw new IOException("Invalid config: 'sinks.files.formats[" + i + "]' must be a string.");
+            }
+            String format = formatNode.asText();
+            if (!ALLOWED_FILE_FORMATS.contains(format)) {
+                throw new IOException("Invalid config: unsupported value '" + format + "' at 'sinks.files.formats[" + i
+                        + "]'. Allowed values: " + String.join(", ", ALLOWED_FILE_FORMATS) + ".");
+            }
+        }
+    }
+
+    private static String validateAndResolveOpenSearchAuthType(JsonNode authNode) throws IOException {
+        String rawAuthType = textOrNull(authNode.get("type"));
+        if (rawAuthType == null || rawAuthType.isBlank()) {
+            return ConfigState.DEFAULT_OPEN_SEARCH_AUTH_TYPE;
+        }
+        if (!ALLOWED_OPEN_SEARCH_AUTH_TYPES.contains(rawAuthType)) {
+            throw new IOException("Invalid config: unsupported value '" + rawAuthType + "' at 'sinks.openSearch.auth.type'. "
+                    + "Allowed values: " + String.join(", ", ALLOWED_OPEN_SEARCH_AUTH_TYPES) + ".");
+        }
+        return rawAuthType;
+    }
+
+    private static void validateAuthFieldCombination(
+            String authType,
+            String username,
+            ConfigState.OpenSearchOptions openSearchOptions) throws IOException {
+        List<String> allowedFields = allowedAuthFieldsFor(authType);
+        requireAllowedAuthField(authType, "username", username, allowedFields);
+        requireAllowedAuthField(authType, "apiKeyId", openSearchOptions.apiKeyId(), allowedFields);
+        requireAllowedAuthField(authType, "certPath", openSearchOptions.certPath(), allowedFields);
+        requireAllowedAuthField(authType, "certKeyPath", openSearchOptions.certKeyPath(), allowedFields);
+    }
+
+    private static List<String> allowedAuthFieldsFor(String authType) {
+        return switch (authType) {
+            case "Basic" -> List.of("username");
+            case "API Key" -> List.of("apiKeyId");
+            case "Certificate" -> List.of("certPath", "certKeyPath");
+            case "JWT", "None" -> List.of();
+            default -> throw new IllegalStateException("Unexpected OpenSearch auth type: " + authType);
+        };
+    }
+
+    private static void requireAllowedAuthField(
+            String authType,
+            String fieldName,
+            String value,
+            List<String> allowedFields) throws IOException {
+        if (value == null || value.isBlank() || allowedFields.contains(fieldName)) {
+            return;
+        }
+        String allowed = allowedFields.isEmpty() ? "none" : String.join(", ", allowedFields);
+        throw new IOException("Invalid config: 'sinks.openSearch.auth." + fieldName
+                + "' is not allowed when 'sinks.openSearch.auth.type' is '" + authType
+                + "'. Allowed non-secret fields for this auth type: " + allowed + ".");
     }
 
     private static IndexNamesParts parseIndexNames(JsonNode root) {
@@ -683,10 +934,12 @@ public final class Json {
     /* ----------------------- small carrier records ----------------------- */
 
     private record ScopeParts(String type, List<String> values, List<String> kinds) { }
-    private record SinksParts(String files, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
+    private record SinksParts(boolean filesEnabled, String files, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
                               boolean fileTotalCapEnabled, double fileTotalCapGb,
                               boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
-                              String os, String osUser, String osPass, String openSearchTlsMode) { }
+                              boolean openSearchEnabled,
+                              String os, String osUser, String osPass, String openSearchTlsMode,
+                              ConfigState.OpenSearchOptions openSearchOptions) { }
     private record DataSourceOptionsParts(
             List<String> settingsSub,
             List<String> trafficToolTypes,

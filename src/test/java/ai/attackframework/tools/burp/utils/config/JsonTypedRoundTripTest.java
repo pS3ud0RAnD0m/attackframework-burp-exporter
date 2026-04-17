@@ -153,6 +153,81 @@ class JsonTypedRoundTripTest {
     }
 
     @Test
+    void build_and_parse_preserves_nonSecret_openSearch_auth_and_pinned_tls_settings() throws IOException {
+        ConfigState.OpenSearchOptions openSearchOptions = new ConfigState.OpenSearchOptions(
+                "Certificate",
+                "kid-1",
+                "client-cert.pem",
+                "client-key.pem",
+                "c:/tls/opensearch.pem",
+                "fingerprint-123",
+                "ZmFrZWNlcnQ=");
+        var state = new ConfigState.State(
+                List.of("settings"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(
+                        false,
+                        "/path/to/directory",
+                        true,
+                        false,
+                        false,
+                        4d,
+                        false,
+                        90,
+                        false,
+                        "https://opensearch.url:9200",
+                        "alice",
+                        "",
+                        ConfigState.OPEN_SEARCH_TLS_PINNED,
+                        openSearchOptions),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                null);
+
+        String json = ConfigJsonMapper.build(state);
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(json).contains("\"sinks\" : {");
+        assertThat(json).contains("\"files\" : {");
+        assertThat(json).contains("\"path\" : \"/path/to/directory\"");
+        assertThat(json).contains("\"formats\" : [ \"jsonl\" ]");
+        assertThat(json).contains("\"limits\" : {");
+        assertThat(json).contains("\"openSearch\" : {");
+        assertThat(json).contains("\"url\" : \"https://opensearch.url:9200\"");
+        assertThat(json).contains("\"tlsMode\" : \"pinned\"");
+        assertThat(json).contains("\"auth\" : {");
+        assertThat(json).contains("\"type\" : \"Certificate\"");
+        assertThat(json).doesNotContain("\"username\" : \"alice\"");
+        assertThat(json).doesNotContain("\"apiKeyId\" : \"kid-1\"");
+        assertThat(json).contains("\"certPath\" : \"client-cert.pem\"");
+        assertThat(json).contains("\"certKeyPath\" : \"client-key.pem\"");
+        assertThat(json).contains("\"pinnedTlsCertificate\" : {");
+        assertThat(json).doesNotContain("\"filesEnabled\"");
+        assertThat(json).doesNotContain("\"fileFormats\"");
+        assertThat(json).doesNotContain("\"openSearchEnabled\"");
+        assertThat(json).doesNotContain("\"openSearchTlsMode\"");
+
+        assertThat(parsed.sinks().filesEnabled()).isFalse();
+        assertThat(parsed.sinks().filesPath()).isEqualTo("/path/to/directory");
+        assertThat(parsed.sinks().fileJsonlEnabled()).isTrue();
+        assertThat(parsed.sinks().fileBulkNdjsonEnabled()).isFalse();
+        assertThat(parsed.sinks().osEnabled()).isFalse();
+        assertThat(parsed.sinks().openSearchUrl()).isEqualTo("https://opensearch.url:9200");
+        assertThat(parsed.sinks().openSearchUser()).isBlank();
+        assertThat(parsed.sinks().openSearchOptions().authType()).isEqualTo("Certificate");
+        assertThat(parsed.sinks().openSearchOptions().apiKeyId()).isBlank();
+        assertThat(parsed.sinks().openSearchOptions().certPath()).isEqualTo("client-cert.pem");
+        assertThat(parsed.sinks().openSearchOptions().certKeyPath()).isEqualTo("client-key.pem");
+        assertThat(parsed.sinks().openSearchOptions().pinnedTlsCertificateSourcePath()).isEqualTo("c:/tls/opensearch.pem");
+        assertThat(parsed.sinks().openSearchOptions().pinnedTlsCertificateFingerprintSha256()).isEqualTo("fingerprint-123");
+        assertThat(parsed.sinks().openSearchOptions().pinnedTlsCertificateEncodedBase64()).isEqualTo("ZmFrZWNlcnQ=");
+    }
+
+    @Test
     void parse_json_without_dataSourceOptions_uses_current_defaults() throws IOException {
         String legacy = """
             {"version":"1.0","dataSources":["traffic"],"scope":["burp"],"sinks":{}}

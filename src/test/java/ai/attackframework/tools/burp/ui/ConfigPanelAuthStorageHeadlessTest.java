@@ -30,6 +30,7 @@ import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 
 class ConfigPanelAuthStorageHeadlessTest {
@@ -213,6 +214,66 @@ class ConfigPanelAuthStorageHeadlessTest {
                 Logger.unregisterListener(listener);
                 Logger.resetState();
             }
+        });
+    }
+
+    @Test
+    void onImportResult_applies_nonSecret_auth_settings_and_pinned_certificate_from_config() throws Exception {
+        withCleanSession(() -> {
+            ConfigPanel panel = newPanelOnEdt();
+            ConfigState.State imported = new ConfigState.State(
+                    List.of(),
+                    "all",
+                    List.of(),
+                    new ConfigState.Sinks(
+                            false,
+                            "",
+                            false,
+                            false,
+                            true,
+                            ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
+                            true,
+                            ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
+                            true,
+                            "https://opensearch.url:9200",
+                            "alice",
+                            "",
+                            ConfigState.OPEN_SEARCH_TLS_PINNED,
+                            new ConfigState.OpenSearchOptions(
+                                    "Certificate",
+                                    "kid-1",
+                                    "client-cert.pem",
+                                    "client-key.pem",
+                                    "c:/tls/opensearch.pem",
+                                    "fingerprint-123",
+                                    "ZmFrZWNlcnQ=")),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null);
+
+            JComboBox<String> authType = get(panel, "openSearchAuthTypeCombo");
+            JTextField user = get(panel, "openSearchUserField");
+            JTextField apiKeyId = get(panel, "openSearchApiKeyIdField");
+            JTextField certPath = get(panel, "openSearchCertPathField");
+            JTextField certKeyPath = get(panel, "openSearchCertKeyPathField");
+            JComboBox<String> tlsMode = get(panel, "openSearchTlsModeCombo");
+
+            runEdt(() -> panel.onImportResult(imported));
+
+            runEdt(() -> {
+                assertThat(String.valueOf(authType.getSelectedItem())).isEqualTo("Certificate");
+                assertThat(user.getText()).isEqualTo("alice");
+                assertThat(apiKeyId.getText()).isEqualTo("kid-1");
+                assertThat(certPath.getText()).isEqualTo("client-cert.pem");
+                assertThat(certKeyPath.getText()).isEqualTo("client-key.pem");
+                assertThat(String.valueOf(tlsMode.getSelectedItem())).isEqualTo("Trust pinned certificate");
+            });
+
+            SecureCredentialStore.PinnedTlsCertificate pinned = SecureCredentialStore.loadPinnedTlsCertificate();
+            assertThat(pinned.sourcePath()).isEqualTo("c:/tls/opensearch.pem");
+            assertThat(pinned.fingerprintSha256()).isEqualTo("fingerprint-123");
+            assertThat(pinned.encodedBytes()).containsExactly("fakecert".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         });
     }
 

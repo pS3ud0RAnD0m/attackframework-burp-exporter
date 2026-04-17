@@ -21,8 +21,17 @@ class JsonSinksOmissionTest {
         );
 
         String json = ConfigJsonMapper.build(state);
+        assertThat(json).contains("\"sinks\" : {");
+        assertThat(json).contains("\"files\" : {");
+        assertThat(json).contains("\"enabled\" : false");
+        assertThat(json).contains("\"formats\" : [ ]");
+        assertThat(json).contains("\"limits\" : {");
+        assertThat(json).contains("\"openSearch\" : {");
+        assertThat(json).contains("\"tlsMode\" : \"verify\"");
+        assertThat(json).contains("\"auth\" : {");
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
+        assertThat(cfg.filesEnabled()).isFalse();
         assertThat(cfg.filesPath()).isNull();
         assertThat(cfg.fileJsonlEnabled()).isFalse();
         assertThat(cfg.fileBulkNdjsonEnabled()).isFalse();
@@ -30,8 +39,10 @@ class JsonSinksOmissionTest {
         assertThat(cfg.fileTotalCapGb()).isEqualTo(ConfigState.DEFAULT_FILE_TOTAL_CAP_GB);
         assertThat(cfg.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(cfg.fileDiskUsagePercent()).isEqualTo(ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT);
+        assertThat(cfg.openSearchEnabled()).isFalse();
         assertThat(cfg.openSearchUrl()).isNull();
         assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_VERIFY);
+        assertThat(cfg.openSearchOptions().authType()).isEqualTo(ConfigState.DEFAULT_OPEN_SEARCH_AUTH_TYPE);
     }
 
     @Test
@@ -47,12 +58,26 @@ class JsonSinksOmissionTest {
         );
 
         String json = ConfigJsonMapper.build(state);
-        assertThat(json).doesNotContain("openSearchUser");
         assertThat(json).doesNotContain("openSearchPassword");
-        assertThat(json).contains("\"fileFormats\"");
-        assertThat(json).contains("\"openSearchTlsMode\" : \"pinned\"");
+        assertThat(json).doesNotContain("\"fileFormats\"");
+        assertThat(json).doesNotContain("\"filesEnabled\"");
+        assertThat(json).doesNotContain("\"openSearchEnabled\"");
+        assertThat(json).doesNotContain("\"openSearchTlsMode\"");
+        assertThat(json).contains("\"files\" : {");
+        assertThat(json).contains("\"enabled\" : true");
+        assertThat(json).contains("\"path\" : \"" + FILES_ROOT + "\"");
+        assertThat(json).contains("\"formats\" : [ \"jsonl\", \"bulkNdjson\" ]");
+        assertThat(json).contains("\"limits\" : {");
+        assertThat(json).contains("\"openSearch\" : {");
+        assertThat(json).contains("\"enabled\" : true");
+        assertThat(json).contains("\"url\" : \"" + OS_URL + "\"");
+        assertThat(json).contains("\"tlsMode\" : \"pinned\"");
+        assertThat(json).contains("\"auth\" : {");
+        assertThat(json).contains("\"type\" : \"Basic\"");
+        assertThat(json).contains("\"username\" : \"admin\"");
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
+        assertThat(cfg.filesEnabled()).isTrue();
         assertThat(cfg.filesPath()).isEqualTo(FILES_ROOT);
         assertThat(cfg.fileJsonlEnabled()).isTrue();
         assertThat(cfg.fileBulkNdjsonEnabled()).isTrue();
@@ -60,10 +85,71 @@ class JsonSinksOmissionTest {
         assertThat(cfg.fileTotalCapGb()).isEqualTo(9d);
         assertThat(cfg.fileDiskUsagePercentEnabled()).isTrue();
         assertThat(cfg.fileDiskUsagePercent()).isEqualTo(92);
+        assertThat(cfg.openSearchEnabled()).isTrue();
         assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
-        assertThat(cfg.openSearchUser()).isBlank();
+        assertThat(cfg.openSearchUser()).isEqualTo("admin");
         assertThat(cfg.openSearchPassword()).isBlank();
         assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_PINNED);
+        assertThat(cfg.openSearchOptions().authType()).isEqualTo("Basic");
+    }
+
+    @Test
+    void build_preserves_disabled_destinations_and_nonSecret_openSearch_settings() throws IOException {
+        ConfigState.OpenSearchOptions options = new ConfigState.OpenSearchOptions(
+                "Certificate",
+                "key-id-1",
+                "client-cert.pem",
+                "client-key.pem",
+                "/tmp/opensearch-cert.pem",
+                "abc123",
+                "ZmFrZWNlcnQ=");
+        var state = new ConfigState.State(
+                null, "all", null,
+                new ConfigState.Sinks(false, FILES_ROOT, true, false,
+                        false, 7d,
+                        false, 88,
+                        false, OS_URL, "alice", "", ConfigState.OPEN_SEARCH_TLS_PINNED, options),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null
+        );
+
+        String json = ConfigJsonMapper.build(state);
+        assertThat(json).contains("\"files\" : {");
+        assertThat(json).contains("\"enabled\" : false");
+        assertThat(json).contains("\"path\" : \"" + FILES_ROOT + "\"");
+        assertThat(json).contains("\"formats\" : [ \"jsonl\" ]");
+        assertThat(json).contains("\"limits\" : {");
+        assertThat(json).contains("\"totalEnabled\" : false");
+        assertThat(json).contains("\"diskUsedPercentEnabled\" : false");
+        assertThat(json).contains("\"openSearch\" : {");
+        assertThat(json).contains("\"enabled\" : false");
+        assertThat(json).contains("\"url\" : \"" + OS_URL + "\"");
+        assertThat(json).contains("\"tlsMode\" : \"pinned\"");
+        assertThat(json).contains("\"auth\" : {");
+        assertThat(json).contains("\"type\" : \"Certificate\"");
+        assertThat(json).doesNotContain("\"username\" : \"alice\"");
+        assertThat(json).doesNotContain("\"apiKeyId\" : \"key-id-1\"");
+        assertThat(json).contains("\"certPath\" : \"client-cert.pem\"");
+        assertThat(json).contains("\"certKeyPath\" : \"client-key.pem\"");
+        assertThat(json).contains("\"pinnedTlsCertificate\" : {");
+        Json.ImportedConfig cfg = Json.parseConfigJson(json);
+
+        assertThat(cfg.filesEnabled()).isFalse();
+        assertThat(cfg.filesPath()).isEqualTo(FILES_ROOT);
+        assertThat(cfg.fileJsonlEnabled()).isTrue();
+        assertThat(cfg.fileBulkNdjsonEnabled()).isFalse();
+        assertThat(cfg.fileTotalCapEnabled()).isFalse();
+        assertThat(cfg.fileDiskUsagePercentEnabled()).isFalse();
+        assertThat(cfg.openSearchEnabled()).isFalse();
+        assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
+        assertThat(cfg.openSearchUser()).isBlank();
+        assertThat(cfg.openSearchOptions().authType()).isEqualTo("Certificate");
+        assertThat(cfg.openSearchOptions().apiKeyId()).isBlank();
+        assertThat(cfg.openSearchOptions().certPath()).isEqualTo("client-cert.pem");
+        assertThat(cfg.openSearchOptions().certKeyPath()).isEqualTo("client-key.pem");
+        assertThat(cfg.openSearchOptions().pinnedTlsCertificateSourcePath()).isEqualTo("/tmp/opensearch-cert.pem");
+        assertThat(cfg.openSearchOptions().pinnedTlsCertificateFingerprintSha256()).isEqualTo("abc123");
+        assertThat(cfg.openSearchOptions().pinnedTlsCertificateEncodedBase64()).isEqualTo("ZmFrZWNlcnQ=");
     }
 
     @Test
@@ -71,8 +157,12 @@ class JsonSinksOmissionTest {
         String json = """
             {
               "sinks": {
-                "files": "",
-                "openSearch": ""
+                "files": {
+                  "path": ""
+                },
+                "openSearch": {
+                  "url": ""
+                }
               }
             }
             """;
@@ -88,21 +178,29 @@ class JsonSinksOmissionTest {
     }
 
     @Test
-    void parse_legacy_openSearch_credentials_are_ignored() throws IOException {
+    void parse_nested_openSearch_apiKey_auth_imports_supported_nonSecret_fields() throws IOException {
         String json = """
             {
               "sinks": {
-                "openSearch": "https://opensearch.url:9200",
-                "openSearchUser": "admin",
-                "openSearchPassword": "secret"
+                "openSearch": {
+                  "enabled": true,
+                  "url": "https://opensearch.url:9200",
+                  "auth": {
+                    "type": "API Key",
+                    "apiKeyId": "kid-1"
+                  }
+                }
               }
             }
             """;
 
         Json.ImportedConfig cfg = Json.parseConfigJson(json);
+        assertThat(cfg.openSearchEnabled()).isTrue();
         assertThat(cfg.openSearchUrl()).isEqualTo(OS_URL);
         assertThat(cfg.openSearchUser()).isBlank();
         assertThat(cfg.openSearchPassword()).isBlank();
         assertThat(cfg.openSearchTlsMode()).isEqualTo(ConfigState.OPEN_SEARCH_TLS_VERIFY);
+        assertThat(cfg.openSearchOptions().authType()).isEqualTo("API Key");
+        assertThat(cfg.openSearchOptions().apiKeyId()).isEqualTo("kid-1");
     }
 }

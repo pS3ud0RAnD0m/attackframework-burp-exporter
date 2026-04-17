@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -44,7 +45,7 @@ class ConfigControllerImportExportIT {
             }
 
             CountDownLatch imp = importDone;
-            if (imp != null && message.startsWith("Imported")) {
+            if (imp != null && (message.startsWith("Imported") || message.startsWith("Import failed"))) {
                 imp.countDown();
             }
         }
@@ -81,6 +82,64 @@ class ConfigControllerImportExportIT {
         cc.importConfigAsync(tmp);
         assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
         assertThat(ui.control).contains("Imported");
+    }
+
+    @Test
+    void import_flat_sinks_shape_reportsGuidedStatus() throws Exception {
+        String invalid = """
+            {
+              "version": "1.0",
+              "sinks": {
+                "filesEnabled": true,
+                "files": "C:/exports"
+              }
+            }
+            """;
+        Path tmp = TestPathSupport.createFile("cc-import-invalid-sinks", ".json");
+        Files.writeString(tmp, invalid);
+
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
+        CountDownLatch importDone = new CountDownLatch(1);
+        ui.setImportLatch(importDone);
+
+        cc.importConfigAsync(tmp);
+        assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.control).contains("Import failed:");
+        assertThat(ui.control).contains("sinks.files");
+        assertThat(ui.control).contains("sinks.openSearch");
+        assertThat(ui.control).contains("sinks.files.limits.totalEnabled");
+    }
+
+    @Test
+    void import_nested_sink_typo_reportsGuidedStatus() throws Exception {
+        String invalid = """
+            {
+              "version": "1.0",
+              "sinks": {
+                "files": {
+                  "enabled": true,
+                  "limit": {
+                    "totalEnabled": true
+                  }
+                }
+              }
+            }
+            """;
+        Path tmp = TestPathSupport.createFile("cc-import-invalid-sink-typo", ".json");
+        Files.writeString(tmp, invalid);
+
+        TestUi ui = new TestUi();
+        ConfigController cc = new ConfigController(ui);
+        CountDownLatch importDone = new CountDownLatch(1);
+        ui.setImportLatch(importDone);
+
+        cc.importConfigAsync(tmp);
+        assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(ui.control).contains("Import failed:");
+        assertThat(ui.control).contains("sinks.files");
+        assertThat(ui.control).contains("sinks.openSearch");
+        assertThat(ui.control).contains("sinks.files.limits.totalEnabled");
     }
 
     @Test

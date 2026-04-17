@@ -69,6 +69,8 @@ public final class ConfigState {
     public static final String OPEN_SEARCH_TLS_PINNED = "pinned";
     /** Trust all OpenSearch TLS certificates without verification. */
     public static final String OPEN_SEARCH_TLS_INSECURE = "insecure";
+    /** Default persisted OpenSearch auth type selection. */
+    public static final String DEFAULT_OPEN_SEARCH_AUTH_TYPE = "Basic";
 
     /** Scope kind for {@link ScopeEntry}. */
     public enum Kind { REGEX, STRING }
@@ -95,7 +97,8 @@ public final class ConfigState {
     public record Sinks(boolean filesEnabled, String filesPath, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
                         boolean fileTotalCapEnabled, double fileTotalCapGb,
                         boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
-                        boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword, String openSearchTlsMode) {
+                        boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
+                        String openSearchTlsMode, OpenSearchOptions openSearchOptions) {
         public Sinks {
             filesPath = filesPath != null ? filesPath : "";
             fileTotalCapGb = normalizeFileTotalCapGb(fileTotalCapGb);
@@ -103,6 +106,7 @@ public final class ConfigState {
             openSearchUser = openSearchUser != null ? openSearchUser : "";
             openSearchPassword = openSearchPassword != null ? openSearchPassword : "";
             openSearchTlsMode = normalizeOpenSearchTlsMode(openSearchTlsMode);
+            openSearchOptions = openSearchOptions == null ? defaultOpenSearchOptions() : openSearchOptions;
         }
 
         /** Returns the configured file cap converted to bytes for runtime enforcement. */
@@ -117,7 +121,20 @@ public final class ConfigState {
             this(filesEnabled, filesPath, fileJsonlEnabled, fileBulkNdjsonEnabled,
                     true, DEFAULT_FILE_TOTAL_CAP_GB,
                     true, DEFAULT_FILE_MAX_DISK_USED_PERCENT,
-                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchTlsMode);
+                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchTlsMode,
+                    defaultOpenSearchOptions());
+        }
+
+        public Sinks(boolean filesEnabled, String filesPath, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
+                     boolean fileTotalCapEnabled, double fileTotalCapGb,
+                     boolean fileDiskUsagePercentEnabled, int fileDiskUsagePercent,
+                     boolean osEnabled, String openSearchUrl, String openSearchUser, String openSearchPassword,
+                     String openSearchTlsMode) {
+            this(filesEnabled, filesPath, fileJsonlEnabled, fileBulkNdjsonEnabled,
+                    fileTotalCapEnabled, fileTotalCapGb,
+                    fileDiskUsagePercentEnabled, fileDiskUsagePercent,
+                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword,
+                    openSearchTlsMode, defaultOpenSearchOptions());
         }
 
         public Sinks(boolean filesEnabled, String filesPath, boolean fileJsonlEnabled, boolean fileBulkNdjsonEnabled,
@@ -129,7 +146,8 @@ public final class ConfigState {
                     fileTotalCapEnabled, fileTotalCapGb,
                     fileDiskUsagePercentEnabled, fileDiskUsagePercent,
                     osEnabled, openSearchUrl, openSearchUser, openSearchPassword,
-                    openSearchInsecureSsl ? OPEN_SEARCH_TLS_INSECURE : OPEN_SEARCH_TLS_VERIFY);
+                    openSearchInsecureSsl ? OPEN_SEARCH_TLS_INSECURE : OPEN_SEARCH_TLS_VERIFY,
+                    defaultOpenSearchOptions());
         }
 
         public Sinks(boolean filesEnabled, String filesPath,
@@ -153,7 +171,8 @@ public final class ConfigState {
             this(filesEnabled, filesPath, false, false,
                     true, DEFAULT_FILE_TOTAL_CAP_GB,
                     true, DEFAULT_FILE_MAX_DISK_USED_PERCENT,
-                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchTlsMode);
+                    osEnabled, openSearchUrl, openSearchUser, openSearchPassword, openSearchTlsMode,
+                    defaultOpenSearchOptions());
         }
 
         public Sinks(boolean filesEnabled, String filesPath,
@@ -161,6 +180,28 @@ public final class ConfigState {
                      boolean openSearchInsecureSsl) {
             this(filesEnabled, filesPath, osEnabled, openSearchUrl, openSearchUser, openSearchPassword,
                     openSearchInsecureSsl ? OPEN_SEARCH_TLS_INSECURE : OPEN_SEARCH_TLS_VERIFY);
+        }
+    }
+
+    /** Persisted non-secret OpenSearch settings that should survive config export/import. */
+    public record OpenSearchOptions(
+            String authType,
+            String apiKeyId,
+            String certPath,
+            String certKeyPath,
+            String pinnedTlsCertificateSourcePath,
+            String pinnedTlsCertificateFingerprintSha256,
+            String pinnedTlsCertificateEncodedBase64) {
+        public OpenSearchOptions {
+            authType = normalizeOpenSearchAuthType(authType);
+            apiKeyId = apiKeyId == null ? "" : apiKeyId;
+            certPath = certPath == null ? "" : certPath;
+            certKeyPath = certKeyPath == null ? "" : certKeyPath;
+            pinnedTlsCertificateSourcePath = pinnedTlsCertificateSourcePath == null ? "" : pinnedTlsCertificateSourcePath;
+            pinnedTlsCertificateFingerprintSha256 = pinnedTlsCertificateFingerprintSha256 == null
+                    ? "" : pinnedTlsCertificateFingerprintSha256;
+            pinnedTlsCertificateEncodedBase64 = pinnedTlsCertificateEncodedBase64 == null
+                    ? "" : pinnedTlsCertificateEncodedBase64;
         }
     }
 
@@ -337,6 +378,11 @@ public final class ConfigState {
         return new UiPreferences(DEFAULT_STATS_CHART_STYLE, defaultLogPanelPreferences());
     }
 
+    /** Default persisted OpenSearch non-secret settings. */
+    public static OpenSearchOptions defaultOpenSearchOptions() {
+        return new OpenSearchOptions(DEFAULT_OPEN_SEARCH_AUTH_TYPE, "", "", "", "", "", "");
+    }
+
     /** Converts a human-friendly GB value to runtime bytes using half-up rounding. */
     public static long gbToBytes(double gb) {
         BigDecimal normalized = BigDecimal.valueOf(normalizeFileTotalCapGb(gb));
@@ -366,6 +412,20 @@ public final class ConfigState {
             case OPEN_SEARCH_TLS_PINNED, "trust pinned certificate", "trust-pinned-certificate" -> OPEN_SEARCH_TLS_PINNED;
             case OPEN_SEARCH_TLS_INSECURE, "trust all certificates", "trust-all-certificates" -> OPEN_SEARCH_TLS_INSECURE;
             default -> OPEN_SEARCH_TLS_VERIFY;
+        };
+    }
+
+    /** Returns a normalized persisted OpenSearch auth type, defaulting to {@link #DEFAULT_OPEN_SEARCH_AUTH_TYPE}. */
+    public static String normalizeOpenSearchAuthType(String authType) {
+        if (authType == null || authType.isBlank()) {
+            return DEFAULT_OPEN_SEARCH_AUTH_TYPE;
+        }
+        return switch (authType.trim().toLowerCase(Locale.ROOT)) {
+            case "api key", "apikey" -> "API Key";
+            case "jwt" -> "JWT";
+            case "certificate", "cert" -> "Certificate";
+            case "none" -> "None";
+            default -> "Basic";
         };
     }
 

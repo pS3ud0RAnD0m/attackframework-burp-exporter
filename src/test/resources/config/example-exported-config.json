@@ -1,0 +1,58 @@
+{
+  "version" : "${VERSION}",
+  "dataSources" : [ "exporter", "traffic", "settings", "findings" ],
+  "dataSourceOptions" : {
+    "settings" : [ "project" ],
+    "traffic" : [ "proxy", "extensions" ],
+    "findings" : [ "high", "low" ],
+    "exporter" : [ "info", "warn", "stats", "config" ],
+    "exporterStatsIntervalSeconds" : 45
+  },
+  "scope" : [ "all" ],
+  "sinks" : {
+    "files" : {
+      "enabled" : true,
+      "path" : "C:/Burp/exports",
+      "formats" : [ "jsonl" ],
+      "limits" : {
+        "totalEnabled" : false,
+        "totalGb" : 12.5,
+        "diskUsedPercentEnabled" : true,
+        "maxDiskUsedPercent" : 88
+      }
+    },
+    "openSearch" : {
+      "enabled" : true,
+      "url" : "https://opensearch.example:9200",
+      "tlsMode" : "pinned",
+      "auth" : {
+        "type" : "Certificate",
+        "certPath" : "certs/client.pem",
+        "certKeyPath" : "certs/client-key.pem"
+      },
+      "pinnedTlsCertificate" : {
+        "sourcePath" : "certs/opensearch-ca.pem",
+        "fingerprintSha256" : "abcd1234",
+        "encodedBase64" : "QUJDREVGRw=="
+      }
+    }
+  },
+  "indexNames" : {
+    "baseTemplate" : "${now:yyyyMMdd}-attackframework-tool-burp"
+  },
+  "ui" : {
+    "stats" : {
+      "chartStyle" : 2
+    },
+    "log" : {
+      "minLevel" : "warn",
+      "pauseAutoscroll" : true,
+      "filterText" : "tls",
+      "filterCase" : true,
+      "filterRegex" : false,
+      "searchText" : "retry",
+      "searchCase" : false,
+      "searchRegex" : true
+    }
+  }
+}

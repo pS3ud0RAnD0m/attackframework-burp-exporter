@@ -14,6 +14,7 @@ import java.math.RoundingMode;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -1042,7 +1043,24 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 fileDiskUsagePercentField.setText(String.valueOf(sinks.fileDiskUsagePercent()));
                 openSearchSinkCheckbox.setSelected(sinks.osEnabled());
                 openSearchUrlField.setText(sinks.openSearchUrl() != null ? sinks.openSearchUrl() : "");
-                openSearchTlsModeCombo.setSelectedItem(labelForTlsMode(sinks.openSearchTlsMode()));
+                boolean previousSuppressAuthSync = suppressAuthSync;
+                suppressAuthSync = true;
+                try {
+                    openSearchTlsModeCombo.setSelectedItem(labelForTlsMode(sinks.openSearchTlsMode()));
+                    openSearchUserField.setText(sinks.openSearchUser() != null ? sinks.openSearchUser() : "");
+                    ConfigState.OpenSearchOptions openSearchOptions = sinks.openSearchOptions() == null
+                            ? ConfigState.defaultOpenSearchOptions()
+                            : sinks.openSearchOptions();
+                    if (openSearchAuthTypeCombo != null) {
+                        openSearchAuthTypeCombo.setSelectedItem(openSearchOptions.authType());
+                    }
+                    openSearchApiKeyIdField.setText(openSearchOptions.apiKeyId());
+                    openSearchCertPathField.setText(openSearchOptions.certPath());
+                    openSearchCertKeyPathField.setText(openSearchOptions.certKeyPath());
+                    applyImportedPinnedTlsCertificate(openSearchOptions);
+                } finally {
+                    suppressAuthSync = previousSuppressAuthSync;
+                }
             }
 
             switch (state.scopeType()) {
@@ -1542,6 +1560,26 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
     }
 
+    private void applyImportedPinnedTlsCertificate(ConfigState.OpenSearchOptions openSearchOptions) {
+        if (openSearchOptions == null
+                || openSearchOptions.pinnedTlsCertificateEncodedBase64().isBlank()
+                || openSearchOptions.pinnedTlsCertificateSourcePath().isBlank()
+                || openSearchOptions.pinnedTlsCertificateFingerprintSha256().isBlank()) {
+            SecureCredentialStore.clearPinnedTlsCertificate();
+            return;
+        }
+        try {
+            byte[] encodedBytes = Base64.getDecoder().decode(openSearchOptions.pinnedTlsCertificateEncodedBase64());
+            SecureCredentialStore.savePinnedTlsCertificate(
+                    openSearchOptions.pinnedTlsCertificateSourcePath(),
+                    openSearchOptions.pinnedTlsCertificateFingerprintSha256(),
+                    encodedBytes);
+        } catch (IllegalArgumentException e) {
+            SecureCredentialStore.clearPinnedTlsCertificate();
+            Logger.logErrorPanelOnly("[ConfigPanel] Imported config contained an invalid pinned TLS certificate payload.");
+        }
+    }
+
     private void logTlsModeChangeIfNeeded(String normalizedMode) {
         if (normalizedMode == null || normalizedMode.equals(lastLoggedTlsMode)) {
             return;
@@ -1978,10 +2016,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
         String authType = openSearchAuthTypeCombo != null
                 ? String.valueOf(openSearchAuthTypeCombo.getSelectedItem())
-                : "None";
+                : ConfigState.DEFAULT_OPEN_SEARCH_AUTH_TYPE;
         boolean authBasic = "Basic".equals(authType);
-        String osUser = authBasic ? nonBlankOr(openSearchUserField.getText(), "") : "";
+        String osUser = nonBlankOr(openSearchUserField.getText(), "");
         String osPass = authBasic ? nonBlankOr(passwordText(openSearchPasswordField), "") : "";
+        SecureCredentialStore.PinnedTlsCertificate pinnedTlsCertificate = SecureCredentialStore.loadPinnedTlsCertificate();
+        String pinnedTlsCertificateBase64 = pinnedTlsCertificate.encodedBytes().length == 0
+                ? ""
+                : Base64.getEncoder().encodeToString(pinnedTlsCertificate.encodedBytes());
         return new ConfigState.State(
                 selectedSources,
                 scopeType,
@@ -1995,7 +2037,15 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                         osEnabled, osUrl,
                         osUser,
                         osPass,
-                        selectedTlsMode()),
+                        selectedTlsMode(),
+                        new ConfigState.OpenSearchOptions(
+                                authType,
+                                nonBlankOr(openSearchApiKeyIdField.getText(), ""),
+                                nonBlankOr(openSearchCertPathField.getText(), ""),
+                                nonBlankOr(openSearchCertKeyPathField.getText(), ""),
+                                pinnedTlsCertificate.sourcePath(),
+                                pinnedTlsCertificate.fingerprintSha256(),
+                                pinnedTlsCertificateBase64)),
                 settingsSub,
                 trafficToolTypes,
                 findingsSeverities,
