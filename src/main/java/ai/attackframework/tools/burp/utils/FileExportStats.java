@@ -21,7 +21,17 @@ public final class FileExportStats {
     private static final List<String> TRAFFIC_SOURCE_KEYS = Collections.unmodifiableList(
             Arrays.asList("proxy_live_http", "proxy_history_snapshot", "proxy_websocket"));
     private static final List<String> TRAFFIC_TOOL_TYPE_KEYS = Collections.unmodifiableList(
-            Arrays.asList("BURP_AI", "EXTENSIONS", "INTRUDER", "PROXY", "PROXY_HISTORY", "REPEATER", "SCANNER", "SEQUENCER", "UNKNOWN"));
+            Arrays.asList(
+                    "BURP_AI",
+                    "EXTENSIONS",
+                    "INTRUDER",
+                    "PROXY",
+                    "PROXY_HISTORY",
+                    "REPEATER",
+                    "REPEATER_HISTORY",
+                    "SCANNER",
+                    "SEQUENCER",
+                    "UNKNOWN"));
     private static final int LAST_ERROR_MAX_LEN = 200;
 
     private static final Map<String, PerIndexStats> STATS = new ConcurrentHashMap<>();

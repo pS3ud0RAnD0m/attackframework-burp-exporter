@@ -151,9 +151,8 @@ public final class FileUtil {
                 java.nio.file.Files.createDirectories(parent);
             }
 
-            DiskSpaceGuard.ensureWritable(p, 3L, "JSON file creation");
+            DiskSpaceGuard.ensureWritable(p, 1L, "JSON file creation");
             java.nio.file.Files.createFile(p);
-            java.nio.file.Files.writeString(p, "{}\n", StandardCharsets.UTF_8);
             return new CreateResult(p, Status.CREATED, null);
 
         } catch (FileAlreadyExistsException e) {

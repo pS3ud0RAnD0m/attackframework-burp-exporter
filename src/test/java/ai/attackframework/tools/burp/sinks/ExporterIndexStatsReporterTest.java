@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -44,12 +45,14 @@ class ExporterIndexStatsReporterTest {
                     ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                     null));
             RuntimeConfig.setExportRunning(true);
+            ExportStats.recordRepeaterMetadataSource("request_identity");
 
             ExporterIndexStatsReporter.pushSnapshotNow();
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
             assertThat(jsonlPath).exists();
             assertThat(Files.readString(jsonlPath)).contains("stats_snapshot");
+            assertThat(Files.readString(jsonlPath)).contains("repeater_live_metadata_source_summary");
         } finally {
             tearDown();
         }

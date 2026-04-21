@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -9,12 +10,16 @@ import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.handler.HttpRequestToBeSent;
 import burp.api.montoya.http.handler.HttpResponseReceived;
 import burp.api.montoya.http.message.HttpHeader;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.requests.HttpRequest;
@@ -24,12 +29,12 @@ import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
 
 /**
- * Asserts that {@link OpenSearchTrafficHandler#buildDocument} produces a document
- * with the expected top-level and nested shape for the traffic index mapping.
+ * Asserts that {@link TrafficHttpHandler#buildDocument} produces a document with the expected
+ * top-level and nested shape for the traffic index mapping.
  */
-class OpenSearchTrafficHandlerDocumentTest {
+class TrafficHttpHandlerDocumentTest {
 
-    private final OpenSearchTrafficHandler handler = new OpenSearchTrafficHandler();
+    private final TrafficHttpHandler handler = new TrafficHttpHandler();
     private final HttpRequest request = mock(HttpRequest.class);
     private final HttpResponseReceived response = mock(HttpResponseReceived.class);
     private final HttpService service = mock(HttpService.class);
@@ -53,6 +58,8 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(request.bodyOffset()).thenReturn(0);
         when(request.markers()).thenReturn(List.of());
         when(request.contentType()).thenReturn(ContentType.NONE);
+        ByteArray requestBytes = byteArray("GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n");
+        when(request.toByteArray()).thenReturn(requestBytes);
 
         when(response.initiatingRequest()).thenReturn(request);
         when(response.messageId()).thenReturn(1);
@@ -71,6 +78,8 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(response.bodyToString()).thenReturn("");
         when(response.markers()).thenReturn(List.of());
         when(response.attributes(any(AttributeType[].class))).thenReturn(List.of());
+        ByteArray responseBytes = byteArray("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+        when(response.toByteArray()).thenReturn(responseBytes);
     }
 
     @Test
@@ -78,7 +87,31 @@ class OpenSearchTrafficHandlerDocumentTest {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
         assertThat(doc).containsKeys("url", "host", "port", "scheme", "http_version", "tool", "burp_in_scope",
-                "message_id", "path", "method", "status", "mime_type", "request", "response", "document_meta");
+                "message_id", "path", "method", "status", "mime_type", "repeater_tab_name",
+                "repeater_group_name", "request", "response", "document_meta");
+    }
+
+    @Test
+    void buildDocument_reservesRepeaterMetadataFields_forFutureLiveEnrichment() {
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        assertThat(doc.get("repeater_tab_name")).isNull();
+        assertThat(doc.get("repeater_group_name")).isNull();
+    }
+
+    @Test
+    void buildDocument_writesLiveRepeaterMetadata_whenProvided() {
+        Map<String, Object> doc = handler.buildDocument(
+                response,
+                request,
+                true,
+                1L,
+                2L,
+                ToolType.REPEATER,
+                new RepeaterMetadataFields.Metadata("Tab 7", "Group X"));
+
+        assertThat(doc.get("repeater_tab_name")).isEqualTo("Tab 7");
+        assertThat(doc.get("repeater_group_name")).isEqualTo("Group X");
     }
 
     @Test
@@ -96,6 +129,33 @@ class OpenSearchTrafficHandlerDocumentTest {
         assertThat(reqHeaders.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
         assertThat(req.get("method")).isEqualTo("GET");
         assertThat(req.get("path")).isEqualTo("/path?q=1");
+    }
+
+    @Test
+    void buildDocument_usesRawRequestLineFallback_whenRequestAccessorsThrow() {
+        when(request.url()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        when(request.method()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        when(request.path()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        when(request.pathWithoutQuery()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        when(request.query()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        when(request.fileExtension()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        when(request.httpVersion()).thenThrow(new IllegalArgumentException("URL is invalid."));
+        ByteArray malformedRequestBytes = byteArray("POST /fallback/path?q=1 HTTP/2\r\nHost: example.com\r\n\r\n");
+        when(request.toByteArray()).thenReturn(malformedRequestBytes);
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        assertThat(doc.get("url")).isNull();
+        assertThat(doc.get("method")).isEqualTo("POST");
+        assertThat(doc.get("path")).isEqualTo("/fallback/path?q=1");
+        assertThat(doc.get("http_version")).isEqualTo("HTTP/2");
+
+        Map<?, ?> req = nestedMap(doc, "request");
+        assertThat(req.get("method")).isEqualTo("POST");
+        assertThat(req.get("path")).isEqualTo("/fallback/path?q=1");
+        assertThat(req.get("path_without_query")).isEqualTo("/fallback/path");
+        assertThat(req.get("query")).isEqualTo("q=1");
+        assertThat(req.get("http_version")).isEqualTo("HTTP/2");
     }
 
     @Test
@@ -251,7 +311,7 @@ class OpenSearchTrafficHandlerDocumentTest {
 
     @Test
     void buildOrphanResponse_matchesCurrentTrafficResponseShape() {
-        Map<?, ?> responseDoc = map(callStatic(OpenSearchTrafficHandler.class, "buildOrphanResponse"));
+        Map<?, ?> responseDoc = map(callStatic(TrafficHttpHandler.class, "buildOrphanResponse"));
 
         assertContainsKeys(responseDoc,
                 "status", "status_code_class", "reason_phrase", "http_version", "headers", "cookies",
@@ -297,7 +357,7 @@ class OpenSearchTrafficHandlerDocumentTest {
         when(responseSource.toolType()).thenReturn(ToolType.REPEATER);
         when(response.toolSource()).thenReturn(responseSource);
 
-        assertThat(OpenSearchTrafficHandler.resolveResponseToolType(response, ToolType.PROXY))
+            assertThat(TrafficHttpHandler.resolveResponseToolType(response, ToolType.PROXY))
                 .isEqualTo(ToolType.REPEATER);
     }
 
@@ -305,7 +365,7 @@ class OpenSearchTrafficHandlerDocumentTest {
     void resolveResponseToolType_fallsBackToRequestToolTypeWhenResponseMissing() {
         when(response.toolSource()).thenReturn(null);
 
-        assertThat(OpenSearchTrafficHandler.resolveResponseToolType(response, ToolType.PROXY))
+        assertThat(TrafficHttpHandler.resolveResponseToolType(response, ToolType.PROXY))
                 .isEqualTo(ToolType.PROXY);
     }
 
@@ -313,6 +373,474 @@ class OpenSearchTrafficHandlerDocumentTest {
     void resolveResponseToolType_returnsNullWhenBothMissing() {
         when(response.toolSource()).thenReturn(null);
 
-        assertThat(OpenSearchTrafficHandler.resolveResponseToolType(response, null)).isNull();
+        assertThat(TrafficHttpHandler.resolveResponseToolType(response, null)).isNull();
+    }
+
+    @Test
+    void resolveRequestStageRepeaterMetadata_returnsTrackedMetadata_forRepeaterTraffic() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            null),
+                    new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha"),
+                    now);
+
+            assertThat(TrafficHttpHandler.resolveRequestStageRepeaterMetadata(request, ToolType.REPEATER))
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha"));
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveRequestStageRepeaterMetadata_fallsBackToCurrentRepeaterMetadata_whenTrackerEmpty() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            assertThat(TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    request,
+                    ToolType.REPEATER,
+                    () -> new RepeaterMetadataFields.Metadata("GetUserToken", null)))
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("GetUserToken", null));
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveRequestStageRepeaterMetadata_doesNotCallFallbackSupplier_whenTrackerResolves() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            AtomicInteger fallbackCalls = new AtomicInteger();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            null),
+                    new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha"),
+                    now);
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    request,
+                    ToolType.REPEATER,
+                    () -> {
+                        fallbackCalls.incrementAndGet();
+                        return new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group");
+                    });
+
+            assertThat(resolved).isEqualTo(new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha"));
+            assertThat(fallbackCalls).hasValue(0);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveRequestStageRepeaterMetadata_returnsEmpty_whenTrackerIsAmbiguous() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            AtomicInteger fallbackCalls = new AtomicInteger();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                    new RepeaterMetadataFields.Metadata("Tab One", "Group One"),
+                    now);
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB"),
+                    new RepeaterMetadataFields.Metadata("Tab Two", "Group Two"),
+                    now + 1);
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    request,
+                    ToolType.REPEATER,
+                    () -> {
+                        fallbackCalls.incrementAndGet();
+                        return new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group");
+                    });
+
+            assertThat(resolved).isEqualTo(RepeaterMetadataFields.Metadata.empty());
+            assertThat(fallbackCalls).hasValue(0);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveRequestStageRepeaterMetadata_prefersExactRequestIdentity_whenHashesAreAmbiguous() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            AtomicInteger fallbackCalls = new AtomicInteger();
+            HttpRequestResponse first = requestResponse(
+                    "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA");
+            HttpRequestResponse second = requestResponse(
+                    "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB");
+            RepeaterLiveMetadataTracker.observe(
+                    first,
+                    new RepeaterMetadataFields.Metadata("Tab One", "Group One"),
+                    now);
+            RepeaterLiveMetadataTracker.observe(
+                    second,
+                    new RepeaterMetadataFields.Metadata("Tab Two", "Group Two"),
+                    now + 1);
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    first.request(),
+                    ToolType.REPEATER,
+                    () -> {
+                        fallbackCalls.incrementAndGet();
+                        return new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group");
+                    });
+
+            assertThat(resolved).isEqualTo(new RepeaterMetadataFields.Metadata("Tab One", "Group One"));
+            assertThat(fallbackCalls).hasValue(0);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void repeaterMetadataSourceCounters_recordRequestIdentityAndUiFallbackPaths() {
+        ExportStats.resetForTests();
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            HttpRequestResponse tracked = requestResponse(
+                    "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    null);
+            RepeaterMetadataFields.Metadata trackedMetadata =
+                    new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha");
+            RepeaterLiveMetadataTracker.observe(tracked, trackedMetadata, now);
+
+            assertThat(TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    tracked.request(),
+                    ToolType.REPEATER)).isEqualTo(trackedMetadata);
+
+            RepeaterLiveMetadataTracker.clear();
+
+            assertThat(TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    request,
+                    ToolType.REPEATER,
+                    () -> new RepeaterMetadataFields.Metadata("Fallback Tab", null)))
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Fallback Tab", null));
+
+            assertThat(ExportStats.getRepeaterMetadataSourceCount("request_identity")).isEqualTo(1);
+            assertThat(ExportStats.getRepeaterMetadataSourceCount("ui_fallback")).isEqualTo(1);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+            ExportStats.resetForTests();
+        }
+    }
+
+    @Test
+    void repeaterMetadataSourceCounters_recordHashAndReusePaths() {
+        ExportStats.resetForTests();
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+                    new RepeaterMetadataFields.Metadata("Hash Tab", "Hash Group"),
+                    now);
+
+            assertThat(TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    request,
+                    ToolType.REPEATER,
+                    () -> new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group")))
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Hash Tab", "Hash Group"));
+            assertThat(TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    RepeaterMetadataFields.Metadata.empty(),
+                    () -> new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group")))
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Hash Tab", "Hash Group"));
+
+            RepeaterLiveMetadataTracker.clear();
+
+            assertThat(TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    new RepeaterMetadataFields.Metadata("Request Stage Tab", "Request Stage Group"),
+                    () -> new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group")))
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Request Stage Tab", "Request Stage Group"));
+
+            assertThat(ExportStats.getRepeaterMetadataSourceCount("request_hash")).isEqualTo(1);
+            assertThat(ExportStats.getRepeaterMetadataSourceCount("exchange_hash")).isEqualTo(1);
+            assertThat(ExportStats.getRepeaterMetadataSourceCount("request_stage_reuse")).isEqualTo(1);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+            ExportStats.resetForTests();
+        }
+    }
+
+    @Test
+    void repeaterMetadataSourceCounters_recordAmbiguousNullPath() {
+        ExportStats.resetForTests();
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                    new RepeaterMetadataFields.Metadata("Tab One", "Group One"),
+                    now);
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB"),
+                    new RepeaterMetadataFields.Metadata("Tab Two", "Group Two"),
+                    now + 1);
+
+            assertThat(TrafficHttpHandler.resolveRequestStageRepeaterMetadata(
+                    request,
+                    ToolType.REPEATER,
+                    () -> new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group")))
+                    .isEqualTo(RepeaterMetadataFields.Metadata.empty());
+            assertThat(ExportStats.getRepeaterMetadataSourceCount("ambiguous_null")).isEqualTo(1);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+            ExportStats.resetForTests();
+        }
+    }
+
+    @Test
+    void resolveResponseStageRepeaterMetadata_prefersExchangeMatch_overRequestStageFallback() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+                    new RepeaterMetadataFields.Metadata("Live Tab", "Live Group"),
+                    now);
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group"));
+
+            assertThat(resolved).isEqualTo(new RepeaterMetadataFields.Metadata("Live Tab", "Live Group"));
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveResponseStageRepeaterMetadata_doesNotCallFallbackSupplier_whenRequestStageMetadataPresent() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            AtomicInteger fallbackCalls = new AtomicInteger();
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    new RepeaterMetadataFields.Metadata("Request Stage Tab", "Request Stage Group"),
+                    () -> {
+                        fallbackCalls.incrementAndGet();
+                        return new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group");
+                    });
+
+            assertThat(resolved)
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Request Stage Tab", "Request Stage Group"));
+            assertThat(fallbackCalls).hasValue(0);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveResponseStageRepeaterMetadata_fallsBackToCurrentRepeaterMetadata_whenTrackerEmpty() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    RepeaterMetadataFields.Metadata.empty(),
+                    () -> new RepeaterMetadataFields.Metadata("GetUserToken", null));
+
+            assertThat(resolved).isEqualTo(new RepeaterMetadataFields.Metadata("GetUserToken", null));
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveResponseStageRepeaterMetadata_fallsBackToRequestStageMetadata_whenExchangeMatchAmbiguous() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            HttpRequestResponse exchange = requestResponse(
+                    "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            RepeaterLiveMetadataTracker.observe(
+                    exchange,
+                    new RepeaterMetadataFields.Metadata("Tab One", "Group One"),
+                    now);
+            RepeaterLiveMetadataTracker.observe(
+                    exchange,
+                    new RepeaterMetadataFields.Metadata("Tab Two", "Group Two"),
+                    now + 1);
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    new RepeaterMetadataFields.Metadata("Request Stage Tab", "Request Stage Group"));
+
+            assertThat(resolved)
+                    .isEqualTo(new RepeaterMetadataFields.Metadata("Request Stage Tab", "Request Stage Group"));
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveResponseStageRepeaterMetadata_returnsEmpty_whenExchangeAndRequestAreAmbiguous() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            HttpRequestResponse first = requestResponse(
+                    "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            HttpRequestResponse second = requestResponse(
+                    "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            RepeaterLiveMetadataTracker.observe(
+                    first,
+                    new RepeaterMetadataFields.Metadata("Tab One", "Group One"),
+                    now);
+            RepeaterLiveMetadataTracker.observe(
+                    second,
+                    new RepeaterMetadataFields.Metadata("Tab Two", "Group Two"),
+                    now + 1);
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    RepeaterMetadataFields.Metadata.empty(),
+                    () -> new RepeaterMetadataFields.Metadata("Fallback Tab", "Fallback Group"));
+
+            assertThat(resolved).isEqualTo(RepeaterMetadataFields.Metadata.empty());
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void buildOrphanDocumentSkeleton_writesRepeaterRequestStageMetadata_forRequestOnlyExports() {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> skeleton = (Map<String, Object>) call(
+                handler,
+                "buildOrphanDocumentSkeleton",
+                requestToBeSent(
+                        "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                        77,
+                        ToolType.REPEATER),
+                1L,
+                new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha"));
+
+        assertThat(skeleton.get("repeater_tab_name")).isEqualTo("Repeater Tab");
+        assertThat(skeleton.get("repeater_group_name")).isEqualTo("Group Alpha");
+    }
+
+    @Test
+    void buildOrphanDocumentSkeleton_keepsRepeaterMetadataNull_forNonRepeaterTraffic_evenWhenTrackerHasData() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            null),
+                    new RepeaterMetadataFields.Metadata("Tracked Tab", "Tracked Group"),
+                    System.currentTimeMillis());
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> skeleton = (Map<String, Object>) call(
+                    handler,
+                    "buildOrphanDocumentSkeleton",
+                    requestToBeSent(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            78,
+                            ToolType.PROXY),
+                    1L,
+                    TrafficHttpHandler.resolveRequestStageRepeaterMetadata(request, ToolType.PROXY));
+
+            assertThat(skeleton.get("repeater_tab_name")).isNull();
+            assertThat(skeleton.get("repeater_group_name")).isNull();
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    private static HttpRequestResponse requestResponse(String rawRequest, String rawResponse) {
+        HttpRequestResponse requestResponse = mock(HttpRequestResponse.class);
+        HttpRequest trackedRequest = mock(HttpRequest.class);
+        ByteArray trackedRequestBytes = byteArray(rawRequest);
+        when(trackedRequest.toByteArray()).thenReturn(trackedRequestBytes);
+        when(requestResponse.request()).thenReturn(trackedRequest);
+        if (rawResponse != null) {
+            HttpResponseReceived trackedResponse = mock(HttpResponseReceived.class);
+            ByteArray trackedResponseBytes = byteArray(rawResponse);
+            when(trackedResponse.toByteArray()).thenReturn(trackedResponseBytes);
+            when(requestResponse.response()).thenReturn(trackedResponse);
+        }
+        return requestResponse;
+    }
+
+    private static ByteArray byteArray(String value) {
+        ByteArray bytes = mock(ByteArray.class);
+        when(bytes.getBytes()).thenReturn(value.getBytes(StandardCharsets.UTF_8));
+        return bytes;
+    }
+
+    private static HttpRequestToBeSent requestToBeSent(String rawRequest, int messageId, ToolType toolType) {
+        HttpRequestToBeSent request = mock(HttpRequestToBeSent.class);
+        HttpService service = mock(HttpService.class);
+        ToolSource toolSource = mock(ToolSource.class);
+        ByteArray requestBytes = byteArray(rawRequest);
+
+        when(service.host()).thenReturn("example.com");
+        when(service.port()).thenReturn(443);
+        when(service.secure()).thenReturn(true);
+        when(toolSource.toolType()).thenReturn(toolType);
+
+        when(request.toolSource()).thenReturn(toolSource);
+        when(request.messageId()).thenReturn(messageId);
+        when(request.isInScope()).thenReturn(true);
+        when(request.url()).thenReturn("https://example.com/path?q=1");
+        when(request.httpService()).thenReturn(service);
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.method()).thenReturn("GET");
+        when(request.path()).thenReturn("/path?q=1");
+        when(request.pathWithoutQuery()).thenReturn("/path");
+        when(request.query()).thenReturn("q=1");
+        when(request.fileExtension()).thenReturn("");
+        when(request.headers()).thenReturn(List.of());
+        when(request.parameters()).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.bodyOffset()).thenReturn(0);
+        when(request.markers()).thenReturn(List.of());
+        when(request.annotations()).thenReturn(null);
+        when(request.contentType()).thenReturn(ContentType.NONE);
+        when(request.toByteArray()).thenReturn(requestBytes);
+        return request;
     }
 }

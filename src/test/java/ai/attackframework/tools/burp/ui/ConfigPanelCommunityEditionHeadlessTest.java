@@ -61,6 +61,7 @@ class ConfigPanelCommunityEditionHeadlessTest {
             JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
             JCheckBox trafficProxyHistoryCheckbox = Reflect.get(panel, "trafficProxyHistoryCheckbox");
             JCheckBox trafficRepeaterCheckbox = Reflect.get(panel, "trafficRepeaterCheckbox");
+            JCheckBox trafficRepeaterHistoryCheckbox = Reflect.get(panel, "trafficRepeaterHistoryCheckbox");
             JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
             JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox");
             TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
@@ -105,6 +106,7 @@ class ConfigPanelCommunityEditionHeadlessTest {
                 assertThat(trafficProxyCheckbox.isSelected()).isTrue();
                 assertThat(trafficProxyHistoryCheckbox.isSelected()).isTrue();
                 assertThat(trafficRepeaterCheckbox.isSelected()).isTrue();
+                assertThat(trafficRepeaterHistoryCheckbox.isSelected()).isTrue();
                 assertThat(trafficScannerCheckbox.isEnabled()).isFalse();
                 assertThat(trafficScannerCheckbox.isSelected()).isFalse();
                 assertThat(trafficSequencerCheckbox.isSelected()).isTrue();
@@ -146,6 +148,7 @@ class ConfigPanelCommunityEditionHeadlessTest {
             JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
             JCheckBox trafficProxyHistoryCheckbox = Reflect.get(panel, "trafficProxyHistoryCheckbox");
             JCheckBox trafficRepeaterCheckbox = Reflect.get(panel, "trafficRepeaterCheckbox");
+            JCheckBox trafficRepeaterHistoryCheckbox = Reflect.get(panel, "trafficRepeaterHistoryCheckbox");
             JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
             JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox");
             JPanel issuesNotice = findByName(panel, "src.issues.communityNotice", JPanel.class);
@@ -164,6 +167,7 @@ class ConfigPanelCommunityEditionHeadlessTest {
                 assertThat(trafficProxyCheckbox.isSelected()).isTrue();
                 assertThat(trafficProxyHistoryCheckbox.isSelected()).isTrue();
                 assertThat(trafficRepeaterCheckbox.isSelected()).isTrue();
+                assertThat(trafficRepeaterHistoryCheckbox.isSelected()).isTrue();
                 assertThat(trafficScannerCheckbox.isEnabled()).isTrue();
                 assertThat(trafficScannerCheckbox.isSelected()).isTrue();
                 assertThat(trafficSequencerCheckbox.isSelected()).isTrue();

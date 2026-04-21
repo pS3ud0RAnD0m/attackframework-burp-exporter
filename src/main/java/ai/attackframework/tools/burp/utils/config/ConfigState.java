@@ -31,6 +31,7 @@ public final class ConfigState {
             "proxy",
             "proxy_history",
             "repeater",
+            "repeater_history",
             "scanner",
             "sequencer");
 

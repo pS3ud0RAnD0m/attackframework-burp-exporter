@@ -27,7 +27,26 @@ public final class ExportStats {
     private static final List<String> TRAFFIC_SOURCE_KEYS = Collections.unmodifiableList(
             Arrays.asList("proxy_live_http", "proxy_history_snapshot", "proxy_websocket"));
     private static final List<String> TRAFFIC_TOOL_TYPE_KEYS = Collections.unmodifiableList(
-            Arrays.asList("BURP_AI", "EXTENSIONS", "INTRUDER", "PROXY", "PROXY_HISTORY", "REPEATER", "SCANNER", "SEQUENCER", "UNKNOWN"));
+            Arrays.asList(
+                    "BURP_AI",
+                    "EXTENSIONS",
+                    "INTRUDER",
+                    "PROXY",
+                    "PROXY_HISTORY",
+                    "REPEATER",
+                    "REPEATER_HISTORY",
+                    "SCANNER",
+                    "SEQUENCER",
+                    "UNKNOWN"));
+    private static final List<String> REPEATER_METADATA_SOURCE_KEYS = Collections.unmodifiableList(
+            Arrays.asList(
+                    "request_identity",
+                    "request_hash",
+                    "exchange_hash",
+                    "ui_fallback",
+                    "request_stage_reuse",
+                    "ambiguous_null",
+                    "none"));
     private static final int LAST_ERROR_MAX_LEN = 200;
     private static final long THROUGHPUT_WINDOW_MS = 60_000L;
     private static final long THROUGHPUT_WINDOW_SHORT_MS = 10_000L;
@@ -39,6 +58,7 @@ public final class ExportStats {
     private static final Map<String, PerIndexStats> STATS = new ConcurrentHashMap<>();
     private static final Map<String, TrafficSourceStats> TRAFFIC_SOURCE_STATS = new ConcurrentHashMap<>();
     private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_COUNTS = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicLong> REPEATER_METADATA_SOURCE_COUNTS = new ConcurrentHashMap<>();
     private static final AtomicLong exportStartRequestedAtMs = new AtomicLong(-1);
     private static final AtomicLong firstTrafficSuccessAtMs = new AtomicLong(-1);
     private static final AtomicReference<ProxyHistorySnapshotStats> lastProxyHistorySnapshot =
@@ -53,6 +73,9 @@ public final class ExportStats {
         }
         for (String toolType : TRAFFIC_TOOL_TYPE_KEYS) {
             TRAFFIC_TOOL_TYPE_COUNTS.put(toolType, new AtomicLong(0));
+        }
+        for (String metadataSource : REPEATER_METADATA_SOURCE_KEYS) {
+            REPEATER_METADATA_SOURCE_COUNTS.put(metadataSource, new AtomicLong(0));
         }
     }
 
@@ -76,6 +99,11 @@ public final class ExportStats {
     /** Returns known traffic tool type keys shown in Config > Traffic. */
     public static List<String> getTrafficToolTypeKeys() {
         return TRAFFIC_TOOL_TYPE_KEYS;
+    }
+
+    /** Returns known live-Repeater metadata source keys used in trace and stats summaries. */
+    public static List<String> getRepeaterMetadataSourceKeys() {
+        return REPEATER_METADATA_SOURCE_KEYS;
     }
 
     private static TrafficSourceStats forTrafficSource(String sourceKey) {
@@ -228,6 +256,36 @@ public final class ExportStats {
     public static long getTrafficToolTypeCapturedCount(String toolTypeKey) {
         AtomicLong c = TRAFFIC_TOOL_TYPE_COUNTS.get(toolTypeKey);
         return c == null ? 0 : c.get();
+    }
+
+    /**
+     * Records one live-Repeater metadata source decision.
+     *
+     * <p>These counters mirror the trace-level {@code metadataSource} vocabulary so the Stats panel
+     * and exporter stats snapshots can summarize which correlation paths are doing the work during a
+     * run.</p>
+     */
+    public static void recordRepeaterMetadataSource(String metadataSource) {
+        String normalizedSource = normalizeRepeaterMetadataSource(metadataSource);
+        REPEATER_METADATA_SOURCE_COUNTS
+                .computeIfAbsent(normalizedSource, ignored -> new AtomicLong(0))
+                .incrementAndGet();
+    }
+
+    /** Returns the session total for one live-Repeater metadata source label. */
+    public static long getRepeaterMetadataSourceCount(String metadataSource) {
+        AtomicLong count = REPEATER_METADATA_SOURCE_COUNTS.get(normalizeRepeaterMetadataSource(metadataSource));
+        return count == null ? 0 : count.get();
+    }
+
+    /** Formats live-Repeater metadata source counters for compact UI and stats summaries. */
+    public static String describeRepeaterMetadataSourceCounts() {
+        return "id=" + getRepeaterMetadataSourceCount("request_identity")
+                + " reqHash=" + getRepeaterMetadataSourceCount("request_hash")
+                + " exchHash=" + getRepeaterMetadataSourceCount("exchange_hash")
+                + " ui=" + getRepeaterMetadataSourceCount("ui_fallback")
+                + " reuse=" + getRepeaterMetadataSourceCount("request_stage_reuse")
+                + " ambig=" + getRepeaterMetadataSourceCount("ambiguous_null");
     }
 
     /** Returns last push duration in ms, or -1 if not set. */
@@ -513,6 +571,40 @@ public final class ExportStats {
         return exportStartRequestedAtMs.get();
     }
 
+    /** Resets process-local export stats. Intended for test teardown only. */
+    public static void resetForTests() {
+        STATS.clear();
+        TRAFFIC_SOURCE_STATS.clear();
+        TRAFFIC_TOOL_TYPE_COUNTS.clear();
+        REPEATER_METADATA_SOURCE_COUNTS.clear();
+        for (String key : INDEX_KEYS) {
+            STATS.put(key, new PerIndexStats());
+        }
+        for (String sourceKey : TRAFFIC_SOURCE_KEYS) {
+            TRAFFIC_SOURCE_STATS.put(sourceKey, new TrafficSourceStats());
+        }
+        for (String toolType : TRAFFIC_TOOL_TYPE_KEYS) {
+            TRAFFIC_TOOL_TYPE_COUNTS.put(toolType, new AtomicLong(0));
+        }
+        for (String metadataSource : REPEATER_METADATA_SOURCE_KEYS) {
+            REPEATER_METADATA_SOURCE_COUNTS.put(metadataSource, new AtomicLong(0));
+        }
+        exportStartRequestedAtMs.set(-1);
+        firstTrafficSuccessAtMs.set(-1);
+        lastProxyHistorySnapshot.set(null);
+        synchronized (recentSuccesses) {
+            recentSuccesses.clear();
+        }
+        trafficQueueDrops.set(0);
+        trafficSpillEnqueued.set(0);
+        trafficSpillDequeued.set(0);
+        trafficSpillDrops.set(0);
+        trafficSpillRecovered.set(0);
+        trafficSpillExpiredPruned.set(0);
+        trafficDropReasons.clear();
+        trafficToolSourceFallbacks.set(0);
+    }
+
     /**
      * Records summary metrics for the latest proxy-history snapshot push.
      *
@@ -565,5 +657,13 @@ public final class ExportStats {
     private static final class TrafficSourceStats {
         final AtomicLong successCount = new AtomicLong(0);
         final AtomicLong failureCount = new AtomicLong(0);
+    }
+
+    private static String normalizeRepeaterMetadataSource(String metadataSource) {
+        if (metadataSource == null || metadataSource.isBlank()) {
+            return "none";
+        }
+        String normalized = metadataSource.trim();
+        return REPEATER_METADATA_SOURCE_KEYS.contains(normalized) ? normalized : "none";
     }
 }

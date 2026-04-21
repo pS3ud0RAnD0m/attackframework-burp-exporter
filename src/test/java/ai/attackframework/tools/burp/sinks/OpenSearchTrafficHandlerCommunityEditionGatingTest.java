@@ -20,11 +20,11 @@ import burp.api.montoya.core.ToolType;
 import burp.api.montoya.core.Version;
 
 /**
- * Community edition must not export Scanner / Burp AI traffic even when those
- * tool types appear in persisted config; {@link OpenSearchTrafficHandler} gates
- * on {@link RuntimeConfig#isTrafficToolTypeEnabled(String)}.
+ * Community edition must not export Scanner / Burp AI traffic even when those tool types appear
+ * in persisted config; {@link TrafficHttpHandler} gates on
+ * {@link RuntimeConfig#isTrafficToolTypeEnabled(String)}.
  */
-class OpenSearchTrafficHandlerCommunityEditionGatingTest {
+class TrafficHttpHandlerCommunityEditionGatingTest {
 
     private final ConfigState.State previousState = RuntimeConfig.getState();
     private final MontoyaApi previousApi = MontoyaApiProvider.get();
@@ -57,11 +57,11 @@ class OpenSearchTrafficHandlerCommunityEditionGatingTest {
 
             assertThat(RuntimeConfig.getState().trafficToolTypes()).containsExactly("proxy");
 
-            assertThat((Boolean) callStatic(OpenSearchTrafficHandler.class, "shouldExportTrafficByToolSource", ToolType.SCANNER))
+            assertThat((Boolean) callStatic(TrafficHttpHandler.class, "shouldExportTrafficByToolSource", ToolType.SCANNER))
                     .isFalse();
-            assertThat((Boolean) callStatic(OpenSearchTrafficHandler.class, "shouldExportTrafficByToolSource", ToolType.BURP_AI))
+            assertThat((Boolean) callStatic(TrafficHttpHandler.class, "shouldExportTrafficByToolSource", ToolType.BURP_AI))
                     .isFalse();
-            assertThat((Boolean) callStatic(OpenSearchTrafficHandler.class, "shouldExportTrafficByToolSource", ToolType.PROXY))
+            assertThat((Boolean) callStatic(TrafficHttpHandler.class, "shouldExportTrafficByToolSource", ToolType.PROXY))
                     .isTrue();
         } finally {
             reset();

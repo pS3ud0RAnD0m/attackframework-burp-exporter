@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.sinks;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
@@ -40,8 +41,11 @@ public final class ExportReporterLifecycle {
      * runtime matches what the Start/Stop controls show.</p>
      */
     public static void stopAndClearPendingExportWork() {
+        TrafficExportQueue.flushPendingWorkToFilesOnStop();
         RuntimeConfig.setExportRunning(false);
         stopBackgroundReporters();
+        RepeaterHistoryIndexReporter.clearRunState();
+        RepeaterLiveMetadataTracker.clear();
         TrafficExportQueue.clearPendingWork();
         IndexingRetryCoordinator.getInstance().clearPendingWork();
         FileExportService.resetForRuntime();
@@ -55,6 +59,7 @@ public final class ExportReporterLifecycle {
      */
     public static void stopAndClearSessionState() {
         stopAndClearPendingExportWork();
+        RepeaterHistoryIndexReporter.clearSessionState();
         BurpRuntimeMetadata.clear();
         MontoyaApiProvider.set(null);
         SecureCredentialStore.clearAll();
@@ -71,6 +76,7 @@ public final class ExportReporterLifecycle {
         stopAndClearSessionState();
         ControlStatusBridge.clear();
         DiskSpaceGuard.resetForTests();
+        ExportStats.resetForTests();
         FileExportService.resetForTests();
     }
 }

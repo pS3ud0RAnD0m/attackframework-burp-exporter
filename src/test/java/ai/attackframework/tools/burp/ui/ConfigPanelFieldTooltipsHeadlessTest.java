@@ -31,6 +31,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
         JCheckBox findingsSeverity = findByName(panel, "fields.findings.severity", JCheckBox.class);
         JCheckBox trafficUrl = findByName(panel, "fields.traffic.url", JCheckBox.class);
         JCheckBox trafficBurpInScope = findByName(panel, "fields.traffic.burp_in_scope", JCheckBox.class);
+        JCheckBox trafficRepeaterGroupName = findByName(panel, "fields.traffic.repeater_group_name", JCheckBox.class);
 
         runEdt(() -> {
             assertThat(header).isNotNull();
@@ -44,6 +45,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
             assertThat(findingsSeverity).isNotNull();
             assertThat(trafficUrl).isNotNull();
             assertThat(trafficBurpInScope).isNotNull();
+            assertThat(trafficRepeaterGroupName).isNotNull();
             assertThat(header.getToolTipText()).isEqualTo("<html>Configure index naming and which mapped fields each exported document includes.<br>Naming controls affect index creation and file basenames.<br>Field toggles affect document contents.</html>");
             assertThat(settingsLabel.getToolTipText())
                     .isEqualTo("<html><b>Settings fields</b><br>Configure fields exported to the Settings index.<br>The index name can be customized from the Index Base Name field.<br>Use these toggles to trim the settings document payload.</html>");
@@ -67,10 +69,28 @@ class ConfigPanelFieldTooltipsHeadlessTest {
                     .isEqualTo("<html>Issue severity.<br><b>Source:</b> FindingsIndexReporter.buildFindingDoc() uses AuditIssue.severity().</html>");
             assertThat(trafficUrl.getText()).isEqualTo("request.url");
             assertThat(trafficUrl.getToolTipText())
-                    .isEqualTo("<html>Full request URL.<br><b>Source:</b> OpenSearchTrafficHandler.buildDocument() uses request.url(); ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url(); ProxyWebSocketIndexReporter.buildDocument() uses ws.upgradeRequest().url().</html>");
+                    .contains("<b>Description</b>")
+                    .contains("Full request URL.")
+                    .contains("<b>Source</b>")
+                    .contains("TrafficHttpHandler.buildDocument() uses request.url()")
+                    .contains("ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url()")
+                    .contains("ProxyWebSocketIndexReporter.buildDocument() uses ws.upgradeRequest().url().");
             assertThat(trafficBurpInScope.getText()).isEqualTo("burp_in_scope");
             assertThat(trafficBurpInScope.getToolTipText())
-                    .isEqualTo("<html>Raw Burp Suite scope flag, not the extension's export-scope decision.<br><b>Source:</b> OpenSearchTrafficHandler uses request.isInScope(); ProxyHistoryIndexReporter uses MontoyaApi.scope().isInScope(url); ProxyWebSocketIndexReporter uses MontoyaApi.scope().isInScope(url) via safeBurpInScope().</html>");
+                    .contains("<b>Description</b>")
+                    .contains("Raw Burp Suite scope flag, not the extension's export-scope decision.")
+                    .contains("<b>Source</b>")
+                    .contains("TrafficHttpHandler uses request.isInScope()")
+                    .contains("ProxyHistoryIndexReporter uses MontoyaApi.scope().isInScope(url)")
+                    .contains("ProxyWebSocketIndexReporter uses MontoyaApi.scope().isInScope(url) via safeBurpInScope().");
+            assertThat(trafficRepeaterGroupName.getText()).isEqualTo("repeater.group_name");
+            assertThat(trafficRepeaterGroupName.getToolTipText())
+                    .contains("<b>Description</b>")
+                    .contains("Best-effort Repeater tab-group name")
+                    .contains("<b>Source</b>")
+                    .contains(
+                            "RepeaterHistoryIndexReporter infers this from the selected Repeater tab-header component during startup capture.")
+                    .contains("TrafficHttpHandler uses short-lived correlation from Repeater editor rebinds for live Repeater traffic.");
         });
     }
 

@@ -6,7 +6,8 @@ import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ExporterIndexLogForwarder;
-import ai.attackframework.tools.burp.sinks.OpenSearchTrafficHandler;
+import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
+import ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -28,6 +29,9 @@ public class Exporter implements BurpExtension {
     private volatile Registration unloadRegistration;
     private volatile Registration suiteTabRegistration;
     private volatile Registration httpHandlerRegistration;
+    private volatile Registration requestEditorRegistration;
+    private volatile Registration responseEditorRegistration;
+    private volatile Registration contextMenuRegistration;
     private volatile ExporterIndexLogForwarder logForwarder;
 
     /**
@@ -57,6 +61,12 @@ public class Exporter implements BurpExtension {
             logForwarder = new ExporterIndexLogForwarder();
             Logger.registerListener(logForwarder);
             BatchSizeController.getInstance().setOnChangeListener(size -> Logger.logDebug("Batch size: " + size));
+            requestEditorRegistration = api.userInterface().registerHttpRequestEditorProvider(
+                    RepeaterHistoryIndexReporter.requestEditorProvider());
+            responseEditorRegistration = api.userInterface().registerHttpResponseEditorProvider(
+                    RepeaterHistoryIndexReporter.responseEditorProvider());
+            contextMenuRegistration = api.userInterface().registerContextMenuItemsProvider(
+                    RepeaterHistoryIndexReporter.contextMenuItemsProvider());
 
             if (SwingUtilities.isEventDispatchThread()) {
                 registerUi(api, tabTitle);
@@ -74,7 +84,7 @@ public class Exporter implements BurpExtension {
                 }
             }
 
-            httpHandlerRegistration = api.http().registerHttpHandler(new OpenSearchTrafficHandler());
+            httpHandlerRegistration = api.http().registerHttpHandler(new TrafficHttpHandler());
 
             Logger.logInfo("Burp Exporter v" + version + " initialized successfully.");
         } catch (RuntimeException e) {
@@ -93,6 +103,12 @@ public class Exporter implements BurpExtension {
 
         safeDeregister(httpHandlerRegistration);
         httpHandlerRegistration = null;
+        safeDeregister(requestEditorRegistration);
+        requestEditorRegistration = null;
+        safeDeregister(responseEditorRegistration);
+        responseEditorRegistration = null;
+        safeDeregister(contextMenuRegistration);
+        contextMenuRegistration = null;
         safeDeregister(suiteTabRegistration);
         suiteTabRegistration = null;
 

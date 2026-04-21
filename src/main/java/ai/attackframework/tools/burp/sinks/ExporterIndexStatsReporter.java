@@ -207,6 +207,12 @@ public final class ExporterIndexStatsReporter {
         message.put("traffic_queue_size", ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize());
         message.put("traffic_queue_drops", ExportStats.getTrafficQueueDrops());
         message.put("traffic_tool_source_fallback_hits", ExportStats.getTrafficToolSourceFallbacks());
+        Map<String, Object> repeaterMetadataSources = new LinkedHashMap<>();
+        for (String key : ExportStats.getRepeaterMetadataSourceKeys()) {
+            repeaterMetadataSources.put(key, ExportStats.getRepeaterMetadataSourceCount(key));
+        }
+        message.put("repeater_live_metadata_sources", repeaterMetadataSources);
+        message.put("repeater_live_metadata_source_summary", ExportStats.describeRepeaterMetadataSourceCounts());
         message.put("retry_queue_drops_total", ExportStats.getTotalRetryQueueDrops());
         message.put("throughput_docs_per_sec_60", ExportStats.getThroughputDocsPerSecLast60s());
         message.put("total_indexed_bytes", ExportStats.getTotalExportedBytes());
@@ -243,7 +249,9 @@ public final class ExporterIndexStatsReporter {
         doc.put("message", message);
         doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used="
                 + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a")
-                + " threads=" + threadCount + " traffic_indexed=" + ExportStats.getSuccessCount("traffic"));
+                + " threads=" + threadCount
+                + " traffic_indexed=" + ExportStats.getSuccessCount("traffic")
+                + " repeater_live_sources={" + ExportStats.describeRepeaterMetadataSourceCounts() + "}");
         doc.put("thread", Thread.currentThread().getName());
         doc.put("extension_version", Version.get());
         doc.put("burp_version", burpVersion());

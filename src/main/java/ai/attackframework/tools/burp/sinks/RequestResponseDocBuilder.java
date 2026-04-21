@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,7 +34,7 @@ import burp.api.montoya.core.Marker;
 
 /**
  * Builds request and response sub-documents in the same shape as the traffic index,
- * for use by both {@link OpenSearchTrafficHandler} and {@link SitemapIndexReporter}.
+ * for use by both {@link TrafficHttpHandler} and {@link SitemapIndexReporter}.
  */
 public final class RequestResponseDocBuilder {
 
@@ -87,6 +88,19 @@ public final class RequestResponseDocBuilder {
      * @return map with method, path, headers, parameters, and body content fields.
      */
     public static Map<String, Object> buildRequestDoc(HttpRequest request) {
+        if (request == null) {
+            return buildFallbackRequestDoc(null);
+        }
+        try {
+            return buildRequestDocStrict(request);
+        } catch (RuntimeException e) {
+            Logger.logDebug("[RequestResponseDocBuilder] request fallback due to malformed request: "
+                    + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            return buildFallbackRequestDoc(request);
+        }
+    }
+
+    private static Map<String, Object> buildRequestDocStrict(HttpRequest request) {
         Map<String, Object> req = new LinkedHashMap<>();
         req.put("method", request.method());
         req.put("path", request.path());
@@ -116,6 +130,46 @@ public final class RequestResponseDocBuilder {
                 request.bodyOffset());
 
         req.put("markers", markersToList(request.markers()));
+        return req;
+    }
+
+    /**
+     * Builds a request sub-document from raw bytes when Montoya accessors throw.
+     *
+     * <p>The fallback preserves export continuity for malformed Repeater requests by parsing the
+     * raw request line and safely querying only the accessors that Burp still exposes. Missing
+     * fields remain {@code null} instead of aborting the whole document.</p>
+     */
+    private static Map<String, Object> buildFallbackRequestDoc(HttpRequest request) {
+        RawRequestSnapshot raw = RawRequestSnapshot.from(request);
+        Map<String, Object> req = new LinkedHashMap<>();
+        req.put("method", raw.method());
+        req.put("path", raw.path());
+        req.put("path_without_query", nullToEmpty(raw.pathWithoutQuery()));
+        req.put("query", nullToEmpty(raw.query()));
+        req.put("file_extension", nullToEmpty(raw.fileExtension()));
+        req.put("http_version", raw.httpVersion());
+
+        burp.api.montoya.http.message.ContentType contentType = safeContentType(request);
+        req.put("content_type", contentType == null ? null : contentType.toString());
+        req.put("content_type_enum", contentType == null ? null : contentType.name());
+
+        List<HttpHeader> requestHeaders = safeHeaders(request);
+        req.put("headers", buildHeadersObject(requestHeaders));
+        req.put("parameters", safeParameters(request));
+
+        putBodyFields(
+                req,
+                raw.bodyBytes(),
+                requestHeaders,
+                mediaTypeHints(
+                        contentType == null ? null : contentType.toString(),
+                        contentType == null ? null : contentType.name()),
+                false,
+                false,
+                raw.bodyOffset());
+
+        req.put("markers", safeMarkers(request));
         return req;
     }
 
@@ -336,6 +390,160 @@ public final class RequestResponseDocBuilder {
             out.add(entry);
         }
         return out;
+    }
+
+    private static burp.api.montoya.http.message.ContentType safeContentType(HttpRequest request) {
+        if (request == null) {
+            return null;
+        }
+        try {
+            return request.contentType();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static List<HttpHeader> safeHeaders(HttpRequest request) {
+        if (request == null) {
+            return List.of();
+        }
+        try {
+            List<HttpHeader> headers = request.headers();
+            return headers == null ? List.of() : headers;
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    private static List<Map<String, Object>> safeParameters(HttpRequest request) {
+        if (request == null) {
+            return List.of();
+        }
+        try {
+            return parametersToList(request.parameters());
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    private static List<Map<String, Object>> safeMarkers(HttpRequest request) {
+        if (request == null) {
+            return List.of();
+        }
+        try {
+            return markersToList(request.markers());
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    private record RawRequestSnapshot(
+            String method,
+            String path,
+            String pathWithoutQuery,
+            String query,
+            String fileExtension,
+            String httpVersion,
+            byte[] bodyBytes,
+            int bodyOffset) {
+        private static RawRequestSnapshot from(HttpRequest request) {
+            byte[] rawBytes = rawBytes(request);
+            int bodyOffset = bodyOffset(rawBytes);
+            String requestLine = requestLine(rawBytes, bodyOffset);
+            String[] parts = requestLine == null ? new String[0] : requestLine.split(" ", 3);
+            String method = normalizeBlank(parts.length > 0 ? parts[0] : null);
+            String path = normalizeBlank(parts.length > 1 ? parts[1] : null);
+            String httpVersion = normalizeBlank(parts.length > 2 ? parts[2] : null);
+            return new RawRequestSnapshot(
+                    method,
+                    path,
+                    pathWithoutQuery(path),
+                    queryPart(path),
+                    fileExtension(path),
+                    httpVersion,
+                    bodyBytes(rawBytes, bodyOffset),
+                    bodyOffset);
+        }
+
+        private static byte[] rawBytes(HttpRequest request) {
+            if (request == null) {
+                return null;
+            }
+            try {
+                return request.toByteArray() == null ? null : request.toByteArray().getBytes();
+            } catch (RuntimeException ignored) {
+                return null;
+            }
+        }
+
+        private static int bodyOffset(byte[] rawBytes) {
+            if (rawBytes == null || rawBytes.length == 0) {
+                return 0;
+            }
+            for (int i = 0; i <= rawBytes.length - 4; i++) {
+                if (rawBytes[i] == '\r' && rawBytes[i + 1] == '\n'
+                        && rawBytes[i + 2] == '\r' && rawBytes[i + 3] == '\n') {
+                    return i + 4;
+                }
+            }
+            for (int i = 0; i <= rawBytes.length - 2; i++) {
+                if (rawBytes[i] == '\n' && rawBytes[i + 1] == '\n') {
+                    return i + 2;
+                }
+            }
+            return rawBytes.length;
+        }
+
+        private static String requestLine(byte[] rawBytes, int bodyOffset) {
+            if (rawBytes == null || rawBytes.length == 0) {
+                return null;
+            }
+            int limit = Math.min(bodyOffset, rawBytes.length);
+            int lineEnd = 0;
+            while (lineEnd < limit && rawBytes[lineEnd] != '\r' && rawBytes[lineEnd] != '\n') {
+                lineEnd++;
+            }
+            if (lineEnd <= 0) {
+                return null;
+            }
+            return new String(rawBytes, 0, lineEnd, StandardCharsets.ISO_8859_1);
+        }
+
+        private static byte[] bodyBytes(byte[] rawBytes, int bodyOffset) {
+            if (rawBytes == null || bodyOffset >= rawBytes.length) {
+                return null;
+            }
+            return Arrays.copyOfRange(rawBytes, bodyOffset, rawBytes.length);
+        }
+
+        private static String pathWithoutQuery(String path) {
+            if (path == null) {
+                return null;
+            }
+            int queryIndex = path.indexOf('?');
+            return queryIndex >= 0 ? path.substring(0, queryIndex) : path;
+        }
+
+        private static String queryPart(String path) {
+            if (path == null) {
+                return null;
+            }
+            int queryIndex = path.indexOf('?');
+            return queryIndex >= 0 && queryIndex + 1 < path.length()
+                    ? path.substring(queryIndex + 1)
+                    : null;
+        }
+
+        private static String fileExtension(String path) {
+            String pathWithoutQuery = pathWithoutQuery(path);
+            if (pathWithoutQuery == null || pathWithoutQuery.isBlank()) {
+                return null;
+            }
+            int slash = pathWithoutQuery.lastIndexOf('/');
+            String leaf = slash >= 0 ? pathWithoutQuery.substring(slash + 1) : pathWithoutQuery;
+            int dot = leaf.lastIndexOf('.');
+            return dot >= 0 && dot + 1 < leaf.length() ? leaf.substring(dot + 1) : null;
+        }
     }
 
     private static List<Map<String, Object>> cookiesToList(List<Cookie> cookies) {
@@ -711,6 +919,10 @@ public final class RequestResponseDocBuilder {
 
     private static String nullToEmpty(String s) {
         return s == null ? "" : s;
+    }
+
+    private static String normalizeBlank(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**

@@ -52,6 +52,8 @@ class FileUtilTest {
         assertThat(first).hasSize(2);
         assertThat(java.nio.file.Files.exists(f1)).isTrue();
         assertThat(java.nio.file.Files.exists(f2)).isTrue();
+        assertThat(java.nio.file.Files.readString(f1)).isEmpty();
+        assertThat(java.nio.file.Files.readString(f2)).isEmpty();
         assertThat(first.stream().map(FileUtil.CreateResult::status))
                 .containsExactlyInAnyOrder(FileUtil.Status.CREATED, FileUtil.Status.CREATED);
 

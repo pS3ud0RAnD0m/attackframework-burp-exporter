@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,15 +33,12 @@ import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.requests.HttpRequest;
 
 /**
- * Burp HTTP handler that indexes request/response traffic into the OpenSearch traffic index.
+ * Shared implementation for live HTTP traffic capture.
  *
- * <p>Builds the document on Burp's HTTP thread and enqueues it to {@link TrafficExportQueue};
- * a dedicated worker drains the queue in batches and pushes via the Bulk API. The HTTP thread
- * is not blocked on network I/O. Only indexes when OpenSearch traffic export is enabled, the
- * OpenSearch URL is set, and the request passes scope filtering. Document shape matches
- * {@code /opensearch/mappings/traffic.json}.</p>
+ * <p>{@link TrafficHttpHandler} exposes the public sink-neutral type while this package-private
+ * support class keeps the larger implementation isolated from the tiny entrypoint wrapper.</p>
  */
-public final class OpenSearchTrafficHandler implements HttpHandler {
+class TrafficHttpHandlerSupport implements HttpHandler {
 
     private static final String SCHEMA_VERSION = "1";
 
@@ -63,11 +61,11 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             t.setDaemon(true);
             return t;
         });
-        exec.scheduleAtFixedRate(
-                OpenSearchTrafficHandler::flushOrphanedRequests,
-                ORPHAN_CHECK_INTERVAL_SECONDS,
-                ORPHAN_CHECK_INTERVAL_SECONDS,
-                TimeUnit.SECONDS);
+            exec.scheduleAtFixedRate(
+                    TrafficHttpHandlerSupport::flushOrphanedRequests,
+                    ORPHAN_CHECK_INTERVAL_SECONDS,
+                    ORPHAN_CHECK_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS);
     }
 
     /** Whether traffic from this tool source should be exported (user-selected tool types only). */
@@ -120,7 +118,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             return RequestToBeSentAction.continueWith(request);
         }
         if (!ScopeFilter.shouldExport(
-                RuntimeConfig.getState(), request.url(), request.isInScope())) {
+                RuntimeConfig.getState(), safeRequestUrl(request), request.isInScope())) {
             return RequestToBeSentAction.continueWith(request);
         }
         ToolSource toolSource = request.toolSource();
@@ -137,9 +135,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         long requestSentMs = System.currentTimeMillis();
         ToolSource reqToolSource = request.toolSource();
         ToolType reqToolType = reqToolSource == null ? null : reqToolSource.toolType();
-        Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request, requestSentMs);
+        RepeaterMetadataFields.Metadata requestStageRepeaterMetadata =
+                resolveRequestStageRepeaterMetadata(request, reqToolType);
+        Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request, requestSentMs, requestStageRepeaterMetadata);
         if (skeleton != null) {
-            pendingOrphans.put(request.messageId(), new PendingOrphan(skeleton, requestSentMs, reqToolType));
+            pendingOrphans.put(
+                    request.messageId(),
+                    new PendingOrphan(skeleton, requestSentMs, reqToolType, requestStageRepeaterMetadata));
         }
         return RequestToBeSentAction.continueWith(request);
     }
@@ -160,7 +162,7 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
 
         boolean burpInScope = request.isInScope();
         boolean inScope = ScopeFilter.shouldExport(
-                RuntimeConfig.getState(), request.url(), burpInScope);
+                RuntimeConfig.getState(), safeRequestUrl(request), burpInScope);
         if (!inScope) {
             return ResponseReceivedAction.continueWith(response);
         }
@@ -195,8 +197,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
 
         long responseReceivedMs = System.currentTimeMillis();
         Long requestSentMs = pending == null ? null : pending.timestamp;
+        RepeaterMetadataFields.Metadata pendingRepeaterMetadata =
+                pending == null ? RepeaterMetadataFields.Metadata.empty() : pending.repeaterMetadata;
+        RepeaterMetadataFields.Metadata repeaterMetadata =
+                resolveResponseStageRepeaterMetadata(request, response, toolType, pendingRepeaterMetadata);
 
-        Map<String, Object> document = buildDocument(response, request, burpInScope, requestSentMs, responseReceivedMs, toolType);
+        Map<String, Object> document =
+                buildDocument(response, request, burpInScope, requestSentMs, responseReceivedMs, toolType, repeaterMetadata);
         ExportStats.recordTrafficToolTypeCaptured(toolType == null ? "UNKNOWN" : toolType.name(), 1);
         TrafficExportQueue.offer(document);
 
@@ -225,7 +232,14 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * @return map matching traffic index mapping (never null)
      */
     Map<String, Object> buildDocument(HttpResponseReceived response, HttpRequest request, boolean burpInScope) {
-        return buildDocument(response, request, burpInScope, null, null, null);
+        return buildDocument(
+                response,
+                request,
+                burpInScope,
+                null,
+                null,
+                null,
+                RepeaterMetadataFields.Metadata.empty());
     }
 
     Map<String, Object> buildDocument(
@@ -234,7 +248,8 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
             boolean burpInScope,
             Long requestSentMs,
             Long responseReceivedMs,
-            ToolType resolvedToolType) {
+            ToolType resolvedToolType,
+            RepeaterMetadataFields.Metadata repeaterMetadata) {
         HttpService service = request.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         ToolSource toolSource = response.toolSource();
@@ -242,16 +257,18 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         if (toolType == null) {
             toolType = toolSource == null ? null : toolSource.toolType();
         }
+        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
+        Object requestHttpVersion = requestDoc.get("http_version");
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", request.url());
+        document.put("url", safeRequestUrl(request));
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
         document.put("protocol_transport", scheme);
         document.put("protocol_application", "http");
-        document.put("protocol_sub", request.httpVersion());
-        document.put("http_version", request.httpVersion());
+        document.put("protocol_sub", requestHttpVersion);
+        document.put("http_version", requestHttpVersion);
         document.put("tool", toolType == null ? null : toolType.toolName());
         document.put("tool_type", toolType == null ? null : toolType.name());
         document.put("burp_in_scope", burpInScope);
@@ -261,13 +278,14 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("duration_ms", durationMs(requestSentMs, responseReceivedMs));
         putAnnotations(document, response.annotations());
         document.put("edited", null);
-        document.put("path", request.path());
-        document.put("method", request.method());
+        document.put("path", requestDoc.get("path"));
+        document.put("method", requestDoc.get("method"));
         document.put("status", (int) response.statusCode());
         MimeType responseMime = response.mimeType();
         document.put("mime_type", responseMime == null ? null : responseMime.name());
+        RepeaterMetadataFields.put(document, repeaterMetadata);
 
-        document.put("request", RequestResponseDocBuilder.buildRequestDoc(request));
+        document.put("request", requestDoc);
         document.put("response", RequestResponseDocBuilder.buildResponseDoc(response));
 
         Map<String, Object> meta = new LinkedHashMap<>();
@@ -312,22 +330,27 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
      * Caller must hold Burp HTTP thread. Does not include {@code response}; add via
      * {@link #buildOrphanResponse()} when exporting.
      */
-    private Map<String, Object> buildOrphanDocumentSkeleton(HttpRequestToBeSent request, long requestSentMs) {
+    private Map<String, Object> buildOrphanDocumentSkeleton(
+            HttpRequestToBeSent request,
+            long requestSentMs,
+            RepeaterMetadataFields.Metadata repeaterMetadata) {
         HttpService service = request.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         ToolSource toolSource = request.toolSource();
         ToolType toolType = toolSource == null ? null : toolSource.toolType();
         boolean burpInScope = request.isInScope();
+        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
+        Object requestHttpVersion = requestDoc.get("http_version");
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", request.url());
+        document.put("url", safeRequestUrl(request));
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
         document.put("protocol_transport", scheme);
         document.put("protocol_application", "http");
-        document.put("protocol_sub", request.httpVersion());
-        document.put("http_version", request.httpVersion());
+        document.put("protocol_sub", requestHttpVersion);
+        document.put("http_version", requestHttpVersion);
         document.put("tool", toolType == null ? null : toolType.toolName());
         document.put("tool_type", toolType == null ? null : toolType.name());
         document.put("burp_in_scope", burpInScope);
@@ -337,12 +360,13 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("duration_ms", null);
         putAnnotations(document, request.annotations());
         document.put("edited", null);
-        document.put("path", request.path());
-        document.put("method", request.method());
+        document.put("path", requestDoc.get("path"));
+        document.put("method", requestDoc.get("method"));
         document.put("status", ORPHAN_STATUS);
         document.put("mime_type", (String) null);
+        RepeaterMetadataFields.put(document, repeaterMetadata);
 
-        document.put("request", RequestResponseDocBuilder.buildRequestDoc(request));
+        document.put("request", requestDoc);
 
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", SCHEMA_VERSION);
@@ -366,6 +390,192 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         document.put("ws_message_id", null);
 
         return document;
+    }
+
+    /**
+     * Returns the request URL when Montoya exposes it safely.
+     *
+     * <p>Malformed or partially bound Repeater requests can throw from {@code request.url()}.
+     * Returning {@code null} lets scope checks and document assembly keep the rest of the request
+     * instead of dropping the document.</p>
+     */
+    private static String safeRequestUrl(HttpRequest request) {
+        try {
+            return request == null ? null : request.url();
+        } catch (RuntimeException e) {
+            Logger.logDebug("[TrafficHttpHandler] Failed to resolve request URL: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Resolves best-effort Repeater metadata during the request stage.
+     *
+     * <p>Only live {@link ToolType#REPEATER} traffic participates. Ambiguous tracker matches
+     * intentionally return empty metadata so identical concurrent Repeater tabs do not inherit the
+     * wrong label from current UI focus.</p>
+     */
+    static RepeaterMetadataFields.Metadata resolveRequestStageRepeaterMetadata(HttpRequest request, ToolType toolType) {
+        return resolveRequestStageRepeaterMetadata(
+                request,
+                toolType,
+                RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+    }
+
+    /**
+     * Resolves best-effort Repeater metadata during the request stage.
+     *
+     * @param request live request being exported
+     * @param toolType Burp tool that emitted the request
+     * @param liveFallbackSupplier current UI metadata supplier used only when no tracked match exists
+     * @return best-effort Repeater metadata or {@link RepeaterMetadataFields.Metadata#empty()}
+     */
+    static RepeaterMetadataFields.Metadata resolveRequestStageRepeaterMetadata(
+            HttpRequest request,
+            ToolType toolType,
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        if (toolType != ToolType.REPEATER) {
+            return RepeaterMetadataFields.Metadata.empty();
+        }
+        return resolveTrackedRequestOrLiveFallback(request, "request", liveFallbackSupplier);
+    }
+
+    /**
+     * Resolves best-effort Repeater metadata during the response stage.
+     *
+     * <p>The response stage first tries the stricter request+response tracker match, then reuses
+     * confident request-stage metadata, and finally consults the current UI only when there was no
+     * tracked signal at all.</p>
+     */
+    static RepeaterMetadataFields.Metadata resolveResponseStageRepeaterMetadata(
+            HttpRequest request,
+            HttpResponseReceived response,
+            ToolType toolType,
+            RepeaterMetadataFields.Metadata requestStageMetadata) {
+        return resolveResponseStageRepeaterMetadata(
+                request,
+                response,
+                toolType,
+                requestStageMetadata,
+                RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+    }
+
+    /**
+     * Resolves best-effort Repeater metadata during the response stage.
+     *
+     * @param request live request being exported
+     * @param response live response being exported
+     * @param toolType Burp tool that emitted the exchange
+     * @param requestStageMetadata confident metadata captured earlier during request export
+     * @param liveFallbackSupplier current UI metadata supplier used only when no tracked match exists
+     * @return best-effort Repeater metadata or {@link RepeaterMetadataFields.Metadata#empty()}
+     */
+    static RepeaterMetadataFields.Metadata resolveResponseStageRepeaterMetadata(
+            HttpRequest request,
+            HttpResponseReceived response,
+            ToolType toolType,
+            RepeaterMetadataFields.Metadata requestStageMetadata,
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        if (toolType != ToolType.REPEATER) {
+            return RepeaterMetadataFields.Metadata.empty();
+        }
+        RepeaterLiveMetadataTracker.Resolution exchangeResolution =
+                RepeaterLiveMetadataTracker.resolveExchangeResolution(request, response);
+        if (exchangeResolution.metadata().isPresent()) {
+            logLiveRepeaterMetadataDecision(
+                    "response",
+                    exchangeResolution.sourceLabel(),
+                    exchangeResolution.metadata(),
+                    "reason=tracker_match");
+            return exchangeResolution.metadata();
+        }
+        if (exchangeResolution.ambiguous()) {
+            if (requestStageMetadata != null && requestStageMetadata.isPresent()) {
+                logLiveRepeaterMetadataDecision(
+                        "response",
+                        RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE,
+                        requestStageMetadata,
+                        "reason=exchange_ambiguous trackerSource="
+                                + RepeaterMetadataTraceLabels.safeValue(exchangeResolution.sourceLabel()));
+                return requestStageMetadata;
+            }
+            logLiveRepeaterMetadataDecision(
+                    "response",
+                    RepeaterMetadataTraceLabels.AMBIGUOUS_NULL,
+                    RepeaterMetadataFields.Metadata.empty(),
+                    "reason=exchange_ambiguous trackerSource="
+                            + RepeaterMetadataTraceLabels.safeValue(exchangeResolution.sourceLabel()));
+            return RepeaterMetadataFields.Metadata.empty();
+        }
+        if (requestStageMetadata != null && requestStageMetadata.isPresent()) {
+            logLiveRepeaterMetadataDecision(
+                    "response",
+                    RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE,
+                    requestStageMetadata,
+                    "reason=exchange_tracker_miss");
+            return requestStageMetadata;
+        }
+        return resolveTrackedRequestOrLiveFallback(request, "response", liveFallbackSupplier);
+    }
+
+    /**
+     * Resolves Repeater metadata from the short-lived tracker before touching the Swing fallback.
+     *
+     * <p>The tracker is the authoritative source for live Repeater traffic because it is bound to
+     * the observed request object. The fallback supplier is only consulted when there is no tracked
+     * match. When the tracker sees multiple distinct metadata candidates for the same live request,
+     * this helper returns empty metadata instead of querying the current UI selection so ambiguous
+     * concurrent traffic does not inherit the wrong tab/group name.</p>
+     */
+    private static RepeaterMetadataFields.Metadata resolveTrackedRequestOrLiveFallback(
+            HttpRequest request,
+            String stage,
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        RepeaterLiveMetadataTracker.Resolution trackedRequest =
+                RepeaterLiveMetadataTracker.resolveRequestResolution(request);
+        if (trackedRequest.metadata().isPresent()) {
+            logLiveRepeaterMetadataDecision(
+                    stage,
+                    trackedRequest.sourceLabel(),
+                    trackedRequest.metadata(),
+                    "reason=tracker_match");
+            return trackedRequest.metadata();
+        }
+        if (trackedRequest.ambiguous()) {
+            logLiveRepeaterMetadataDecision(
+                    stage,
+                    RepeaterMetadataTraceLabels.AMBIGUOUS_NULL,
+                    RepeaterMetadataFields.Metadata.empty(),
+                    "reason=request_ambiguous trackerSource="
+                            + RepeaterMetadataTraceLabels.safeValue(trackedRequest.sourceLabel()));
+            return RepeaterMetadataFields.Metadata.empty();
+        }
+        RepeaterMetadataFields.Metadata fallbackMetadata = liveFallbackSupplier == null
+                ? RepeaterMetadataFields.Metadata.empty()
+                : liveFallbackSupplier.get();
+        RepeaterMetadataFields.Metadata normalizedFallback =
+                fallbackMetadata == null ? RepeaterMetadataFields.Metadata.empty() : fallbackMetadata;
+        logLiveRepeaterMetadataDecision(
+                stage,
+                RepeaterMetadataTraceLabels.UI_FALLBACK,
+                normalizedFallback,
+                normalizedFallback.isPresent()
+                        ? "reason=no_tracked_match"
+                        : "reason=no_tracked_match_and_ui_unlabeled");
+        return normalizedFallback;
+    }
+
+    private static void logLiveRepeaterMetadataDecision(
+            String stage,
+            String metadataSource,
+            RepeaterMetadataFields.Metadata metadata,
+            String reason) {
+        ExportStats.recordRepeaterMetadataSource(metadataSource);
+        Logger.logTrace("[TrafficHttpHandler] Live Repeater metadata stage="
+                + RepeaterMetadataTraceLabels.safeValue(stage)
+                + " metadataSource=" + RepeaterMetadataTraceLabels.safeValue(metadataSource)
+                + " " + RepeaterMetadataTraceLabels.describeLiveMetadata(metadata)
+                + " " + RepeaterMetadataTraceLabels.safeValue(reason));
     }
 
     private static Map<String, Object> buildOrphanResponse() {
@@ -448,11 +658,19 @@ public final class OpenSearchTrafficHandler implements HttpHandler {
         final Map<String, Object> documentSkeleton;
         final long timestamp;
         final ToolType toolType;
+        final RepeaterMetadataFields.Metadata repeaterMetadata;
 
-        PendingOrphan(Map<String, Object> documentSkeleton, long timestamp, ToolType toolType) {
+        PendingOrphan(
+                Map<String, Object> documentSkeleton,
+                long timestamp,
+                ToolType toolType,
+                RepeaterMetadataFields.Metadata repeaterMetadata) {
             this.documentSkeleton = documentSkeleton;
             this.timestamp = timestamp;
             this.toolType = toolType;
+            this.repeaterMetadata = repeaterMetadata == null
+                    ? RepeaterMetadataFields.Metadata.empty()
+                    : repeaterMetadata;
         }
     }
 

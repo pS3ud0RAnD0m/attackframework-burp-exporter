@@ -138,6 +138,39 @@ public final class TrafficExportQueue {
         spillQueue.clear();
     }
 
+    /**
+     * Best-effort synchronous flush of queued traffic documents to file sinks.
+     *
+     * <p>Used during intentional Stop for file-only runs so already-captured traffic is not lost
+     * when lifecycle cleanup clears the in-memory and spill backlogs. OpenSearch/network delivery
+     * is intentionally not attempted here; this path is only about draining local file backlog.</p>
+     *
+     * @return number of traffic documents handed to file export
+     */
+    static int flushPendingWorkToFilesOnStop() {
+        if (!RuntimeConfig.isAnyFileExportEnabled()) {
+            return 0;
+        }
+        int flushed = 0;
+        while (true) {
+            Map<String, Object> doc = queue.poll();
+            if (doc == null) {
+                doc = spillQueue.poll();
+            }
+            if (doc == null) {
+                break;
+            }
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(trafficIndexName(), "traffic", doc);
+            FileExportService.emit(prepared);
+            flushed++;
+        }
+        if (flushed > 0) {
+            Logger.logInfoPanelOnly("[TrafficExportQueue] Flushed " + flushed
+                    + " queued traffic document(s) to files before Stop.");
+        }
+        return flushed;
+    }
+
     private static void startWorkerIfNeeded() {
         if (workerStarted.compareAndSet(false, true)) {
             Thread t = new Thread(TrafficExportQueue::drainLoop, "attackframework-traffic-export");

@@ -51,7 +51,8 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         JCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
         JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
         String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
-                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
+                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox",
+                "trafficRepeaterHistoryCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
 
         // Start with at least one Traffic option selected; section should be enabled
         SwingUtilities.invokeAndWait(() -> {
@@ -196,7 +197,8 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
         Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
         String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
-                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
+                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox",
+                "trafficRepeaterHistoryCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
 
         SwingUtilities.invokeAndWait(() -> {
             trafficCheckbox.setSelected(true);

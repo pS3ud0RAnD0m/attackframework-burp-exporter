@@ -238,6 +238,7 @@ public class StatsPanel extends JPanel {
     private final JLabel currentBatchSizeValue;
     private final JLabel trafficQueueValue;
     private final JLabel queueDropsValue;
+    private final JLabel repeaterMetadataSourcesValue;
     private final JLabel spillQueueDocsValue;
     private final JLabel spillQueueMibValue;
     private final JLabel spillOldestAgeValue;
@@ -348,7 +349,8 @@ public class StatsPanel extends JPanel {
 
         MetricCardState miscState = addGroupedMetricCard(cardsRow, "Misc Stats", List.of(
                 new MetricSection("Global", new String[] {
-                        "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops"
+                        "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
+                        "Repeater Metadata Sources"
                 }),
                 new MetricSection("OpenSearch", new String[] {
                         "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
@@ -367,6 +369,7 @@ public class StatsPanel extends JPanel {
         currentBatchSizeValue = miscValues.get("Current Batch Size");
         trafficQueueValue = miscValues.get("Traffic Queue Size");
         queueDropsValue = miscValues.get("Queue Drops");
+        repeaterMetadataSourcesValue = miscValues.get("Repeater Metadata Sources");
         spillQueueDocsValue = miscValues.get("Spill Queue Docs");
         spillQueueMibValue = miscValues.get("Spill Queue MiB");
         spillOldestAgeValue = miscValues.get("Spill Oldest Age (s)");
@@ -439,6 +442,7 @@ public class StatsPanel extends JPanel {
         currentBatchSizeValue.setText(formatWhole(BatchSizeController.getInstance().getCurrentBatchSize()));
         trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
         queueDropsValue.setText(formatWhole(ExportStats.getTrafficQueueDrops()));
+        repeaterMetadataSourcesValue.setText(ExportStats.describeRepeaterMetadataSourceCounts());
         spillQueueDocsValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillSize()));
         long spillBytes = ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillBytes();
         spillQueueMibValue.setText(DECIMAL_ONE.format(spillBytes / (1024.0 * 1024.0)));
@@ -909,12 +913,56 @@ public class StatsPanel extends JPanel {
     }
 
     private static void updateTablePreferredHeight(JTable table) {
+        updatePrimaryLabelColumnWidth(table);
         int rows = Math.max(1, table.getRowCount());
         int headerHeight = table.getTableHeader() != null ? table.getTableHeader().getPreferredSize().height : 24;
         int totalHeight = headerHeight + (rows * table.getRowHeight()) + 6;
         int preferredWidth = Math.max(700, table.getPreferredSize().width);
         table.setPreferredScrollableViewportSize(new Dimension(preferredWidth, totalHeight));
         table.setPreferredSize(new Dimension(preferredWidth, Math.max(1, totalHeight - headerHeight)));
+    }
+
+    /**
+     * Packs the first label column to the widest visible label so entries such as
+     * {@code Repeater History} are not clipped in fixed-width tables.
+     */
+    private static void updatePrimaryLabelColumnWidth(JTable table) {
+        if (table == null || table.getColumnCount() == 0) {
+            return;
+        }
+        javax.swing.table.TableColumn column = table.getColumnModel().getColumn(0);
+        int preferredWidth = preferredColumnWidth(table, 0);
+        column.setPreferredWidth(preferredWidth);
+        column.setWidth(preferredWidth);
+    }
+
+    /**
+     * Measures the larger of the header text or any visible cell in the column, then adds a small
+     * padding buffer so packed labels do not render flush against the divider.
+     */
+    private static int preferredColumnWidth(JTable table, int columnIndex) {
+        int widest = 0;
+        javax.swing.table.TableColumn column = table.getColumnModel().getColumn(columnIndex);
+        javax.swing.table.TableCellRenderer headerRenderer = column.getHeaderRenderer();
+        if (headerRenderer == null && table.getTableHeader() != null) {
+            headerRenderer = table.getTableHeader().getDefaultRenderer();
+        }
+        if (headerRenderer != null) {
+            Component headerComponent = headerRenderer.getTableCellRendererComponent(
+                    table,
+                    column.getHeaderValue(),
+                    false,
+                    false,
+                    -1,
+                    columnIndex);
+            widest = Math.max(widest, headerComponent.getPreferredSize().width);
+        }
+        for (int rowIndex = 0; rowIndex < table.getRowCount(); rowIndex++) {
+            javax.swing.table.TableCellRenderer renderer = table.getCellRenderer(rowIndex, columnIndex);
+            Component cellComponent = table.prepareRenderer(renderer, rowIndex, columnIndex);
+            widest = Math.max(widest, cellComponent.getPreferredSize().width);
+        }
+        return Math.max(120, widest + 18);
     }
 
     private static int compareNumericCell(Object left, Object right) {

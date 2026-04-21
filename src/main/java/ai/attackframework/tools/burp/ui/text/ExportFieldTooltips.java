@@ -277,6 +277,8 @@ public final class ExportFieldTooltips {
             case "path" -> "request.path";
             case "method" -> "request.method";
             case "mime_type" -> "response.mime_type";
+            case "repeater_tab_name" -> "repeater.tab_name";
+            case "repeater_group_name" -> "repeater.group_name";
             case "websocket_id" -> "websocket.connection_id";
             case "ws_message_id" -> "websocket.message_id";
             case "ws_direction" -> "websocket.direction";
@@ -300,7 +302,7 @@ public final class ExportFieldTooltips {
         return switch (fieldKey) {
             case "url" -> Tooltips.textWithSource(
                     "Full request URL.",
-                    "OpenSearchTrafficHandler.buildDocument() uses request.url(); ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url(); ProxyWebSocketIndexReporter.buildDocument() uses ws.upgradeRequest().url().");
+                    "TrafficHttpHandler.buildDocument() uses request.url(); ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url(); ProxyWebSocketIndexReporter.buildDocument() uses ws.upgradeRequest().url().");
             case "host" -> Tooltips.textWithSource(
                     "Target host.",
                     "Traffic producers use request/upgrade HttpService.host().");
@@ -315,7 +317,7 @@ public final class ExportFieldTooltips {
                     "Traffic producers map request/upgrade HttpService.secure() to https/http.");
             case "protocol_application" -> Tooltips.textWithSource(
                     "Application protocol label.",
-                    "OpenSearchTrafficHandler.buildDocument() assigns \"http\" for HTTP docs; ProxyHistoryIndexReporter.buildDocument() assigns \"http\"; ProxyWebSocketIndexReporter.buildDocument() assigns \"websocket\".");
+                    "TrafficHttpHandler.buildDocument() assigns \"http\" for HTTP docs; ProxyHistoryIndexReporter.buildDocument() assigns \"http\"; ProxyWebSocketIndexReporter.buildDocument() assigns \"websocket\".");
             case "protocol_sub" -> Tooltips.textWithSource(
                     "HTTP protocol version.",
                     "HTTP docs use request.httpVersion(); WebSocket docs use ws.upgradeRequest().httpVersion().");
@@ -324,25 +326,25 @@ public final class ExportFieldTooltips {
                     "HTTP docs use request.httpVersion(); WebSocket docs use ws.upgradeRequest().httpVersion().");
             case "tool" -> Tooltips.textWithSource(
                     "Burp tool display name.",
-                    "OpenSearchTrafficHandler uses ToolType.toolName() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"Proxy History\"; ProxyWebSocketIndexReporter writes \"Proxy WebSocket\".");
+                    "TrafficHttpHandler uses ToolType.toolName() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"Proxy History\"; RepeaterHistoryIndexReporter writes \"Repeater History\"; ProxyWebSocketIndexReporter writes \"Proxy WebSocket\".");
             case "tool_type" -> Tooltips.textWithSource(
                     "Burp tool enum/source label.",
-                    "OpenSearchTrafficHandler uses ToolType.name() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"PROXY_HISTORY\"; ProxyWebSocketIndexReporter writes \"PROXY_WEBSOCKET\".");
+                    "TrafficHttpHandler uses ToolType.name() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"PROXY_HISTORY\"; RepeaterHistoryIndexReporter writes \"REPEATER_HISTORY\"; ProxyWebSocketIndexReporter writes \"PROXY_WEBSOCKET\".");
             case "burp_in_scope" -> Tooltips.textWithSource(
                     "Raw Burp Suite scope flag, not the extension's export-scope decision.",
-                    "OpenSearchTrafficHandler uses request.isInScope(); ProxyHistoryIndexReporter uses MontoyaApi.scope().isInScope(url); ProxyWebSocketIndexReporter uses MontoyaApi.scope().isInScope(url) via safeBurpInScope().");
+                    "TrafficHttpHandler uses request.isInScope(); ProxyHistoryIndexReporter uses MontoyaApi.scope().isInScope(url); ProxyWebSocketIndexReporter uses MontoyaApi.scope().isInScope(url) via safeBurpInScope().");
             case "message_id" -> Tooltips.textWithSource(
                     "Source-specific Burp message identifier used for correlation.",
-                    "OpenSearchTrafficHandler uses response.messageId() or request.messageId() for orphan docs; ProxyHistoryIndexReporter uses ProxyHttpRequestResponse.id(); ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.id().");
+                    "TrafficHttpHandler uses response.messageId() or request.messageId() for orphan docs; ProxyHistoryIndexReporter uses ProxyHttpRequestResponse.id(); ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.id().");
             case "time_start" -> Tooltips.textWithSource(
                     "Start time for the exported traffic event.",
-                    "OpenSearchTrafficHandler uses an exporter timestamp captured with System.currentTimeMillis() when the request is sent; ProxyHistoryIndexReporter uses TimingData.timeRequestSent() with item.time() fallback; ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.time().");
+                    "TrafficHttpHandler uses an exporter timestamp captured with System.currentTimeMillis() when the request is sent; ProxyHistoryIndexReporter uses TimingData.timeRequestSent() with item.time() fallback; ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.time().");
             case "time_end" -> Tooltips.textWithSource(
                     "End time for the exported traffic event.",
-                    "OpenSearchTrafficHandler uses an exporter timestamp captured with System.currentTimeMillis() when the response is received; ProxyHistoryIndexReporter derives it from TimingData.timeRequestSent() plus timeBetweenRequestSentAndEndOfResponse(); ProxyWebSocketIndexReporter reuses ProxyWebSocketMessage.time().");
+                    "TrafficHttpHandler uses an exporter timestamp captured with System.currentTimeMillis() when the response is received; ProxyHistoryIndexReporter derives it from TimingData.timeRequestSent() plus timeBetweenRequestSentAndEndOfResponse(); ProxyWebSocketIndexReporter reuses ProxyWebSocketMessage.time().");
             case "duration_ms" -> Tooltips.textWithSource(
                     "Observed duration in milliseconds.",
-                    "OpenSearchTrafficHandler subtracts exporter-captured request/response timestamps; ProxyHistoryIndexReporter uses TimingData.timeBetweenRequestSentAndEndOfResponse(); ProxyWebSocketIndexReporter writes 0.");
+                    "TrafficHttpHandler subtracts exporter-captured request/response timestamps; ProxyHistoryIndexReporter uses TimingData.timeBetweenRequestSentAndEndOfResponse(); ProxyWebSocketIndexReporter writes 0.");
             case "comment" -> Tooltips.textWithSource(
                     "User comment attached in Burp.",
                     "HTTP docs read annotations.notes(); WebSocket docs read ProxyWebSocketMessage.annotations().notes().");
@@ -360,7 +362,25 @@ public final class ExportFieldTooltips {
                     "HTTP docs use request.method(); WebSocket docs use ws.upgradeRequest().method().");
             case "mime_type" -> Tooltips.textWithSource(
                     "Effective response MIME classification.",
-                    "OpenSearchTrafficHandler and ProxyHistoryIndexReporter use response.mimeType().name(); WebSocket docs write null.");
+                    "TrafficHttpHandler and ProxyHistoryIndexReporter use response.mimeType().name(); WebSocket docs write null.");
+            case "repeater_tab_name" -> Tooltips.textWithSource(
+                    "Best-effort Repeater tab label for Repeater-origin traffic. "
+                            + "Live Repeater traffic can intentionally leave this empty when Burp cannot safely disambiguate identical concurrent tabs.",
+                    "RepeaterHistoryIndexReporter infers this from the currently selected non-view "
+                            + "Repeater tab path during startup capture. TrafficHttpHandler "
+                            + "uses short-lived correlation from Repeater editor rebinds for live "
+                            + "Repeater traffic and writes null when correlation is ambiguous, "
+                            + "unavailable, or Burp does not preserve a stable live tab identity.");
+            case "repeater_group_name" -> Tooltips.textWithSource(
+                    "Best-effort Repeater tab-group name when the selected tab belongs to a "
+                            + "readable group. Live Repeater traffic can intentionally leave this "
+                            + "empty for identical concurrent tabs or when no readable group label exists.",
+                    "RepeaterHistoryIndexReporter infers this from the selected Repeater tab-header "
+                            + "component during startup capture. TrafficHttpHandler uses "
+                            + "short-lived correlation from Repeater editor rebinds for live "
+                            + "Repeater traffic. Ungrouped tabs, non-Repeater traffic, ambiguous "
+                            + "live matches, or UI layouts that do not expose a readable group "
+                            + "label write null.");
             case "websocket_id" -> Tooltips.textWithSource(
                     "WebSocket conversation identifier.",
                     "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.webSocketId().");
@@ -402,10 +422,10 @@ public final class ExportFieldTooltips {
                     "ProxyHistoryIndexReporter uses ProxyHttpRequestResponse.listenerPort(); ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.listenerPort().");
             case "time_request_sent" -> Tooltips.textWithSource(
                     "Request-sent timestamp.",
-                    "OpenSearchTrafficHandler reuses the exporter timestamp captured when handleHttpRequestToBeSent runs; ProxyHistoryIndexReporter uses TimingData.timeRequestSent() with item.time() fallback; ProxyWebSocketIndexReporter reuses ProxyWebSocketMessage.time().");
+                    "TrafficHttpHandler reuses the exporter timestamp captured when handleHttpRequestToBeSent runs; ProxyHistoryIndexReporter uses TimingData.timeRequestSent() with item.time() fallback; ProxyWebSocketIndexReporter reuses ProxyWebSocketMessage.time().");
             case "response_start_latency_ms" -> Tooltips.textWithSource(
                     "Latency from request sent to response start.",
-                    "ProxyHistoryIndexReporter uses TimingData.timeBetweenRequestSentAndStartOfResponse(); OpenSearchTrafficHandler currently stores the full exporter-observed request-to-response delta; ProxyWebSocketIndexReporter writes null.");
+                    "ProxyHistoryIndexReporter uses TimingData.timeBetweenRequestSentAndStartOfResponse(); TrafficHttpHandler currently stores the full exporter-observed request-to-response delta; ProxyWebSocketIndexReporter writes null.");
             default -> fieldKey;
         };
     }

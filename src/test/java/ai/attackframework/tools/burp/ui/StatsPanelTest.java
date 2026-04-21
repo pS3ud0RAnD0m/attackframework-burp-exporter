@@ -170,6 +170,20 @@ class StatsPanelTest {
     }
 
     @Test
+    void trafficBySourceTables_packFirstColumnToFitRepeaterHistoryLabel() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JTable openSearchTable = get(panel, "trafficBySourceTable");
+        JTable fileTable = get(panel, "fileTrafficBySourceTable");
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        assertThat(firstColumnPreferredWidth(openSearchTable))
+                .isGreaterThanOrEqualTo(requiredLabelColumnWidth(openSearchTable, "Repeater History"));
+        assertThat(firstColumnPreferredWidth(fileTable))
+                .isGreaterThanOrEqualTo(requiredLabelColumnWidth(fileTable, "Repeater History"));
+    }
+
+    @Test
     void byIndexTable_hasNoDefaultActiveSortKey() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JTable byIndexTable = get(panel, "byIndexTable");
@@ -894,6 +908,28 @@ class StatsPanelTest {
             }
         }
         throw new AssertionError("Row not found: " + rowLabel);
+    }
+
+    private static int firstColumnPreferredWidth(JTable table) {
+        return onEdt(() -> table.getColumnModel().getColumn(0).getPreferredWidth());
+    }
+
+    private static int requiredLabelColumnWidth(JTable table, String rowLabel) {
+        return onEdt(() -> {
+            int rowIndex = -1;
+            for (int row = 0; row < table.getRowCount(); row++) {
+                if (rowLabel.equals(String.valueOf(table.getValueAt(row, 0)))) {
+                    rowIndex = row;
+                    break;
+                }
+            }
+            assertThat(rowIndex).isGreaterThanOrEqualTo(0);
+            Component cell = table.prepareRenderer(table.getCellRenderer(rowIndex, 0), rowIndex, 0);
+            Component header = table.getTableHeader()
+                    .getDefaultRenderer()
+                    .getTableCellRendererComponent(table, table.getColumnName(0), false, false, -1, 0);
+            return Math.max(120, Math.max(header.getPreferredSize().width, cell.getPreferredSize().width) + 18);
+        });
     }
 
     private static <T extends Component> T findDescendant(Container root, Class<T> type) {

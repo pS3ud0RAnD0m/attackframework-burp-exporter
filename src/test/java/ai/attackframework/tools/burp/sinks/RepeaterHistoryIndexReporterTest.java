@@ -1,0 +1,1161 @@
+package ai.attackframework.tools.burp.sinks;
+
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.awt.FlowLayout;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import javax.swing.JLabel;
+import org.junit.jupiter.api.Test;
+
+import javax.swing.JTabbedPane;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
+
+import burp.api.montoya.core.ByteArray;
+import burp.api.montoya.core.ToolSource;
+import burp.api.montoya.core.ToolType;
+import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.http.message.responses.HttpResponse;
+import burp.api.montoya.ui.editor.extension.EditorCreationContext;
+import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
+import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+
+class RepeaterHistoryIndexReporterTest {
+
+    @Test
+    void captureFromEditorContext_dedupesRepeatedRepeaterBindings() {
+        try {
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            HttpRequestResponse requestResponse = repeaterRequestResponseWithResponse(
+                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+
+            RepeaterHistoryIndexReporter.captureFromEditorContext(context, requestResponse, "request_editor", null);
+            RepeaterHistoryIndexReporter.captureFromEditorContext(context, requestResponse, "response_editor", null);
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(1);
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_ignoresPartialBindings_withoutResponse() {
+        try {
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            RepeaterHistoryIndexReporter.captureFromEditorContext(
+                    context,
+                    repeaterRequestResponse("GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n"),
+                    "request_editor",
+                    null);
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isZero();
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_ignoresNonRepeaterEditors() {
+        try {
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.PROXY);
+
+            RepeaterHistoryIndexReporter.captureFromEditorContext(
+                    context,
+                    repeaterRequestResponseWithResponse(
+                            "GET /proxy HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+                    "request_editor",
+                    null);
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isZero();
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void markQueuedForCurrentRun_dedupesWithinRun_andResetsAcrossRuns() {
+        try {
+            assertThat(RepeaterHistoryIndexReporter.markQueuedForCurrentRun("fingerprint-1")).isTrue();
+            assertThat(RepeaterHistoryIndexReporter.markQueuedForCurrentRun("fingerprint-1")).isFalse();
+
+            RepeaterHistoryIndexReporter.clearRunState();
+
+            assertThat(RepeaterHistoryIndexReporter.markQueuedForCurrentRun("fingerprint-1")).isTrue();
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void markStartupSlotForCurrentRun_allowsOnlyFirstCapture_forSameTabSlot() {
+        try {
+            assertThat(RepeaterHistoryIndexReporter.markStartupSlotForCurrentRun("Group Alpha|3", "fp-1")).isTrue();
+            assertThat(RepeaterHistoryIndexReporter.markStartupSlotForCurrentRun("Group Alpha|3", "fp-1")).isFalse();
+            assertThat(RepeaterHistoryIndexReporter.markStartupSlotForCurrentRun("Group Alpha|3", "fp-2")).isFalse();
+
+            RepeaterHistoryIndexReporter.clearRunState();
+
+            assertThat(RepeaterHistoryIndexReporter.markStartupSlotForCurrentRun("Group Alpha|3", "fp-2")).isTrue();
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_ignoresLiveRunRebinds_afterStartupCaptureWindowCloses() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    startupSelectionField.set(null, repeaterTabMetadata("HistoricTab", null, "startup-slot-live-window"));
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                RepeaterHistoryIndexReporter.captureFromEditorContext(
+                        context,
+                        repeaterRequestResponseWithResponse(
+                                "GET /historic HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+                        "request_editor",
+                        null);
+            });
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(1);
+
+            RepeaterHistoryIndexReporter.closeCaptureWindowForCurrentRun();
+            RepeaterHistoryIndexReporter.captureFromEditorContext(
+                    context,
+                    repeaterRequestResponseWithResponse(
+                            "GET /after-window HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+                    "request_editor",
+                    null);
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(1);
+        } finally {
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void startupSlotKey_usesSlotIdentityWhenPresent() throws Exception {
+        try {
+            RepeaterHistoryIndexReporter.RepeaterTabMetadata metadata =
+                    (RepeaterHistoryIndexReporter.RepeaterTabMetadata) repeaterTabMetadata(
+                    "myRepeaterGroupTwoTabOne",
+                    "myRepeaterGroupTwo",
+                    "startup-slot-5");
+
+            assertThat(RepeaterHistoryCapturePolicy.startupSlotKey(metadata)).isEqualTo("startup-slot-5");
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_dedupesDifferentFingerprints_forSameStartupSlot() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+            startupSelectionField.set(null, repeaterTabMetadata(
+                    "myRepeaterGroupTwoTabOne",
+                    "myRepeaterGroupTwo",
+                    "startup-slot-5"));
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            HttpRequestResponse firstBinding = repeaterRequestResponseWithResponse(
+                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA");
+            HttpRequestResponse reboundBinding = repeaterRequestResponseWithResponse(
+                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB");
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            SwingUtilities.invokeAndWait(() -> {
+                RepeaterHistoryIndexReporter.captureFromEditorContext(context, firstBinding, "request_editor", null);
+                RepeaterHistoryIndexReporter.captureFromEditorContext(context, reboundBinding, "request_editor", null);
+            });
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(1);
+        } finally {
+            RepeaterHistoryIndexReporter.closeCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_keepsIdenticalFingerprints_forDifferentStartupSlots() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        Field capturedField = RepeaterHistoryIndexReporter.class.getDeclaredField("CAPTURED");
+        capturedField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            HttpRequestResponse firstTabBinding = repeaterRequestResponseWithResponse(
+                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA");
+            HttpRequestResponse secondTabBinding = repeaterRequestResponseWithResponse(
+                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA");
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, repeaterTabMetadata("GetGateway", "Concurrent", "startup-slot-7"));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            firstTabBinding,
+                            "request_editor",
+                            null));
+
+            startupSelectionField.set(null, repeaterTabMetadata("385", "Concurrent", "startup-slot-8"));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            secondTabBinding,
+                            "request_editor",
+                            null));
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(2);
+            assertThat(((java.util.Map<?, ?>) capturedField.get(null)).keySet().stream()
+                    .map(String::valueOf)
+                    .toList())
+                    .containsExactlyInAnyOrder("slot:startup-slot-7", "slot:startup-slot-8");
+        } finally {
+            RepeaterHistoryIndexReporter.closeCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_ignoresStartupBindings_withoutLogicalTabIdentity() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, repeaterTabMetadata(null, null, null));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            repeaterRequestResponseWithResponse(
+                                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                            "response_editor",
+                            null));
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isZero();
+        } finally {
+            RepeaterHistoryIndexReporter.closeCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_keepsStartupBindings_withReadableTabMetadata_evenWithoutSlotIdentity() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, repeaterTabMetadata("ReadableTab", null, null));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            repeaterRequestResponseWithResponse(
+                                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                            "request_editor",
+                            null));
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(1);
+        } finally {
+            RepeaterHistoryIndexReporter.closeCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void describeStartupMetadataSummary_keepsPerTabDetailAtTrace_only() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Method recordMethod = RepeaterHistoryIndexReporter.class.getDeclaredMethod(
+                "recordStartupMetadataObservation",
+                String.class,
+                String.class,
+                String.class,
+                Class.forName("ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter$RepeaterTabMetadata"));
+        recordMethod.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            List<String> seen = new ArrayList<>();
+            Logger.LogListener listener = (level, message) -> seen.add(level + ":" + message);
+            Logger.registerListener(listener);
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            recordMethod.invoke(
+                    null,
+                    "request_editor",
+                    "slot:slot-1",
+                    "fp-1",
+                    repeaterTabMetadata("GetUserToken", null, "slot-1"));
+            recordMethod.invoke(
+                    null,
+                    "response_editor",
+                    "fp-2",
+                    "fp-2",
+                    repeaterTabMetadata("SensitiveContentInUrl", "Findings", "slot-2"));
+            SwingUtilities.invokeAndWait(() -> { });
+
+            assertThat(seen).hasSize(2);
+            assertThat(seen).allMatch(entry -> entry.startsWith("TRACE:[RepeaterHistory] Startup metadata via "));
+            assertThat(seen.getFirst())
+                    .contains("startupSession=g")
+                    .contains("metadataSource=startup_slot")
+                    .contains("captureKey=slot:slot-1")
+                    .contains("tab=GetUserToken")
+                    .contains("group=<null>");
+            assertThat(seen.get(1))
+                    .contains("startupSession=g")
+                    .contains("metadataSource=startup_fingerprint")
+                    .contains("captureKey=fp-2")
+                    .contains("tab=SensitiveContentInUrl")
+                    .contains("group=Findings");
+            assertThat(RepeaterHistoryIndexReporter.describeStartupMetadataSummary())
+                    .contains("observations=2")
+                    .contains("grouped=1")
+                    .contains("standalone=1")
+                    .contains("uniqueSlots=2")
+                    .contains("uniqueTabGroupPairs=2")
+                    .contains("noIdentityObservationsSkipped=0")
+                    .contains("alreadyCapturedSlotObservations=0")
+                    .contains("metadataUpgrades=0")
+                    .contains("request_editor=1")
+                    .contains("response_editor=1")
+                    .doesNotContain("GetUserToken")
+                    .doesNotContain("SensitiveContentInUrl")
+                    .doesNotContain("Findings");
+
+            RepeaterHistoryIndexReporter.clearRunState();
+
+            assertThat(RepeaterHistoryIndexReporter.describeStartupMetadataSummary()).isEqualTo("none");
+        } finally {
+            Logger.resetState();
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void startupMetadataSummary_reportsIgnoredDuplicateAndUpgradeCounters_withoutPerTabLeakage() {
+        RepeaterHistoryStartupMetadataSummary summary = new RepeaterHistoryStartupMetadataSummary();
+        RepeaterHistoryIndexReporter.RepeaterTabMetadata standalone =
+                new RepeaterHistoryIndexReporter.RepeaterTabMetadata("GetUserToken", null, "root", "slot-1");
+        RepeaterHistoryIndexReporter.RepeaterTabMetadata grouped =
+                new RepeaterHistoryIndexReporter.RepeaterTabMetadata("SensitiveContentInUrl", "Findings", "root", "slot-2");
+
+        summary.recordObservation("request_editor", standalone);
+        summary.recordObservation("response_editor", grouped);
+        summary.recordIgnoredAnonymousBinding("response_editor");
+        summary.recordDuplicateSlotSuppression("request_editor", "slot-1");
+        summary.recordMetadataUpgrade("response_editor");
+
+        assertThat(summary.describe())
+                .contains("observations=2")
+                .contains("grouped=1")
+                .contains("standalone=1")
+                .contains("uniqueSlots=2")
+                .contains("uniqueTabGroupPairs=2")
+                .contains("noIdentityObservationsSkipped=1")
+                .contains("alreadyCapturedSlotObservations=1")
+                .contains("metadataUpgrades=1")
+                .contains("capturePaths=[request_editor=1, response_editor=1]")
+                .contains("noIdentityPaths=[response_editor=1]")
+                .contains("alreadyCapturedSlotPaths=[request_editor=1]")
+                .contains("alreadyCapturedSlotHighlights=[slot-1|request_editor=1]")
+                .contains("upgradedPaths=[response_editor=1]")
+                .doesNotContain("GetUserToken")
+                .doesNotContain("SensitiveContentInUrl")
+                .doesNotContain("Findings");
+    }
+
+    @Test
+    void captureFromEditorContext_coalescesDuplicateStartupSlotTraceAfterThreshold() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            List<String> seen = new ArrayList<>();
+            Logger.LogListener listener = (level, message) -> seen.add(level + ":" + message);
+            Logger.registerListener(listener);
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, repeaterTabMetadata("GetUserToken", null, "slot-1"));
+
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            repeaterRequestResponseWithResponse(
+                                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                            "request_editor",
+                            null));
+            for (int i = 0; i < 5; i++) {
+                SwingUtilities.invokeAndWait(() ->
+                        RepeaterHistoryIndexReporter.captureFromEditorContext(
+                                context,
+                                repeaterRequestResponseWithResponse(
+                                        "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                                "request_editor",
+                                null));
+            }
+
+            List<String> duplicateLogs = seen.stream()
+                    .filter(entry -> entry.contains(
+                            "Skipped additional startup editor observation for logical slot already captured"))
+                    .toList();
+            List<String> coalescedLogs = seen.stream()
+                    .filter(entry -> entry.contains(
+                            "will be summarized instead of logged individually"))
+                    .toList();
+
+            assertThat(duplicateLogs).hasSize(3);
+            assertThat(coalescedLogs).hasSize(1);
+            assertThat(RepeaterHistoryIndexReporter.describeStartupMetadataSummary())
+                    .contains("alreadyCapturedSlotObservations=5")
+                    .contains("alreadyCapturedSlotHighlights=[slot-1|request_editor=5]");
+        } finally {
+            Logger.resetState();
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void captureFromEditorContext_mixedStartupBindings_doNotLeaveAnonymousCapturedEntries() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        Field capturedField = RepeaterHistoryIndexReporter.class.getDeclaredField("CAPTURED");
+        capturedField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(false, null, false, null, null, null, false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_history"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            RepeaterHistoryIndexReporter.openCaptureWindowForCurrentRun();
+
+            startupSelectionField.set(null, repeaterTabMetadata("GetBearerToken", null, "slot-1"));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            repeaterRequestResponseWithResponse(
+                                    "GET /first HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                            "request_editor",
+                            null));
+
+            startupSelectionField.set(null, repeaterTabMetadata(null, null, null));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            repeaterRequestResponseWithResponse(
+                                    "GET /anonymous HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB"),
+                            "response_editor",
+                            null));
+
+            startupSelectionField.set(null, repeaterTabMetadata("GetUserToken", null, "slot-2"));
+            SwingUtilities.invokeAndWait(() ->
+                    RepeaterHistoryIndexReporter.captureFromEditorContext(
+                            context,
+                            repeaterRequestResponseWithResponse(
+                                    "GET /second HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                                    "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nC"),
+                            "request_editor",
+                            null));
+
+            Field tabNameField = Class.forName(
+                    "ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter$CapturedRepeaterItem")
+                    .getDeclaredField("repeaterTabName");
+            tabNameField.setAccessible(true);
+            Field groupNameField = Class.forName(
+                    "ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter$CapturedRepeaterItem")
+                    .getDeclaredField("repeaterGroupName");
+            groupNameField.setAccessible(true);
+
+            assertThat(RepeaterHistoryIndexReporter.capturedItemCount()).isEqualTo(2);
+            assertThat(((Map<?, ?>) capturedField.get(null)).values().stream()
+                    .map(item -> {
+                        try {
+                            return String.valueOf(tabNameField.get(item)) + "|" + String.valueOf(groupNameField.get(item));
+                        } catch (IllegalAccessException e) {
+                            throw new RuntimeException(e);
+                        }
+                    })
+                    .toList())
+                    .containsExactlyInAnyOrder("GetBearerToken|null", "GetUserToken|null");
+        } finally {
+            RepeaterHistoryIndexReporter.closeCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void buildDocument_includesRepeaterTabAndGroupNames_whenProvided() {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> document = (Map<String, Object>) callStatic(
+                    RepeaterHistoryIndexReporter.class,
+                    "buildDocument",
+                    repeaterRequestResponse("GET /grouped HTTP/1.1\r\nHost: example.test\r\n\r\n"),
+                    "2",
+                    "Group Alpha");
+
+            assertThat(document.get("repeater_tab_name")).isEqualTo("2");
+            assertThat(document.get("repeater_group_name")).isEqualTo("Group Alpha");
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void buildDocument_survivesMalformedRequestAccessors_byFallingBackToRawRequestLine() {
+        try {
+            HttpRequest request = mock(HttpRequest.class);
+            HttpResponse response = mock(HttpResponse.class);
+            HttpService service = mock(HttpService.class);
+            HttpRequestResponse requestResponse = mock(HttpRequestResponse.class);
+            ByteArray requestBytes = mock(ByteArray.class);
+            ByteArray responseBytes = mock(ByteArray.class);
+
+            when(requestResponse.request()).thenReturn(request);
+            when(requestResponse.response()).thenReturn(response);
+            when(requestResponse.httpService()).thenReturn(service);
+            when(service.host()).thenReturn("example.test");
+            when(service.port()).thenReturn(443);
+            when(service.secure()).thenReturn(true);
+
+            when(request.url()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.method()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.path()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.pathWithoutQuery()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.query()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.fileExtension()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.httpVersion()).thenThrow(new IllegalArgumentException("URL is invalid."));
+            when(request.headers()).thenReturn(java.util.List.of());
+            when(request.parameters()).thenReturn(java.util.List.of());
+            when(request.body()).thenReturn(null);
+            when(request.bodyOffset()).thenReturn(0);
+            when(request.markers()).thenReturn(java.util.List.of());
+            when(request.contentType()).thenReturn(null);
+            when(requestBytes.getBytes()).thenReturn(
+                    "POST /fallback/path?q=1 HTTP/2\r\nHost: example.test\r\n\r\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            when(request.toByteArray()).thenReturn(requestBytes);
+            when(requestResponse.annotations()).thenReturn(null);
+
+            when(response.statusCode()).thenReturn((short) 200);
+            when(response.reasonPhrase()).thenReturn("OK");
+            when(response.httpVersion()).thenReturn("HTTP/1.1");
+            when(response.headers()).thenReturn(java.util.List.of());
+            when(response.cookies()).thenReturn(java.util.List.of());
+            when(response.mimeType()).thenReturn(null);
+            when(response.body()).thenReturn(null);
+            when(response.bodyOffset()).thenReturn(0);
+            when(response.markers()).thenReturn(java.util.List.of());
+            when(responseBytes.getBytes()).thenReturn("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            when(response.toByteArray()).thenReturn(responseBytes);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> document = (Map<String, Object>) callStatic(
+                    RepeaterHistoryIndexReporter.class,
+                    "buildDocument",
+                    requestResponse,
+                    "FallbackTab",
+                    null);
+
+            assertThat(document.get("url")).isNull();
+            assertThat(document.get("method")).isEqualTo("POST");
+            assertThat(document.get("path")).isEqualTo("/fallback/path?q=1");
+            assertThat(document.get("http_version")).isEqualTo("HTTP/2");
+            assertThat(document.get("repeater_tab_name")).isEqualTo("FallbackTab");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> requestDoc = (Map<String, Object>) document.get("request");
+            assertThat(requestDoc.get("method")).isEqualTo("POST");
+            assertThat(requestDoc.get("path")).isEqualTo("/fallback/path?q=1");
+            assertThat(requestDoc.get("path_without_query")).isEqualTo("/fallback/path");
+            assertThat(requestDoc.get("query")).isEqualTo("q=1");
+            assertThat(requestDoc.get("http_version")).isEqualTo("HTTP/2");
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void currentRepeaterTabMetadata_prefersAnchorOverStaleStartupSelection() throws Exception {
+        try {
+            Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+            startupSelectionField.setAccessible(true);
+            startupSelectionField.set(null, repeaterTabMetadata("383", "myOtherRepeaterGroup", "slot-383"));
+
+            JTabbedPane pane = new JTabbedPane();
+            JPanel tabTwo = new JPanel();
+            JPanel tabThree = new JPanel();
+            JPanel anchor = new JPanel();
+            tabTwo.add(anchor);
+            pane.addTab("2", tabTwo);
+            pane.addTab("3", tabThree);
+            pane.setSelectedIndex(0);
+
+            Object[] resultHolder = new Object[1];
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    Method method = RepeaterHistoryIndexReporter.class.getDeclaredMethod(
+                            "currentRepeaterTabMetadata",
+                            java.awt.Component.class);
+                    method.setAccessible(true);
+                    resultHolder[0] = method.invoke(null, anchor);
+                } catch (ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            Object metadata = resultHolder[0];
+            Method tabName = metadata.getClass().getDeclaredMethod("tabName");
+            tabName.setAccessible(true);
+            Method groupName = metadata.getClass().getDeclaredMethod("groupName");
+            groupName.setAccessible(true);
+
+            assertThat(tabName.invoke(metadata)).isEqualTo("2");
+            assertThat(groupName.invoke(metadata)).isNull();
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+            Field startupSelectionField = RepeaterHistoryIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+            startupSelectionField.setAccessible(true);
+            startupSelectionField.set(null, null);
+        }
+    }
+
+    @Test
+    void inferRepeaterGroupName_usesNearestPaneGroupForNumericLeafTabs() throws Exception {
+        try {
+            JTabbedPane pane = new JTabbedPane();
+            pane.addTab("2", new JPanel());
+            pane.addTab("myRepeaterGroup", new JPanel());
+            pane.addTab("3", new JPanel());
+            pane.addTab("382", new JPanel());
+            pane.addTab("myOtherRepeaterGroup", new JPanel());
+            pane.addTab("383", new JPanel());
+
+            SwingUtilities.invokeAndWait(() -> {
+                pane.setTabComponentAt(1, groupHeader("myRepeaterGroup", "2"));
+                pane.setTabComponentAt(4, groupHeader("myOtherRepeaterGroup", "1"));
+
+                pane.setSelectedIndex(0);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("2");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+
+                pane.setSelectedIndex(2);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("3");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane))
+                        .isEqualTo("myRepeaterGroup");
+
+                pane.setSelectedIndex(3);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("382");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane))
+                        .isEqualTo("myRepeaterGroup");
+
+                pane.setSelectedIndex(5);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("383");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane))
+                        .isEqualTo("myOtherRepeaterGroup");
+            });
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterGroupName_usesNearestPaneGroupForNamedLeafTabs() throws Exception {
+        try {
+            JTabbedPane pane = new JTabbedPane();
+            pane.addTab("myStandAloneTab", new JPanel());
+            pane.addTab("myRepeaterGroupOne", new JPanel());
+            pane.addTab("myRepeaterGroupOneTabOne", new JPanel());
+            pane.addTab("myRepeaterGroupOneTabTwo", new JPanel());
+            pane.addTab("myRepeaterGroupTwo", new JPanel());
+            pane.addTab("myRepeaterGroupTwoTabOne", new JPanel());
+
+            SwingUtilities.invokeAndWait(() -> {
+                pane.setTabComponentAt(1, groupHeader("myRepeaterGroupOne", "2"));
+                pane.setTabComponentAt(4, groupHeader("myRepeaterGroupTwo", "1"));
+
+                pane.setSelectedIndex(0);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane))
+                        .isEqualTo("myStandAloneTab");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+
+                pane.setSelectedIndex(2);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane))
+                        .isEqualTo("myRepeaterGroupOneTabOne");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane))
+                        .isEqualTo("myRepeaterGroupOne");
+
+                pane.setSelectedIndex(3);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane))
+                        .isEqualTo("myRepeaterGroupOneTabTwo");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane))
+                        .isEqualTo("myRepeaterGroupOne");
+
+                pane.setSelectedIndex(5);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane))
+                        .isEqualTo("myRepeaterGroupTwoTabOne");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane))
+                        .isEqualTo("myRepeaterGroupTwo");
+            });
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterGroupName_returnsNull_whenRepeatedSiblingLabelCouldBeTabNotGroup() throws Exception {
+        try {
+            JTabbedPane pane = new JTabbedPane();
+            pane.addTab("DeletePiggybank", new JPanel());
+            pane.addTab("149", new JPanel());
+            pane.addTab("150", new JPanel());
+            pane.addTab("DeletePiggybank", new JPanel());
+            pane.addTab("151", new JPanel());
+            pane.addTab("DeletePiggybank", new JPanel());
+
+            SwingUtilities.invokeAndWait(() -> {
+                pane.setSelectedIndex(4);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("151");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+            });
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterGroupName_returnsNull_whenSinglePrefixedSiblingLooksLikeStandaloneTab() throws Exception {
+        try {
+            JTabbedPane pane = new JTabbedPane();
+            pane.addTab("DeletePiggy", new JPanel());
+            pane.addTab("DeletePiggybank", new JPanel());
+            pane.addTab("151", new JPanel());
+
+            SwingUtilities.invokeAndWait(() -> {
+                pane.setSelectedIndex(1);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("DeletePiggybank");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+            });
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterGroupName_stopsAtExplicitHeaderCountBoundary() throws Exception {
+        try {
+            JTabbedPane pane = new JTabbedPane();
+            pane.addTab("Findings", new JPanel());
+            pane.addTab("SensitiveContentInUrl", new JPanel());
+            pane.addTab("CAPTCHARemoved", new JPanel());
+            pane.addTab("Web-InaccurateBalance", new JPanel());
+            pane.addTab("Mobile-AccurateBalance", new JPanel());
+            pane.addTab("CardNumber-Invalid", new JPanel());
+            pane.addTab("1", new JPanel());
+            pane.addTab("2", new JPanel());
+            pane.addTab("3", new JPanel());
+            pane.addTab("4", new JPanel());
+
+            SwingUtilities.invokeAndWait(() -> {
+                pane.setTabComponentAt(0, groupHeader("Findings", "5"));
+
+                pane.setSelectedIndex(1);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isEqualTo("Findings");
+
+                pane.setSelectedIndex(5);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isEqualTo("Findings");
+
+                pane.setSelectedIndex(6);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+
+                pane.setSelectedIndex(9);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+            });
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterGroupName_returnsNull_whenStandaloneNamedTabHasNoExplicitGroupMarker() throws Exception {
+        try {
+            JTabbedPane pane = new JTabbedPane();
+            pane.addTab("Web-Update", new JPanel());
+            pane.addTab("72", new JPanel());
+            pane.addTab("73", new JPanel());
+
+            SwingUtilities.invokeAndWait(() -> {
+                pane.setSelectedIndex(1);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("72");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+
+                pane.setSelectedIndex(2);
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterTabName(pane)).isEqualTo("73");
+                assertThat(RepeaterHistoryIndexReporter.inferRepeaterGroupName(pane)).isNull();
+            });
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterTabMetadata_treatsSingleStandaloneCandidateAsTabName_whenPrimaryMissing()
+            throws Exception {
+        try {
+            Method method = RepeaterHistoryIndexReporter.class.getDeclaredMethod(
+                    "inferRepeaterTabMetadata",
+                    java.util.List.class,
+                    String.class);
+            method.setAccessible(true);
+
+            Object snapshot = selectedTabSnapshot(
+                    null,
+                    java.util.List.of("myStandAloneTab"),
+                    java.util.List.of("myStandAloneTab"),
+                    java.util.List.of(),
+                    java.util.List.of(),
+                    "burp.Zr4u",
+                    0,
+                    1);
+
+            Object metadata = method.invoke(null, java.util.List.of(snapshot), "burp.Zr4u");
+            Method tabName = metadata.getClass().getDeclaredMethod("tabName");
+            tabName.setAccessible(true);
+            Method groupName = metadata.getClass().getDeclaredMethod("groupName");
+            groupName.setAccessible(true);
+
+            assertThat(tabName.invoke(metadata)).isEqualTo("myStandAloneTab");
+            assertThat(groupName.invoke(metadata)).isNull();
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void inferRepeaterTabMetadataFromAnchor_ignoresAuxiliaryNestedTabsInSlotIdentity() throws Exception {
+        try {
+            JTabbedPane outerPane = new JTabbedPane();
+            JPanel standalone = new JPanel();
+            JPanel groupedTab = new JPanel();
+            JTabbedPane messageViewTabs = new JTabbedPane();
+            messageViewTabs.addTab("Inspector", new JPanel());
+            messageViewTabs.addTab("Notes", new JPanel());
+            messageViewTabs.addTab("Explanations", new JPanel());
+            JPanel customActions = new JPanel();
+            JPanel anchor = new JPanel();
+            customActions.add(anchor);
+            messageViewTabs.addTab("Custom actions", customActions);
+            messageViewTabs.setSelectedIndex(3);
+            groupedTab.add(messageViewTabs);
+            outerPane.addTab("myStandAloneTab", standalone);
+            outerPane.addTab("myRepeaterGroupTwoTabOne", groupedTab);
+            outerPane.setSelectedIndex(1);
+
+            Object[] metadataHolder = new Object[1];
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    Method method = RepeaterHistoryIndexReporter.class.getDeclaredMethod(
+                            "inferRepeaterTabMetadataFromAnchor",
+                            java.awt.Component.class);
+                    method.setAccessible(true);
+                    metadataHolder[0] = method.invoke(null, anchor);
+                } catch (ReflectiveOperationException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            Object metadata = metadataHolder[0];
+            Method slotIdentityKey = metadata.getClass().getDeclaredMethod("slotIdentityKey");
+            slotIdentityKey.setAccessible(true);
+
+            assertThat(slotIdentityKey.invoke(metadata)).isEqualTo("javax.swing.JTabbedPane#1");
+        } finally {
+            RepeaterHistoryIndexReporter.clearSessionState();
+        }
+    }
+
+    private static HttpRequestResponse repeaterRequestResponse(String rawRequest) {
+        HttpRequest request = mock(HttpRequest.class);
+        ByteArray requestBytes = mock(ByteArray.class);
+        when(requestBytes.getBytes()).thenReturn(rawRequest.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(request.toByteArray()).thenReturn(requestBytes);
+
+        HttpRequestResponse requestResponse = mock(HttpRequestResponse.class);
+        when(requestResponse.request()).thenReturn(request);
+        when(requestResponse.copyToTempFile()).thenReturn(requestResponse);
+        return requestResponse;
+    }
+
+    private static HttpRequestResponse repeaterRequestResponseWithResponse(String rawRequest, String rawResponse) {
+        HttpRequestResponse requestResponse = repeaterRequestResponse(rawRequest);
+        HttpResponse response = mock(HttpResponse.class);
+        ByteArray responseBytes = mock(ByteArray.class);
+        when(responseBytes.getBytes()).thenReturn(rawResponse.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(response.toByteArray()).thenReturn(responseBytes);
+        when(requestResponse.response()).thenReturn(response);
+        return requestResponse;
+    }
+
+    private static Object repeaterTabMetadata(
+            String tabName,
+            String groupName,
+            String slotIdentityKey) throws Exception {
+        Class<?> metadataClass = Class.forName(
+                "ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter$RepeaterTabMetadata");
+        Constructor<?> constructor = metadataClass.getDeclaredConstructor(
+                String.class,
+                String.class,
+                String.class,
+                String.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(
+                tabName,
+                groupName,
+                "test-root",
+                slotIdentityKey);
+    }
+
+    private static Object selectedTabSnapshot(
+            String primaryLabel,
+            java.util.List<String> candidateLabels,
+            java.util.List<String> paneCandidateLabels,
+            java.util.List<Object> paneTabs,
+            java.util.List<String> panePrimaryLabels,
+            String paneClass,
+            int selectedIndex,
+            int tabCount) throws Exception {
+        Class<?> snapshotClass = Class.forName(
+                "ai.attackframework.tools.burp.sinks.RepeaterTabMetadataHeuristics$SelectedTabSnapshot");
+        Constructor<?> constructor = snapshotClass.getDeclaredConstructor(
+                String.class,
+                java.util.List.class,
+                java.util.List.class,
+                java.util.List.class,
+                java.util.List.class,
+                String.class,
+                int.class,
+                int.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(
+                primaryLabel,
+                candidateLabels,
+                paneCandidateLabels,
+                paneTabs,
+                panePrimaryLabels,
+                paneClass,
+                selectedIndex,
+                tabCount);
+    }
+
+    private static JPanel groupHeader(String groupName, String childCount) {
+        JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        header.add(new JLabel(groupName));
+        header.add(new JLabel(childCount));
+        return header;
+    }
+}

@@ -23,7 +23,7 @@ public final class ExportFieldRegistry {
         TOGGLEABLE_BY_INDEX.put("traffic", List.of(
                 "url", "host", "port", "scheme", "protocol_transport", "protocol_application", "protocol_sub",
                 "http_version", "tool", "tool_type", "burp_in_scope", "message_id", "time_start", "time_end", "duration_ms",
-                "comment", "highlight", "edited", "path", "method", "mime_type",
+                "comment", "highlight", "edited", "path", "method", "mime_type", "repeater_tab_name", "repeater_group_name",
                 "websocket_id", "ws_message_id", "ws_direction", "ws_message_type", "ws_payload", "ws_payload_text",
                 "ws_payload_length", "ws_edited", "ws_edited_payload", "ws_upgrade_request", "ws_time",
                 "proxy_history_id", "listener_port", "time_request_sent", "response_start_latency_ms"
