@@ -174,7 +174,7 @@ public final class SitemapIndexReporter {
             long runningBatchBytes = 0;
             int attempted = 0;
 
-            SnapshotSummary.Baseline baseline = pushAll ? SnapshotSummary.snapshot("sitemap") : null;
+            SnapshotSummary.Baseline baseline = pushAll ? SnapshotSummary.forIndexKey("sitemap") : null;
             boolean openSearchActive = pushAll && isOpenSearchActive();
             boolean fileActive = pushAll && RuntimeConfig.isAnyFileExportEnabled();
             long startNs = pushAll ? System.nanoTime() : 0L;

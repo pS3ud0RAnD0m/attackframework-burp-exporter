@@ -99,7 +99,7 @@ public final class ProxyHistoryIndexReporter {
         }
 
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
-        SnapshotSummary.Baseline baseline = SnapshotSummary.snapshot(route);
+        SnapshotSummary.Baseline baseline = SnapshotSummary.forRoute(route);
         long startNs = System.nanoTime();
         int success = 0;
         int attempted = 0;
