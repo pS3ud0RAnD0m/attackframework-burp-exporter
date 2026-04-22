@@ -605,8 +605,8 @@ class StatsPanelTest {
         long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 4);
 
         ExportStats.recordSuccess("traffic", 17);
-        ExportStats.recordTrafficToolTypeCaptured("PROXY", 5);
-        ExportStats.recordTrafficToolTypeCaptured("REPEATER", 3);
+        ExportStats.recordTrafficToolTypeSuccess("PROXY", 5);
+        ExportStats.recordTrafficToolTypeSuccess("REPEATER", 3);
         ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", 4);
         ExportStats.recordTrafficSourceSuccess("proxy_websocket", 5);
 
@@ -801,7 +801,7 @@ class StatsPanelTest {
 
         FileExportStats.recordSuccess("traffic", 5);
         FileExportStats.recordExportedBytes("traffic", 4096L);
-        FileExportStats.recordTrafficToolTypeCaptured("PROXY", 5);
+        FileExportStats.recordTrafficToolTypeSuccess("PROXY", 5);
         Thread.sleep(20L);
         onEdt(() -> call(panel, "refreshVisibleStats"));
 

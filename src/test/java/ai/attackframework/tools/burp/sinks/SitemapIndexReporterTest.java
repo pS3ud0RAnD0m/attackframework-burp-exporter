@@ -1,6 +1,12 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -9,6 +15,9 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.requests.HttpRequest;
 
 /**
  * Ensures {@link SitemapIndexReporter} completes without throwing when
@@ -62,6 +71,41 @@ class SitemapIndexReporterTest {
     void pushNewItemsOnly_completesWithoutThrow_whenExportNotRunning() {
         RuntimeConfig.setExportRunning(false);
         SitemapIndexReporter.pushNewItemsOnly();
+    }
+
+    @Test
+    void buildSitemapDoc_survivesMalformedRequest_andReconstructsUrl() {
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenThrow(new IllegalStateException("URL is invalid."));
+        when(request.method()).thenReturn("GET");
+        when(request.path()).thenReturn("/login");
+        when(request.pathWithoutQuery()).thenReturn("/login");
+        when(request.query()).thenReturn("");
+        when(request.fileExtension()).thenReturn("");
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.headers()).thenReturn(List.of());
+        when(request.parameters()).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.contentType()).thenReturn(null);
+
+        HttpService service = mock(HttpService.class);
+        when(service.host()).thenReturn("auth.example.com");
+        when(service.port()).thenReturn(443);
+        when(service.secure()).thenReturn(true);
+
+        HttpRequestResponse item = mock(HttpRequestResponse.class);
+        when(item.request()).thenReturn(request);
+        when(item.httpService()).thenReturn(service);
+        when(item.hasResponse()).thenReturn(false);
+
+        Map<?, ?> doc = (Map<?, ?>) callStatic(SitemapIndexReporter.class, "buildSitemapDoc", item);
+
+        assertThat(doc).isNotNull();
+        assertThat(doc.get("url")).isEqualTo("https://auth.example.com/login");
+        assertThat(doc.get("method")).isEqualTo("GET");
+        assertThat(doc.get("path")).isEqualTo("/login");
+        assertThat(doc.get("host")).isEqualTo("auth.example.com");
     }
 
     @Test

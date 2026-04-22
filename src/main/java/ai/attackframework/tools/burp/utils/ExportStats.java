@@ -57,7 +57,8 @@ public final class ExportStats {
 
     private static final Map<String, PerIndexStats> STATS = new ConcurrentHashMap<>();
     private static final Map<String, TrafficSourceStats> TRAFFIC_SOURCE_STATS = new ConcurrentHashMap<>();
-    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_COUNTS = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_FAILURE_COUNTS = new ConcurrentHashMap<>();
     private static final Map<String, AtomicLong> REPEATER_METADATA_SOURCE_COUNTS = new ConcurrentHashMap<>();
     private static final AtomicLong exportStartRequestedAtMs = new AtomicLong(-1);
     private static final AtomicLong firstTrafficSuccessAtMs = new AtomicLong(-1);
@@ -72,7 +73,8 @@ public final class ExportStats {
             TRAFFIC_SOURCE_STATS.put(sourceKey, new TrafficSourceStats());
         }
         for (String toolType : TRAFFIC_TOOL_TYPE_KEYS) {
-            TRAFFIC_TOOL_TYPE_COUNTS.put(toolType, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.put(toolType, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.put(toolType, new AtomicLong(0));
         }
         for (String metadataSource : REPEATER_METADATA_SOURCE_KEYS) {
             REPEATER_METADATA_SOURCE_COUNTS.put(metadataSource, new AtomicLong(0));
@@ -241,20 +243,34 @@ public final class ExportStats {
     }
 
     /**
-     * Records captured traffic events for a specific traffic tool type.
-     *
-     * <p>This tracks accepted events at capture time (before queue drain), useful for
-     * visibility into tool-source distribution.</p>
+     * Records successful OpenSearch traffic pushes for a specific tool type.
      */
-    public static void recordTrafficToolTypeCaptured(String toolTypeKey, long count) {
+    public static void recordTrafficToolTypeSuccess(String toolTypeKey, long count) {
         if (count <= 0) return;
-        AtomicLong c = TRAFFIC_TOOL_TYPE_COUNTS.computeIfAbsent(toolTypeKey, k -> new AtomicLong(0));
+        AtomicLong c = TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.computeIfAbsent(
+                normalizeTrafficToolType(toolTypeKey),
+                k -> new AtomicLong(0));
         c.addAndGet(count);
     }
 
-    /** Returns captured traffic event count for a specific tool type. */
-    public static long getTrafficToolTypeCapturedCount(String toolTypeKey) {
-        AtomicLong c = TRAFFIC_TOOL_TYPE_COUNTS.get(toolTypeKey);
+    /** Records failed OpenSearch traffic pushes for a specific tool type. */
+    public static void recordTrafficToolTypeFailure(String toolTypeKey, long count) {
+        if (count <= 0) return;
+        AtomicLong c = TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.computeIfAbsent(
+                normalizeTrafficToolType(toolTypeKey),
+                k -> new AtomicLong(0));
+        c.addAndGet(count);
+    }
+
+    /** Returns successful OpenSearch traffic push count for a specific tool type. */
+    public static long getTrafficToolTypeSuccessCount(String toolTypeKey) {
+        AtomicLong c = TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.get(normalizeTrafficToolType(toolTypeKey));
+        return c == null ? 0 : c.get();
+    }
+
+    /** Returns failed OpenSearch traffic push count for a specific tool type. */
+    public static long getTrafficToolTypeFailureCount(String toolTypeKey) {
+        AtomicLong c = TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.get(normalizeTrafficToolType(toolTypeKey));
         return c == null ? 0 : c.get();
     }
 
@@ -575,7 +591,8 @@ public final class ExportStats {
     public static void resetForTests() {
         STATS.clear();
         TRAFFIC_SOURCE_STATS.clear();
-        TRAFFIC_TOOL_TYPE_COUNTS.clear();
+        TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.clear();
+        TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.clear();
         REPEATER_METADATA_SOURCE_COUNTS.clear();
         for (String key : INDEX_KEYS) {
             STATS.put(key, new PerIndexStats());
@@ -584,7 +601,8 @@ public final class ExportStats {
             TRAFFIC_SOURCE_STATS.put(sourceKey, new TrafficSourceStats());
         }
         for (String toolType : TRAFFIC_TOOL_TYPE_KEYS) {
-            TRAFFIC_TOOL_TYPE_COUNTS.put(toolType, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.put(toolType, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.put(toolType, new AtomicLong(0));
         }
         for (String metadataSource : REPEATER_METADATA_SOURCE_KEYS) {
             REPEATER_METADATA_SOURCE_COUNTS.put(metadataSource, new AtomicLong(0));
@@ -643,6 +661,10 @@ public final class ExportStats {
             }
             return attempted / (durationMs / 1000.0);
         }
+    }
+
+    private static String normalizeTrafficToolType(String toolTypeKey) {
+        return toolTypeKey == null || toolTypeKey.isBlank() ? "UNKNOWN" : toolTypeKey.trim();
     }
 
     private static final class PerIndexStats {

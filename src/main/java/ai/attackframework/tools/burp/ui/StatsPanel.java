@@ -62,6 +62,7 @@ import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
 
 import ai.attackframework.tools.burp.ui.text.Tooltips;
+import ai.attackframework.tools.burp.sinks.TrafficRouteBucket;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -1727,41 +1728,24 @@ public class StatsPanel extends JPanel {
      *
      * <p>Most rows come from live captured tool-type counts. Proxy-history snapshot pushes and
      * proxy WebSocket exports are recorded separately, so include those under the
-     * proxy_history row.</p>
+     * proxy_history row. Delegates to {@link TrafficRouteBucket} so the mapping stays consistent
+     * across sinks and stats displays.</p>
      */
     private static long resolveSourceSuccess(String sourceKey) {
-        long captured = ExportStats.getTrafficToolTypeCapturedCount(sourceKey);
-        if ("PROXY_HISTORY".equals(sourceKey)) {
-            captured += ExportStats.getTrafficSourceSuccessCount("proxy_history_snapshot");
-            captured += ExportStats.getTrafficSourceSuccessCount("proxy_websocket");
-        }
-        return captured;
+        return TrafficRouteBucket.resolveOpenSearchSourceSuccess(sourceKey);
     }
 
     /** Resolves "Traffic by source" failure count for a source key. */
     private static long resolveSourceFailure(String sourceKey) {
-        if ("PROXY_HISTORY".equals(sourceKey)) {
-            return ExportStats.getTrafficSourceFailureCount("proxy_history_snapshot")
-                    + ExportStats.getTrafficSourceFailureCount("proxy_websocket");
-        }
-        return 0;
+        return TrafficRouteBucket.resolveOpenSearchSourceFailure(sourceKey);
     }
 
     private static long resolveFileSourceSuccess(String sourceKey) {
-        long captured = FileExportStats.getTrafficToolTypeCapturedCount(sourceKey);
-        if ("PROXY_HISTORY".equals(sourceKey)) {
-            captured += FileExportStats.getTrafficSourceSuccessCount("proxy_history_snapshot");
-            captured += FileExportStats.getTrafficSourceSuccessCount("proxy_websocket");
-        }
-        return captured;
+        return TrafficRouteBucket.resolveFileSourceSuccess(sourceKey);
     }
 
     private static long resolveFileSourceFailure(String sourceKey) {
-        if ("PROXY_HISTORY".equals(sourceKey)) {
-            return FileExportStats.getTrafficSourceFailureCount("proxy_history_snapshot")
-                    + FileExportStats.getTrafficSourceFailureCount("proxy_websocket");
-        }
-        return 0;
+        return TrafficRouteBucket.resolveFileSourceFailure(sourceKey);
     }
 
     private static String truncateForColumn(String s, int maxLen) {

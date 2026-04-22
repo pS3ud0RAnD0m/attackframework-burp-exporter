@@ -145,7 +145,7 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        assertThat(doc.get("url")).isNull();
+        assertThat(doc.get("url")).isEqualTo("https://example.com/fallback/path?q=1");
         assertThat(doc.get("method")).isEqualTo("POST");
         assertThat(doc.get("path")).isEqualTo("/fallback/path?q=1");
         assertThat(doc.get("http_version")).isEqualTo("HTTP/2");
@@ -472,6 +472,42 @@ class TrafficHttpHandlerDocumentTest {
     }
 
     @Test
+    void resolveRequestStageResolution_keepsUiSnapshot_whenTrackerIsAmbiguous() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            long now = System.currentTimeMillis();
+            AtomicInteger fallbackCalls = new AtomicInteger();
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nA"),
+                    new RepeaterMetadataFields.Metadata("Tab One", "Group One"),
+                    now);
+            RepeaterLiveMetadataTracker.observe(
+                    requestResponse(
+                            "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nB"),
+                    new RepeaterMetadataFields.Metadata("Tab Two", "Group Two"),
+                    now + 1);
+
+            TrafficHttpHandlerSupport.RequestStageResolution resolution =
+                    TrafficHttpHandler.resolveRequestStageResolution(
+                            request,
+                            ToolType.REPEATER,
+                            () -> {
+                                fallbackCalls.incrementAndGet();
+                                return new RepeaterMetadataFields.Metadata("ApplyCode", null);
+                            });
+
+            assertThat(resolution.metadata()).isEqualTo(RepeaterMetadataFields.Metadata.empty());
+            assertThat(resolution.uiSnapshot()).isEqualTo(new RepeaterMetadataFields.Metadata("ApplyCode", null));
+            assertThat(fallbackCalls).hasValue(1);
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
     void resolveRequestStageRepeaterMetadata_prefersExactRequestIdentity_whenHashesAreAmbiguous() {
         RepeaterLiveMetadataTracker.clear();
         try {
@@ -676,6 +712,28 @@ class TrafficHttpHandlerDocumentTest {
                     () -> new RepeaterMetadataFields.Metadata("GetUserToken", null));
 
             assertThat(resolved).isEqualTo(new RepeaterMetadataFields.Metadata("GetUserToken", null));
+        } finally {
+            RepeaterLiveMetadataTracker.clear();
+        }
+    }
+
+    @Test
+    void resolveResponseStageRepeaterMetadata_reusesRequestStageUiSnapshot_whenRequestWasAmbiguous() {
+        RepeaterLiveMetadataTracker.clear();
+        try {
+            TrafficHttpHandlerSupport.RequestStageResolution requestStageResolution =
+                    TrafficHttpHandlerSupport.RequestStageResolution.ambiguous(
+                            RepeaterMetadataTraceLabels.REQUEST_HASH,
+                            new RepeaterMetadataFields.Metadata("ApplyCode", null));
+
+            RepeaterMetadataFields.Metadata resolved = TrafficHttpHandler.resolveResponseStageRepeaterMetadata(
+                    request,
+                    response,
+                    ToolType.REPEATER,
+                    requestStageResolution,
+                    () -> new RepeaterMetadataFields.Metadata("380", null));
+
+            assertThat(resolved).isEqualTo(new RepeaterMetadataFields.Metadata("ApplyCode", null));
         } finally {
             RepeaterLiveMetadataTracker.clear();
         }

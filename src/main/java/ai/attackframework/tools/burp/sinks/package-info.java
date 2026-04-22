@@ -1,9 +1,34 @@
 /**
- * Export sinks and related reporters for Burp Suite data.
+ * Sinks (reporters) that turn Burp sources into exporter output for the OpenSearch and file sinks.
  *
- * <p>This package contains the document builders, queues, and OpenSearch/file sinks that persist
- * exporter data, along with best-effort reporters that bridge Burp APIs into those sinks. Most
- * types operate on background threads, but some Repeater-history helpers necessarily inspect Swing
- * state on the EDT because Montoya does not expose a dedicated historic Repeater API.</p>
+ * <p>This package houses:</p>
+ * <ul>
+ *   <li><b>Traffic reporters</b> — {@link ai.attackframework.tools.burp.sinks.TrafficHttpHandler},
+ *       {@link ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter},
+ *       {@link ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter},
+ *       {@link ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter} — that feed
+ *       the shared {@code traffic} index.</li>
+ *   <li><b>Non-traffic reporters</b> —
+ *       {@link ai.attackframework.tools.burp.sinks.SitemapIndexReporter},
+ *       {@link ai.attackframework.tools.burp.sinks.FindingsIndexReporter},
+ *       {@link ai.attackframework.tools.burp.sinks.ExporterIndexConfigReporter} — that write
+ *       their own domain indices.</li>
+ *   <li><b>Shared infrastructure</b> —
+ *       {@link ai.attackframework.tools.burp.sinks.TrafficExportQueue} bounded queue and spill,
+ *       {@link ai.attackframework.tools.burp.sinks.FileExportService} file-sink writer,
+ *       {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket} route mapping for
+ *       traffic counters, {@link ai.attackframework.tools.burp.sinks.BulkOutcomeRecorder}
+ *       bulk success/failure accounting, and
+ *       {@link ai.attackframework.tools.burp.sinks.SnapshotSummary} one-shot run summaries.</li>
+ * </ul>
+ *
+ * <p>OpenSearch bulk exports use two deliberate paths: retry-coordinated snapshot pushes via
+ * {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper#pushBulk} and
+ * streaming drains via
+ * {@link ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender}. Both converge on
+ * {@link ai.attackframework.tools.burp.sinks.FileExportService} for file output and on
+ * {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket} /
+ * {@link ai.attackframework.tools.burp.sinks.BulkOutcomeRecorder} for counter accounting so
+ * stats remain consistent across the two bulk strategies.</p>
  */
 package ai.attackframework.tools.burp.sinks;

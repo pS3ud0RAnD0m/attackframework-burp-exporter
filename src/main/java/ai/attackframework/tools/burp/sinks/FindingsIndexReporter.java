@@ -15,7 +15,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -257,17 +256,10 @@ public final class FindingsIndexReporter {
     private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = !activeBaseUrl.isBlank();
+        int attempted = batchDocs.size();
         int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, findingsIndexName(), "findings", batchDocs);
-        int failureCount = batchDocs.size() - successCount;
-        if (openSearchActive) {
-            ExportStats.recordSuccess("findings", successCount);
-            ExportStats.recordFailure("findings", failureCount);
-        }
-        if (openSearchActive && failureCount > 0) {
-            ExportStats.recordLastError("findings", "Bulk had " + failureCount + " failure(s)");
-            Logger.logWarnPanelOnly("[Findings] Bulk push completed with " + failureCount + " failure(s).");
-        }
-        if (successCount == batchDocs.size()) {
+        BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", attempted, successCount, openSearchActive);
+        if (successCount == attempted) {
             pushedIssueKeys.addAll(batchKeys);
         }
     }

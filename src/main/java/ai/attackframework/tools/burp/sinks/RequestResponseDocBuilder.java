@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.charset.UnsupportedCharsetException;
 
 import ai.attackframework.tools.burp.utils.Logger;
+import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.handler.HttpResponseReceived;
 import burp.api.montoya.http.message.Cookie;
 import burp.api.montoya.http.message.HttpHeader;
@@ -98,6 +99,43 @@ public final class RequestResponseDocBuilder {
                     + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             return buildFallbackRequestDoc(request);
         }
+    }
+
+    /**
+     * Resolves the best-effort request URL for top-level traffic documents.
+     *
+     * <p>When {@link HttpRequest#url()} throws for malformed or partially bound Repeater requests,
+     * this helper reconstructs a usable URL from {@link HttpService} plus the already-recovered
+     * request path so top-level fields stay aligned with the nested request document.</p>
+     *
+     * @param request request whose direct URL accessor may throw
+     * @param service HTTP service backing the request
+     * @param requestDoc already-built request sub-document, usually from {@link #buildRequestDoc(HttpRequest)}
+     * @param logPrefix logger prefix without brackets, for example {@code "RepeaterHistory"}
+     * @return direct URL when available, otherwise a best-effort reconstructed URL or {@code null}
+     */
+    public static String buildBestEffortUrl(
+            HttpRequest request,
+            HttpService service,
+            Map<String, Object> requestDoc,
+            String logPrefix) {
+        String directUrl = safeRequestUrl(request, logPrefix);
+        if (directUrl != null) {
+            return directUrl;
+        }
+        String path = normalizeBlank(stringValue(requestDoc == null ? null : requestDoc.get("path")));
+        if (path == null) {
+            return null;
+        }
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            return path;
+        }
+        if (service == null || normalizeBlank(service.host()) == null) {
+            return null;
+        }
+        String scheme = service.secure() ? "https" : "http";
+        String normalizedPath = path.startsWith("/") ? path : "/" + path;
+        return scheme + "://" + service.host() + portSuffix(scheme, service.port()) + normalizedPath;
     }
 
     private static Map<String, Object> buildRequestDocStrict(HttpRequest request) {
@@ -435,6 +473,48 @@ public final class RequestResponseDocBuilder {
         } catch (RuntimeException ignored) {
             return List.of();
         }
+    }
+
+    /**
+     * Returns {@link HttpRequest#url()} when available, or {@code null} when Montoya throws.
+     *
+     * <p>Use this for lightweight call sites (for example scope filtering) that only need a safe
+     * URL lookup without the reconstruction cost of {@link #buildBestEffortUrl}. The logged context
+     * mirrors the reconstruction helper so failure reasons stay traceable across exports.</p>
+     *
+     * @param request request whose direct URL accessor may throw
+     * @param logPrefix logger prefix without brackets, for example {@code "Sitemap"}
+     * @return trimmed URL when available, otherwise {@code null}
+     */
+    public static String safeRequestUrl(HttpRequest request, String logPrefix) {
+        try {
+            return request == null ? null : normalizeBlank(request.url());
+        } catch (RuntimeException e) {
+            String prefix = normalizeBlank(logPrefix);
+            if (prefix == null) {
+                Logger.logDebug("[RequestResponseDocBuilder] Failed to resolve request URL: "
+                        + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            } else {
+                Logger.logDebug("[" + prefix + "] Failed to resolve request URL: "
+                        + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+            return null;
+        }
+    }
+
+    private static String portSuffix(String scheme, int port) {
+        if (port <= 0) {
+            return "";
+        }
+        if (("http".equalsIgnoreCase(scheme) && port == 80)
+                || ("https".equalsIgnoreCase(scheme) && port == 443)) {
+            return "";
+        }
+        return ":" + port;
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private record RawRequestSnapshot(

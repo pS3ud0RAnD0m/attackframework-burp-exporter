@@ -185,44 +185,36 @@ public final class FileExportService {
             String error
     ) { }
 
+    /**
+     * Credits a successful file write for a traffic document against its route bucket.
+     *
+     * <p>No-op for non-traffic documents and for prepared entries without a resolvable body.
+     * Traffic-only side effect: increments {@link FileExportStats} per-route success counters
+     * via {@link TrafficRouteBucket#recordFileSuccess(TrafficRouteBucket.Route, long)}.</p>
+     *
+     * @param document prepared document whose route should receive the credit
+     */
     private static void recordTrafficSuccess(PreparedExportDocument document) {
-        if (!"traffic".equals(document.indexKey())) {
+        if (!"traffic".equals(document.indexKey()) || document.document() == null) {
             return;
         }
-        String toolType = toolTypeOf(document);
-        if ("PROXY_WEBSOCKET".equals(toolType)) {
-            FileExportStats.recordTrafficSourceSuccess("proxy_websocket", 1);
-            return;
-        }
-        if ("PROXY_HISTORY".equals(toolType)) {
-            FileExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", 1);
-        } else if (toolType != null && !toolType.isBlank()) {
-            FileExportStats.recordTrafficToolTypeCaptured(toolType, 1);
-        } else {
-            FileExportStats.recordTrafficToolTypeCaptured("UNKNOWN", 1);
-        }
+        TrafficRouteBucket.recordFileSuccess(TrafficRouteBucket.fromDocument(document.document()), 1);
     }
 
+    /**
+     * Attributes a failed file write for a traffic document against its route bucket.
+     *
+     * <p>No-op for non-traffic documents and for prepared entries without a resolvable body.
+     * Traffic-only side effect: increments {@link FileExportStats} per-route failure counters
+     * via {@link TrafficRouteBucket#recordFileFailure(TrafficRouteBucket.Route, long)}.</p>
+     *
+     * @param document prepared document whose route should receive the failure
+     */
     private static void recordTrafficFailure(PreparedExportDocument document) {
-        if (!"traffic".equals(document.indexKey())) {
+        if (!"traffic".equals(document.indexKey()) || document.document() == null) {
             return;
         }
-        String toolType = toolTypeOf(document);
-        if ("PROXY_WEBSOCKET".equals(toolType)) {
-            FileExportStats.recordTrafficSourceFailure("proxy_websocket", 1);
-            return;
-        }
-        if ("PROXY_HISTORY".equals(toolType)) {
-            FileExportStats.recordTrafficSourceFailure("proxy_history_snapshot", 1);
-        }
-    }
-
-    private static String toolTypeOf(PreparedExportDocument document) {
-        if (document == null || document.document() == null) {
-            return null;
-        }
-        Object value = document.document().get("tool_type");
-        return value == null ? null : String.valueOf(value);
+        TrafficRouteBucket.recordFileFailure(TrafficRouteBucket.fromDocument(document.document()), 1);
     }
 
     private static final class RootState {

@@ -31,6 +31,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
@@ -89,6 +90,8 @@ public final class RepeaterHistoryIndexReporter {
     private static final AtomicInteger CAPTURE_WINDOW_GENERATION = new AtomicInteger(-1);
     private static volatile RepeaterTabMetadata currentStartupSelectionMetadata;
     private static volatile String currentStartupSessionId = RepeaterMetadataTraceLabels.NONE;
+    private static volatile StartupExportStatsSnapshot startupExportStatsSnapshot =
+            StartupExportStatsSnapshot.empty();
 
     private RepeaterHistoryIndexReporter() {}
 
@@ -134,6 +137,7 @@ public final class RepeaterHistoryIndexReporter {
         STARTUP_DUPLICATE_SLOT_TRACE_COUNTS.clear();
         currentStartupSelectionMetadata = null;
         currentStartupSessionId = RepeaterMetadataTraceLabels.NONE;
+        startupExportStatsSnapshot = StartupExportStatsSnapshot.empty();
     }
 
     /** Clears all cached Repeater-history session state. */
@@ -223,6 +227,7 @@ public final class RepeaterHistoryIndexReporter {
     static void openCaptureWindowForCurrentRun() {
         int generation = RUN_GENERATION.get();
         CAPTURE_WINDOW_GENERATION.set(generation);
+        startupExportStatsSnapshot = StartupExportStatsSnapshot.capture(CAPTURED.size());
         currentStartupSessionId = RepeaterMetadataTraceLabels.startupSessionId(
                 generation,
                 STARTUP_SESSION_SEQUENCE.incrementAndGet());
@@ -578,6 +583,60 @@ public final class RepeaterHistoryIndexReporter {
         return RepeaterMetadataTraceLabels.historyMetadataSource(captureKey);
     }
 
+    private static void logStartupExportCompletionSummary() {
+        StartupExportStatsSnapshot baseline = startupExportStatsSnapshot;
+        int newCaptures = Math.max(0, CAPTURED.size() - baseline.captureCountBefore());
+        Logger.logInfoPanelOnly("[Traffic] Repeater History startup export complete startupSession="
+                + currentStartupSessionId()
+                + " captured " + newCaptures + " tab(s)"
+                + "; file={success=" + baseline.fileSuccessDelta()
+                + ", failure=" + baseline.fileFailureDelta() + "}"
+                + "; openSearch={success=" + baseline.openSearchSuccessDelta()
+                + ", failure=" + baseline.openSearchFailureDelta() + "}"
+                + "; " + describeStartupMetadataSummary() + ".");
+    }
+
+    private static record StartupExportStatsSnapshot(
+            int captureCountBefore,
+            long fileRepeaterHistorySuccessBefore,
+            long fileRepeaterHistoryFailureBefore,
+            long openSearchRepeaterHistorySuccessBefore,
+            long openSearchRepeaterHistoryFailureBefore) {
+
+        private static StartupExportStatsSnapshot empty() {
+            return new StartupExportStatsSnapshot(0, 0, 0, 0, 0);
+        }
+
+        private static StartupExportStatsSnapshot capture(int captureCountBefore) {
+            return new StartupExportStatsSnapshot(
+                    captureCountBefore,
+                    FileExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE),
+                    FileExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE),
+                    ExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE),
+                    ExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE));
+        }
+
+        private long fileSuccessDelta() {
+            return Math.max(0, FileExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE)
+                    - fileRepeaterHistorySuccessBefore);
+        }
+
+        private long fileFailureDelta() {
+            return Math.max(0, FileExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE)
+                    - fileRepeaterHistoryFailureBefore);
+        }
+
+        private long openSearchSuccessDelta() {
+            return Math.max(0, ExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE)
+                    - openSearchRepeaterHistorySuccessBefore);
+        }
+
+        private long openSearchFailureDelta() {
+            return Math.max(0, ExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE)
+                    - openSearchRepeaterHistoryFailureBefore);
+        }
+    }
+
     /** Schedules one delayed EDT pass of the unsupported Repeater startup tab walk. */
     private static void scheduleStartupTabWalkPass(int generation, int passNumber, int delayMs) {
         Timer timer = new Timer(delayMs, ignored -> runStartupTabWalk(generation, passNumber, delayMs));
@@ -630,6 +689,7 @@ public final class RepeaterHistoryIndexReporter {
         if (completedPassNumber < 2) {
             scheduleStartupTabWalkPass(generation, completedPassNumber + 1, STARTUP_TAB_WALK_SECOND_PASS_DELAY_MS);
         } else {
+            logStartupExportCompletionSummary();
             closeCaptureWindowForCurrentRun();
         }
     }
@@ -857,7 +917,6 @@ public final class RepeaterHistoryIndexReporter {
                 + " tab=" + safeLogValue(item.repeaterTabName)
                 + " group=" + safeLogValue(item.repeaterGroupName)
                 + " path=" + safeLogValue(document.get("path") == null ? null : String.valueOf(document.get("path"))));
-        ExportStats.recordTrafficToolTypeCaptured(TOOL_TYPE, 1);
         TrafficExportQueue.offer(document);
     }
 
@@ -1012,9 +1071,13 @@ public final class RepeaterHistoryIndexReporter {
         HttpResponse response = requestResponse.response();
         HttpService service = requestResponse.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
-        String url = safeUrl(request);
-        boolean burpInScope = isInScope(url);
         Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
+        String url = RequestResponseDocBuilder.buildBestEffortUrl(
+                request,
+                service,
+                requestDoc,
+                "RepeaterHistory");
+        boolean burpInScope = isInScope(url);
         Object requestHttpVersion = requestDoc.get("http_version");
 
         Map<String, Object> document = new LinkedHashMap<>();
@@ -1068,15 +1131,6 @@ public final class RepeaterHistoryIndexReporter {
         document.put("ws_time", null);
         document.put("ws_message_id", null);
         return document;
-    }
-
-    private static String safeUrl(HttpRequest request) {
-        try {
-            return request.url();
-        } catch (RuntimeException e) {
-            Logger.logDebug("[RepeaterHistory] Failed to resolve request URL: " + e.getMessage());
-            return null;
-        }
     }
 
     private static boolean isInScope(String url) {

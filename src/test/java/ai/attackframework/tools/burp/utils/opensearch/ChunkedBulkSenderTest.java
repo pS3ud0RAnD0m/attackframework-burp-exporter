@@ -1,10 +1,15 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import java.io.InputStream;
+import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,6 +80,49 @@ class ChunkedBulkSenderTest {
                 "http://opensearch.url:9999", "test-index", "traffic", queue, 10, 5 * 1024 * 1024, 50);
         assertThat(r.attemptedCount).isZero();
         assertThat(r.successCount).isZero();
+    }
+
+    @Test
+    void ndjsonQueueInputStream_stillWritesReservedFirstDoc_afterInitialDelay() throws Exception {
+        LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
+        Map<String, Object> firstDoc = new LinkedHashMap<>();
+        firstDoc.put("tool_type", "REPEATER_HISTORY");
+        firstDoc.put("status", 0);
+        firstDoc.put("document_meta", new LinkedHashMap<>());
+
+        Class<?> streamClass = Class.forName(
+                "ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender$NdjsonQueueInputStream");
+        Constructor<?> constructor = streamClass.getDeclaredConstructor(
+                String.class,
+                String.class,
+                java.util.concurrent.BlockingQueue.class,
+                Map.class,
+                int.class,
+                long.class,
+                long.class,
+                AtomicInteger.class,
+                AtomicLong.class);
+        constructor.setAccessible(true);
+
+        AtomicInteger attempted = new AtomicInteger();
+        AtomicLong attemptedBytes = new AtomicLong();
+        InputStream stream = (InputStream) constructor.newInstance(
+                "attackframework-tool-burp-traffic",
+                "traffic",
+                queue,
+                firstDoc,
+                10,
+                5 * 1024 * 1024L,
+                1L,
+                attempted,
+                attemptedBytes);
+
+        Thread.sleep(5L);
+
+        byte[] payload = stream.readAllBytes();
+        assertThat(payload).isNotEmpty();
+        assertThat(new String(payload, StandardCharsets.UTF_8)).contains("\"tool_type\":\"REPEATER_HISTORY\"");
+        assertThat(attempted.get()).isEqualTo(1);
     }
 
     @Test

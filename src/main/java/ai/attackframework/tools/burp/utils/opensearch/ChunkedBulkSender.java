@@ -5,7 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +29,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.sinks.FileExportService;
+import ai.attackframework.tools.burp.sinks.TrafficRouteBucket;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
@@ -60,14 +65,53 @@ public final class ChunkedBulkSender {
         public final long attemptedBytes;
         /** Estimated payload bytes for successful documents in this bulk request. */
         public final long successBytes;
+        /** Successful traffic documents grouped by tool type. */
+        public final Map<String, Integer> trafficToolTypeSuccessCounts;
+        /** Failed traffic documents grouped by tool type. */
+        public final Map<String, Integer> trafficToolTypeFailureCounts;
+        /** Successful traffic documents grouped by source bucket. */
+        public final Map<String, Integer> trafficSourceSuccessCounts;
+        /** Failed traffic documents grouped by source bucket. */
+        public final Map<String, Integer> trafficSourceFailureCounts;
 
         public Result(int successCount, int attemptedCount, long attemptedBytes, long successBytes) {
+            this(
+                    successCount,
+                    attemptedCount,
+                    attemptedBytes,
+                    successBytes,
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of());
+        }
+
+        public Result(
+                int successCount,
+                int attemptedCount,
+                long attemptedBytes,
+                long successBytes,
+                Map<String, Integer> trafficToolTypeSuccessCounts,
+                Map<String, Integer> trafficToolTypeFailureCounts,
+                Map<String, Integer> trafficSourceSuccessCounts,
+                Map<String, Integer> trafficSourceFailureCounts) {
             this.successCount = successCount;
             this.attemptedCount = attemptedCount;
             this.attemptedBytes = attemptedBytes;
             this.successBytes = successBytes;
+            this.trafficToolTypeSuccessCounts = immutableCopy(trafficToolTypeSuccessCounts);
+            this.trafficToolTypeFailureCounts = immutableCopy(trafficToolTypeFailureCounts);
+            this.trafficSourceSuccessCounts = immutableCopy(trafficSourceSuccessCounts);
+            this.trafficSourceFailureCounts = immutableCopy(trafficSourceFailureCounts);
         }
         public boolean isFullSuccess() { return attemptedCount > 0 && successCount == attemptedCount; }
+
+        private static Map<String, Integer> immutableCopy(Map<String, Integer> counts) {
+            if (counts == null || counts.isEmpty()) {
+                return Map.of();
+            }
+            return Collections.unmodifiableMap(new LinkedHashMap<>(counts));
+        }
     }
 
     /**
@@ -110,15 +154,19 @@ public final class ChunkedBulkSender {
                 indexName, indexKey, queue, firstDoc, maxBatch, maxBytes, maxWaitNanos, attemptedRef, attemptedBytesRef);
         post.setEntity(new InputStreamEntity(ndjsonStream, -1, ContentType.create("application/x-ndjson")));
         addPreemptiveBasicAuthHeader(post);
+        List<TrafficRouteBucket.Route> attemptedTrafficRoutes =
+                ndjsonStream instanceof NdjsonQueueInputStream queueStream
+                        ? queueStream.attemptedTrafficRoutes()
+                        : List.of();
 
         try {
-            return executeRequest(baseUrl, post, attemptedRef, attemptedBytesRef, indexName);
+            return executeRequest(baseUrl, post, attemptedRef, attemptedBytesRef, indexName, attemptedTrafficRoutes);
         } catch (IOException | RuntimeException e) {
             long attemptedBytes = attemptedBytesRef.get();
             Logger.logDebug("ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
             Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk push failed for " + indexName + ": "
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            return new Result(0, attemptedRef.get(), attemptedBytes, 0);
+            return failedResult(attemptedRef.get(), attemptedBytes, attemptedTrafficRoutes);
         }
     }
 
@@ -127,7 +175,8 @@ public final class ChunkedBulkSender {
             HttpPost post,
             AtomicInteger attemptedRef,
             AtomicLong attemptedBytesRef,
-            String indexName) throws IOException {
+            String indexName,
+            List<TrafficRouteBucket.Route> attemptedTrafficRoutes) throws IOException {
         CloseableHttpClient client = OpenSearchConnector.getClassicHttpClient(
                 baseUrl, RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
         return client.execute(post, response -> {
@@ -142,15 +191,26 @@ public final class ChunkedBulkSender {
             long attemptedBytes = attemptedBytesRef.get();
             if (status < 200 || status >= 300) {
                 Logger.logDebug("ChunkedBulkSender bulk request failed: " + status + " " + responseBody);
+                String detail = responseBody != null && responseBody.contains("request body is required")
+                        ? " OpenSearch reported an empty bulk request body."
+                        : "";
                 Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk request failed for "
-                        + indexName + ": HTTP " + status + ".");
-                return new Result(0, attempted, attemptedBytes, 0);
+                        + indexName + ": HTTP " + status + "." + detail);
+                return failedResult(attempted, attemptedBytes, attemptedTrafficRoutes);
             }
-            Result parsed = parseBulkResponse(responseBody, attempted);
+            Result parsed = parseBulkResponse(responseBody, attempted, attemptedTrafficRoutes);
             long successBytes = parsed.successCount > 0 && attempted > 0
                     ? Math.round((double) attemptedBytes * parsed.successCount / attempted)
                     : 0;
-            return new Result(parsed.successCount, parsed.attemptedCount, attemptedBytes, successBytes);
+            return new Result(
+                    parsed.successCount,
+                    parsed.attemptedCount,
+                    attemptedBytes,
+                    successBytes,
+                    parsed.trafficToolTypeSuccessCounts,
+                    parsed.trafficToolTypeFailureCounts,
+                    parsed.trafficSourceSuccessCounts,
+                    parsed.trafficSourceFailureCounts);
         });
     }
 
@@ -189,19 +249,30 @@ public final class ChunkedBulkSender {
 
     /** Package-private for tests. */
     static Result parseBulkResponse(String responseBody, int attemptedCount) {
+        return parseBulkResponse(responseBody, attemptedCount, List.of());
+    }
+
+    static Result parseBulkResponse(
+            String responseBody,
+            int attemptedCount,
+            List<TrafficRouteBucket.Route> attemptedTrafficRoutes) {
         if (responseBody == null || responseBody.isBlank()) {
-            return new Result(0, attemptedCount, 0, 0);
+            return failedResult(attemptedCount, 0, attemptedTrafficRoutes);
         }
         try {
             JsonNode root = JSON.readTree(responseBody);
             JsonNode items = root.get("items");
             if (items == null || !items.isArray()) {
-                return new Result(0, attemptedCount, 0, 0);
+                return failedResult(attemptedCount, 0, attemptedTrafficRoutes);
             }
             ArrayNode arr = (ArrayNode) items;
             int successCount = 0;
             int maxLogged = 3;
             int logged = 0;
+            Map<String, Integer> toolTypeSuccessCounts = new LinkedHashMap<>();
+            Map<String, Integer> toolTypeFailureCounts = new LinkedHashMap<>();
+            Map<String, Integer> sourceSuccessCounts = new LinkedHashMap<>();
+            Map<String, Integer> sourceFailureCounts = new LinkedHashMap<>();
             for (int i = 0; i < arr.size(); i++) {
                 JsonNode item = arr.get(i);
                 JsonNode op = item.get("index");
@@ -210,23 +281,66 @@ public final class ChunkedBulkSender {
                 int status = (op != null && op.has("status")) ? op.get("status").asInt() : 0;
                 if (status >= 200 && status < 300) {
                     successCount++;
+                    recordRouteCount(attemptedTrafficRoutes, i, toolTypeSuccessCounts, sourceSuccessCounts);
                 } else if (logged < maxLogged) {
                     JsonNode err = op != null ? op.get("error") : null;
                     String reason = err != null && err.has("reason") ? err.get("reason").asText() : "unknown";
                     Logger.logDebug("Bulk item error at " + i + ": " + reason);
                     logged++;
+                    recordRouteCount(attemptedTrafficRoutes, i, toolTypeFailureCounts, sourceFailureCounts);
+                } else {
+                    recordRouteCount(attemptedTrafficRoutes, i, toolTypeFailureCounts, sourceFailureCounts);
                 }
             }
             if (arr.size() - successCount > maxLogged) {
                 Logger.logDebug("Bulk index: " + (arr.size() - successCount - maxLogged) + " more item errors (total failed: " + (arr.size() - successCount) + ")");
             }
-            return new Result(successCount, attemptedCount, 0, 0);
+            return new Result(
+                    successCount,
+                    attemptedCount,
+                    0,
+                    0,
+                    toolTypeSuccessCounts,
+                    toolTypeFailureCounts,
+                    sourceSuccessCounts,
+                    sourceFailureCounts);
         } catch (IOException | RuntimeException e) {
             Logger.logDebug("ChunkedBulkSender parse response failed: " + e.getMessage());
             Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk response parsing failed: "
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            return new Result(0, attemptedCount, 0, 0);
+            return failedResult(attemptedCount, 0, attemptedTrafficRoutes);
         }
+    }
+
+    private static Result failedResult(
+            int attemptedCount,
+            long attemptedBytes,
+            List<TrafficRouteBucket.Route> attemptedTrafficRoutes) {
+        Map<String, Integer> toolTypeFailureCounts = new LinkedHashMap<>();
+        Map<String, Integer> sourceFailureCounts = new LinkedHashMap<>();
+        for (int i = 0; i < attemptedTrafficRoutes.size(); i++) {
+            recordRouteCount(attemptedTrafficRoutes, i, toolTypeFailureCounts, sourceFailureCounts);
+        }
+        return new Result(0, attemptedCount, attemptedBytes, 0, Map.of(), toolTypeFailureCounts, Map.of(), sourceFailureCounts);
+    }
+
+    private static void recordRouteCount(
+            List<TrafficRouteBucket.Route> attemptedTrafficRoutes,
+            int index,
+            Map<String, Integer> toolTypeCounts,
+            Map<String, Integer> sourceCounts) {
+        if (attemptedTrafficRoutes == null || index < 0 || index >= attemptedTrafficRoutes.size()) {
+            return;
+        }
+        TrafficRouteBucket.Route route = attemptedTrafficRoutes.get(index);
+        if (route == null) {
+            return;
+        }
+        Map<String, Integer> target = route.kind() == TrafficRouteBucket.Kind.SOURCE
+                ? sourceCounts
+                : toolTypeCounts;
+        Integer current = target.get(route.key());
+        target.put(route.key(), current == null ? 1 : current + 1);
     }
 
     /**
@@ -244,6 +358,7 @@ public final class ChunkedBulkSender {
         private final long maxWaitNanos;
         private final AtomicInteger attemptedRef;
         private final AtomicLong attemptedBytesRef;
+        private final List<TrafficRouteBucket.Route> attemptedTrafficRoutes = new ArrayList<>();
 
         private byte[] buffer = new byte[0];
         private int pos;
@@ -303,11 +418,11 @@ public final class ChunkedBulkSender {
         /** Fetches one document from the queue, serializes to NDJSON, and sets buffer. */
         private boolean fillBuffer() throws IOException {
             if (attemptedRef.get() >= maxBatch) return false;
-            if ((System.nanoTime() - batchStartNanos) >= maxWaitNanos) return false;
             Map<String, Object> doc = firstDoc;
             if (doc != null) {
                 firstDoc = null;
             } else {
+                if ((System.nanoTime() - batchStartNanos) >= maxWaitNanos) return false;
                 doc = queue.poll();
             }
             if (doc == null) return false;
@@ -325,7 +440,12 @@ public final class ChunkedBulkSender {
             attemptedRef.incrementAndGet();
             runningBytes += docBytes;
             attemptedBytesRef.addAndGet(docBytes);
+            attemptedTrafficRoutes.add(TrafficRouteBucket.fromDocument(prepared.document()));
             return true;
+        }
+
+        List<TrafficRouteBucket.Route> attemptedTrafficRoutes() {
+            return attemptedTrafficRoutes;
         }
     }
 }

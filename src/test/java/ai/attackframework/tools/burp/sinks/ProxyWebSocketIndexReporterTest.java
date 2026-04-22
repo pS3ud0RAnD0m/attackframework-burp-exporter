@@ -105,4 +105,66 @@ class ProxyWebSocketIndexReporterTest {
         assertThat(doc.get("ws_edited_payload")).isNotNull();
         assertThat(doc.get("ws_upgrade_request")).isInstanceOf(Map.class);
     }
+
+    @Test
+    void buildDocument_survivesMalformedUpgradeRequest_andReconstructsUrl() {
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.scope().isInScope(anyString())).thenReturn(true);
+
+        ProxyWebSocketMessage ws = mock(ProxyWebSocketMessage.class);
+        HttpRequest upgrade = mock(HttpRequest.class);
+        HttpService svc = mock(HttpService.class);
+
+        when(svc.host()).thenReturn("example.com");
+        when(svc.port()).thenReturn(443);
+        when(svc.secure()).thenReturn(true);
+
+        when(upgrade.httpService()).thenReturn(svc);
+        // Direct URL accessor throws, mimicking partially-bound Burp Repeater/WebSocket upgrades.
+        when(upgrade.url()).thenThrow(new IllegalStateException("URL is invalid."));
+        when(upgrade.path()).thenReturn("/ws");
+        when(upgrade.method()).thenReturn("GET");
+        when(upgrade.pathWithoutQuery()).thenReturn("/ws");
+        when(upgrade.query()).thenReturn("");
+        when(upgrade.fileExtension()).thenReturn("");
+        when(upgrade.httpVersion()).thenReturn("HTTP/1.1");
+        when(upgrade.headers()).thenReturn(List.of());
+        when(upgrade.parameters()).thenReturn(List.of());
+        when(upgrade.body()).thenReturn(null);
+        when(upgrade.markers()).thenReturn(List.of());
+        when(upgrade.contentType()).thenReturn(null);
+
+        ByteArray payload = mock(ByteArray.class);
+        when(payload.getBytes()).thenReturn("hi".getBytes(StandardCharsets.UTF_8));
+        ByteArray editedPayload = mock(ByteArray.class);
+        when(editedPayload.getBytes()).thenReturn("hi".getBytes(StandardCharsets.UTF_8));
+
+        when(ws.upgradeRequest()).thenReturn(upgrade);
+        when(ws.id()).thenReturn(1);
+        when(ws.webSocketId()).thenReturn(1);
+        when(ws.listenerPort()).thenReturn(443);
+        when(ws.payload()).thenReturn(payload);
+        when(ws.editedPayload()).thenReturn(editedPayload);
+        when(ws.direction()).thenReturn(Direction.CLIENT_TO_SERVER);
+        when(ws.time()).thenReturn(ZonedDateTime.now());
+        when(ws.annotations()).thenReturn(null);
+
+        Map<String, Object> doc = ProxyWebSocketIndexReporter.buildDocument(api, ws);
+
+        assertThat(doc).isNotNull();
+        assertThat(doc.get("url")).isEqualTo("https://example.com/ws");
+        assertThat(doc.get("tool_type")).isEqualTo("PROXY_WEBSOCKET");
+        assertThat(doc.get("path")).isEqualTo("/ws");
+        assertThat(doc.get("method")).isEqualTo("GET");
+    }
 }

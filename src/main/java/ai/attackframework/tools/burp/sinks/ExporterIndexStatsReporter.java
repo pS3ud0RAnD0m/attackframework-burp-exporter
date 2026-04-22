@@ -213,6 +213,7 @@ public final class ExporterIndexStatsReporter {
         }
         message.put("repeater_live_metadata_sources", repeaterMetadataSources);
         message.put("repeater_live_metadata_source_summary", ExportStats.describeRepeaterMetadataSourceCounts());
+        putTrafficRouteCounts(message);
         message.put("retry_queue_drops_total", ExportStats.getTotalRetryQueueDrops());
         message.put("throughput_docs_per_sec_60", ExportStats.getThroughputDocsPerSecLast60s());
         message.put("total_indexed_bytes", ExportStats.getTotalExportedBytes());
@@ -262,6 +263,54 @@ public final class ExporterIndexStatsReporter {
         meta.put("indexed_at", Instant.now().toString());
         doc.put("document_meta", meta);
         return doc;
+    }
+
+    /**
+     * Populates per-route traffic success/failure counters for both sinks on the snapshot.
+     *
+     * <p>This lets an OpenSearch-only observer see what each sink actually wrote per tool type
+     * and per source (for example {@code proxy_history_snapshot}, {@code proxy_websocket})
+     * without polling {@code StatsPanel}. Zero-valued entries are retained so downstream
+     * dashboards see a stable schema across runs.</p>
+     */
+    private static void putTrafficRouteCounts(Map<String, Object> message) {
+        Map<String, Object> osToolTypeSuccess = new LinkedHashMap<>();
+        Map<String, Object> osToolTypeFailure = new LinkedHashMap<>();
+        for (String toolType : ExportStats.getTrafficToolTypeKeys()) {
+            osToolTypeSuccess.put(toolType, ExportStats.getTrafficToolTypeSuccessCount(toolType));
+            osToolTypeFailure.put(toolType, ExportStats.getTrafficToolTypeFailureCount(toolType));
+        }
+        Map<String, Object> osSourceSuccess = new LinkedHashMap<>();
+        Map<String, Object> osSourceFailure = new LinkedHashMap<>();
+        for (String source : ExportStats.getTrafficSourceKeys()) {
+            osSourceSuccess.put(source, ExportStats.getTrafficSourceSuccessCount(source));
+            osSourceFailure.put(source, ExportStats.getTrafficSourceFailureCount(source));
+        }
+        message.put("traffic_opensearch_tool_type_success", osToolTypeSuccess);
+        message.put("traffic_opensearch_tool_type_failure", osToolTypeFailure);
+        message.put("traffic_opensearch_source_success", osSourceSuccess);
+        message.put("traffic_opensearch_source_failure", osSourceFailure);
+
+        Map<String, Object> fileToolTypeSuccess = new LinkedHashMap<>();
+        Map<String, Object> fileToolTypeFailure = new LinkedHashMap<>();
+        for (String toolType : ExportStats.getTrafficToolTypeKeys()) {
+            fileToolTypeSuccess.put(toolType,
+                    ai.attackframework.tools.burp.utils.FileExportStats.getTrafficToolTypeSuccessCount(toolType));
+            fileToolTypeFailure.put(toolType,
+                    ai.attackframework.tools.burp.utils.FileExportStats.getTrafficToolTypeFailureCount(toolType));
+        }
+        Map<String, Object> fileSourceSuccess = new LinkedHashMap<>();
+        Map<String, Object> fileSourceFailure = new LinkedHashMap<>();
+        for (String source : ExportStats.getTrafficSourceKeys()) {
+            fileSourceSuccess.put(source,
+                    ai.attackframework.tools.burp.utils.FileExportStats.getTrafficSourceSuccessCount(source));
+            fileSourceFailure.put(source,
+                    ai.attackframework.tools.burp.utils.FileExportStats.getTrafficSourceFailureCount(source));
+        }
+        message.put("traffic_file_tool_type_success", fileToolTypeSuccess);
+        message.put("traffic_file_tool_type_failure", fileToolTypeFailure);
+        message.put("traffic_file_source_success", fileSourceSuccess);
+        message.put("traffic_file_source_failure", fileSourceFailure);
     }
 
     private static String burpVersion() {

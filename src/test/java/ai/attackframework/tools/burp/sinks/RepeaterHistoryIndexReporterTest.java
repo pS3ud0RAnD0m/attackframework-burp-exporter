@@ -474,14 +474,14 @@ class RepeaterHistoryIndexReporterTest {
                     .contains("standalone=1")
                     .contains("uniqueSlots=2")
                     .contains("uniqueTabGroupPairs=2")
+                    .contains("groups=[Findings=1]")
                     .contains("noIdentityObservationsSkipped=0")
                     .contains("alreadyCapturedSlotObservations=0")
                     .contains("metadataUpgrades=0")
                     .contains("request_editor=1")
                     .contains("response_editor=1")
                     .doesNotContain("GetUserToken")
-                    .doesNotContain("SensitiveContentInUrl")
-                    .doesNotContain("Findings");
+                    .doesNotContain("SensitiveContentInUrl");
 
             RepeaterHistoryIndexReporter.clearRunState();
 
@@ -514,6 +514,7 @@ class RepeaterHistoryIndexReporterTest {
                 .contains("standalone=1")
                 .contains("uniqueSlots=2")
                 .contains("uniqueTabGroupPairs=2")
+                .contains("groups=[Findings=1]")
                 .contains("noIdentityObservationsSkipped=1")
                 .contains("alreadyCapturedSlotObservations=1")
                 .contains("metadataUpgrades=1")
@@ -523,8 +524,7 @@ class RepeaterHistoryIndexReporterTest {
                 .contains("alreadyCapturedSlotHighlights=[slot-1|request_editor=1]")
                 .contains("upgradedPaths=[response_editor=1]")
                 .doesNotContain("GetUserToken")
-                .doesNotContain("SensitiveContentInUrl")
-                .doesNotContain("Findings");
+                .doesNotContain("SensitiveContentInUrl");
     }
 
     @Test
@@ -762,7 +762,7 @@ class RepeaterHistoryIndexReporterTest {
                     "FallbackTab",
                     null);
 
-            assertThat(document.get("url")).isNull();
+            assertThat(document.get("url")).isEqualTo("https://example.test/fallback/path?q=1");
             assertThat(document.get("method")).isEqualTo("POST");
             assertThat(document.get("path")).isEqualTo("/fallback/path?q=1");
             assertThat(document.get("http_version")).isEqualTo("HTTP/2");

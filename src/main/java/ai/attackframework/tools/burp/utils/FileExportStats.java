@@ -36,7 +36,8 @@ public final class FileExportStats {
 
     private static final Map<String, PerIndexStats> STATS = new ConcurrentHashMap<>();
     private static final Map<String, TrafficSourceStats> TRAFFIC_SOURCE_STATS = new ConcurrentHashMap<>();
-    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_COUNTS = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicLong> TRAFFIC_TOOL_TYPE_FAILURE_COUNTS = new ConcurrentHashMap<>();
 
     static {
         for (String key : INDEX_KEYS) {
@@ -46,7 +47,8 @@ public final class FileExportStats {
             TRAFFIC_SOURCE_STATS.put(key, new TrafficSourceStats());
         }
         for (String key : TRAFFIC_TOOL_TYPE_KEYS) {
-            TRAFFIC_TOOL_TYPE_COUNTS.put(key, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.put(key, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.put(key, new AtomicLong(0));
         }
     }
 
@@ -181,17 +183,31 @@ public final class FileExportStats {
         return forTrafficSource(sourceKey).failureCount.get();
     }
 
-    /** Records captured traffic tool-type counts for file-exported traffic documents. */
-    public static void recordTrafficToolTypeCaptured(String toolTypeKey, long count) {
+    /** Records successful file-export traffic writes for a tool type. */
+    public static void recordTrafficToolTypeSuccess(String toolTypeKey, long count) {
         if (count <= 0 || toolTypeKey == null || toolTypeKey.isBlank()) {
             return;
         }
-        TRAFFIC_TOOL_TYPE_COUNTS.computeIfAbsent(toolTypeKey, ignored -> new AtomicLong(0)).addAndGet(count);
+        TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.computeIfAbsent(toolTypeKey, ignored -> new AtomicLong(0)).addAndGet(count);
     }
 
-    /** Returns the captured file-export traffic count for one tool type. */
-    public static long getTrafficToolTypeCapturedCount(String toolTypeKey) {
-        AtomicLong count = TRAFFIC_TOOL_TYPE_COUNTS.get(toolTypeKey);
+    /** Records failed file-export traffic writes for a tool type. */
+    public static void recordTrafficToolTypeFailure(String toolTypeKey, long count) {
+        if (count <= 0 || toolTypeKey == null || toolTypeKey.isBlank()) {
+            return;
+        }
+        TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.computeIfAbsent(toolTypeKey, ignored -> new AtomicLong(0)).addAndGet(count);
+    }
+
+    /** Returns the successful file-export traffic count for one tool type. */
+    public static long getTrafficToolTypeSuccessCount(String toolTypeKey) {
+        AtomicLong count = TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.get(toolTypeKey);
+        return count == null ? 0L : count.get();
+    }
+
+    /** Returns the failed file-export traffic count for one tool type. */
+    public static long getTrafficToolTypeFailureCount(String toolTypeKey) {
+        AtomicLong count = TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.get(toolTypeKey);
         return count == null ? 0L : count.get();
     }
 
@@ -199,7 +215,8 @@ public final class FileExportStats {
     public static void resetForTests() {
         STATS.clear();
         TRAFFIC_SOURCE_STATS.clear();
-        TRAFFIC_TOOL_TYPE_COUNTS.clear();
+        TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.clear();
+        TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.clear();
         for (String key : INDEX_KEYS) {
             STATS.put(key, new PerIndexStats());
         }
@@ -207,7 +224,8 @@ public final class FileExportStats {
             TRAFFIC_SOURCE_STATS.put(key, new TrafficSourceStats());
         }
         for (String key : TRAFFIC_TOOL_TYPE_KEYS) {
-            TRAFFIC_TOOL_TYPE_COUNTS.put(key, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.put(key, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.put(key, new AtomicLong(0));
         }
     }
 

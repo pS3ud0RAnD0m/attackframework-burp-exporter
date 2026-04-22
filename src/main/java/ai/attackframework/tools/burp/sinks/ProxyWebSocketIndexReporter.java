@@ -18,7 +18,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -45,10 +44,6 @@ public final class ProxyWebSocketIndexReporter {
     private static volatile boolean runInProgress;
 
     private ProxyWebSocketIndexReporter() {}
-
-    private static String trafficIndexName() {
-        return RuntimeConfig.indexNameForKey("traffic");
-    }
 
     public static void start() {
         if (scheduler != null) {
@@ -195,20 +190,17 @@ public final class ProxyWebSocketIndexReporter {
     private static void flushBatch(List<String> keys, List<Map<String, Object>> docs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = !activeBaseUrl.isBlank();
-        int success = OpenSearchClientWrapper.pushBulk(activeBaseUrl, trafficIndexName(), "traffic", docs);
-        int failure = docs.size() - success;
-        if (openSearchActive) {
-            ExportStats.recordSuccess("traffic", success);
-            ExportStats.recordTrafficSourceSuccess("proxy_websocket", success);
-            ExportStats.recordFailure("traffic", failure);
-            ExportStats.recordTrafficSourceFailure("proxy_websocket", failure);
-        }
-        if (success == docs.size()) {
+        int attempted = docs.size();
+        int success = OpenSearchClientWrapper.pushBulk(
+                activeBaseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, docs);
+        TrafficRouteBucket.recordBulkOutcome(
+                TrafficRouteBucket.proxyWebSocket(),
+                attempted,
+                success,
+                openSearchActive,
+                "Proxy WebSocket bulk push");
+        if (success == attempted) {
             pushedKeys.addAll(keys);
-        } else if (openSearchActive && failure > 0) {
-            ExportStats.recordLastError("traffic", "Proxy WebSocket bulk had " + failure + " failure(s)");
-            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket bulk push completed with "
-                    + failure + " failure(s).");
         }
     }
 
@@ -216,17 +208,18 @@ public final class ProxyWebSocketIndexReporter {
         HttpRequest upgrade = ws.upgradeRequest();
         HttpService service = upgrade == null ? null : upgrade.httpService();
 
-        String url = null;
-        try {
-            url = upgrade == null ? null : upgrade.url();
-        } catch (Exception ignored) {
-            // malformed upgrade request
-        }
+        Map<String, Object> upgradeRequestDoc = upgrade == null
+                ? null
+                : RequestResponseDocBuilder.buildRequestDoc(upgrade);
+        String url = upgrade == null
+                ? null
+                : RequestResponseDocBuilder.buildBestEffortUrl(upgrade, service, upgradeRequestDoc, "ProxyWebSocket");
         boolean burpInScope = safeBurpInScope(api, url);
         boolean inScope = ScopeFilter.shouldExport(RuntimeConfig.getState(), url, burpInScope);
         if (!inScope) {
             return null;
         }
+        Object upgradeHttpVersion = upgradeRequestDoc == null ? null : upgradeRequestDoc.get("http_version");
 
         ZonedDateTime t = ws.time();
         String wsTime = t == null ? null : t.toInstant().toString();
@@ -242,14 +235,14 @@ public final class ProxyWebSocketIndexReporter {
         doc.put("scheme", service == null ? null : (service.secure() ? "https" : "http"));
         doc.put("protocol_transport", service == null ? null : (service.secure() ? "https" : "http"));
         doc.put("protocol_application", "websocket");
-        doc.put("protocol_sub", upgrade == null ? null : upgrade.httpVersion());
-        doc.put("http_version", upgrade == null ? null : upgrade.httpVersion());
+        doc.put("protocol_sub", upgradeHttpVersion);
+        doc.put("http_version", upgradeHttpVersion);
         doc.put("tool", "Proxy WebSocket");
         doc.put("tool_type", "PROXY_WEBSOCKET");
         doc.put("burp_in_scope", burpInScope);
         doc.put("message_id", ws.id());
-        doc.put("path", upgrade == null ? null : upgrade.path());
-        doc.put("method", upgrade == null ? null : upgrade.method());
+        doc.put("path", upgradeRequestDoc == null ? null : upgradeRequestDoc.get("path"));
+        doc.put("method", upgradeRequestDoc == null ? null : upgradeRequestDoc.get("method"));
         doc.put("status", null);
         doc.put("mime_type", null);
         doc.put("comment", ws.annotations() != null && ws.annotations().hasNotes() ? ws.annotations().notes() : null);
@@ -265,7 +258,7 @@ public final class ProxyWebSocketIndexReporter {
         doc.put("proxy_history_id", null);
         doc.put("listener_port", ws.listenerPort());
 
-        doc.put("request", upgrade == null ? null : RequestResponseDocBuilder.buildRequestDoc(upgrade));
+        doc.put("request", upgradeRequestDoc);
         doc.put("response", null);
 
         doc.put("websocket_id", ws.webSocketId());

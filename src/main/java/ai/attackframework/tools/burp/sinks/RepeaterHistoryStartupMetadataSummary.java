@@ -17,6 +17,7 @@ final class RepeaterHistoryStartupMetadataSummary {
     private static final int DUPLICATE_SLOT_HIGHLIGHT_LIMIT = 5;
 
     private final Map<String, Integer> observationsByCapturePath = new LinkedHashMap<>();
+    private final Map<String, Integer> observationsByGroupName = new LinkedHashMap<>();
     private final Map<String, Integer> ignoredAnonymousBindingsByCapturePath = new LinkedHashMap<>();
     private final Map<String, Integer> duplicateSlotSuppressionsByCapturePath = new LinkedHashMap<>();
     private final Map<String, Integer> duplicateSlotSuppressionsBySlotPath = new LinkedHashMap<>();
@@ -31,6 +32,7 @@ final class RepeaterHistoryStartupMetadataSummary {
 
     synchronized void clear() {
         observationsByCapturePath.clear();
+        observationsByGroupName.clear();
         ignoredAnonymousBindingsByCapturePath.clear();
         duplicateSlotSuppressionsByCapturePath.clear();
         duplicateSlotSuppressionsBySlotPath.clear();
@@ -50,6 +52,7 @@ final class RepeaterHistoryStartupMetadataSummary {
         totalObservations++;
         if (metadata != null && metadata.groupName() != null) {
             groupedObservations++;
+            increment(observationsByGroupName, metadata.groupName());
         }
         increment(observationsByCapturePath, capturePath);
         uniqueSlots.add(RepeaterHistoryCapturePolicy.safeLogValue(
@@ -90,6 +93,7 @@ final class RepeaterHistoryStartupMetadataSummary {
                 + ", standalone=" + (totalObservations - groupedObservations)
                 + ", uniqueSlots=" + uniqueSlots.size()
                 + ", uniqueTabGroupPairs=" + uniqueTabGroupPairs.size()
+                + ", groups=[" + describeCounts(observationsByGroupName) + "]"
                 + ", noIdentityObservationsSkipped=" + ignoredAnonymousBindings
                 + ", alreadyCapturedSlotObservations=" + duplicateSlotSuppressions
                 + ", metadataUpgrades=" + metadataUpgrades

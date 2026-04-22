@@ -1,13 +1,22 @@
 package ai.attackframework.tools.burp.sinks;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.http.HttpService;
+import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -85,6 +94,49 @@ class ProxyHistoryIndexReporterTest {
         } finally {
             resetRuntimeConfig();
         }
+    }
+
+    @Test
+    void buildDocument_survivesMalformedRequest_andReconstructsUrl() {
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.scope().isInScope(anyString())).thenReturn(false);
+
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenThrow(new IllegalStateException("URL is invalid."));
+        when(request.method()).thenReturn("POST");
+        when(request.path()).thenReturn("/api/orders");
+        when(request.pathWithoutQuery()).thenReturn("/api/orders");
+        when(request.query()).thenReturn("");
+        when(request.fileExtension()).thenReturn("");
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.headers()).thenReturn(List.of());
+        when(request.parameters()).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.contentType()).thenReturn(null);
+
+        HttpService service = mock(HttpService.class);
+        when(service.host()).thenReturn("shop.example.com");
+        when(service.port()).thenReturn(443);
+        when(service.secure()).thenReturn(true);
+
+        ProxyHttpRequestResponse item = mock(ProxyHttpRequestResponse.class);
+        when(item.finalRequest()).thenReturn(request);
+        when(item.httpService()).thenReturn(service);
+        when(item.id()).thenReturn(42);
+        when(item.listenerPort()).thenReturn(8080);
+        when(item.edited()).thenReturn(false);
+        when(item.annotations()).thenReturn(null);
+        when(item.response()).thenReturn(null);
+
+        Map<?, ?> doc = (Map<?, ?>) callStatic(ProxyHistoryIndexReporter.class, "buildDocument", api, item);
+
+        assertThat(doc).isNotNull();
+        assertThat(doc.get("url")).isEqualTo("https://shop.example.com/api/orders");
+        assertThat(doc.get("method")).isEqualTo("POST");
+        assertThat(doc.get("tool_type")).isEqualTo("PROXY_HISTORY");
+        assertThat(doc.get("path")).isEqualTo("/api/orders");
+        assertThat(doc.get("burp_in_scope")).isEqualTo(false);
     }
 
     @Test

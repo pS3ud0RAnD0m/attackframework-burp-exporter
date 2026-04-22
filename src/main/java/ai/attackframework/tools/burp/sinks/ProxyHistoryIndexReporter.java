@@ -47,10 +47,6 @@ public final class ProxyHistoryIndexReporter {
 
     private ProxyHistoryIndexReporter() {}
 
-    private static String trafficIndexName() {
-        return RuntimeConfig.indexNameForKey("traffic");
-    }
-
     /**
      * Schedules a one-time push of all current proxy history items (on Start), after a short delay.
      *
@@ -102,6 +98,8 @@ public final class ProxyHistoryIndexReporter {
             return;
         }
 
+        TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
+        SnapshotSummary.Baseline baseline = SnapshotSummary.snapshot(route);
         long startNs = System.nanoTime();
         int success = 0;
         int attempted = 0;
@@ -123,20 +121,11 @@ public final class ProxyHistoryIndexReporter {
             if (sizeCapReached || countCapReached) {
                 chunkTarget = applyLiveBackpressure(chunkTarget);
                 int attemptedChunk = chunk.size();
-                int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), "traffic", chunk);
+                int sent = OpenSearchClientWrapper.pushBulk(
+                        baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, chunk);
                 success += sent;
                 attempted += attemptedChunk;
-                if (openSearchActive) {
-                    ExportStats.recordSuccess("traffic", sent);
-                    ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
-                }
-                if (openSearchActive && sent < attemptedChunk) {
-                    int failureChunk = attemptedChunk - sent;
-                    ExportStats.recordFailure("traffic", failureChunk);
-                    ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
-                    Logger.logWarnPanelOnly("[Traffic] Proxy history chunk completed with "
-                            + failureChunk + " failure(s).");
-                }
+                recordChunkOutcome(route, openSearchActive, attemptedChunk, sent);
                 chunkTarget = adjustSnapshotBatchTarget(chunkTarget, attemptedChunk, sent);
                 chunk.clear();
                 estBytes = 0;
@@ -147,29 +136,33 @@ public final class ProxyHistoryIndexReporter {
         if (RuntimeConfig.isExportRunning() && !chunk.isEmpty()) {
             chunkTarget = applyLiveBackpressure(chunkTarget);
             int attemptedChunk = chunk.size();
-            int sent = OpenSearchClientWrapper.pushBulk(baseUrl, trafficIndexName(), "traffic", chunk);
+            int sent = OpenSearchClientWrapper.pushBulk(
+                    baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, chunk);
             success += sent;
             attempted += attemptedChunk;
-            if (openSearchActive) {
-                ExportStats.recordSuccess("traffic", sent);
-                ExportStats.recordTrafficSourceSuccess("proxy_history_snapshot", sent);
-            }
-            if (openSearchActive && sent < attemptedChunk) {
-                int failureChunk = attemptedChunk - sent;
-                ExportStats.recordFailure("traffic", failureChunk);
-                ExportStats.recordTrafficSourceFailure("proxy_history_snapshot", failureChunk);
-                Logger.logWarnPanelOnly("[Traffic] Proxy history chunk completed with "
-                        + failureChunk + " failure(s).");
-            }
+            recordChunkOutcome(route, openSearchActive, attemptedChunk, sent);
         }
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
         if (openSearchActive) {
-            ExportStats.recordLastPush("traffic", durationMs);
+            ExportStats.recordLastPush(TrafficRouteBucket.INDEX_KEY, durationMs);
         }
         ExportStats.recordProxyHistorySnapshot(attempted, success, durationMs, chunkTarget);
-        Logger.logTrace("[ProxyHistory] pushed " + success + " of " + attempted
-                + " to " + RuntimeConfig.activeSinkSummary());
+        SnapshotSummary.logInfo(
+                "ProxyHistory",
+                baseline,
+                attempted,
+                durationMs,
+                openSearchActive,
+                RuntimeConfig.isAnyFileExportEnabled());
+    }
+
+    private static void recordChunkOutcome(
+            TrafficRouteBucket.Route route,
+            boolean openSearchActive,
+            int attemptedChunk,
+            int sent) {
+        TrafficRouteBucket.recordBulkOutcome(route, attemptedChunk, sent, openSearchActive, "Proxy history chunk");
     }
 
     /**
@@ -231,18 +224,20 @@ public final class ProxyHistoryIndexReporter {
         }
         HttpService service = item.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
-        String url = request.url();
+        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
+        String url = RequestResponseDocBuilder.buildBestEffortUrl(request, service, requestDoc, "ProxyHistory");
         boolean burpInScope = url != null && api.scope().isInScope(url);
+        Object requestHttpVersion = requestDoc.get("http_version");
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", request.url());
+        document.put("url", url);
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
         document.put("protocol_transport", scheme);
         document.put("protocol_application", "http");
-        document.put("protocol_sub", request.httpVersion());
-        document.put("http_version", request.httpVersion());
+        document.put("protocol_sub", requestHttpVersion);
+        document.put("http_version", requestHttpVersion);
         document.put("tool", "Proxy History");
         document.put("tool_type", "PROXY_HISTORY");
         document.put("burp_in_scope", burpInScope);
@@ -252,9 +247,9 @@ public final class ProxyHistoryIndexReporter {
         document.put("edited", item.edited());
         populateTiming(document, item);
         putAnnotations(document, item.annotations());
-        document.put("path", request.path());
-        document.put("method", request.method());
-        document.put("request", RequestResponseDocBuilder.buildRequestDoc(request));
+        document.put("path", requestDoc.get("path"));
+        document.put("method", requestDoc.get("method"));
+        document.put("request", requestDoc);
 
         HttpResponse response = item.response();
         if (response != null) {

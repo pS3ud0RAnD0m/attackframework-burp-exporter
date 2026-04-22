@@ -39,10 +39,6 @@ public final class TrafficExportQueue {
 
     private TrafficExportQueue() {}
 
-    private static String trafficIndexName() {
-        return RuntimeConfig.indexNameForKey("traffic");
-    }
-
     static {
         long recoveredDocs = spillQueue.recoveredCount();
         if (recoveredDocs > 0) {
@@ -160,7 +156,8 @@ public final class TrafficExportQueue {
             if (doc == null) {
                 break;
             }
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(trafficIndexName(), "traffic", doc);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
+                    TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, doc);
             FileExportService.emit(prepared);
             flushed++;
         }
@@ -224,7 +221,8 @@ public final class TrafficExportQueue {
             refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
             long startNs = System.nanoTime();
             ChunkedBulkSender.Result result = ChunkedBulkSender.push(
-                    baseUrl, trafficIndexName(), "traffic", queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
+                    baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY,
+                    queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
             long durationMs = (System.nanoTime() - startNs) / 1_000_000;
 
             if (result.attemptedCount == 0) {
@@ -233,11 +231,17 @@ public final class TrafficExportQueue {
             ExportStats.recordLastPush("traffic", durationMs);
             ExportStats.recordSuccess("traffic", result.successCount);
             ExportStats.recordExportedBytes("traffic", result.successBytes);
-            ExportStats.recordTrafficSourceSuccess("proxy_live_http", result.successCount);
+            result.trafficToolTypeSuccessCounts.forEach(
+                    (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeSuccess(toolTypeKey, count.longValue()));
+            result.trafficSourceSuccessCounts.forEach(
+                    (sourceKey, count) -> ExportStats.recordTrafficSourceSuccess(sourceKey, count.longValue()));
             if (result.successCount < result.attemptedCount) {
                 long failure = result.attemptedCount - result.successCount;
                 ExportStats.recordFailure("traffic", failure);
-                ExportStats.recordTrafficSourceFailure("proxy_live_http", failure);
+                result.trafficToolTypeFailureCounts.forEach(
+                        (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeFailure(toolTypeKey, count.longValue()));
+                result.trafficSourceFailureCounts.forEach(
+                        (sourceKey, count) -> ExportStats.recordTrafficSourceFailure(sourceKey, count.longValue()));
             }
             if (result.isFullSuccess()) {
                 batchController.recordSuccess(result.attemptedCount);
@@ -295,7 +299,8 @@ public final class TrafficExportQueue {
             if (doc == null) {
                 break;
             }
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(trafficIndexName(), "traffic", doc);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
+                    TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, doc);
             long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
             if (attempted > 0 && exportedBytes + docBytes > maxBytes) {
                 queue.offer(doc);

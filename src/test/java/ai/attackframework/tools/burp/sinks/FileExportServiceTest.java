@@ -164,12 +164,12 @@ class FileExportServiceTest {
             String indexName = IndexNaming.indexNameForShortName("traffic");
             PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
             long beforeSuccess = FileExportStats.getSuccessCount("traffic");
-            long beforeSource = FileExportStats.getTrafficToolTypeCapturedCount("PROXY");
+            long beforeSource = FileExportStats.getTrafficToolTypeSuccessCount("PROXY");
 
             FileExportService.emit(prepared);
 
             assertThat(FileExportStats.getSuccessCount("traffic")).isEqualTo(beforeSuccess + 1);
-            assertThat(FileExportStats.getTrafficToolTypeCapturedCount("PROXY")).isEqualTo(beforeSource + 1);
+            assertThat(FileExportStats.getTrafficToolTypeSuccessCount("PROXY")).isEqualTo(beforeSource + 1);
             assertThat(FileExportStats.getExportedBytes("traffic")).isGreaterThan(0L);
         });
     }

@@ -15,7 +15,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
@@ -173,6 +172,12 @@ public final class SitemapIndexReporter {
             List<String> batchKeys = new ArrayList<>(batchSize);
             List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
             long runningBatchBytes = 0;
+            int attempted = 0;
+
+            SnapshotSummary.Baseline baseline = pushAll ? SnapshotSummary.snapshot("sitemap") : null;
+            boolean openSearchActive = pushAll && isOpenSearchActive();
+            boolean fileActive = pushAll && RuntimeConfig.isAnyFileExportEnabled();
+            long startNs = pushAll ? System.nanoTime() : 0L;
 
             for (HttpRequestResponse item : items) {
                 if (!RuntimeConfig.isExportRunning()) {
@@ -182,7 +187,7 @@ public final class SitemapIndexReporter {
                 if (request == null) {
                     continue;
                 }
-                String url = request.url();
+                String url = RequestResponseDocBuilder.safeRequestUrl(request, "Sitemap");
                 if (url == null) {
                     url = "";
                 }
@@ -202,6 +207,7 @@ public final class SitemapIndexReporter {
                 batchKeys.add(key);
                 batchDocs.add(doc);
                 runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
+                attempted++;
 
                 if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize() || runningBatchBytes >= BULK_MAX_BYTES) {
                     flushBatch(batchKeys, batchDocs);
@@ -213,9 +219,19 @@ public final class SitemapIndexReporter {
             if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
                 flushBatch(batchKeys, batchDocs);
             }
+
+            if (baseline != null) {
+                long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+                SnapshotSummary.logInfo("Sitemap", baseline, attempted, durationMs, openSearchActive, fileActive);
+            }
         } finally {
             runInProgress = false;
         }
+    }
+
+    private static boolean isOpenSearchActive() {
+        String activeBaseUrl = RuntimeConfig.openSearchUrl();
+        return activeBaseUrl != null && !activeBaseUrl.isBlank();
     }
 
     /** Returns sitemap request/response items, tolerating transient Burp lifecycle nulls. */
@@ -252,17 +268,10 @@ public final class SitemapIndexReporter {
     private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = !activeBaseUrl.isBlank();
+        int attempted = batchDocs.size();
         int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, sitemapIndexName(), "sitemap", batchDocs);
-        int failureCount = batchDocs.size() - successCount;
-        if (openSearchActive) {
-            ExportStats.recordSuccess("sitemap", successCount);
-            ExportStats.recordFailure("sitemap", failureCount);
-        }
-        if (openSearchActive && failureCount > 0) {
-            ExportStats.recordLastError("sitemap", "Bulk had " + failureCount + " failure(s)");
-            Logger.logWarnPanelOnly("[Sitemap] Bulk push completed with " + failureCount + " failure(s).");
-        }
-        if (successCount == batchDocs.size()) {
+        BulkOutcomeRecorder.record("sitemap", "Sitemap", "Bulk push", attempted, successCount, openSearchActive);
+        if (successCount == attempted) {
             pushedItemKeys.addAll(batchKeys);
         }
     }
@@ -284,15 +293,21 @@ public final class SitemapIndexReporter {
         HttpService service = item.httpService();
         HttpResponse response = item.hasResponse() ? item.response() : null;
 
-        String url = request != null ? request.url() : "";
-        String method = request != null ? request.method() : "";
-        doc.put("url", nullToEmpty(url));
+        Map<String, Object> requestDoc = request == null ? null : RequestResponseDocBuilder.buildRequestDoc(request);
+        String url = request == null
+                ? ""
+                : nullToEmpty(RequestResponseDocBuilder.buildBestEffortUrl(request, service, requestDoc, "Sitemap"));
+        String method = valueAsString(requestDoc, "method");
+        String httpVersion = valueAsString(requestDoc, "http_version");
+        String path = valueAsString(requestDoc, "path");
+        String query = valueAsString(requestDoc, "query");
+        doc.put("url", url);
         doc.put("host", service != null ? service.host() : "");
         doc.put("port", service != null ? service.port() : 0);
         doc.put("protocol_transport", service != null ? (service.secure() ? "https" : "http") : "");
         doc.put("protocol_application", "http");
-        doc.put("protocol_sub", request != null ? nullToEmpty(request.httpVersion()) : "");
-        doc.put("method", nullToEmpty(method));
+        doc.put("protocol_sub", httpVersion);
+        doc.put("method", method);
 
         if (response != null) {
             doc.put("status_code", (int) response.statusCode());
@@ -319,16 +334,12 @@ public final class SitemapIndexReporter {
             doc.put("param_names", List.of());
         }
 
-        doc.put("path", request != null ? nullToEmpty(request.path()) : "");
-        doc.put("query_string", request != null ? nullToEmpty(request.query()) : "");
+        doc.put("path", path);
+        doc.put("query_string", query);
         doc.put("request_id", requestId(url, method));
         doc.put("source", SOURCE_VALUE);
 
-        if (request != null) {
-            doc.put("request", RequestResponseDocBuilder.buildRequestDoc(request));
-        } else {
-            doc.put("request", null);
-        }
+        doc.put("request", requestDoc);
         if (response != null) {
             doc.put("response", RequestResponseDocBuilder.buildResponseDoc(response));
         } else {
@@ -357,6 +368,14 @@ public final class SitemapIndexReporter {
             Logger.logDebug("[Sitemap] response.attributes(PAGE_TITLE) failed: " + e.getMessage());
         }
         return null;
+    }
+
+    private static String valueAsString(Map<String, Object> requestDoc, String key) {
+        if (requestDoc == null) {
+            return "";
+        }
+        Object value = requestDoc.get(key);
+        return value == null ? "" : value.toString();
     }
 
     private static String nullToEmpty(String s) {

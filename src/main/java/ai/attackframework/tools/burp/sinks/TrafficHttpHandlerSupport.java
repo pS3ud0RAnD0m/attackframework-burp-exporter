@@ -18,7 +18,6 @@ import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.core.Annotations;
 import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.core.ToolSource;
@@ -50,10 +49,6 @@ class TrafficHttpHandlerSupport implements HttpHandler {
     private static final String ORPHAN_REASON_PHRASE = "Timeout";
 
     private static final ConcurrentHashMap<Integer, PendingOrphan> pendingOrphans = new ConcurrentHashMap<>();
-
-    private static String trafficIndexName() {
-        return RuntimeConfig.indexNameForKey("traffic");
-    }
 
     static {
         ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -117,8 +112,13 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 || !RuntimeConfig.isAnyTrafficExportEnabled()) {
             return RequestToBeSentAction.continueWith(request);
         }
+        String scopeUrl = RequestResponseDocBuilder.buildBestEffortUrl(
+                request,
+                request.httpService(),
+                RequestResponseDocBuilder.buildRequestDoc(request),
+                "TrafficHttpHandler");
         if (!ScopeFilter.shouldExport(
-                RuntimeConfig.getState(), safeRequestUrl(request), request.isInScope())) {
+                RuntimeConfig.getState(), scopeUrl, request.isInScope())) {
             return RequestToBeSentAction.continueWith(request);
         }
         ToolSource toolSource = request.toolSource();
@@ -135,13 +135,19 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         long requestSentMs = System.currentTimeMillis();
         ToolSource reqToolSource = request.toolSource();
         ToolType reqToolType = reqToolSource == null ? null : reqToolSource.toolType();
-        RepeaterMetadataFields.Metadata requestStageRepeaterMetadata =
-                resolveRequestStageRepeaterMetadata(request, reqToolType);
-        Map<String, Object> skeleton = buildOrphanDocumentSkeleton(request, requestSentMs, requestStageRepeaterMetadata);
+        RequestStageResolution requestStageResolution =
+                resolveRequestStageResolution(
+                        request,
+                        reqToolType,
+                        RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+        Map<String, Object> skeleton = buildOrphanDocumentSkeleton(
+                request,
+                requestSentMs,
+                requestStageResolution.metadataForExport());
         if (skeleton != null) {
             pendingOrphans.put(
                     request.messageId(),
-                    new PendingOrphan(skeleton, requestSentMs, reqToolType, requestStageRepeaterMetadata));
+                    new PendingOrphan(skeleton, requestSentMs, reqToolType, requestStageResolution));
         }
         return RequestToBeSentAction.continueWith(request);
     }
@@ -161,8 +167,13 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         }
 
         boolean burpInScope = request.isInScope();
+        String scopeUrl = RequestResponseDocBuilder.buildBestEffortUrl(
+                request,
+                request.httpService(),
+                RequestResponseDocBuilder.buildRequestDoc(request),
+                "TrafficHttpHandler");
         boolean inScope = ScopeFilter.shouldExport(
-                RuntimeConfig.getState(), safeRequestUrl(request), burpInScope);
+                RuntimeConfig.getState(), scopeUrl, burpInScope);
         if (!inScope) {
             return ResponseReceivedAction.continueWith(response);
         }
@@ -197,14 +208,16 @@ class TrafficHttpHandlerSupport implements HttpHandler {
 
         long responseReceivedMs = System.currentTimeMillis();
         Long requestSentMs = pending == null ? null : pending.timestamp;
-        RepeaterMetadataFields.Metadata pendingRepeaterMetadata =
-                pending == null ? RepeaterMetadataFields.Metadata.empty() : pending.repeaterMetadata;
         RepeaterMetadataFields.Metadata repeaterMetadata =
-                resolveResponseStageRepeaterMetadata(request, response, toolType, pendingRepeaterMetadata);
+                resolveResponseStageRepeaterMetadata(
+                        request,
+                        response,
+                        toolType,
+                        pending == null ? RequestStageResolution.none() : pending.requestStageResolution,
+                        RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
 
         Map<String, Object> document =
                 buildDocument(response, request, burpInScope, requestSentMs, responseReceivedMs, toolType, repeaterMetadata);
-        ExportStats.recordTrafficToolTypeCaptured(toolType == null ? "UNKNOWN" : toolType.name(), 1);
         TrafficExportQueue.offer(document);
 
         pendingOrphans.remove(response.messageId());
@@ -261,7 +274,11 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         Object requestHttpVersion = requestDoc.get("http_version");
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", safeRequestUrl(request));
+        document.put("url", RequestResponseDocBuilder.buildBestEffortUrl(
+                request,
+                service,
+                requestDoc,
+                "TrafficHttpHandler"));
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
@@ -343,7 +360,11 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         Object requestHttpVersion = requestDoc.get("http_version");
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", safeRequestUrl(request));
+        document.put("url", RequestResponseDocBuilder.buildBestEffortUrl(
+                request,
+                service,
+                requestDoc,
+                "TrafficHttpHandler"));
         document.put("host", service == null ? null : service.host());
         document.put("port", service == null ? null : service.port());
         document.put("scheme", scheme);
@@ -393,22 +414,6 @@ class TrafficHttpHandlerSupport implements HttpHandler {
     }
 
     /**
-     * Returns the request URL when Montoya exposes it safely.
-     *
-     * <p>Malformed or partially bound Repeater requests can throw from {@code request.url()}.
-     * Returning {@code null} lets scope checks and document assembly keep the rest of the request
-     * instead of dropping the document.</p>
-     */
-    private static String safeRequestUrl(HttpRequest request) {
-        try {
-            return request == null ? null : request.url();
-        } catch (RuntimeException e) {
-            Logger.logDebug("[TrafficHttpHandler] Failed to resolve request URL: " + e.getMessage());
-            return null;
-        }
-    }
-
-    /**
      * Resolves best-effort Repeater metadata during the request stage.
      *
      * <p>Only live {@link ToolType#REPEATER} traffic participates. Ambiguous tracker matches
@@ -434,10 +439,55 @@ class TrafficHttpHandlerSupport implements HttpHandler {
             HttpRequest request,
             ToolType toolType,
             Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        return resolveRequestStageResolution(request, toolType, liveFallbackSupplier, false).metadata();
+    }
+
+    static RequestStageResolution resolveRequestStageResolution(
+            HttpRequest request,
+            ToolType toolType,
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        return resolveRequestStageResolution(request, toolType, liveFallbackSupplier, true);
+    }
+
+    private static RequestStageResolution resolveRequestStageResolution(
+            HttpRequest request,
+            ToolType toolType,
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier,
+            boolean captureAmbiguousUiSnapshot) {
         if (toolType != ToolType.REPEATER) {
-            return RepeaterMetadataFields.Metadata.empty();
+            return RequestStageResolution.none();
         }
-        return resolveTrackedRequestOrLiveFallback(request, "request", liveFallbackSupplier);
+        RepeaterLiveMetadataTracker.Resolution trackedRequest =
+                RepeaterLiveMetadataTracker.resolveRequestResolution(request);
+        if (trackedRequest.metadata().isPresent()) {
+            logLiveRepeaterMetadataDecision(
+                    "request",
+                    trackedRequest.sourceLabel(),
+                    trackedRequest.metadata(),
+                    "reason=tracker_match");
+            return RequestStageResolution.confident(trackedRequest.metadata(), trackedRequest.sourceLabel());
+        }
+        if (trackedRequest.ambiguous()) {
+            logLiveRepeaterMetadataDecision(
+                    "request",
+                    RepeaterMetadataTraceLabels.AMBIGUOUS_NULL,
+                    RepeaterMetadataFields.Metadata.empty(),
+                    "reason=request_ambiguous trackerSource="
+                            + RepeaterMetadataTraceLabels.safeValue(trackedRequest.sourceLabel()));
+            RepeaterMetadataFields.Metadata requestUiSnapshot = captureAmbiguousUiSnapshot
+                    ? normalizedFallbackMetadata(liveFallbackSupplier)
+                    : RepeaterMetadataFields.Metadata.empty();
+            return RequestStageResolution.ambiguous(trackedRequest.sourceLabel(), requestUiSnapshot);
+        }
+        RepeaterMetadataFields.Metadata fallbackMetadata = normalizedFallbackMetadata(liveFallbackSupplier);
+        logLiveRepeaterMetadataDecision(
+                "request",
+                RepeaterMetadataTraceLabels.UI_FALLBACK,
+                fallbackMetadata,
+                fallbackMetadata.isPresent()
+                        ? "reason=no_tracked_match"
+                        : "reason=no_tracked_match_and_ui_unlabeled");
+        return RequestStageResolution.confident(fallbackMetadata, RepeaterMetadataTraceLabels.UI_FALLBACK);
     }
 
     /**
@@ -476,9 +526,26 @@ class TrafficHttpHandlerSupport implements HttpHandler {
             ToolType toolType,
             RepeaterMetadataFields.Metadata requestStageMetadata,
             Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        return resolveResponseStageRepeaterMetadata(
+                request,
+                response,
+                toolType,
+                RequestStageResolution.fromMetadata(requestStageMetadata),
+                liveFallbackSupplier);
+    }
+
+    static RepeaterMetadataFields.Metadata resolveResponseStageRepeaterMetadata(
+            HttpRequest request,
+            HttpResponseReceived response,
+            ToolType toolType,
+            RequestStageResolution requestStageResolution,
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
         if (toolType != ToolType.REPEATER) {
             return RepeaterMetadataFields.Metadata.empty();
         }
+        RequestStageResolution normalizedRequestStage = requestStageResolution == null
+                ? RequestStageResolution.none()
+                : requestStageResolution;
         RepeaterLiveMetadataTracker.Resolution exchangeResolution =
                 RepeaterLiveMetadataTracker.resolveExchangeResolution(request, response);
         if (exchangeResolution.metadata().isPresent()) {
@@ -490,14 +557,23 @@ class TrafficHttpHandlerSupport implements HttpHandler {
             return exchangeResolution.metadata();
         }
         if (exchangeResolution.ambiguous()) {
-            if (requestStageMetadata != null && requestStageMetadata.isPresent()) {
+            if (normalizedRequestStage.metadata().isPresent()) {
                 logLiveRepeaterMetadataDecision(
                         "response",
                         RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE,
-                        requestStageMetadata,
+                        normalizedRequestStage.metadata(),
                         "reason=exchange_ambiguous trackerSource="
                                 + RepeaterMetadataTraceLabels.safeValue(exchangeResolution.sourceLabel()));
-                return requestStageMetadata;
+                return normalizedRequestStage.metadata();
+            }
+            if (normalizedRequestStage.uiSnapshot().isPresent()) {
+                logLiveRepeaterMetadataDecision(
+                        "response",
+                        RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE,
+                        normalizedRequestStage.uiSnapshot(),
+                        "reason=exchange_ambiguous request_ambiguous_ui_snapshot trackerSource="
+                                + RepeaterMetadataTraceLabels.safeValue(exchangeResolution.sourceLabel()));
+                return normalizedRequestStage.uiSnapshot();
             }
             logLiveRepeaterMetadataDecision(
                     "response",
@@ -507,13 +583,21 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                             + RepeaterMetadataTraceLabels.safeValue(exchangeResolution.sourceLabel()));
             return RepeaterMetadataFields.Metadata.empty();
         }
-        if (requestStageMetadata != null && requestStageMetadata.isPresent()) {
+        if (normalizedRequestStage.metadata().isPresent()) {
             logLiveRepeaterMetadataDecision(
                     "response",
                     RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE,
-                    requestStageMetadata,
+                    normalizedRequestStage.metadata(),
                     "reason=exchange_tracker_miss");
-            return requestStageMetadata;
+            return normalizedRequestStage.metadata();
+        }
+        if (normalizedRequestStage.uiSnapshot().isPresent()) {
+            logLiveRepeaterMetadataDecision(
+                    "response",
+                    RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE,
+                    normalizedRequestStage.uiSnapshot(),
+                    "reason=exchange_tracker_miss request_ambiguous_ui_snapshot");
+            return normalizedRequestStage.uiSnapshot();
         }
         return resolveTrackedRequestOrLiveFallback(request, "response", liveFallbackSupplier);
     }
@@ -563,6 +647,14 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                         ? "reason=no_tracked_match"
                         : "reason=no_tracked_match_and_ui_unlabeled");
         return normalizedFallback;
+    }
+
+    private static RepeaterMetadataFields.Metadata normalizedFallbackMetadata(
+            Supplier<RepeaterMetadataFields.Metadata> liveFallbackSupplier) {
+        RepeaterMetadataFields.Metadata fallbackMetadata = liveFallbackSupplier == null
+                ? RepeaterMetadataFields.Metadata.empty()
+                : liveFallbackSupplier.get();
+        return fallbackMetadata == null ? RepeaterMetadataFields.Metadata.empty() : fallbackMetadata;
     }
 
     private static void logLiveRepeaterMetadataDecision(
@@ -615,7 +707,6 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 || !RuntimeConfig.isAnyTrafficExportEnabled()) {
             return;
         }
-        String baseUrl = RuntimeConfig.openSearchUrl();
         long now = System.currentTimeMillis();
         List<Integer> toFlush = new ArrayList<>();
         for (Map.Entry<Integer, PendingOrphan> e : pendingOrphans.entrySet()) {
@@ -634,23 +725,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
             doc.put("duration_ms", durationMs(po.timestamp, nowMs));
             doc.put("response_start_latency_ms", durationMs(po.timestamp, nowMs));
             doc.put("response", buildOrphanResponse());
-            long startNs = System.nanoTime();
-            boolean success = OpenSearchClientWrapper.pushDocument(baseUrl, trafficIndexName(), "traffic", doc);
-            long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
-            if (openSearchActive) {
-                ExportStats.recordLastPush("traffic", durationMs);
-            }
-            if (success && openSearchActive) {
-                ExportStats.recordSuccess("traffic", 1);
-                ExportStats.recordTrafficSourceSuccess("proxy_live_http", 1);
-            } else if (!success && openSearchActive) {
-                ExportStats.recordFailure("traffic", 1);
-                ExportStats.recordTrafficSourceFailure("proxy_live_http", 1);
-                String errMsg = "Failed to index orphan traffic document to " + trafficIndexName();
-                ExportStats.recordLastError("traffic", errMsg);
-                Logger.logError("[OpenSearch] " + errMsg);
-            }
+            TrafficExportQueue.offer(doc);
         }
     }
 
@@ -658,19 +733,66 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         final Map<String, Object> documentSkeleton;
         final long timestamp;
         final ToolType toolType;
-        final RepeaterMetadataFields.Metadata repeaterMetadata;
+        final RequestStageResolution requestStageResolution;
 
         PendingOrphan(
                 Map<String, Object> documentSkeleton,
                 long timestamp,
                 ToolType toolType,
-                RepeaterMetadataFields.Metadata repeaterMetadata) {
+                RequestStageResolution requestStageResolution) {
             this.documentSkeleton = documentSkeleton;
             this.timestamp = timestamp;
             this.toolType = toolType;
-            this.repeaterMetadata = repeaterMetadata == null
-                    ? RepeaterMetadataFields.Metadata.empty()
-                    : repeaterMetadata;
+            this.requestStageResolution = requestStageResolution == null
+                    ? RequestStageResolution.none()
+                    : requestStageResolution;
+        }
+    }
+
+    static record RequestStageResolution(
+            RepeaterMetadataFields.Metadata metadata,
+            String sourceLabel,
+            RepeaterMetadataFields.Metadata uiSnapshot) {
+
+        RequestStageResolution {
+            metadata = metadata == null ? RepeaterMetadataFields.Metadata.empty() : metadata;
+            sourceLabel = sourceLabel == null || sourceLabel.isBlank()
+                    ? RepeaterMetadataTraceLabels.NONE
+                    : sourceLabel.trim();
+            uiSnapshot = uiSnapshot == null ? RepeaterMetadataFields.Metadata.empty() : uiSnapshot;
+        }
+
+        static RequestStageResolution none() {
+            return new RequestStageResolution(
+                    RepeaterMetadataFields.Metadata.empty(),
+                    RepeaterMetadataTraceLabels.NONE,
+                    RepeaterMetadataFields.Metadata.empty());
+        }
+
+        static RequestStageResolution confident(
+                RepeaterMetadataFields.Metadata metadata,
+                String sourceLabel) {
+            return new RequestStageResolution(
+                    metadata,
+                    sourceLabel,
+                    RepeaterMetadataFields.Metadata.empty());
+        }
+
+        static RequestStageResolution ambiguous(
+                String sourceLabel,
+                RepeaterMetadataFields.Metadata uiSnapshot) {
+            return new RequestStageResolution(
+                    RepeaterMetadataFields.Metadata.empty(),
+                    sourceLabel,
+                    uiSnapshot);
+        }
+
+        static RequestStageResolution fromMetadata(RepeaterMetadataFields.Metadata metadata) {
+            return confident(metadata, RepeaterMetadataTraceLabels.REQUEST_STAGE_REUSE);
+        }
+
+        RepeaterMetadataFields.Metadata metadataForExport() {
+            return metadata.isPresent() ? metadata : uiSnapshot;
         }
     }
 
@@ -688,4 +810,5 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         long d = endMs - startMs;
         return d >= 0 ? d : 0L;
     }
+
 }

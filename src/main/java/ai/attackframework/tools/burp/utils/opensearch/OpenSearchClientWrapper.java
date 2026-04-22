@@ -192,9 +192,36 @@ public class OpenSearchClientWrapper {
     }
 
     /**
-     * Pushes documents in bulk. Delegates to the retry coordinator (retries with backoff, then queue failed items).
+     * Pushes documents in bulk. Delegates to the retry coordinator (retries with backoff, then
+     * queue failed items).
      *
      * <p>Documents are filtered to include only fields enabled in the Fields panel before push.</p>
+     *
+     * <h2>Bulk-path responsibilities</h2>
+     *
+     * <p>The exporter deliberately uses two distinct bulk paths with different guarantees:</p>
+     * <ul>
+     *   <li><strong>{@code OpenSearchClientWrapper.pushBulk}</strong> (this method) is the
+     *       retry-coordinated path used by one-shot <em>snapshot</em> reporters (Proxy History,
+     *       Proxy WebSocket, Sitemap, Findings). It emits to every enabled file sink via
+     *       {@link FileExportService#emitBatch(List)} and delegates the OpenSearch call to
+     *       {@link IndexingRetryCoordinator}, which retries with backoff and queues failed items
+     *       for the drain thread. Callers are expected to be small, bounded batches that can
+     *       tolerate the synchronous round-trip.</li>
+     *   <li><strong>{@link ChunkedBulkSender#push}</strong> is the streaming path used by the
+     *       live {@code TrafficExportQueue} drain loop. It writes NDJSON directly into the POST
+     *       body as the queue is drained, applies per-chunk size/byte/time caps, and tracks
+     *       per-route counts via {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket}.
+     *       It does <em>not</em> retry; when a bulk fails the caller is responsible for
+     *       re-queuing (or dropping) items.</li>
+     * </ul>
+     *
+     * <p>Snapshot reporters stay on {@code pushBulk} because losing retry + drain-queue fallback
+     * would regress reliability for one-shot waves. Live traffic stays on
+     * {@code ChunkedBulkSender} because its backpressure and streaming body are required under
+     * sustained throughput. Both paths route file-sink writes through {@link FileExportService}
+     * and attribute success/failure through {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket},
+     * so traffic accounting is consistent regardless of which path a document takes.</p>
      *
      * @param baseUrl OpenSearch base URL
      * @param indexName target index name
@@ -260,6 +287,8 @@ public class OpenSearchClientWrapper {
      */
     static BulkResult doPushBulkWithDetails(String baseUrl, String indexName, List<Map<String, Object>> documents) {
         if (documents == null || documents.isEmpty()) {
+            // OpenSearch rejects empty bulk requests with "request body is required"; short-circuit
+            // here so every reporter/bulk entry point shares the same guard as the chunked path.
             return new BulkResult(0, List.of());
         }
         try {
@@ -294,7 +323,12 @@ public class OpenSearchClientWrapper {
             }
             return new BulkResult(successCount, failedIndices);
         } catch (IOException | RuntimeException e) {
-            Logger.logDebug("doPushBulk failed for " + indexName + ": " + e.getMessage());
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            Logger.logDebug("doPushBulk failed for " + indexName + ": " + msg);
+            if (msg.contains("request body is required")) {
+                Logger.logWarnPanelOnly("[OpenSearch] Bulk request failed for "
+                        + indexName + ": OpenSearch reported an empty bulk request body.");
+            }
             return new BulkResult(0, List.of());
         }
     }
