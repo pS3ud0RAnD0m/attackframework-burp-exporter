@@ -15,6 +15,3 @@
 !.github/**
 !gradle/**
 !src/**
-
-# Ignore for local VCS
-.idea/
