@@ -255,7 +255,7 @@ public final class FindingsIndexReporter {
 
     private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
-        boolean openSearchActive = !activeBaseUrl.isBlank();
+        boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
         int attempted = batchDocs.size();
         int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, findingsIndexName(), "findings", batchDocs);
         BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", attempted, successCount, openSearchActive);

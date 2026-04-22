@@ -257,18 +257,12 @@ class RepeaterLiveMetadataTrackerTest {
         return bytes;
     }
 
-    @SuppressWarnings("unchecked")
     private static ConcurrentHashMap<String, ConcurrentLinkedDeque<?>> requestIndex() {
-        return (ConcurrentHashMap<String, ConcurrentLinkedDeque<?>>) getStatic(
-                RepeaterLiveMetadataTracker.class,
-                "BY_REQUEST_HASH");
+        return getStatic(RepeaterLiveMetadataTracker.class, "BY_REQUEST_HASH");
     }
 
-    @SuppressWarnings("unchecked")
     private static ConcurrentHashMap<String, ConcurrentLinkedDeque<?>> exchangeIndex() {
-        return (ConcurrentHashMap<String, ConcurrentLinkedDeque<?>>) getStatic(
-                RepeaterLiveMetadataTracker.class,
-                "BY_EXCHANGE_HASH");
+        return getStatic(RepeaterLiveMetadataTracker.class, "BY_EXCHANGE_HASH");
     }
 
     private static ConcurrentLinkedDeque<?> requestDequeFor(HttpRequest request) {

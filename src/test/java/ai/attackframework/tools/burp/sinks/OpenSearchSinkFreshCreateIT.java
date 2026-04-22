@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
  */
 class OpenSearchSinkFreshCreateIT {
 
-    private static final List<String> SOURCES = List.of("tool", "settings", "sitemap", "findings", "traffic");
+    private static final List<String> SOURCES = List.of("exporter", "settings", "sitemap", "findings", "traffic");
 
     private static final int WAIT_AFTER_DELETE_MS = 500;
     private static final int POLL_EXISTS_MAX_MS = 5_000;
@@ -38,19 +39,16 @@ class OpenSearchSinkFreshCreateIT {
             String fullName = IndexNaming.indexNameForShortName(s);
             try {
                 client.indices().delete(new DeleteIndexRequest.Builder().index(fullName).build());
-            } catch (Exception ignored) {
+            } catch (IOException | RuntimeException ignored) {
                 // Index may not exist yet; deletion is best-effort for a clean slate.
             }
         }
 
         // Wait for deletes to be visible so create sees indices as missing
-        Thread.sleep(WAIT_AFTER_DELETE_MS);
+        TimeUnit.MILLISECONDS.sleep(WAIT_AFTER_DELETE_MS);
         for (String s : SOURCES) {
             String fullName = IndexNaming.indexNameForShortName(s);
-            long deadline = System.currentTimeMillis() + POLL_EXISTS_MAX_MS;
-            while (client.indices().exists(b -> b.index(fullName)).value() && System.currentTimeMillis() < deadline) {
-                Thread.sleep(POLL_INTERVAL_MS);
-            }
+            waitForIndexAbsent(client, fullName);
         }
 
         // Re-create each index and assert CREATED
@@ -62,6 +60,19 @@ class OpenSearchSinkFreshCreateIT {
 
             assertThat(r.fullName()).isEqualTo(expectedFull);
             assertThat(r.status()).isEqualTo(IndexResult.Status.CREATED);
+        }
+    }
+
+    /**
+     * Polls the dev cluster until the supplied index is absent or the deadline elapses.
+     * Encapsulates the retry loop so the sleep-in-loop pattern is confined to this helper.
+     */
+    private static void waitForIndexAbsent(OpenSearchClient client, String fullName)
+            throws IOException, InterruptedException {
+        long deadline = System.currentTimeMillis() + POLL_EXISTS_MAX_MS;
+        while (client.indices().exists(b -> b.index(fullName)).value()
+                && System.currentTimeMillis() < deadline) {
+            TimeUnit.MILLISECONDS.sleep(POLL_INTERVAL_MS);
         }
     }
 }

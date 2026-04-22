@@ -80,14 +80,9 @@ class OpenSearchClientWrapperIT {
         String result = indexResp.result().jsonValue();
         assertThat(result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated")).isTrue();
 
-        /*
-         * Map.class is a raw type because Java does not preserve generic parameters at runtime (type erasure).
-         * The OpenSearch Java client requires a Class<TDocument> for deserialization, so we cast Map.class
-         * to Class<Map<String,Object>>. This cast is unchecked by the compiler because generic type
-         * information is not available at runtime. The suppression is intentional and considered safe here
-         * because the test controls both serialization and deserialization of the document structure.
-         */
-        @SuppressWarnings("unchecked")
+        // OpenSearch's get() requires Class<TDocument>; Map.class is raw by erasure, so we re-assert the generic
+        // parameters. Safe here because the test controls both the serialized document shape and its deserialization.
+        @SuppressWarnings("unchecked") // Raw Map.class cast; see comment above.
         Class<Map<String, Object>> mapClass = (Class<Map<String, Object>>) (Class<?>) Map.class;
 
         GetResponse<Map<String, Object>> getResp = client.get(

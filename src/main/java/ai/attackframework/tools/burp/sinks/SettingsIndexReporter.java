@@ -20,7 +20,6 @@ import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -68,7 +67,7 @@ public final class SettingsIndexReporter {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
-            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
+            boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SETTINGS)) {
                 return;
@@ -82,26 +81,17 @@ public final class SettingsIndexReporter {
             ConfigState.State state = RuntimeConfig.getState();
             Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), "settings", doc);
+            SingleDocOutcomeRecorder.record("settings", ok, openSearchActive, "Settings index push failed");
             if (ok) {
-                if (openSearchActive) {
-                    ExportStats.recordSuccess("settings", 1);
-                }
                 lastPushedHash = hashSettingsForEnabled(state, projectJson, userJson);
                 Logger.logInfoPanelOnly("[Settings] Snapshot pushed to " + RuntimeConfig.activeSinkSummary() + ".");
             } else {
-                if (openSearchActive) {
-                    ExportStats.recordFailure("settings", 1);
-                    ExportStats.recordLastError("settings", "Settings index push failed");
-                }
                 Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
                         + RuntimeConfig.activeSinkSummary() + " (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            if (RuntimeConfig.isOpenSearchExportEnabled()) {
-                ExportStats.recordFailure("settings", 1);
-                ExportStats.recordLastError("settings", msg);
-            }
+            SingleDocOutcomeRecorder.record("settings", false, RuntimeConfig.isOpenSearchActive(), msg);
             Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
                     + RuntimeConfig.activeSinkSummary() + ": " + msg);
         }
@@ -165,7 +155,7 @@ public final class SettingsIndexReporter {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
-            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
+            boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
             List<String> sources = RuntimeConfig.getState().dataSources();
             if (sources == null || !sources.contains(ConfigKeys.SRC_SETTINGS)) {
                 return;
@@ -183,27 +173,18 @@ public final class SettingsIndexReporter {
             }
             Map<String, Object> doc = buildSettingsDoc(api, projectJson, userJson, state);
             boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, settingsIndexName(), "settings", doc);
+            SingleDocOutcomeRecorder.record("settings", ok, openSearchActive, "Settings index push failed");
             if (ok) {
-                if (openSearchActive) {
-                    ExportStats.recordSuccess("settings", 1);
-                }
                 lastPushedHash = currentHash;
                 Logger.logInfoPanelOnly("[Settings] Snapshot pushed to "
                         + RuntimeConfig.activeSinkSummary() + " (change detected).");
             } else {
-                if (openSearchActive) {
-                    ExportStats.recordFailure("settings", 1);
-                    ExportStats.recordLastError("settings", "Settings index push failed");
-                }
                 Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
                         + RuntimeConfig.activeSinkSummary() + " (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            if (RuntimeConfig.isOpenSearchExportEnabled()) {
-                ExportStats.recordFailure("settings", 1);
-                ExportStats.recordLastError("settings", msg);
-            }
+            SingleDocOutcomeRecorder.record("settings", false, RuntimeConfig.isOpenSearchActive(), msg);
             Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
                     + RuntimeConfig.activeSinkSummary() + ": " + msg);
         }

@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
@@ -48,14 +47,12 @@ public final class ExporterIndexConfigReporter {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
-            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
+            boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
             Map<String, Object> doc = buildConfigDoc(RuntimeConfig.getState());
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("tool"), "tool", doc);
-            if (ok && openSearchActive) {
-                ExportStats.recordSuccess("tool", 1);
-            } else if (!ok && openSearchActive) {
-                ExportStats.recordFailure("tool", 1);
-                ExportStats.recordLastError("tool", "Exporter config snapshot push failed");
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("exporter"), "exporter", doc);
+            SingleDocOutcomeRecorder.record("exporter", ok, openSearchActive,
+                    "Exporter config snapshot push failed");
+            if (!ok && openSearchActive) {
                 Logger.logWarnPanelOnly("[Exporter] Config snapshot push failed.");
             }
         } catch (Exception e) {

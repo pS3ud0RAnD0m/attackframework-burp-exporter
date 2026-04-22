@@ -175,7 +175,7 @@ public final class SitemapIndexReporter {
             int attempted = 0;
 
             SnapshotSummary.Baseline baseline = pushAll ? SnapshotSummary.forIndexKey("sitemap") : null;
-            boolean openSearchActive = pushAll && isOpenSearchActive();
+            boolean openSearchActive = pushAll && RuntimeConfig.isOpenSearchActive();
             boolean fileActive = pushAll && RuntimeConfig.isAnyFileExportEnabled();
             long startNs = pushAll ? System.nanoTime() : 0L;
 
@@ -229,10 +229,6 @@ public final class SitemapIndexReporter {
         }
     }
 
-    private static boolean isOpenSearchActive() {
-        String activeBaseUrl = RuntimeConfig.openSearchUrl();
-        return activeBaseUrl != null && !activeBaseUrl.isBlank();
-    }
 
     /** Returns sitemap request/response items, tolerating transient Burp lifecycle nulls. */
     private static List<HttpRequestResponse> safeSiteMapItems(MontoyaApi api) {
@@ -267,7 +263,7 @@ public final class SitemapIndexReporter {
 
     private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
-        boolean openSearchActive = !activeBaseUrl.isBlank();
+        boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
         int attempted = batchDocs.size();
         int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, sitemapIndexName(), "sitemap", batchDocs);
         BulkOutcomeRecorder.record("sitemap", "Sitemap", "Bulk push", attempted, successCount, openSearchActive);

@@ -73,7 +73,7 @@ class OpenSearchSinkIT {
 
         // Short names check
         Set<String> seenShort = second.stream().map(IndexResult::shortName).collect(Collectors.toSet());
-        assertThat(seenShort).contains("tool", "settings", "sitemap", "findings", "traffic");
+        assertThat(seenShort).contains("exporter", "settings", "sitemap", "findings", "traffic");
     }
 
     /**

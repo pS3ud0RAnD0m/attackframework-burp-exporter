@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
@@ -24,7 +25,7 @@ import ai.attackframework.tools.burp.utils.Logger;
 class OpenSearchSinkUnsupportedSourceIT {
 
     private static final Set<String> ALLOWED_SHORT_NAMES = Set.of(
-            "tool", "settings", "sitemap", "findings", "traffic"
+            "exporter", "settings", "sitemap", "findings", "traffic"
     );
 
     @Test
@@ -49,7 +50,7 @@ class OpenSearchSinkUnsupportedSourceIT {
             for (IndexResult r : results) {
                 try {
                     client.indices().delete(new DeleteIndexRequest.Builder().index(r.fullName()).build());
-                } catch (Exception e) {
+                } catch (IOException | RuntimeException e) {
                     Logger.logError("[OpenSearchSinkUnsupportedSourceIT] Failed to delete index during unsupported-source test cleanup: " + r.fullName(), e);
                 }
             }

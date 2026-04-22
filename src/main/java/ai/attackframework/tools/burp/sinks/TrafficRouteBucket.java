@@ -152,9 +152,9 @@ public final class TrafficRouteBucket {
      * per-route counter updates on top via {@link #recordOpenSearchSuccess(Route, long)} /
      * {@link #recordOpenSearchFailure(Route, long)}.</p>
      *
-     * <p>Counts are clamped so {@code sent} is bounded to {@code [0, max(0, attempted)]}; this
-     * mirrors {@link BulkOutcomeRecorder} and keeps per-route counters consistent with the index
-     * totals when callers mis-report.</p>
+     * <p>Counts are clamped so {@code sent} is bounded to {@code [0, max(0, attempted)]} by
+     * {@link BulkOutcomeRecorder#record}; per-route counters derived here inherit that clamping
+     * and stay consistent with the index totals when callers mis-report.</p>
      *
      * <p>When {@code openSearchActive} is {@code false}, this call is a no-op and no counters
      * are updated (the file sink records its own outcomes separately).</p>
@@ -175,16 +175,15 @@ public final class TrafficRouteBucket {
         if (route == null) {
             return;
         }
-        int clampedAttempted = Math.max(0, attempted);
         int clampedSent = BulkOutcomeRecorder.record(
-                INDEX_KEY, "Traffic", logLabel, clampedAttempted, sent, openSearchActive);
+                INDEX_KEY, "Traffic", logLabel, attempted, sent, openSearchActive);
         if (!openSearchActive) {
             return;
         }
         if (clampedSent > 0) {
             recordOpenSearchSuccess(route, clampedSent);
         }
-        int failure = clampedAttempted - clampedSent;
+        int failure = Math.max(0, attempted) - clampedSent;
         if (failure > 0) {
             recordOpenSearchFailure(route, failure);
         }

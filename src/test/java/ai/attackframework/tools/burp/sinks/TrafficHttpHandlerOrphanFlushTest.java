@@ -56,9 +56,7 @@ class TrafficHttpHandlerOrphanFlushTest {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static void seedAgedPendingOrphan(int messageId, ToolType toolType) throws Exception {
-        Class<?> supportCls = Class.forName(SUPPORT_CLASS);
         Class<?> pendingOrphanCls = Class.forName(SUPPORT_CLASS + "$PendingOrphan");
         Class<?> resolutionCls = Class.forName(SUPPORT_CLASS + "$RequestStageResolution");
 
@@ -77,11 +75,7 @@ class TrafficHttpHandlerOrphanFlushTest {
         ctor.setAccessible(true);
         Object aged = ctor.newInstance(skeleton, 0L, toolType, resolution);
 
-        Field pendingField = supportCls.getDeclaredField("pendingOrphans");
-        pendingField.setAccessible(true);
-        ConcurrentHashMap<Integer, Object> pending =
-                (ConcurrentHashMap<Integer, Object>) pendingField.get(null);
-        pending.put(messageId, aged);
+        readPendingOrphans().put(messageId, aged);
     }
 
     private static void invokeFlushOrphanedRequests() throws Exception {
@@ -90,24 +84,30 @@ class TrafficHttpHandlerOrphanFlushTest {
         m.invoke(null);
     }
 
-    @SuppressWarnings("unchecked")
     private static void assertPendingOrphanRemoved(int messageId) throws Exception {
-        Field pendingField = Class.forName(SUPPORT_CLASS).getDeclaredField("pendingOrphans");
-        pendingField.setAccessible(true);
-        ConcurrentHashMap<Integer, Object> pending =
-                (ConcurrentHashMap<Integer, Object>) pendingField.get(null);
-        assertThat(pending.get(messageId))
+        assertThat(readPendingOrphans().get(messageId))
                 .as("flushOrphanedRequests must remove drained entries")
                 .isNull();
     }
 
-    @SuppressWarnings("unchecked")
     private static void clearPendingOrphans() throws Exception {
+        readPendingOrphans().clear();
+    }
+
+    /**
+     * Returns the private static {@code pendingOrphans} map from {@code TrafficHttpHandlerSupport}
+     * via reflection, exposing it to the test as a typed {@code ConcurrentHashMap<Integer, Object>}.
+     *
+     * <p>Single centralized suppression for this test: the field is declared in production code as
+     * {@code ConcurrentHashMap<Integer, PendingOrphan>}; we narrow to {@code Object} values because
+     * {@code PendingOrphan} is package-private and only referenced via reflection here. The cast
+     * merely re-asserts the generic parameters that type erasure strips at runtime.</p>
+     */
+    @SuppressWarnings("unchecked") // Field is ConcurrentHashMap<Integer, PendingOrphan>; test uses Object values via reflection.
+    private static ConcurrentHashMap<Integer, Object> readPendingOrphans() throws Exception {
         Field pendingField = Class.forName(SUPPORT_CLASS).getDeclaredField("pendingOrphans");
         pendingField.setAccessible(true);
-        ConcurrentHashMap<Integer, Object> pending =
-                (ConcurrentHashMap<Integer, Object>) pendingField.get(null);
-        pending.clear();
+        return (ConcurrentHashMap<Integer, Object>) pendingField.get(null);
     }
 
     private static ConfigState.State fileOnlyTrafficState(Path root) {

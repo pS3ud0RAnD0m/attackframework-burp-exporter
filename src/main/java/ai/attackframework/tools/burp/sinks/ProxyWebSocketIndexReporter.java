@@ -189,7 +189,7 @@ public final class ProxyWebSocketIndexReporter {
 
     private static void flushBatch(List<String> keys, List<Map<String, Object>> docs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
-        boolean openSearchActive = !activeBaseUrl.isBlank();
+        boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
         int attempted = docs.size();
         int success = OpenSearchClientWrapper.pushBulk(
                 activeBaseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, docs);

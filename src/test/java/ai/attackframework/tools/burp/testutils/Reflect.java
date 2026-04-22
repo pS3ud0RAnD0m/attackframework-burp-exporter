@@ -119,6 +119,11 @@ public final class Reflect {
      * Invokes a (possibly private) method by name. Resolves overloads by arity and assignability,
      * and supports null arguments and primitive parameters.
      *
+     * <p>Returns {@link Object} rather than a generic {@code <T> T} so that call sites such as
+     * {@code assertThat(call(...))} don't become ambiguous across AssertJ's overloaded
+     * {@code assertThat(...)} factories. Callers that need a typed result cast the return value
+     * and document the cast at the call site.</p>
+     *
      * @param target     instance declaring (or inheriting) the method
      * @param methodName declared method name
      * @param args       arguments to pass (may contain nulls)
@@ -144,6 +149,9 @@ public final class Reflect {
 
     /**
      * Invokes a static (possibly private) method by name.
+     *
+     * <p>Returns {@link Object} for the same reason as {@link #call(Object, String, Object...)};
+     * see that method's Javadoc.</p>
      *
      * @param owner      class declaring (or inheriting) the method
      * @param methodName declared method name

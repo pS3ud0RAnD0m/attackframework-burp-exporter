@@ -92,7 +92,7 @@ public final class ProxyHistoryIndexReporter {
      * @param baseUrl OpenSearch base URL
      */
     private static void pushItems(MontoyaApi api, String baseUrl) {
-        boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
+        boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
         List<ProxyHttpRequestResponse> history = api.proxy().history();
         if (history == null || history.isEmpty()) {
             return;

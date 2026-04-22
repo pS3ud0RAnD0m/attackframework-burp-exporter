@@ -137,14 +137,12 @@ public final class ExporterIndexStatsReporter {
                 return;
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
-            boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
+            boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
             Map<String, Object> doc = buildSnapshotDoc();
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("tool"), "tool", doc);
-            if (ok && openSearchActive) {
-                ExportStats.recordSuccess("tool", 1);
-            } else if (!ok && openSearchActive) {
-                ExportStats.recordFailure("tool", 1);
-                ExportStats.recordLastError("tool", "Exporter stats snapshot push failed");
+            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("exporter"), "exporter", doc);
+            SingleDocOutcomeRecorder.record("exporter", ok, openSearchActive,
+                    "Exporter stats snapshot push failed");
+            if (!ok && openSearchActive) {
                 Logger.logWarnPanelOnly("[Exporter] Stats snapshot push failed.");
             }
         } catch (Exception e) {

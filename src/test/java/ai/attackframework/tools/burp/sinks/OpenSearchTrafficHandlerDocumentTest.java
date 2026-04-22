@@ -804,6 +804,7 @@ class TrafficHttpHandlerDocumentTest {
 
     @Test
     void buildOrphanDocumentSkeleton_writesRepeaterRequestStageMetadata_forRequestOnlyExports() {
+        // buildOrphanDocumentSkeleton returns LinkedHashMap<String, Object>; cast narrows the erased signature.
         @SuppressWarnings("unchecked")
         Map<String, Object> skeleton = (Map<String, Object>) call(
                 handler,
@@ -830,6 +831,7 @@ class TrafficHttpHandlerDocumentTest {
                     new RepeaterMetadataFields.Metadata("Tracked Tab", "Tracked Group"),
                     System.currentTimeMillis());
 
+            // buildOrphanDocumentSkeleton returns LinkedHashMap<String, Object>; cast narrows the erased signature.
             @SuppressWarnings("unchecked")
             Map<String, Object> skeleton = (Map<String, Object>) call(
                     handler,

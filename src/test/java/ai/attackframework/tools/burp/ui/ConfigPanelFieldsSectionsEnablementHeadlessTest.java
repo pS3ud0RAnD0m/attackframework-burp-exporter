@@ -224,7 +224,7 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
             exporterInfoCheckbox.setSelected(true);
             runRefresh(panel);
         });
-        assertThat(sectionEnabled("tool", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
+        assertThat(sectionEnabled("exporter", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
 
         SwingUtilities.invokeAndWait(() -> {
             exporterCheckbox.setSelected(false);
@@ -233,13 +233,13 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
             }
             runRefresh(panel);
         });
-        assertThat(sectionEnabled("tool", headerRows, subPanels, fieldCheckboxesByIndex)).isFalse();
+        assertThat(sectionEnabled("exporter", headerRows, subPanels, fieldCheckboxesByIndex)).isFalse();
 
         SwingUtilities.invokeAndWait(() -> {
             exporterInfoCheckbox.setSelected(true);
             runRefresh(panel);
         });
-        assertThat(sectionEnabled("tool", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
+        assertThat(sectionEnabled("exporter", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
     }
 
     private static void runRefresh(ConfigPanel panel) {

@@ -69,8 +69,16 @@ class IndexNamingTest {
                 java.time.Instant.parse("2026-04-15T12:34:56Z"));
 
         assertThat(resolution.valid()).isTrue();
-        assertThat(resolution.namesByKey().get("tool")).isEqualTo("20260415-attackframework-tool-burp-exporter");
+        assertThat(resolution.namesByKey().get("exporter")).isEqualTo("20260415-attackframework-tool-burp-exporter");
         assertThat(resolution.namesByKey().get("traffic")).isEqualTo("20260415-attackframework-tool-burp-traffic");
+    }
+
+    @Test
+    void requireKnownIndexKey_legacyToolIndexName_mapsToExporter() {
+        assertThat(IndexNaming.requireKnownIndexKey(IndexNaming.LEGACY_TOOL_INDEX_NAME))
+                .isEqualTo("exporter");
+        assertThat(IndexNaming.requireKnownIndexKey(IndexNaming.indexNameForShortName("exporter")))
+                .isEqualTo("exporter");
     }
 
     @Test
@@ -87,7 +95,7 @@ class IndexNamingTest {
                 java.time.Instant.parse("2026-04-15T12:34:56Z"));
 
         assertThat(validation.valid()).isFalse();
-        assertThat(validation.failingIndexKey()).isEqualTo("tool");
+        assertThat(validation.failingIndexKey()).isEqualTo("exporter");
         assertThat(validation.failingDisplayName()).isEqualTo("Exporter");
         assertThat(validation.failingResolvedName()).isEqualTo("Attackframework Tool Burp-exporter");
         assertThat(validation.error()).isEqualTo("must be lowercase.");
@@ -102,7 +110,7 @@ class IndexNamingTest {
                 java.time.Instant.parse("2026-04-15T12:34:56Z"));
 
         assertThat(validation.valid()).isFalse();
-        assertThat(validation.failingIndexKey()).isEqualTo("tool");
+        assertThat(validation.failingIndexKey()).isEqualTo("exporter");
         assertThat(validation.failingResolvedName()).isEqualTo(nearLimitBase + "-exporter");
         assertThat(validation.error()).contains("255-byte OpenSearch index-name limit");
     }

@@ -30,8 +30,6 @@ import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
-import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
@@ -584,56 +582,28 @@ public final class RepeaterHistoryIndexReporter {
     }
 
     private static void logStartupExportCompletionSummary() {
-        StartupExportStatsSnapshot baseline = startupExportStatsSnapshot;
-        int newCaptures = Math.max(0, CAPTURED.size() - baseline.captureCountBefore());
+        StartupExportStatsSnapshot snapshot = startupExportStatsSnapshot;
+        int newCaptures = Math.max(0, CAPTURED.size() - snapshot.captureCountBefore());
+        String body = SnapshotSummary.formatCompletionBody(snapshot.baseline(), true, true);
         Logger.logInfoPanelOnly("[Traffic] Repeater History startup export complete startupSession="
                 + currentStartupSessionId()
                 + " captured " + newCaptures + " tab(s)"
-                + "; file={success=" + baseline.fileSuccessDelta()
-                + ", failure=" + baseline.fileFailureDelta() + "}"
-                + "; openSearch={success=" + baseline.openSearchSuccessDelta()
-                + ", failure=" + baseline.openSearchFailureDelta() + "}"
+                + (body.isEmpty() ? "" : "; " + body)
                 + "; " + describeStartupMetadataSummary() + ".");
     }
 
     private static record StartupExportStatsSnapshot(
             int captureCountBefore,
-            long fileRepeaterHistorySuccessBefore,
-            long fileRepeaterHistoryFailureBefore,
-            long openSearchRepeaterHistorySuccessBefore,
-            long openSearchRepeaterHistoryFailureBefore) {
+            SnapshotSummary.Baseline baseline) {
 
         private static StartupExportStatsSnapshot empty() {
-            return new StartupExportStatsSnapshot(0, 0, 0, 0, 0);
+            return new StartupExportStatsSnapshot(0, null);
         }
 
         private static StartupExportStatsSnapshot capture(int captureCountBefore) {
-            return new StartupExportStatsSnapshot(
-                    captureCountBefore,
-                    FileExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE),
-                    FileExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE),
-                    ExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE),
-                    ExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE));
-        }
-
-        private long fileSuccessDelta() {
-            return Math.max(0, FileExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE)
-                    - fileRepeaterHistorySuccessBefore);
-        }
-
-        private long fileFailureDelta() {
-            return Math.max(0, FileExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE)
-                    - fileRepeaterHistoryFailureBefore);
-        }
-
-        private long openSearchSuccessDelta() {
-            return Math.max(0, ExportStats.getTrafficToolTypeSuccessCount(TOOL_TYPE)
-                    - openSearchRepeaterHistorySuccessBefore);
-        }
-
-        private long openSearchFailureDelta() {
-            return Math.max(0, ExportStats.getTrafficToolTypeFailureCount(TOOL_TYPE)
-                    - openSearchRepeaterHistoryFailureBefore);
+            SnapshotSummary.Baseline baseline = SnapshotSummary.forRoute(
+                    new TrafficRouteBucket.Route(TrafficRouteBucket.Kind.TOOL_TYPE, TOOL_TYPE));
+            return new StartupExportStatsSnapshot(captureCountBefore, baseline);
         }
     }
 

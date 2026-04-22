@@ -69,16 +69,16 @@ class ExporterIndexLogForwarderTest {
             ));
             RuntimeConfig.setExportRunning(true);
             RuntimeConfig.setExportStarting(false);
-            long openSearchToolSuccessBefore = ExportStats.getSuccessCount("tool");
+            long openSearchExporterSuccessBefore = ExportStats.getSuccessCount("exporter");
             forwarder = new ExporterIndexLogForwarder();
 
             forwarder.onLog("INFO", "file-only log");
 
-            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
+            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".ndjson");
             Thread.sleep(250L);
             assertThat(ndjsonPath).exists();
             assertThat(Files.readString(ndjsonPath)).contains("file-only log");
-            assertThat(ExportStats.getSuccessCount("tool")).isEqualTo(openSearchToolSuccessBefore);
+            assertThat(ExportStats.getSuccessCount("exporter")).isEqualTo(openSearchExporterSuccessBefore);
         } finally {
             if (forwarder != null) {
                 forwarder.stop();
@@ -114,7 +114,7 @@ class ExporterIndexLogForwarderTest {
             forwarder.onLog("INFO", "should not be exported");
             Thread.sleep(250L);
 
-            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
+            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".ndjson");
             assertThat(ndjsonPath).doesNotExist();
         } finally {
             if (forwarder != null) {

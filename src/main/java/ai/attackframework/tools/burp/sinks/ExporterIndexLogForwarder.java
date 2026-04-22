@@ -10,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
-import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -141,14 +140,10 @@ public final class ExporterIndexLogForwarder implements Logger.LogListener {
                 }
 
                 String baseUrl = RuntimeConfig.openSearchUrl();
-                boolean openSearchActive = baseUrl != null && !baseUrl.isBlank();
-                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("tool"), "tool", doc);
-                if (ok && openSearchActive) {
-                    ExportStats.recordSuccess("tool", 1);
-                } else if (!ok && openSearchActive) {
-                    ExportStats.recordFailure("tool", 1);
-                    ExportStats.recordLastError("tool", "Exporter log push failed");
-                }
+                boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
+                boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("exporter"), "exporter", doc);
+                SingleDocOutcomeRecorder.record("exporter", ok, openSearchActive,
+                        "Exporter log push failed");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;

@@ -691,6 +691,7 @@ class RepeaterHistoryIndexReporterTest {
     @Test
     void buildDocument_includesRepeaterTabAndGroupNames_whenProvided() {
         try {
+            // buildDocument returns LinkedHashMap<String, Object>; cast narrows the erased signature.
             @SuppressWarnings("unchecked")
             Map<String, Object> document = (Map<String, Object>) callStatic(
                     RepeaterHistoryIndexReporter.class,
@@ -754,6 +755,7 @@ class RepeaterHistoryIndexReporterTest {
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8));
             when(response.toByteArray()).thenReturn(responseBytes);
 
+            // buildDocument returns LinkedHashMap<String, Object>; cast narrows the erased signature.
             @SuppressWarnings("unchecked")
             Map<String, Object> document = (Map<String, Object>) callStatic(
                     RepeaterHistoryIndexReporter.class,
@@ -768,6 +770,7 @@ class RepeaterHistoryIndexReporterTest {
             assertThat(document.get("http_version")).isEqualTo("HTTP/2");
             assertThat(document.get("repeater_tab_name")).isEqualTo("FallbackTab");
 
+            // Nested JSON-derived Map<?, ?>; this test controls the document shape end-to-end.
             @SuppressWarnings("unchecked")
             Map<String, Object> requestDoc = (Map<String, Object>) document.get("request");
             assertThat(requestDoc.get("method")).isEqualTo("POST");

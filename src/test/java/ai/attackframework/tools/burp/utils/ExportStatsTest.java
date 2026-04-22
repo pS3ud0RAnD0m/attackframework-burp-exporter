@@ -11,7 +11,13 @@ class ExportStatsTest {
     @Test
     void getIndexKeys_returnsAllFiveIndexKeys() {
         List<String> keys = ExportStats.getIndexKeys();
-        assertThat(keys).containsExactly("traffic", "tool", "settings", "sitemap", "findings");
+        assertThat(keys).containsExactly("traffic", "exporter", "settings", "sitemap", "findings");
+    }
+
+    @Test
+    void getIndexKeys_containsExporterAndNotLegacyToolKey() {
+        List<String> keys = ExportStats.getIndexKeys();
+        assertThat(keys).contains("exporter").doesNotContain("tool");
     }
 
     @Test
@@ -32,7 +38,7 @@ class ExportStatsTest {
         assertThat(ExportStats.getFailureCount("sitemap")).isEqualTo(before + 1);
 
         long totalBefore = ExportStats.getTotalFailureCount();
-        ExportStats.recordFailure("tool", 1);
+        ExportStats.recordFailure("exporter", 1);
         assertThat(ExportStats.getTotalFailureCount()).isEqualTo(totalBefore + 1);
     }
 
@@ -145,13 +151,13 @@ class ExportStatsTest {
     @Test
     void recordRetryQueueDrop_incrementsPerIndexAndTotal() {
         long beforeTraffic = ExportStats.getRetryQueueDrops("traffic");
-        long beforeTool = ExportStats.getRetryQueueDrops("tool");
+        long beforeExporter = ExportStats.getRetryQueueDrops("exporter");
         long beforeTotal = ExportStats.getTotalRetryQueueDrops();
         ExportStats.recordRetryQueueDrop("traffic", 2);
         assertThat(ExportStats.getRetryQueueDrops("traffic")).isEqualTo(beforeTraffic + 2);
         assertThat(ExportStats.getTotalRetryQueueDrops()).isEqualTo(beforeTotal + 2);
-        ExportStats.recordRetryQueueDrop("tool", 1);
-        assertThat(ExportStats.getRetryQueueDrops("tool")).isEqualTo(beforeTool + 1);
+        ExportStats.recordRetryQueueDrop("exporter", 1);
+        assertThat(ExportStats.getRetryQueueDrops("exporter")).isEqualTo(beforeExporter + 1);
         assertThat(ExportStats.getTotalRetryQueueDrops()).isEqualTo(beforeTotal + 3);
     }
 

@@ -228,26 +228,42 @@ public final class TrafficExportQueue {
             if (result.attemptedCount == 0) {
                 continue;
             }
-            ExportStats.recordLastPush("traffic", durationMs);
-            ExportStats.recordSuccess("traffic", result.successCount);
-            ExportStats.recordExportedBytes("traffic", result.successBytes);
-            result.trafficToolTypeSuccessCounts.forEach(
-                    (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeSuccess(toolTypeKey, count.longValue()));
-            result.trafficSourceSuccessCounts.forEach(
-                    (sourceKey, count) -> ExportStats.recordTrafficSourceSuccess(sourceKey, count.longValue()));
-            if (result.successCount < result.attemptedCount) {
-                long failure = result.attemptedCount - result.successCount;
-                ExportStats.recordFailure("traffic", failure);
-                result.trafficToolTypeFailureCounts.forEach(
-                        (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeFailure(toolTypeKey, count.longValue()));
-                result.trafficSourceFailureCounts.forEach(
-                        (sourceKey, count) -> ExportStats.recordTrafficSourceFailure(sourceKey, count.longValue()));
-            }
+            applyBulkOutcome(result, durationMs);
             if (result.isFullSuccess()) {
                 batchController.recordSuccess(result.attemptedCount);
             } else {
                 batchController.recordFailure(result.attemptedCount);
             }
+        }
+    }
+
+    /**
+     * Applies index-level and per-route accounting for a streaming bulk push outcome.
+     *
+     * <p>Package-private for unit-test access; production callers invoke it from
+     * {@link #drainLoop()} once per completed bulk. Delegates index-level counters and the
+     * panel-warn/last-error on partial failure to
+     * {@link BulkOutcomeRecorder#record(String, String, String, int, int, boolean)}, then
+     * layers per-tool-type and per-source counts derived from {@link ChunkedBulkSender.Result}.
+     * {@link BulkOutcomeRecorder} already clamps {@code sent} to {@code [0, attempted]}; the
+     * per-route failure maps only apply when the clamped success count is below the attempted
+     * total.</p>
+     */
+    static void applyBulkOutcome(ChunkedBulkSender.Result result, long durationMs) {
+        int clampedSent = BulkOutcomeRecorder.record(
+                TrafficRouteBucket.INDEX_KEY, "Traffic", "Bulk push",
+                result.attemptedCount, result.successCount, true);
+        ExportStats.recordLastPush(TrafficRouteBucket.INDEX_KEY, durationMs);
+        ExportStats.recordExportedBytes(TrafficRouteBucket.INDEX_KEY, result.successBytes);
+        result.trafficToolTypeSuccessCounts.forEach(
+                (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeSuccess(toolTypeKey, count.longValue()));
+        result.trafficSourceSuccessCounts.forEach(
+                (sourceKey, count) -> ExportStats.recordTrafficSourceSuccess(sourceKey, count.longValue()));
+        if (clampedSent < result.attemptedCount) {
+            result.trafficToolTypeFailureCounts.forEach(
+                    (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeFailure(toolTypeKey, count.longValue()));
+            result.trafficSourceFailureCounts.forEach(
+                    (sourceKey, count) -> ExportStats.recordTrafficSourceFailure(sourceKey, count.longValue()));
         }
     }
 

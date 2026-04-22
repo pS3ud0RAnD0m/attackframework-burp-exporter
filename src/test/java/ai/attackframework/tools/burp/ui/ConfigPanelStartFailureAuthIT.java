@@ -85,7 +85,7 @@ class ConfigPanelStartFailureAuthIT {
             LockSupport.parkNanos(1_500_000_000L);
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
-            assertThat(ExportStats.getQueueSize("tool")).isZero();
+            assertThat(ExportStats.getQueueSize("exporter")).isZero();
             assertThat(ExportStats.getQueueSize("traffic")).isZero();
             assertThat(ExportStats.getQueueSize("settings")).isZero();
             assertThat(ExportStats.getQueueSize("sitemap")).isZero();

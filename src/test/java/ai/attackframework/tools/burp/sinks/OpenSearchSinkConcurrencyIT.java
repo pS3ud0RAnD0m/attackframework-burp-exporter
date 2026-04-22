@@ -24,12 +24,12 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 class OpenSearchSinkConcurrencyIT {
 
     // Standard short names
-    private static final List<String> SOURCES = List.of("sitemap", "findings", "traffic", "settings", "tool");
+    private static final List<String> SOURCES = List.of("sitemap", "findings", "traffic", "settings", "exporter");
 
     // Expected full names for each short name
     private static Map<String, String> expectedNames() {
         return Map.of(
-                "tool", IndexNaming.indexNameForShortName("tool"),
+                "exporter", IndexNaming.indexNameForShortName("exporter"),
                 "sitemap", IndexNaming.indexNameForShortName("sitemap"),
                 "findings", IndexNaming.indexNameForShortName("findings"),
                 "settings", IndexNaming.indexNameForShortName("settings"),

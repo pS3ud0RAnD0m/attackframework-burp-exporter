@@ -206,7 +206,7 @@ class RuntimeConfigDestinationGatingTest {
             RuntimeConfig.setExportStarting(false);
 
             assertThat(RuntimeConfig.prepareIndexNamesForCurrentRun().valid()).isTrue();
-            String toolDuringRun = RuntimeConfig.indexNameForKey("tool");
+            String exporterDuringRun = RuntimeConfig.indexNameForKey("exporter");
             String trafficDuringRun = RuntimeConfig.indexNameForKey("traffic");
             Instant resolvedAt = RuntimeConfig.resolvedIndexNamesAt();
 
@@ -223,12 +223,12 @@ class RuntimeConfigDestinationGatingTest {
                     "changed-base",
                     null));
 
-            assertThat(RuntimeConfig.indexNameForKey("tool")).isEqualTo(toolDuringRun);
+            assertThat(RuntimeConfig.indexNameForKey("exporter")).isEqualTo(exporterDuringRun);
             assertThat(RuntimeConfig.indexNameForKey("traffic")).isEqualTo(trafficDuringRun);
             assertThat(RuntimeConfig.resolvedIndexNamesAt()).isEqualTo(resolvedAt);
 
             RuntimeConfig.setExportRunning(false);
-            assertThat(RuntimeConfig.indexNameForKey("tool")).isEqualTo("changed-base-exporter");
+            assertThat(RuntimeConfig.indexNameForKey("exporter")).isEqualTo("changed-base-exporter");
             assertThat(RuntimeConfig.indexNameForKey("traffic")).isEqualTo("changed-base-traffic");
         } finally {
             restoreRuntimeState();

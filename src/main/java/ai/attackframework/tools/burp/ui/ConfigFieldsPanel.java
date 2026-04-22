@@ -102,7 +102,7 @@ public final class ConfigFieldsPanel {
             case "sitemap" -> "Sitemap";
             case "findings" -> "Findings";
             case "traffic" -> "Traffic";
-            case "tool" -> "Exporter";
+            case "exporter" -> "Exporter";
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }
@@ -128,7 +128,7 @@ public final class ConfigFieldsPanel {
                     "The index name can be customized from the Index Base Name field.",
                     "Traffic field labels are shown hierarchically to match the mapped document shape."
             );
-            case "tool" -> Tooltips.htmlRaw(
+            case "exporter" -> Tooltips.htmlRaw(
                     "<b>Exporter fields</b>",
                     "Configure fields exported to the Exporter index.",
                     "The index name can be customized from the Index Base Name field.",
@@ -144,7 +144,7 @@ public final class ConfigFieldsPanel {
             case "sitemap" -> Tooltips.html("Show or hide Sitemap field options.");
             case "findings" -> findingsExpandTooltip();
             case "traffic" -> Tooltips.html("Show or hide Traffic field options.");
-            case "tool" -> Tooltips.html("Show or hide Exporter field options.");
+            case "exporter" -> Tooltips.html("Show or hide Exporter field options.");
             default -> throw new IllegalArgumentException("Unknown index for Fields panel: " + indexShortName);
         };
     }

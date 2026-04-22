@@ -12,13 +12,14 @@ import ai.attackframework.tools.burp.utils.Logger;
  * <p>Reporters such as {@code ProxyHistoryIndexReporter} and {@code SitemapIndexReporter} run
  * bounded, single-pass exports at Start. This helper captures counter deltas across the run
  * and emits a single {@code INFO}-level panel line with attempted, file, and OpenSearch
- * outcomes. The format mirrors the Repeater History startup completion summary so operators
- * can visually align per-source totals.</p>
+ * outcomes. The {@code file={...}; openSearch={...}} body shares the substructure with the
+ * Repeater History startup completion summary so operators can visually align per-source
+ * totals across reporters; the surrounding prefix and suffix differ per reporter.</p>
  *
  * <p>Two counter sources are supported via {@link #forRoute(TrafficRouteBucket.Route)} and
  * {@link #forIndexKey(String)}: traffic reporters use the per-route bucket counters, while
  * non-traffic reporters (Sitemap, Findings, etc.) use the index-key totals exposed by
- * {@link ExportStats} / {@link FileExportStats}. Both flavors share identical log output.</p>
+ * {@link ExportStats} / {@link FileExportStats}. Both flavors share identical body output.</p>
  */
 public final class SnapshotSummary {
 
@@ -102,6 +103,35 @@ public final class SnapshotSummary {
             boolean openSearchActive,
             boolean fileActive) {
         String label = (prefix == null || prefix.isBlank()) ? "Export" : prefix.trim();
+        StringBuilder sb = new StringBuilder(128);
+        sb.append('[').append(label).append("] snapshot complete: captured=")
+                .append(Math.max(0, attempted));
+        String body = formatCompletionBody(baseline, openSearchActive, fileActive);
+        if (!body.isEmpty()) {
+            sb.append("; ").append(body);
+        }
+        sb.append(" in ").append(Math.max(0L, durationMs)).append("ms.");
+        return sb.toString();
+    }
+
+    /**
+     * Builds the {@code file={...}; openSearch={...}} body fragment that reporters can compose
+     * into their own completion log lines.
+     *
+     * <p>Each section is included only when the corresponding sink was active for the run. When
+     * both are inactive the method returns an empty string. Reporters are responsible for
+     * prepending/appending any surrounding prefix, suffix, or separators.</p>
+     *
+     * @param baseline snapshot captured before the run; {@code null} yields zeroed deltas
+     * @param openSearchActive whether the OpenSearch sink was active for the run
+     * @param fileActive whether any file sink was active for the run
+     * @return fragment such as {@code "file={success=2, failure=0}; openSearch={success=2, failure=0}"};
+     *         never {@code null}
+     */
+    public static String formatCompletionBody(
+            Baseline baseline,
+            boolean openSearchActive,
+            boolean fileActive) {
         long fileSuccessDelta = 0;
         long fileFailureDelta = 0;
         long openSearchSuccessDelta = 0;
@@ -114,19 +144,18 @@ public final class SnapshotSummary {
             openSearchFailureDelta = Math.max(0,
                     baseline.openSearchFailureNow.getAsLong() - baseline.openSearchFailureBefore);
         }
-
-        StringBuilder sb = new StringBuilder(128);
-        sb.append('[').append(label).append("] snapshot complete: captured=")
-                .append(Math.max(0, attempted));
+        StringBuilder sb = new StringBuilder(64);
         if (fileActive) {
-            sb.append("; file={success=").append(fileSuccessDelta)
+            sb.append("file={success=").append(fileSuccessDelta)
                     .append(", failure=").append(fileFailureDelta).append('}');
         }
         if (openSearchActive) {
-            sb.append("; openSearch={success=").append(openSearchSuccessDelta)
+            if (sb.length() > 0) {
+                sb.append("; ");
+            }
+            sb.append("openSearch={success=").append(openSearchSuccessDelta)
                     .append(", failure=").append(openSearchFailureDelta).append('}');
         }
-        sb.append(" in ").append(Math.max(0L, durationMs)).append("ms.");
         return sb.toString();
     }
 

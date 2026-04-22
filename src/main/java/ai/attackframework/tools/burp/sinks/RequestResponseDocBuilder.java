@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
@@ -365,37 +366,47 @@ public final class RequestResponseDocBuilder {
         };
     }
 
-    @SuppressWarnings("unchecked")
     private static void putResponseBodyField(Map<String, Object> responseDoc, String field, Object value) {
         if (responseDoc == null || field == null) {
             return;
         }
-        Object bodyObj = responseDoc.get("body");
-        Map<String, Object> body;
-        if (bodyObj instanceof Map<?, ?>) {
-            body = (Map<String, Object>) bodyObj;
-        } else {
-            body = new LinkedHashMap<>();
-            responseDoc.put("body", body);
-        }
+        Map<String, Object> body = nestedStringKeyedMap(responseDoc, "body", LinkedHashMap::new);
         body.put(field, value);
     }
 
-    @SuppressWarnings("unchecked")
     private static void putResponseHeaderField(Map<String, Object> responseDoc, String field, Object value) {
         if (responseDoc == null || field == null) {
             return;
         }
-        Object headersObj = responseDoc.get("headers");
-        Map<String, Object> headers;
-        if (headersObj instanceof Map<?, ?>) {
-            headers = (Map<String, Object>) headersObj;
-        } else {
-            headers = new LinkedHashMap<>();
-            headers.put("full", List.of());
-            responseDoc.put("headers", headers);
-        }
+        Map<String, Object> headers = nestedStringKeyedMap(responseDoc, "headers", () -> {
+            Map<String, Object> fresh = new LinkedHashMap<>();
+            fresh.put("full", List.of());
+            return fresh;
+        });
         headers.put(field, value);
+    }
+
+    /**
+     * Returns the nested {@code Map<String, Object>} stored under {@code key} in {@code parent},
+     * or initializes it with {@code initializer} and inserts it when absent or of the wrong type.
+     *
+     * <p>Single centralized suppression for response-document assembly: every nested map in the
+     * response JSON is built by this class as {@code Map<String, Object>}, so the
+     * {@code instanceof Map<?, ?>} guard plus this cast simply re-assert the generic parameters
+     * that type erasure strips at runtime.</p>
+     */
+    @SuppressWarnings("unchecked") // Nested response-document maps are always built here as Map<String, Object>.
+    private static Map<String, Object> nestedStringKeyedMap(
+            Map<String, Object> parent,
+            String key,
+            Supplier<Map<String, Object>> initializer) {
+        Object existing = parent.get(key);
+        if (existing instanceof Map<?, ?>) {
+            return (Map<String, Object>) existing;
+        }
+        Map<String, Object> fresh = initializer.get();
+        parent.put(key, fresh);
+        return fresh;
     }
 
     private static Object attributeValue(Attribute attr) {

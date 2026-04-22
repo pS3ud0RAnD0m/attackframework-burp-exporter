@@ -49,7 +49,7 @@ class ExporterIndexStatsReporterTest {
 
             ExporterIndexStatsReporter.pushSnapshotNow();
 
-            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
+            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl");
             assertThat(jsonlPath).exists();
             assertThat(Files.readString(jsonlPath)).contains("stats_snapshot");
             assertThat(Files.readString(jsonlPath)).contains("repeater_live_metadata_source_summary");
@@ -78,7 +78,7 @@ class ExporterIndexStatsReporterTest {
 
             ExporterIndexStatsReporter.pushSnapshotNow();
 
-            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
+            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl");
             assertThat(jsonlPath).doesNotExist();
         } finally {
             tearDown();

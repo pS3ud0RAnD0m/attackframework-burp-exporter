@@ -14,7 +14,7 @@ class ExportFieldRegistryTest {
     @Test
     void index_order_for_fields_panel_includes_tool_and_matches_config_sources_order() {
         assertThat(ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL)
-                .containsExactly("settings", "sitemap", "findings", "traffic", "tool");
+                .containsExactly("settings", "sitemap", "findings", "traffic", "exporter");
     }
 
     @Test

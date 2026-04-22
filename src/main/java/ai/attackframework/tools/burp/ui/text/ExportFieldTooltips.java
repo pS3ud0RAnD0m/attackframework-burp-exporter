@@ -9,7 +9,7 @@ public final class ExportFieldTooltips {
 
     public static String displayNameFor(String indexShortName, String fieldKey) {
         return switch (indexShortName) {
-            case "tool" -> toolDisplayName(fieldKey);
+            case "exporter" -> exporterDisplayName(fieldKey);
             case "settings" -> settingsDisplayName(fieldKey);
             case "sitemap" -> sitemapDisplayName(fieldKey);
             case "findings" -> findingsDisplayName(fieldKey);
@@ -20,7 +20,7 @@ public final class ExportFieldTooltips {
 
     public static String tooltipFor(String indexShortName, String fieldKey) {
         return switch (indexShortName) {
-            case "tool" -> toolTooltip(fieldKey);
+            case "exporter" -> exporterTooltip(fieldKey);
             case "settings" -> settingsTooltip(fieldKey);
             case "sitemap" -> sitemapTooltip(fieldKey);
             case "findings" -> findingsTooltip(fieldKey);
@@ -29,7 +29,7 @@ public final class ExportFieldTooltips {
         };
     }
 
-    private static String toolDisplayName(String fieldKey) {
+    private static String exporterDisplayName(String fieldKey) {
         return switch (fieldKey) {
             case "level" -> "event.level";
             case "message_text" -> "message_text";
@@ -42,7 +42,7 @@ public final class ExportFieldTooltips {
         };
     }
 
-    private static String toolTooltip(String fieldKey) {
+    private static String exporterTooltip(String fieldKey) {
         return switch (fieldKey) {
             case "level" -> Tooltips.textWithSource(
                     "Event severity or verbosity level.",

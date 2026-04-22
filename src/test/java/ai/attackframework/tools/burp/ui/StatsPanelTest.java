@@ -94,7 +94,7 @@ class StatsPanelTest {
         assertThat(text).contains("Last error");
 
         assertThat(text).contains("traffic");
-        assertThat(text).contains("tool");
+        assertThat(text).contains("exporter");
         assertThat(text).contains("settings");
         assertThat(text).contains("sitemap");
         assertThat(text).contains("findings");
@@ -545,7 +545,7 @@ class StatsPanelTest {
                 .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterKb));
 
         long deltaToMb = Math.max(0L, (1024L * 1024L) - afterKb);
-        ExportStats.recordExportedBytes("tool", deltaToMb);
+        ExportStats.recordExportedBytes("exporter", deltaToMb);
         onEdt(() -> call(panel, "refreshDashboard"));
         long afterMb = afterKb + deltaToMb;
         assertThat(totalExportedValue.getText())

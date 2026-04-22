@@ -83,23 +83,23 @@ class ExportReporterLifecycleTest {
         try {
             RuntimeConfig.setExportRunning(true);
 
-            String toolIndexName = IndexNaming.indexNameForShortName("tool");
+            String exporterIndexName = IndexNaming.indexNameForShortName("exporter");
             IndexingRetryCoordinator coordinator = IndexingRetryCoordinator.getInstance();
-            coordinator.pushDocument("https://127.0.0.1:1", toolIndexName, Map.of("message_text", "x"), "tool");
+            coordinator.pushDocument("https://127.0.0.1:1", exporterIndexName, Map.of("message_text", "x"), "exporter");
             TrafficExportQueue.offer(Map.of("url", "https://example.com/", "status", 200));
 
             ExportReporterLifecycle.stopAndClearPendingExportWork();
 
             long deadline = System.currentTimeMillis() + 2_000;
             while (System.currentTimeMillis() < deadline
-                    && (coordinator.getQueueSize(toolIndexName) != 0
+                    && (coordinator.getQueueSize(exporterIndexName) != 0
                     || TrafficExportQueue.getCurrentSize() != 0
                     || TrafficExportQueue.getCurrentSpillSize() != 0)) {
                 LockSupport.parkNanos(50_000_000L);
             }
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
-            assertThat(coordinator.getQueueSize(toolIndexName)).isZero();
+            assertThat(coordinator.getQueueSize(exporterIndexName)).isZero();
             assertThat(TrafficExportQueue.getCurrentSize()).isZero();
             assertThat(TrafficExportQueue.getCurrentSpillSize()).isZero();
         } finally {
@@ -178,9 +178,8 @@ class ExportReporterLifecycleTest {
         return bytes;
     }
 
-    @SuppressWarnings("unchecked")
     private static LinkedBlockingQueue<Map<String, Object>> trafficQueue() {
-        return (LinkedBlockingQueue<Map<String, Object>>) getStatic(TrafficExportQueue.class, "queue");
+        return getStatic(TrafficExportQueue.class, "queue");
     }
 
     private static ConfigState.State fileExportState(Path root) {

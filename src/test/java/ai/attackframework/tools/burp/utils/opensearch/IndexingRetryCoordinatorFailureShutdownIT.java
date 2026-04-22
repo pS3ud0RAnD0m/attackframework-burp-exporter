@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.utils.opensearch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -41,7 +42,7 @@ class IndexingRetryCoordinatorFailureShutdownIT {
             RuntimeConfig.setExportStarting(false);
 
             for (int i = 0; i < 3; i++) {
-                IndexingRetryCoordinator.getInstance().pushDocument(OpenSearchReachable.BASE_URL, indexName, sampleDoc(i), "tool");
+                IndexingRetryCoordinator.getInstance().pushDocument(OpenSearchReachable.BASE_URL, indexName, sampleDoc(i), "exporter");
             }
 
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
@@ -59,7 +60,7 @@ class IndexingRetryCoordinatorFailureShutdownIT {
             ExportReporterLifecycle.resetForTests();
             try {
                 OpenSearchReachable.getClient().indices().delete(new DeleteIndexRequest.Builder().index(indexName).build());
-            } catch (Exception ignored) {
+            } catch (IOException | RuntimeException ignored) {
                 // Best-effort cleanup for integration infrastructure.
             }
         }
@@ -81,7 +82,7 @@ class IndexingRetryCoordinatorFailureShutdownIT {
             RuntimeConfig.setExportStarting(false);
 
             for (int i = 0; i < 3; i++) {
-                IndexingRetryCoordinator.getInstance().pushDocument(OpenSearchReachable.BASE_URL, indexName, sampleDoc(i), "tool");
+                IndexingRetryCoordinator.getInstance().pushDocument(OpenSearchReachable.BASE_URL, indexName, sampleDoc(i), "exporter");
             }
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
@@ -98,7 +99,7 @@ class IndexingRetryCoordinatorFailureShutdownIT {
             ExportReporterLifecycle.resetForTests();
             try {
                 OpenSearchReachable.getClient().indices().delete(new DeleteIndexRequest.Builder().index(indexName).build());
-            } catch (Exception ignored) {
+            } catch (IOException | RuntimeException ignored) {
                 // Best-effort cleanup for integration infrastructure.
             }
         }

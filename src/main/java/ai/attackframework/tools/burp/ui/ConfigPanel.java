@@ -1177,7 +1177,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     || trafficProxyCheckbox.isSelected() || trafficProxyHistoryCheckbox.isSelected() || trafficRepeaterCheckbox.isSelected()
                     || trafficRepeaterHistoryCheckbox.isSelected()
                     || trafficScannerCheckbox.isSelected() || trafficSequencerCheckbox.isSelected();
-            case "tool" -> exporterCheckbox.isSelected() || exporterTraceCheckbox.isSelected() || exporterDebugCheckbox.isSelected()
+            case "exporter" -> exporterCheckbox.isSelected() || exporterTraceCheckbox.isSelected() || exporterDebugCheckbox.isSelected()
                     || exporterInfoCheckbox.isSelected() || exporterWarnCheckbox.isSelected() || exporterErrorCheckbox.isSelected()
                     || exporterStatsCheckbox.isSelected() || exporterConfigCheckbox.isSelected();
             default -> false;

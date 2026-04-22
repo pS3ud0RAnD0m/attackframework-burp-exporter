@@ -240,8 +240,8 @@ class FileExportServiceTest {
             assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("settings") + ".ndjson")).exists();
             assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("traffic") + ".jsonl")).exists();
             assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("traffic") + ".ndjson")).exists();
-            assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl")).exists();
-            assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson")).exists();
+            assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl")).exists();
+            assertThat(rootAbs.resolve(IndexNaming.indexNameForShortName("exporter") + ".ndjson")).exists();
         });
     }
 

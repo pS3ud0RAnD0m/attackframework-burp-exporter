@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class FileExportStats {
 
     private static final List<String> INDEX_KEYS = Collections.unmodifiableList(
-            Arrays.asList("traffic", "tool", "settings", "sitemap", "findings"));
+            Arrays.asList("traffic", "exporter", "settings", "sitemap", "findings"));
     private static final List<String> TRAFFIC_SOURCE_KEYS = Collections.unmodifiableList(
             Arrays.asList("proxy_live_http", "proxy_history_snapshot", "proxy_websocket"));
     private static final List<String> TRAFFIC_TOOL_TYPE_KEYS = Collections.unmodifiableList(

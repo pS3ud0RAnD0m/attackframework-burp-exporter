@@ -359,7 +359,7 @@ public final class RuntimeConfig {
 
     /** Returns the effective concrete index name for the provided logical key. */
     public static String indexNameForKey(String indexKey) {
-        String normalizedKey = indexKey == null ? "tool" : indexKey.trim().toLowerCase(Locale.ROOT);
+        String normalizedKey = indexKey == null ? "exporter" : indexKey.trim().toLowerCase(Locale.ROOT);
         Map<String, String> resolvedForRun = resolvedIndexNamesForCurrentRun;
         if ((exportRunning || exportStarting) && resolvedForRun.containsKey(normalizedKey)) {
             return resolvedForRun.get(normalizedKey);
@@ -388,6 +388,16 @@ public final class RuntimeConfig {
         }
         ConfigState.State current = state;
         return current == null ? "" : safe(current.sinks().openSearchUrl());
+    }
+
+    /**
+     * Returns {@code true} when OpenSearch export is currently active, i.e. enabled and resolved
+     * to a non-blank base URL. Convenience over inline {@code baseUrl != null && !baseUrl.isBlank()}
+     * checks scattered across reporters.
+     */
+    public static boolean isOpenSearchActive() {
+        String baseUrl = openSearchUrl();
+        return baseUrl != null && !baseUrl.isBlank();
     }
 
     /** Optional OpenSearch username for basic auth (empty = no auth). */

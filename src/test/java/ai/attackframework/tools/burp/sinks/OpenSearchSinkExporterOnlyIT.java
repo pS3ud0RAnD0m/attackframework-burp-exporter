@@ -36,8 +36,8 @@ class OpenSearchSinkExporterOnlyIT {
 
         // Validate full name
         for (IndexResult r : first) {
-            assertThat(r.shortName()).isEqualTo("tool");
-            assertThat(r.fullName()).isEqualTo(IndexNaming.indexNameForShortName("tool"));
+            assertThat(r.shortName()).isEqualTo("exporter");
+            assertThat(r.fullName()).isEqualTo(IndexNaming.indexNameForShortName("exporter"));
         }
 
         // Delete reported index (best-effort cleanup of dev cluster)
@@ -52,7 +52,7 @@ class OpenSearchSinkExporterOnlyIT {
                 .isNotEmpty()
                 .allSatisfy(r -> assertThat(r)
                         .extracting(IndexResult::shortName, IndexResult::fullName, IndexResult::status)
-                        .containsExactly("tool", IndexNaming.indexNameForShortName("tool"), IndexResult.Status.CREATED));
+                        .containsExactly("exporter", IndexNaming.indexNameForShortName("exporter"), IndexResult.Status.CREATED));
     }
 
     private static void deleteIndexQuietly(OpenSearchClient client, String index) {

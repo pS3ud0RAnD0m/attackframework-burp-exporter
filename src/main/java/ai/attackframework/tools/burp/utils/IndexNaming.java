@@ -37,9 +37,9 @@ public final class IndexNaming {
     private static final Set<Character> INVALID_INDEX_CHARS = Set.of(
             '\\', '/', '*', '?', '"', '<', '>', '|', ' ', ',', '#', ':');
 
-    private static final List<String> INDEX_KEYS = List.of("tool", "findings", "settings", "sitemap", "traffic");
+    private static final List<String> INDEX_KEYS = List.of("exporter", "findings", "settings", "sitemap", "traffic");
     private static final Map<String, String> DEFAULT_SUFFIXES = Map.of(
-            "tool", "exporter",
+            "exporter", "exporter",
             "findings", "findings",
             "settings", "settings",
             "sitemap", "sitemap",
@@ -62,7 +62,7 @@ public final class IndexNaming {
         String normalizedKey = shortName == null ? "" : shortName.trim().toLowerCase(Locale.ROOT);
         String normalizedBase = normalizeBaseTemplate(baseTemplate);
         String suffix = normalizedKey.isBlank()
-                ? suffixForIndex("tool")
+                ? suffixForIndex("exporter")
                 : DEFAULT_SUFFIXES.getOrDefault(normalizedKey, normalizedKey);
         return normalizedBase + "-" + suffix;
     }
@@ -121,8 +121,8 @@ public final class IndexNaming {
             throw new IllegalArgumentException("index name is blank; explicit logical index key is required.");
         }
         String normalized = indexName.trim().toLowerCase(Locale.ROOT);
-        if (normalized.equals(LEGACY_TOOL_INDEX_NAME) || normalized.equals(indexNameForShortName("tool"))) {
-            return "tool";
+        if (normalized.equals(LEGACY_TOOL_INDEX_NAME) || normalized.equals(indexNameForShortName("exporter"))) {
+            return "exporter";
         }
         for (String key : INDEX_KEYS) {
             if (normalized.equals(indexNameForShortName(key))) {
@@ -137,7 +137,7 @@ public final class IndexNaming {
     public static String displayNameForIndexKey(String indexKey) {
         String normalized = indexKey == null ? "" : indexKey.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "tool" -> "Exporter";
+            case "exporter" -> "Exporter";
             case "findings" -> "Findings";
             case "settings" -> "Settings";
             case "sitemap" -> "Sitemap";
@@ -160,7 +160,7 @@ public final class IndexNaming {
                     continue;
                 }
                 switch (source.trim().toLowerCase(Locale.ROOT)) {
-                    case "exporter" -> keys.add("tool");
+                    case "exporter" -> keys.add("exporter");
                     case "settings" -> keys.add("settings");
                     case "sitemap" -> keys.add("sitemap");
                     case "issues", "findings" -> keys.add("findings");

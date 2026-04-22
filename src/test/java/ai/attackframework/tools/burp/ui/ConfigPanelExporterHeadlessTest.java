@@ -41,7 +41,7 @@ class ConfigPanelExporterHeadlessTest {
         assertThat(indexNameValidationIndicator.isVisible()).isTrue();
         assertThat(indexNameValidationIndicator.getText()).isEqualTo("✓");
         assertThat(indexNameValidationIndicator.getToolTipText()).contains("Valid Index Base Name");
-        assertThat(headerRows).containsKey("tool");
+        assertThat(headerRows).containsKey("exporter");
         assertThat(state.dataSources()).contains(ConfigKeys.SRC_EXPORTER);
         assertThat(state.exporterSubOptions()).contains(
                 ConfigKeys.SRC_EXPORTER_INFO,

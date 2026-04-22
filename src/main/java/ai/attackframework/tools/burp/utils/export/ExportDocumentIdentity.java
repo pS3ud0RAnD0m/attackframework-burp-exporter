@@ -41,37 +41,34 @@ public final class ExportDocumentIdentity {
     }
 
     /** Returns the export ID stored in {@code document_meta.export_id}, or blank when absent. */
-    @SuppressWarnings("unchecked")
     public static String exportIdOf(Map<String, Object> document) {
         if (document == null) {
             return "";
         }
         Object metaObj = document.get(DOCUMENT_META);
         if (metaObj instanceof Map<?, ?> metaMap) {
-            Object idObj = ((Map<String, Object>) metaMap).get(EXPORT_ID);
+            Object idObj = asStringKeyedMap(metaMap).get(EXPORT_ID);
             return idObj == null ? "" : String.valueOf(idObj);
         }
         return "";
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> withExportId(Map<String, Object> filtered, String exportId) {
         Map<String, Object> copy = new LinkedHashMap<>(filtered);
         Object metaObj = copy.get(DOCUMENT_META);
         Map<String, Object> meta = metaObj instanceof Map<?, ?> existing
-                ? new LinkedHashMap<>((Map<String, Object>) existing)
+                ? new LinkedHashMap<>(asStringKeyedMap(existing))
                 : new LinkedHashMap<>();
         meta.put(EXPORT_ID, exportId);
         copy.put(DOCUMENT_META, meta);
         return copy;
     }
 
-    @SuppressWarnings("unchecked")
     private static String buildStableId(String indexName, Map<String, Object> filtered) {
         Map<String, Object> canonicalDoc = new LinkedHashMap<>(filtered);
         Object metaObj = canonicalDoc.get(DOCUMENT_META);
         if (metaObj instanceof Map<?, ?> existing) {
-            Map<String, Object> meta = new LinkedHashMap<>((Map<String, Object>) existing);
+            Map<String, Object> meta = new LinkedHashMap<>(asStringKeyedMap(existing));
             meta.remove(EXPORT_ID);
             canonicalDoc.put(DOCUMENT_META, meta);
         }
@@ -86,6 +83,19 @@ public final class ExportDocumentIdentity {
         digest.update((byte) '\n');
         digest.update(payload);
         return toHex(digest.digest());
+    }
+
+    /**
+     * Narrows an erased {@code Map<?, ?>} to {@code Map<String, Object>}.
+     *
+     * <p>Single centralized suppression for this module: {@code document_meta} is always
+     * constructed by sink builders as a string-keyed map, and the {@code instanceof Map<?, ?>}
+     * guard at each call site ensures the source is a map before this helper runs. The cast
+     * merely re-asserts the generic parameters that type erasure strips at runtime.</p>
+     */
+    @SuppressWarnings("unchecked") // document_meta is built by sink code as Map<String, Object>; instanceof narrows erased generics.
+    private static Map<String, Object> asStringKeyedMap(Map<?, ?> map) {
+        return (Map<String, Object>) map;
     }
 
     private static MessageDigest sha256() {

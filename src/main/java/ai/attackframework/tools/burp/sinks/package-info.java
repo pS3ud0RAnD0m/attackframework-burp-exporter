@@ -18,7 +18,9 @@
  *       {@link ai.attackframework.tools.burp.sinks.FileExportService} file-sink writer,
  *       {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket} route mapping for
  *       traffic counters, {@link ai.attackframework.tools.burp.sinks.BulkOutcomeRecorder}
- *       bulk success/failure accounting, and
+ *       bulk success/failure accounting,
+ *       {@link ai.attackframework.tools.burp.sinks.SingleDocOutcomeRecorder} single-document
+ *       success/failure accounting, and
  *       {@link ai.attackframework.tools.burp.sinks.SnapshotSummary} one-shot run summaries.</li>
  * </ul>
  *

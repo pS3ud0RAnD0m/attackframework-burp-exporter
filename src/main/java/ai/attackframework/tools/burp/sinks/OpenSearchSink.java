@@ -69,7 +69,7 @@ public class OpenSearchSink {
                 ? defaultRoot
                 : mappingsResourceRoot;
 
-        String mappingShortName = mappingResourceShortName(shortName);
+        String mappingShortName = shortName == null ? "" : shortName.trim().toLowerCase(java.util.Locale.ROOT);
         final String mappingFile = resourceRoot + mappingShortName + ".json";
 
         Logger.logDebug("[OpenSearch] Attempting to create index: " + fullIndexName);
@@ -244,8 +244,4 @@ public class OpenSearchSink {
         return IndexNaming.normalizeBaseTemplate(RuntimeConfig.getState().indexNameBaseTemplate()) + "-" + normalized;
     }
 
-    private static String mappingResourceShortName(String shortName) {
-        String normalized = shortName == null ? "" : shortName.trim().toLowerCase(java.util.Locale.ROOT);
-        return "tool".equals(normalized) ? "exporter" : normalized;
-    }
 }

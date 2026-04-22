@@ -46,16 +46,16 @@ class ExporterIndexConfigReporterFileExportTest {
                     ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
                     null));
             RuntimeConfig.setExportRunning(true);
-            long openSearchToolSuccessBefore = ExportStats.getSuccessCount("tool");
+            long openSearchExporterSuccessBefore = ExportStats.getSuccessCount("exporter");
 
             ExporterIndexConfigReporter.pushConfigSnapshot();
 
-            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
-            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
+            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl");
+            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".ndjson");
             assertThat(jsonlPath).exists();
             assertThat(ndjsonPath).exists();
             assertThat(Files.readString(jsonlPath)).contains("config_snapshot");
-            assertThat(ExportStats.getSuccessCount("tool")).isEqualTo(openSearchToolSuccessBefore);
+            assertThat(ExportStats.getSuccessCount("exporter")).isEqualTo(openSearchExporterSuccessBefore);
         } finally {
             tearDown();
         }
@@ -83,8 +83,8 @@ class ExporterIndexConfigReporterFileExportTest {
 
             ExporterIndexConfigReporter.pushConfigSnapshot();
 
-            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".jsonl");
-            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("tool") + ".ndjson");
+            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl");
+            Path ndjsonPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".ndjson");
             assertThat(jsonlPath).doesNotExist();
             assertThat(ndjsonPath).doesNotExist();
         } finally {

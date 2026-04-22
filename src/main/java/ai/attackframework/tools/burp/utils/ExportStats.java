@@ -17,13 +17,13 @@ import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
  * Thread-safe per-index export stats for OpenSearch pushes.
  *
  * <p>Session-scoped: counts and last error/duration are not persisted. Used by
- * StatsPanel and by the tool-index stats snapshot. Index keys align with
- * short names: traffic, tool, settings, sitemap, findings.</p>
+ * StatsPanel and by the Exporter-index stats snapshot. Index keys align with
+ * short names: traffic, exporter, settings, sitemap, findings.</p>
  */
 public final class ExportStats {
 
     private static final List<String> INDEX_KEYS = Collections.unmodifiableList(
-            Arrays.asList("traffic", "tool", "settings", "sitemap", "findings"));
+            Arrays.asList("traffic", "exporter", "settings", "sitemap", "findings"));
     private static final List<String> TRAFFIC_SOURCE_KEYS = Collections.unmodifiableList(
             Arrays.asList("proxy_live_http", "proxy_history_snapshot", "proxy_websocket"));
     private static final List<String> TRAFFIC_TOOL_TYPE_KEYS = Collections.unmodifiableList(
@@ -88,7 +88,7 @@ public final class ExportStats {
         return s != null ? s : STATS.computeIfAbsent(indexKey, k -> new PerIndexStats());
     }
 
-    /** Returns the list of index keys (traffic, tool, settings, sitemap, findings). */
+    /** Returns the list of index keys (traffic, exporter, settings, sitemap, findings). */
     public static List<String> getIndexKeys() {
         return INDEX_KEYS;
     }

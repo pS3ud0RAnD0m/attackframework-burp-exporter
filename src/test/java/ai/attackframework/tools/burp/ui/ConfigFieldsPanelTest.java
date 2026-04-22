@@ -72,7 +72,7 @@ class ConfigFieldsPanelTest {
             JPanel panel = buildPanelOnEdt();
 
             JLabel toolLabel = findLabelByText(panel, "Exporter");
-            JButton toolExpand = findByName(panel, "fields.tool.expand", JButton.class);
+            JButton toolExpand = findByName(panel, "fields.exporter.expand", JButton.class);
             JLabel indexBaseNameLabel = findLabelByText(panel, "Index Base Name:");
 
             assertThat(toolLabel).isNotNull();
@@ -112,7 +112,7 @@ class ConfigFieldsPanelTest {
             addIndexRow(expandButtons, subPanels, "sitemap");
             addIndexRow(expandButtons, subPanels, "findings");
             addIndexRow(expandButtons, subPanels, "traffic");
-            addIndexRow(expandButtons, subPanels, "tool");
+            addIndexRow(expandButtons, subPanels, "exporter");
             JPanel namingPanel = new JPanel();
             namingPanel.add(new JLabel("Index Base Name:"));
             JPanel panel = new ConfigFieldsPanel(expandButtons, subPanels, namingPanel, 12).build(new LinkedHashMap<>());
@@ -134,7 +134,7 @@ class ConfigFieldsPanelTest {
 
     private static void assertTopLevelTooltip(JPanel panel, String labelText, String displayName, String indexNamePhrase) {
         JLabel label = findLabelByText(panel, labelText);
-        JButton expand = findByName(panel, "fields." + ("Exporter".equals(displayName) ? "tool" : displayName.toLowerCase()) + ".expand", JButton.class);
+        JButton expand = findByName(panel, "fields." + ("Exporter".equals(displayName) ? "exporter" : displayName.toLowerCase()) + ".expand", JButton.class);
         assertThat(label).isNotNull();
         assertThat(expand).isNotNull();
         assertThat(label.getToolTipText()).contains("<b>" + displayName + " fields</b>");

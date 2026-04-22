@@ -29,13 +29,13 @@ public class OpenSearchCleanupIT {
         OpenSearchReachable.createSelectedIndexes(java.util.List.of("exporter", "settings", "traffic"));
 
         OpenSearchClient client = OpenSearchReachable.getClient();
-        assertIndexExists(client, IndexNaming.indexNameForShortName("tool"));
+        assertIndexExists(client, IndexNaming.indexNameForShortName("exporter"));
         assertIndexExists(client, IndexNaming.indexNameForShortName("settings"));
         assertIndexExists(client, IndexNaming.indexNameForShortName("traffic"));
 
         deleteAttackFrameworkIndexesNow();
 
-        assertIndexMissing(client, IndexNaming.indexNameForShortName("tool"));
+        assertIndexMissing(client, IndexNaming.indexNameForShortName("exporter"));
         assertIndexMissing(client, IndexNaming.indexNameForShortName("settings"));
         assertIndexMissing(client, IndexNaming.indexNameForShortName("traffic"));
     }

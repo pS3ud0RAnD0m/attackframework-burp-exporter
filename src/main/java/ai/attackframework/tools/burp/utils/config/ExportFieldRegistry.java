@@ -34,10 +34,10 @@ public final class ExportFieldRegistry {
         ));
 
         // Exporter index fields.
-        TOGGLEABLE_BY_INDEX.put("tool", List.of(
+        TOGGLEABLE_BY_INDEX.put("exporter", List.of(
                 "level", "message_text", "message", "thread", "extension_version", "burp_version", "project_id"
         ));
-        REQUIRED_BY_INDEX.put("tool", List.of("event_type", "source", "document_meta"));
+        REQUIRED_BY_INDEX.put("exporter", List.of("event_type", "source", "document_meta"));
 
         // Settings index fields.
         TOGGLEABLE_BY_INDEX.put("settings", List.of("project_id", "settings_user", "settings_project"));
@@ -61,10 +61,10 @@ public final class ExportFieldRegistry {
     }
 
     /** Index short names in internal display order. */
-    public static final List<String> INDEX_ORDER = List.of("tool", "traffic", "settings", "sitemap", "findings");
+    public static final List<String> INDEX_ORDER = List.of("exporter", "traffic", "settings", "sitemap", "findings");
 
     /** Index order shown in the Fields panel. */
-    public static final List<String> INDEX_ORDER_FOR_FIELDS_PANEL = List.of("settings", "sitemap", "findings", "traffic", "tool");
+    public static final List<String> INDEX_ORDER_FOR_FIELDS_PANEL = List.of("settings", "sitemap", "findings", "traffic", "exporter");
 
     private ExportFieldRegistry() { }
 
