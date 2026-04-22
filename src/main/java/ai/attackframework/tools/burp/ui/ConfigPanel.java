@@ -1718,8 +1718,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
         };
 
+        // ItemListener fires on both user interaction and programmatic setSelected, so the parent
+        // stays in sync with child state during config imports and other non-UI state changes.
+        // ActionListener would only fire on user-driven toggles.
         for (JCheckBox child : safeChildren) {
-            child.addActionListener(e -> {
+            child.addItemListener(e -> {
                 if (syncing.get()) {
                     return;
                 }

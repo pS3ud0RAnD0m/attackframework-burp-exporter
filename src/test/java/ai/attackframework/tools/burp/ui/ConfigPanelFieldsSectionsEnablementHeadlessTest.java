@@ -172,41 +172,10 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         assertThat(sectionEnabled("findings", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
     }
 
-    @Test
-    void parent_only_selected_enables_settings_fields_section() throws Exception {
-        JCheckBox settingsCheckbox = Reflect.get(panel, "settingsCheckbox");
-        JCheckBox settingsProjectCheckbox = Reflect.get(panel, "settingsProjectCheckbox");
-        JCheckBox settingsUserCheckbox = Reflect.get(panel, "settingsUserCheckbox");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
-
-        SwingUtilities.invokeAndWait(() -> {
-            settingsCheckbox.setSelected(true);
-            settingsProjectCheckbox.setSelected(false);
-            settingsUserCheckbox.setSelected(false);
-            runRefresh(panel);
-        });
-        assertThat(sectionEnabled("settings", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
-    }
-
-    @Test
-    void parent_only_selected_enables_traffic_fields_section() throws Exception {
-        JCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
-        String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
-                "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox",
-                "trafficRepeaterHistoryCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
-
-        SwingUtilities.invokeAndWait(() -> {
-            trafficCheckbox.setSelected(true);
-            for (String name : trafficChildNames) ((JCheckBox) Reflect.get(panel, name)).setSelected(false);
-            runRefresh(panel);
-        });
-        assertThat(sectionEnabled("traffic", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
-    }
+    // The "parent selected, all children deselected" state is unreachable under the tri-state
+    // parent/child wiring, so no test covers it. Coverage of the defensive OR in
+    // isAnySourceOptionSelectedForFieldsIndex is provided by the other tests in this class and by
+    // ConfigPanelTriStateImportHeadlessTest.
 
     @Test
     void unselecting_exporter_source_disables_tool_fields_section() throws Exception {
