@@ -1,13 +1,12 @@
 package ai.attackframework.tools.burp.ui;
 
+import static ai.attackframework.tools.burp.testutils.LazySchedulers.peek;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
-import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
 import java.awt.Container;
 import java.nio.file.Path;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
@@ -47,11 +46,11 @@ class ConfigPanelStopLifecycleHeadlessTest {
             runEdt(stopButton::doClick);
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
-            assertThat((ScheduledExecutorService) getStatic(ExporterIndexStatsReporter.class, "scheduler")).isNull();
-            assertThat((ScheduledExecutorService) getStatic(SettingsIndexReporter.class, "scheduler")).isNull();
-            assertThat((ScheduledExecutorService) getStatic(FindingsIndexReporter.class, "scheduler")).isNull();
-            assertThat((ScheduledExecutorService) getStatic(SitemapIndexReporter.class, "scheduler")).isNull();
-            assertThat((ScheduledExecutorService) getStatic(ProxyWebSocketIndexReporter.class, "scheduler")).isNull();
+            assertThat(peek(ExporterIndexStatsReporter.class, "SCHEDULER")).isNull();
+            assertThat(peek(SettingsIndexReporter.class, "SCHEDULER")).isNull();
+            assertThat(peek(FindingsIndexReporter.class, "SCHEDULER")).isNull();
+            assertThat(peek(SitemapIndexReporter.class, "SCHEDULER")).isNull();
+            assertThat(peek(ProxyWebSocketIndexReporter.class, "SCHEDULER")).isNull();
         } finally {
             ExportReporterLifecycle.resetForTests();
         }

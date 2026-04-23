@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -20,6 +19,7 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -44,7 +44,15 @@ public final class SitemapIndexReporter {
     private static final String SCHEMA_VERSION = "1";
     private static final String SOURCE_VALUE = "burp-exporter";
 
-    private static volatile ScheduledExecutorService scheduler;
+    /**
+     * Single-owner scheduler for sitemap snapshot and recurring pushes.
+     *
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
+     * by {@link #stop()} during UI stop or extension unload. A subsequent {@link #start()} or
+     * {@link #pushSnapshotNow()} lazily recreates the executor.</p>
+     */
+    private static final LazyScheduler SCHEDULER =
+            new LazyScheduler("attackframework-sitemap-reporter");
     /** Keys (request_id) of items already pushed this session; only push new on 30s run. */
     private static final Set<String> pushedItemKeys = ConcurrentHashMap.newKeySet();
     private static volatile boolean runInProgress;
@@ -77,8 +85,9 @@ public final class SitemapIndexReporter {
             if (api == null) {
                 return;
             }
-            if (scheduler != null) {
-                scheduler.submit(() -> {
+            ScheduledExecutorService exec = SCHEDULER.peek();
+            if (exec != null) {
+                exec.submit(() -> {
                     try {
                         pushItems(api, true);
                     } catch (Throwable ignored) {
@@ -97,25 +106,11 @@ public final class SitemapIndexReporter {
      * must call {@link #pushSnapshotNow()} once on Start). Safe to call from any thread.
      */
     public static void start() {
-        if (scheduler != null) {
-            return;
-        }
-        synchronized (SitemapIndexReporter.class) {
-            if (scheduler != null) {
-                return;
-            }
-            ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-sitemap-reporter");
-                t.setDaemon(true);
-                return t;
-            });
-            exec.scheduleAtFixedRate(
-                    SitemapIndexReporter::pushNewItemsOnly,
-                    INTERVAL_SECONDS,
-                    INTERVAL_SECONDS,
-                    TimeUnit.SECONDS);
-            scheduler = exec;
-        }
+        SCHEDULER.startRecurring(
+                SitemapIndexReporter::pushNewItemsOnly,
+                INTERVAL_SECONDS,
+                INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
     }
 
     /**
@@ -124,12 +119,7 @@ public final class SitemapIndexReporter {
      * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
      */
     public static void stop() {
-        ScheduledExecutorService exec;
-        synchronized (SitemapIndexReporter.class) {
-            exec = scheduler;
-            scheduler = null;
-        }
-        ReporterExecutors.shutdownNowAndAwait(exec);
+        SCHEDULER.stop();
         pushedItemKeys.clear();
         runInProgress = false;
     }

@@ -8,14 +8,13 @@ import java.lang.management.ThreadMXBean;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -42,7 +41,15 @@ public final class ExporterIndexStatsReporter {
     private static final String SCHEMA_VERSION = "1";
     private static final String EVENT_TYPE = "stats_snapshot";
 
-    private static volatile ScheduledExecutorService scheduler;
+    /**
+     * Single-owner scheduler for the periodic exporter-stats push.
+     *
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
+     * by {@link #stop()} during UI stop or extension unload. Recreated on the next
+     * {@link #start()} when {@link #refreshScheduleForCurrentState()} detects an interval change.</p>
+     */
+    private static final LazyScheduler SCHEDULER =
+            new LazyScheduler("attackframework-exporter-stats");
     private static volatile int scheduledIntervalSeconds = ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS;
 
     private ExporterIndexStatsReporter() {}
@@ -66,25 +73,19 @@ public final class ExporterIndexStatsReporter {
      * {@link #ENABLED} is {@code false} or exporter stats are disabled.</p>
      */
     public static void start() {
-        if (!ENABLED || scheduler != null || !RuntimeConfig.isExporterStatsEnabled()) {
+        if (!ENABLED || SCHEDULER.isStarted() || !RuntimeConfig.isExporterStatsEnabled()) {
             return;
         }
         synchronized (ExporterIndexStatsReporter.class) {
-            if (scheduler != null || !RuntimeConfig.isExporterStatsEnabled()) {
+            if (SCHEDULER.isStarted() || !RuntimeConfig.isExporterStatsEnabled()) {
                 return;
             }
             int intervalSeconds = RuntimeConfig.exporterStatsIntervalSeconds();
-            ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-exporter-stats");
-                t.setDaemon(true);
-                return t;
-            });
-            exec.scheduleAtFixedRate(
+            SCHEDULER.getOrStart().scheduleAtFixedRate(
                     ExporterIndexStatsReporter::pushSnapshot,
                     intervalSeconds,
                     intervalSeconds,
                     TimeUnit.SECONDS);
-            scheduler = exec;
             scheduledIntervalSeconds = intervalSeconds;
         }
     }
@@ -95,12 +96,7 @@ public final class ExporterIndexStatsReporter {
      * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
      */
     public static void stop() {
-        ScheduledExecutorService exec;
-        synchronized (ExporterIndexStatsReporter.class) {
-            exec = scheduler;
-            scheduler = null;
-        }
-        ReporterExecutors.shutdownNowAndAwait(exec);
+        SCHEDULER.stop();
     }
 
     /**
@@ -115,7 +111,7 @@ public final class ExporterIndexStatsReporter {
             return;
         }
         int currentIntervalSeconds = RuntimeConfig.exporterStatsIntervalSeconds();
-        if (scheduler == null) {
+        if (!SCHEDULER.isStarted()) {
             start();
             return;
         }

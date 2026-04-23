@@ -32,6 +32,8 @@ public final class ExportReporterLifecycle {
         FindingsIndexReporter.stop();
         SitemapIndexReporter.stop();
         ProxyWebSocketIndexReporter.stop();
+        ProxyHistoryIndexReporter.stop();
+        TrafficHttpHandlerSupport.stop();
     }
 
     /**
@@ -47,7 +49,9 @@ public final class ExportReporterLifecycle {
         RepeaterHistoryIndexReporter.clearRunState();
         RepeaterLiveMetadataTracker.clear();
         TrafficExportQueue.clearPendingWork();
+        TrafficExportQueue.stopWorker();
         IndexingRetryCoordinator.getInstance().clearPendingWork();
+        IndexingRetryCoordinator.getInstance().stopDrainThread();
         FileExportService.resetForRuntime();
     }
 

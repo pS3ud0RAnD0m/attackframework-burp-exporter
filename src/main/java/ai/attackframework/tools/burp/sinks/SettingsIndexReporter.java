@@ -8,8 +8,6 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -20,6 +18,7 @@ import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -39,7 +38,15 @@ public final class SettingsIndexReporter {
     private static final String SCHEMA_VERSION = "1";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
-    private static volatile ScheduledExecutorService scheduler;
+    /**
+     * Single-owner scheduler for settings-change polling.
+     *
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
+     * by {@link #stop()} during UI stop or extension unload. A subsequent {@link #start()}
+     * lazily recreates the executor.</p>
+     */
+    private static final LazyScheduler SCHEDULER =
+            new LazyScheduler("attackframework-settings-reporter");
     private static volatile String lastPushedHash;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final AtomicBoolean projectOptionsFailureLogged = new AtomicBoolean();
@@ -103,25 +110,11 @@ public final class SettingsIndexReporter {
      * call from any thread.
      */
     public static void start() {
-        if (scheduler != null) {
-            return;
-        }
-        synchronized (SettingsIndexReporter.class) {
-            if (scheduler != null) {
-                return;
-            }
-            ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-settings-reporter");
-                t.setDaemon(true);
-                return t;
-            });
-            exec.scheduleAtFixedRate(
-                    SettingsIndexReporter::pushSnapshotIfChanged,
-                    INTERVAL_SECONDS,
-                    INTERVAL_SECONDS,
-                    TimeUnit.SECONDS);
-            scheduler = exec;
-        }
+        SCHEDULER.startRecurring(
+                SettingsIndexReporter::pushSnapshotIfChanged,
+                INTERVAL_SECONDS,
+                INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
     }
 
     /**
@@ -130,12 +123,7 @@ public final class SettingsIndexReporter {
      * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
      */
     public static void stop() {
-        ScheduledExecutorService exec;
-        synchronized (SettingsIndexReporter.class) {
-            exec = scheduler;
-            scheduler = null;
-        }
-        ReporterExecutors.shutdownNowAndAwait(exec);
+        SCHEDULER.stop();
         lastPushedHash = null;
         projectOptionsFailureLogged.set(false);
         userOptionsFailureLogged.set(false);

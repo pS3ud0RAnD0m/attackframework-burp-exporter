@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +18,7 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -45,7 +45,15 @@ public final class FindingsIndexReporter {
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String SCHEMA_VERSION = "1";
 
-    private static volatile ScheduledExecutorService scheduler;
+    /**
+     * Single-owner scheduler for findings push work.
+     *
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
+     * by {@link #stop()} during UI stop or extension unload. A subsequent {@link #start()} or
+     * {@link #pushSnapshotNow()} lazily recreates the executor.</p>
+     */
+    private static final LazyScheduler SCHEDULER =
+            new LazyScheduler("attackframework-findings-reporter");
     /** Keys of issues already pushed this session; only push new on 30s run. */
     private static final Set<String> pushedIssueKeys = ConcurrentHashMap.newKeySet();
     private static final AtomicBoolean issuesAccessFailureLogged = new AtomicBoolean();
@@ -77,8 +85,9 @@ public final class FindingsIndexReporter {
             if (api == null) {
                 return;
             }
-            if (scheduler != null) {
-                scheduler.submit(() -> pushIssues(api, true));
+            ScheduledExecutorService exec = SCHEDULER.peek();
+            if (exec != null) {
+                exec.submit(() -> pushIssues(api, true));
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
@@ -91,25 +100,11 @@ public final class FindingsIndexReporter {
      * must call {@link #pushSnapshotNow()} once on Start). Safe to call from any thread.
      */
     public static void start() {
-        if (scheduler != null) {
-            return;
-        }
-        synchronized (FindingsIndexReporter.class) {
-            if (scheduler != null) {
-                return;
-            }
-            ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-findings-reporter");
-                t.setDaemon(true);
-                return t;
-            });
-            exec.scheduleAtFixedRate(
-                    FindingsIndexReporter::pushNewIssuesOnly,
-                    INTERVAL_SECONDS,
-                    INTERVAL_SECONDS,
-                    TimeUnit.SECONDS);
-            scheduler = exec;
-        }
+        SCHEDULER.startRecurring(
+                FindingsIndexReporter::pushNewIssuesOnly,
+                INTERVAL_SECONDS,
+                INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
     }
 
     /**
@@ -118,12 +113,7 @@ public final class FindingsIndexReporter {
      * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
      */
     public static void stop() {
-        ScheduledExecutorService exec;
-        synchronized (FindingsIndexReporter.class) {
-            exec = scheduler;
-            scheduler = null;
-        }
-        ReporterExecutors.shutdownNowAndAwait(exec);
+        SCHEDULER.stop();
         pushedIssueKeys.clear();
         issuesAccessFailureLogged.set(false);
         runInProgress = false;

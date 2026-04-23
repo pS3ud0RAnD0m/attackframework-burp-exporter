@@ -9,6 +9,7 @@ import ai.attackframework.tools.burp.sinks.ExporterIndexLogForwarder;
 import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
 import ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
+import ai.attackframework.tools.burp.ui.ConfigPanel;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
@@ -114,6 +115,7 @@ public class Exporter implements BurpExtension {
 
         BatchSizeController.getInstance().setOnChangeListener(null);
         ExportReporterLifecycle.stopAndClearSessionState();
+        ConfigPanel.shutdownStartupExecutor();
         Logger.resetState();
 
         safeDeregister(unloadRegistration);

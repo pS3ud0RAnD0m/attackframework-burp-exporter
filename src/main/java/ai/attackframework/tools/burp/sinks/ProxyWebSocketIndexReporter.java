@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -23,6 +22,7 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
@@ -39,32 +39,27 @@ public final class ProxyWebSocketIndexReporter {
 
     private static final String SCHEMA_VERSION = "1";
     private static final int INTERVAL_SECONDS = 30;
-    private static volatile ScheduledExecutorService scheduler;
+
+    /**
+     * Single-owner scheduler for proxy-WebSocket snapshot and recurring pushes.
+     *
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
+     * by {@link #stop()} during UI stop or extension unload. A subsequent {@link #start()} or
+     * {@link #pushSnapshotNow()} lazily recreates the executor.</p>
+     */
+    private static final LazyScheduler SCHEDULER =
+            new LazyScheduler("attackframework-proxy-websocket-reporter");
     private static final Set<String> pushedKeys = ConcurrentHashMap.newKeySet();
     private static volatile boolean runInProgress;
 
     private ProxyWebSocketIndexReporter() {}
 
     public static void start() {
-        if (scheduler != null) {
-            return;
-        }
-        synchronized (ProxyWebSocketIndexReporter.class) {
-            if (scheduler != null) {
-                return;
-            }
-            ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "attackframework-proxy-websocket-reporter");
-                t.setDaemon(true);
-                return t;
-            });
-            exec.scheduleAtFixedRate(
-                    ProxyWebSocketIndexReporter::pushNewItemsOnly,
-                    INTERVAL_SECONDS,
-                    INTERVAL_SECONDS,
-                    TimeUnit.SECONDS);
-            scheduler = exec;
-        }
+        SCHEDULER.startRecurring(
+                ProxyWebSocketIndexReporter::pushNewItemsOnly,
+                INTERVAL_SECONDS,
+                INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
     }
 
     /**
@@ -73,12 +68,7 @@ public final class ProxyWebSocketIndexReporter {
      * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
      */
     public static void stop() {
-        ScheduledExecutorService exec;
-        synchronized (ProxyWebSocketIndexReporter.class) {
-            exec = scheduler;
-            scheduler = null;
-        }
-        ReporterExecutors.shutdownNowAndAwait(exec);
+        SCHEDULER.stop();
         pushedKeys.clear();
         runInProgress = false;
     }
@@ -95,8 +85,9 @@ public final class ProxyWebSocketIndexReporter {
             if (api == null) {
                 return;
             }
-            if (scheduler != null) {
-                scheduler.submit(() -> {
+            ScheduledExecutorService exec = SCHEDULER.peek();
+            if (exec != null) {
+                exec.submit(() -> {
                     try {
                         pushItems(api, true);
                     } catch (Throwable ignored) {

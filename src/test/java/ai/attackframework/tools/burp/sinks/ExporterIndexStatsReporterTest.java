@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import ai.attackframework.tools.burp.testutils.TestPathSupport;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -93,14 +94,15 @@ class ExporterIndexStatsReporterTest {
 
             ExporterIndexStatsReporter.refreshScheduleForCurrentState();
 
-            ScheduledExecutorService firstScheduler = getStatic(ExporterIndexStatsReporter.class, "scheduler");
+            LazyScheduler holder = getStatic(ExporterIndexStatsReporter.class, "SCHEDULER");
+            ScheduledExecutorService firstScheduler = holder.peek();
             assertThat(firstScheduler).isNotNull();
             assertThat((Integer) getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(30);
 
             RuntimeConfig.updateState(stateWithInterval(45));
             ExporterIndexStatsReporter.refreshScheduleForCurrentState();
 
-            ScheduledExecutorService secondScheduler = getStatic(ExporterIndexStatsReporter.class, "scheduler");
+            ScheduledExecutorService secondScheduler = holder.peek();
             assertThat(secondScheduler).isNotNull();
             assertThat(secondScheduler).isNotSameAs(firstScheduler);
             assertThat((Integer) getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(45);

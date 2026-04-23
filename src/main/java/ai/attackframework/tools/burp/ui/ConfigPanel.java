@@ -67,6 +67,7 @@ import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
+import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -100,11 +101,33 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final int STATUS_MIN_COLS = 20;
     private static final int STATUS_MAX_COLS = 200;
     /** Background executor for Start-path OpenSearch bootstrap work. */
-    private static final ExecutorService STARTUP_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "attackframework-startup");
-        t.setDaemon(true);
-        return t;
-    });
+    private static volatile ExecutorService startupExecutor = newStartupExecutor();
+    private static final long STARTUP_EXECUTOR_SHUTDOWN_TIMEOUT_MS = 1_000L;
+
+    private static ExecutorService newStartupExecutor() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "attackframework-startup");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * Cancels queued Start-path work, waits briefly for the executor to terminate, and installs
+     * a fresh executor so subsequent Start actions in the same JVM still function.
+     *
+     * <p>Called from {@link ai.attackframework.tools.burp.Exporter}'s unload cleanup so the
+     * extension leaves no background worker alive after Burp deregisters it. Safe to call more
+     * than once. Delegates termination to {@link Workers} so shutdown semantics match every
+     * other extension-owned worker; if the executor does not terminate within
+     * {@link #STARTUP_EXECUTOR_SHUTDOWN_TIMEOUT_MS} milliseconds, the current thread's interrupt
+     * flag is restored and the replacement executor is still installed.</p>
+     */
+    public static synchronized void shutdownStartupExecutor() {
+        ExecutorService current = startupExecutor;
+        Workers.awaitExecutorShutdown(current, STARTUP_EXECUTOR_SHUTDOWN_TIMEOUT_MS);
+        startupExecutor = newStartupExecutor();
+    }
 
     private final TriStateCheckBox settingsCheckbox = new TriStateCheckBox("Settings", TriStateCheckBox.State.SELECTED);
     private final JCheckBox sitemapCheckbox  = new Tooltips.HtmlCheckBox("Sitemap",  true);
@@ -492,7 +515,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 + summarizeSelectedDestinations(filesSelected, openSearchSelected) + ".");
         RuntimeConfig.setExportRunning(true);
         RepeaterHistoryIndexReporter.clearRunState();
-        STARTUP_EXECUTOR.execute(() -> runStartupPipeline(
+        startupExecutor.execute(() -> runStartupPipeline(
                 url, sources, uiCallbacks, startupIssues, filesSelected, openSearchSelected));
     }
 

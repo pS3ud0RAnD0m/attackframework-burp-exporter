@@ -9,14 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.core.Annotations;
 import burp.api.montoya.core.HighlightColor;
@@ -50,17 +49,42 @@ class TrafficHttpHandlerSupport implements HttpHandler {
 
     private static final ConcurrentHashMap<Integer, PendingOrphan> pendingOrphans = new ConcurrentHashMap<>();
 
-    static {
-        ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "attackframework-orphan-export");
-            t.setDaemon(true);
-            return t;
-        });
-            exec.scheduleAtFixedRate(
-                    TrafficHttpHandlerSupport::flushOrphanedRequests,
-                    ORPHAN_CHECK_INTERVAL_SECONDS,
-                    ORPHAN_CHECK_INTERVAL_SECONDS,
-                    TimeUnit.SECONDS);
+    /**
+     * Scheduler that periodically flushes orphaned (response-less) requests as timeout documents.
+     *
+     * <p>Created lazily by {@link #ensureOrphanSchedulerStarted()} the first time a request is
+     * tracked and cleared by {@link #stop()} during UI stop or extension unload. A subsequent
+     * tracked request recreates the executor so the extension does not leak a scheduler thread
+     * after unload.</p>
+     */
+    private static final LazyScheduler ORPHAN_SCHEDULER =
+            new LazyScheduler("attackframework-orphan-export");
+
+    /**
+     * Starts the orphan flush scheduler on first use.
+     *
+     * <p>Safe to call from any thread; {@link LazyScheduler#startRecurring} guarantees that the
+     * executor and its {@code scheduleAtFixedRate} registration occur at most once per
+     * lazy-start cycle even under concurrent callers. {@link #stop()} clears
+     * {@link #ORPHAN_SCHEDULER}, so a subsequent tracked request recreates the scheduler.</p>
+     */
+    private static void ensureOrphanSchedulerStarted() {
+        ORPHAN_SCHEDULER.startRecurring(
+                TrafficHttpHandlerSupport::flushOrphanedRequests,
+                ORPHAN_CHECK_INTERVAL_SECONDS,
+                ORPHAN_CHECK_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
+    }
+
+    /**
+     * Stops the orphan flush scheduler and clears tracked pending requests.
+     *
+     * <p>Safe to call from any thread and safe to call more than once. The scheduler is recreated
+     * lazily on the next tracked request via {@link LazyScheduler#getOrStart()}.</p>
+     */
+    public static void stop() {
+        ORPHAN_SCHEDULER.stop();
+        pendingOrphans.clear();
     }
 
     /** Whether traffic from this tool source should be exported (user-selected tool types only). */
@@ -148,6 +172,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
             pendingOrphans.put(
                     request.messageId(),
                     new PendingOrphan(skeleton, requestSentMs, reqToolType, requestStageResolution));
+            ensureOrphanSchedulerStarted();
         }
         return RequestToBeSentAction.continueWith(request);
     }

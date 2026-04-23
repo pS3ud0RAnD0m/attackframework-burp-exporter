@@ -13,6 +13,7 @@ import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
@@ -32,6 +33,8 @@ public final class IndexingRetryCoordinator {
     private static final long BACKOFF_BASE_MS = 1_000;
     private static final int BACKOFF_MULTIPLIER = 2;
     private static final int OUTAGE_LOG_THROTTLE_MS = 30_000;
+
+    private static final long DRAIN_SHUTDOWN_TIMEOUT_MS = 1_000;
 
     private final RetryQueue queue;
     private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
@@ -212,6 +215,34 @@ public final class IndexingRetryCoordinator {
         outageMode.set(false);
         lastOutageLogTime = 0;
         lastDrainBaseUrl = "";
+    }
+
+    /**
+     * Exposes drain-thread liveness for lifecycle and unload-termination tests.
+     *
+     * @return {@code true} when the drain thread reference is non-null and still alive
+     */
+    public boolean isDrainThreadAlive() {
+        Thread worker = drainThread;
+        return worker != null && worker.isAlive();
+    }
+
+    /**
+     * Interrupts and joins the drain thread so the extension unloads cleanly.
+     *
+     * <p>Safe to call from any thread and safe to call more than once. The drain thread is
+     * recreated lazily by {@link #ensureDrainThreadStarted()} on the next push. Delegates
+     * termination to {@link Workers} so shutdown semantics match every other extension-owned
+     * worker; if the thread does not exit within {@link #DRAIN_SHUTDOWN_TIMEOUT_MS} milliseconds,
+     * the current thread's interrupt flag is restored and the method returns.</p>
+     */
+    public void stopDrainThread() {
+        Thread worker;
+        synchronized (drainThreadLock) {
+            worker = drainThread;
+            drainThread = null;
+        }
+        Workers.awaitThreadJoin(worker, DRAIN_SHUTDOWN_TIMEOUT_MS);
     }
 
     private boolean maybeEnterOutageMode(String baseUrl, int consecutiveFails) {

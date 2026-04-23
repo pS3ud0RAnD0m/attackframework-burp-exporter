@@ -6,14 +6,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
@@ -39,13 +38,27 @@ public final class ProxyHistoryIndexReporter {
     private static final int LIVE_SPILL_BACKPRESSURE_DOCS = 2_000;
     private static final long BACKPRESSURE_PAUSE_MS = 75;
 
-    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "attackframework-proxy-history-scheduler");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * Single-owner scheduler for proxy-history snapshot work.
+     *
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} the first time a snapshot is
+     * scheduled and torn down deterministically by {@link #stop()} during UI stop or extension
+     * unload. Matches the lazy/stop pattern used by every other reporter in this package.</p>
+     */
+    private static final LazyScheduler SCHEDULER =
+            new LazyScheduler("attackframework-proxy-history-scheduler");
 
     private ProxyHistoryIndexReporter() {}
+
+    /**
+     * Stops the proxy-history scheduler so the extension unloads cleanly.
+     *
+     * <p>Safe to call from any thread and safe to call more than once. A subsequent
+     * {@link #pushSnapshotNow()} lazily starts a fresh scheduler via {@link LazyScheduler}.</p>
+     */
+    public static void stop() {
+        SCHEDULER.stop();
+    }
 
     /**
      * Schedules a one-time push of all current proxy history items (on Start), after a short delay.
@@ -70,7 +83,7 @@ public final class ProxyHistoryIndexReporter {
                 return;
             }
             MontoyaApi apiRef = api;
-            scheduler.execute(() -> {
+            SCHEDULER.getOrStart().execute(() -> {
                 if (!RuntimeConfig.isExportRunning()) return;
                 String activeBaseUrl = RuntimeConfig.openSearchUrl();
                 pushItems(apiRef, activeBaseUrl);

@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
@@ -36,6 +37,15 @@ public final class TrafficExportQueue {
     private static final LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>(CAPACITY);
     private static final TrafficSpillFileQueue spillQueue = new TrafficSpillFileQueue();
     private static final AtomicBoolean workerStarted = new AtomicBoolean(false);
+
+    /**
+     * Reference to the drain worker so shutdown can interrupt and join it deterministically.
+     *
+     * <p>Single-owner field; swapped under a class lock in {@link #stopWorker()} and lazily
+     * recreated by {@link #startWorkerIfNeeded()} on the next {@link #offer(Map)}.</p>
+     */
+    private static volatile Thread drainWorker;
+    private static final long WORKER_SHUTDOWN_TIMEOUT_MS = 1_000;
 
     private TrafficExportQueue() {}
 
@@ -172,8 +182,30 @@ public final class TrafficExportQueue {
         if (workerStarted.compareAndSet(false, true)) {
             Thread t = new Thread(TrafficExportQueue::drainLoop, "attackframework-traffic-export");
             t.setDaemon(true);
+            synchronized (TrafficExportQueue.class) {
+                drainWorker = t;
+            }
             t.start();
         }
+    }
+
+    /**
+     * Interrupts and joins the drain worker so the extension unloads cleanly.
+     *
+     * <p>Safe to call from any thread and safe to call more than once. Resets the start flag so
+     * the next {@link #offer(Map)} lazily starts a fresh worker. Delegates termination to
+     * {@link Workers} so shutdown semantics match every other extension-owned worker; if the
+     * worker does not exit within {@link #WORKER_SHUTDOWN_TIMEOUT_MS} milliseconds, the current
+     * thread's interrupt flag is restored and the method returns.</p>
+     */
+    public static void stopWorker() {
+        Thread worker;
+        synchronized (TrafficExportQueue.class) {
+            worker = drainWorker;
+            drainWorker = null;
+        }
+        Workers.awaitThreadJoin(worker, WORKER_SHUTDOWN_TIMEOUT_MS);
+        workerStarted.set(false);
     }
 
     private static void drainLoop() {
