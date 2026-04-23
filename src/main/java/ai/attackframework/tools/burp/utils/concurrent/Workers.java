@@ -21,6 +21,18 @@ import java.util.concurrent.TimeUnit;
  */
 public final class Workers {
 
+    /**
+     * Default maximum milliseconds {@link #awaitExecutorShutdown} and {@link #awaitThreadJoin}
+     * callers wait for termination before returning.
+     *
+     * <p>One second matches the historical per-owner budget used across sinks, UI, and retry
+     * paths. Chosen to keep extension unload responsive while still giving in-flight work a
+     * reasonable window to exit. Exposed as a single source of truth so every
+     * {@link LazyScheduler} and every raw {@link ExecutorService} owner agrees on the same
+     * shutdown semantics.</p>
+     */
+    public static final long DEFAULT_SHUTDOWN_TIMEOUT_MS = 1_000L;
+
     private Workers() {}
 
     /**

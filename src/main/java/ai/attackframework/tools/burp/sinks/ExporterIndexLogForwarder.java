@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 
@@ -54,11 +55,12 @@ public final class ExporterIndexLogForwarder implements Logger.LogListener {
      * Stops the background drain worker and clears any queued log documents.
      *
      * <p>Safe to call multiple times. Used during extension unload so hot reload does
-     * not leave a stale forwarder thread behind.</p>
+     * not leave a stale forwarder thread behind. Delegates termination to {@link Workers}
+     * so shutdown semantics match every other extension-owned worker.</p>
      */
     public void stop() {
         queue.clear();
-        worker.shutdownNow();
+        Workers.awaitExecutorShutdown(worker, Workers.DEFAULT_SHUTDOWN_TIMEOUT_MS);
     }
 
     /**

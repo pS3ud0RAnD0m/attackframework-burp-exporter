@@ -102,7 +102,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private static final int STATUS_MAX_COLS = 200;
     /** Background executor for Start-path OpenSearch bootstrap work. */
     private static volatile ExecutorService startupExecutor = newStartupExecutor();
-    private static final long STARTUP_EXECUTOR_SHUTDOWN_TIMEOUT_MS = 1_000L;
 
     private static ExecutorService newStartupExecutor() {
         return Executors.newSingleThreadExecutor(r -> {
@@ -120,12 +119,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * extension leaves no background worker alive after Burp deregisters it. Safe to call more
      * than once. Delegates termination to {@link Workers} so shutdown semantics match every
      * other extension-owned worker; if the executor does not terminate within
-     * {@link #STARTUP_EXECUTOR_SHUTDOWN_TIMEOUT_MS} milliseconds, the current thread's interrupt
+     * {@link Workers#DEFAULT_SHUTDOWN_TIMEOUT_MS} milliseconds, the current thread's interrupt
      * flag is restored and the replacement executor is still installed.</p>
      */
     public static synchronized void shutdownStartupExecutor() {
         ExecutorService current = startupExecutor;
-        Workers.awaitExecutorShutdown(current, STARTUP_EXECUTOR_SHUTDOWN_TIMEOUT_MS);
+        Workers.awaitExecutorShutdown(current, Workers.DEFAULT_SHUTDOWN_TIMEOUT_MS);
         startupExecutor = newStartupExecutor();
     }
 

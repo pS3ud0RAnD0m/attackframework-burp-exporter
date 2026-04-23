@@ -2,8 +2,11 @@ package ai.attackframework.tools.burp.sinks;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
@@ -124,5 +127,29 @@ class ExporterIndexLogForwarderTest {
             BurpRuntimeMetadata.clear();
             MontoyaApiProvider.set(null);
         }
+    }
+
+    @Test
+    void stop_terminatesWorkerExecutor_onUnload() throws Exception {
+        ExporterIndexLogForwarder forwarder = new ExporterIndexLogForwarder();
+        ExecutorService worker = workerOf(forwarder);
+        try {
+            assertThat(worker.isShutdown()).isFalse();
+
+            forwarder.stop();
+
+            assertThat(worker.isShutdown()).isTrue();
+            assertThat(worker.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            RuntimeConfig.setExportRunning(false);
+            BurpRuntimeMetadata.clear();
+            MontoyaApiProvider.set(null);
+        }
+    }
+
+    private static ExecutorService workerOf(ExporterIndexLogForwarder forwarder) throws Exception {
+        Field field = ExporterIndexLogForwarder.class.getDeclaredField("worker");
+        field.setAccessible(true);
+        return (ExecutorService) field.get(forwarder);
     }
 }

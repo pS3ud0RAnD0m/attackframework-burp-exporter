@@ -25,21 +25,13 @@ import java.util.concurrent.TimeUnit;
  */
 public final class LazyScheduler {
 
-    /**
-     * Default maximum milliseconds {@link #stop()} waits for termination before returning.
-     *
-     * <p>One second matches the historical per-reporter budget used across sinks, UI, and retry
-     * paths. Chosen to keep extension unload responsive while still giving in-flight scheduled
-     * tasks a reasonable window to exit.</p>
-     */
-    public static final long DEFAULT_SHUTDOWN_TIMEOUT_MS = 1_000L;
-
     private final String threadName;
     private final long shutdownTimeoutMs;
     private volatile ScheduledExecutorService executor;
 
     /**
-     * Creates a new holder with the {@link #DEFAULT_SHUTDOWN_TIMEOUT_MS default shutdown budget}.
+     * Creates a new holder with the
+     * {@link Workers#DEFAULT_SHUTDOWN_TIMEOUT_MS default shutdown budget}.
      *
      * <p>Preferred for owners that want the standard lazy-start/deterministic-stop behavior
      * without specifying a custom teardown window.</p>
@@ -47,7 +39,7 @@ public final class LazyScheduler {
      * @param threadName daemon thread name assigned to the scheduler's single worker thread
      */
     public LazyScheduler(String threadName) {
-        this(threadName, DEFAULT_SHUTDOWN_TIMEOUT_MS);
+        this(threadName, Workers.DEFAULT_SHUTDOWN_TIMEOUT_MS);
     }
 
     /**
