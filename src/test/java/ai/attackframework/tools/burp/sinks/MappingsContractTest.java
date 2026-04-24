@@ -1,7 +1,9 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -244,6 +246,84 @@ class MappingsContractTest {
             assertThat(responseProps.has("etag_header")).isFalse();
             assertThat(responseProps.has("last_modified_header")).isFalse();
             assertThat(responseProps.has("content_location")).isFalse();
+        }
+    }
+
+    /**
+     * Guards the Lucene 32766-byte per-term cap protection added universally across shipped mappings.
+     *
+     * <p>Every {@code "type": "keyword"} declaration - including {@code fields.raw} subfields under
+     * {@code text} parents - must carry {@code "ignore_above": 8191}. The threshold is chosen so the
+     * worst-case UTF-8 encoding of a Java-char-counted value ({@code 8191 * 3 = 24573} bytes) stays
+     * comfortably under the Lucene cap. Skipping {@code ignore_above} on any keyword field reopens
+     * the "Document contains at least one immense term" failure mode observed pre-fix.</p>
+     */
+    @Test
+    void everyKeywordField_hasIgnoreAboveGuard() throws Exception {
+        List<String> violations = new ArrayList<>();
+        for (String file : MAPPING_FILES) {
+            try (InputStream in = getClass().getResourceAsStream(RESOURCE_ROOT + file)) {
+                assertThat(in).isNotNull();
+                JsonNode root = mapper.readTree(in);
+                collectKeywordViolations(file, "", root, violations);
+            }
+        }
+        assertThat(violations)
+                .withFailMessage("Every keyword declaration must carry \"ignore_above\": 8191. Violations:%n%s",
+                        String.join("\n", violations))
+                .isEmpty();
+    }
+
+    /**
+     * Guards the per-index nested-document cap for mappings that declare nested fields.
+     *
+     * <p>The three HTTP-centric mappings ({@code traffic.json}, {@code findings.json},
+     * {@code sitemap.json}) aggregate nested arrays per document (headers, parameters, markers,
+     * cookies). With the synthesized-BODY parameter filter (in
+     * {@link ai.attackframework.tools.burp.sinks.RequestResponseDocBuilder}) in place, legit
+     * per-doc nested counts sit in the low hundreds, well under the OpenSearch default of
+     * 10000. Shipping without an override keeps the shipped settings block minimal and lets
+     * cluster operators tune if ever needed. If a future regression requires raising the
+     * ceiling, add the override and update the plan note that cleared it.</p>
+     */
+    @Test
+    void httpMappings_doNotOverrideNestedObjectsLimit() throws Exception {
+        List<String> filesWithNested = List.of("traffic.json", "findings.json", "sitemap.json");
+        for (String file : filesWithNested) {
+            try (InputStream in = getClass().getResourceAsStream(RESOURCE_ROOT + file)) {
+                assertThat(in).isNotNull();
+                JsonNode root = mapper.readTree(in);
+                JsonNode limit = root.path("settings").path("index.mapping.nested_objects.limit");
+                assertThat(limit.isMissingNode() || limit.isNull())
+                        .withFailMessage(
+                                "%s must not override index.mapping.nested_objects.limit; "
+                                        + "the synthesized-BODY parameter filter keeps legit "
+                                        + "nested counts under the OpenSearch default",
+                                file)
+                        .isTrue();
+            }
+        }
+    }
+
+    private static void collectKeywordViolations(String file, String path, JsonNode node, List<String> violations) {
+        if (node == null) return;
+        if (node.isObject()) {
+            JsonNode type = node.get("type");
+            if (type != null && type.isTextual() && "keyword".equals(type.asText())) {
+                JsonNode ignoreAbove = node.get("ignore_above");
+                if (ignoreAbove == null || !ignoreAbove.isNumber() || ignoreAbove.asInt() != 8191) {
+                    violations.add(file + " @ " + (path.isEmpty() ? "<root>" : path)
+                            + " - expected ignore_above=8191, found " + ignoreAbove);
+                }
+            }
+            for (Map.Entry<String, JsonNode> entry : node.properties()) {
+                collectKeywordViolations(file, path.isEmpty() ? entry.getKey() : path + "." + entry.getKey(),
+                        entry.getValue(), violations);
+            }
+        } else if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                collectKeywordViolations(file, path + "[" + i + "]", node.get(i), violations);
+            }
         }
     }
 

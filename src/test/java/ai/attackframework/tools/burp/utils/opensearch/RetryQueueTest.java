@@ -52,4 +52,27 @@ class RetryQueueTest {
         List<Map<String, Object>> batch = queue.pollBatch("no-such-index", 10);
         assertThat(batch).isEmpty();
     }
+
+    @Test
+    void oldestEnqueuedAtMs_returnsMinusOneWhenEmpty_andHeadTimestampWhenNonEmpty() throws InterruptedException {
+        RetryQueue queue = new RetryQueue(100);
+        String indexName = "test-index";
+        assertThat(queue.oldestEnqueuedAtMs(indexName)).isEqualTo(-1L);
+
+        long before = System.currentTimeMillis();
+        queue.offer(indexName, Map.of("a", 1));
+        Thread.sleep(2);
+        queue.offer(indexName, Map.of("b", 2));
+        long after = System.currentTimeMillis();
+
+        long head = queue.oldestEnqueuedAtMs(indexName);
+        assertThat(head).isBetween(before, after);
+
+        queue.pollBatch(indexName, 1);
+        long newHead = queue.oldestEnqueuedAtMs(indexName);
+        assertThat(newHead).isGreaterThanOrEqualTo(head);
+
+        queue.pollBatch(indexName, 10);
+        assertThat(queue.oldestEnqueuedAtMs(indexName)).isEqualTo(-1L);
+    }
 }

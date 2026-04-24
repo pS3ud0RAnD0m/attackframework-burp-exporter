@@ -44,6 +44,58 @@ public final class RequestResponseDocBuilder {
 
     private static final int TEXT_SNIFF_BYTES = 64 * 1024;
     private static final double MAX_CONTROL_CHAR_RATIO = 0.02d;
+    /**
+     * High-cardinality alerting threshold for {@code request.parameters}.
+     *
+     * <p>Two distinct signals can cross this threshold for a single request, each with its
+     * own log level:</p>
+     * <ul>
+     *   <li>{@code retained >= threshold} is a real anomaly - a legitimate request genuinely
+     *       has thousands of parameters and an operator should look at it. This emits a
+     *       {@code WARN} line.</li>
+     *   <li>{@code droppedSynthesized >= threshold} with {@code retained} below the threshold
+     *       is routine Content-Type-mismatch activity - the request declared a form-encoded
+     *       Content-Type but carried a binary body, so Burp's parameter parser fabricated
+     *       synthetic {@code BODY} entries from the raw bytes and our synthetic-BODY filter
+     *       dropped them. This is expected behaviour on every protobuf, gRPC, or other binary
+     *       request body mis-declared as form-encoded, and emits a single {@code DEBUG} line
+     *       so the logs do not confuse operators with noise that looks like a warning.</li>
+     * </ul>
+     * <p>The {@code Synthesized Body Params Dropped} and {@code Docs Over Param Threshold}
+     * counters on the Stats panel always increment regardless of log level, so dashboard
+     * visibility is preserved independently of the console/file log output.</p>
+     */
+    static final int PARAMETERS_WARN_THRESHOLD = 5_000;
+    /**
+     * Hard cap on the number of parameter entries retained per request, regardless of
+     * Content-Type classification.
+     *
+     * <p>Backstop for the case where the stated Content-Type cannot be trusted - for example a
+     * raw protobuf upload declared as {@code application/x-www-form-urlencoded}, where Burp's
+     * {@code HttpRequest.parameters()} synthesizes tens or hundreds of thousands of spurious
+     * {@link HttpParameterType#BODY} entries. When the input exceeds this cap the builder first
+     * drops all BODY entries (they are almost always the noise source and raw bytes remain in
+     * {@code body.b64}), then truncates any remaining excess. Real URL-encoded forms do not
+     * approach this cap, so legitimate traffic is unaffected.</p>
+     */
+    static final int PARAMETERS_HARD_CAP = 1_000;
+    private static final int PARAMETERS_WARN_URL_MAX_LEN = 200;
+
+    /**
+     * Inference vocabulary for {@code request.inferred_content_type}.
+     *
+     * <p>Mirrors the fidelity pattern used by {@code response.inferred_mime_type} (Burp's
+     * byte-sniffing verdict) so consumers can compare declared vs. sniffed without us ever
+     * rewriting the declared value. Feeds {@link #shouldIncludeBodyParameters} as a
+     * tamper-resistant gate against Content-Type spoofing, e.g. a raw protobuf body declared
+     * as {@code application/x-www-form-urlencoded}.</p>
+     */
+    static final String INFERRED_CT_EMPTY = "empty";
+    static final String INFERRED_CT_BINARY = "binary";
+    static final String INFERRED_CT_JSON = "json";
+    static final String INFERRED_CT_XML = "xml";
+    static final String INFERRED_CT_MULTIPART = "multipart";
+    static final String INFERRED_CT_TEXT = "text";
     private static final Set<String> EXPLICIT_TEXTUAL_APPLICATION_TYPES = Set.of(
             "application/json",
             "application/xml",
@@ -153,10 +205,15 @@ public final class RequestResponseDocBuilder {
         req.put("content_type_enum", contentType == null ? null : contentType.name());
 
         List<HttpHeader> requestHeaders = request.headers();
-        req.put("headers", buildHeadersObject(requestHeaders));
-        req.put("parameters", parametersToList(request.parameters()));
-
         byte[] bodyBytes = request.body() == null ? null : request.body().getBytes();
+        String inferredContentType = inferRequestContentType(bodyBytes, requestHeaders);
+        req.put("inferred_content_type", inferredContentType);
+        req.put("headers", buildHeadersObject(requestHeaders));
+        boolean includeBody = shouldIncludeBodyParameters(contentType, requestHeaders, inferredContentType);
+        ParametersResult parametersResult = parametersToList(request.parameters(), includeBody);
+        req.put("parameters", parametersResult.entries());
+        recordParameterTelemetry(request, contentType, parametersResult.entries().size(), parametersResult.droppedSynthesized());
+
         putBodyFields(
                 req,
                 bodyBytes,
@@ -194,8 +251,10 @@ public final class RequestResponseDocBuilder {
         req.put("content_type_enum", contentType == null ? null : contentType.name());
 
         List<HttpHeader> requestHeaders = safeHeaders(request);
+        String inferredContentType = inferRequestContentType(raw.bodyBytes(), requestHeaders);
+        req.put("inferred_content_type", inferredContentType);
         req.put("headers", buildHeadersObject(requestHeaders));
-        req.put("parameters", safeParameters(request));
+        req.put("parameters", safeParameters(request, contentType, requestHeaders, inferredContentType));
 
         putBodyFields(
                 req,
@@ -425,20 +484,278 @@ public final class RequestResponseDocBuilder {
         return null;
     }
 
-    private static List<Map<String, Object>> parametersToList(List<ParsedHttpParameter> parameters) {
-        if (parameters == null || parameters.isEmpty()) {
-            return List.of();
+    /**
+     * Decides whether synthesized {@code BODY}-typed parameters should be retained for this request.
+     *
+     * <p>Burp's {@code HttpRequest.parameters()} emits one {@code BODY} {@link ParsedHttpParameter}
+     * per byte-run it finds in the request body regardless of Content-Type. For binary bodies
+     * (protobuf, gzip, octet-stream, multipart, images, etc.) this produces tens or hundreds of
+     * thousands of synthetic entries with non-printable names and empty values - a parser artifact,
+     * not real HTTP parameters. Since raw body bytes remain in {@code request.body.b64}, dropping
+     * these on binary bodies is fidelity-neutral and avoids blowing past the OpenSearch
+     * {@code nested_objects.limit}.</p>
+     *
+     * <p>The gate is a short-circuit chain, strongest signal first:</p>
+     * <ol>
+     *   <li>Inferred {@value #INFERRED_CT_BINARY} body → drop BODY. Catches the Content-Type
+     *       spoofing case (for example protobuf declared as {@code application/x-www-form-urlencoded})
+     *       that earlier declared-only gating missed.</li>
+     *   <li>Declared {@code URL_ENCODED} or {@code MULTIPART} → include BODY. Canonical form.</li>
+     *   <li>Declared {@code JSON} / {@code XML} / {@code AMF} → drop BODY. These types do not
+     *       legitimately emit {@link HttpParameterType#BODY} entries.</li>
+     *   <li>Otherwise (absent / {@code NONE} / {@code UNKNOWN}) → fall back to the Content-Type
+     *       header, dropping only when the header is explicitly binary. Preserves legacy behavior
+     *       for headerless form posts.</li>
+     * </ol>
+     */
+    static boolean shouldIncludeBodyParameters(
+            burp.api.montoya.http.message.ContentType contentType,
+            List<HttpHeader> headers,
+            String inferredContentType) {
+        if (INFERRED_CT_BINARY.equals(inferredContentType)) {
+            return false;
         }
-        List<Map<String, Object>> out = new ArrayList<>(parameters.size());
+        String declaredName = contentType == null ? null : contentType.name();
+        if ("URL_ENCODED".equals(declaredName) || "MULTIPART".equals(declaredName)) {
+            return true;
+        }
+        if ("JSON".equals(declaredName) || "XML".equals(declaredName) || "AMF".equals(declaredName)) {
+            return false;
+        }
+        String header = contentType == null ? null : contentType.toString();
+        String primary = primaryMediaType(header, mediaTypeHints(declaredName));
+        if (primary == null) {
+            primary = mediaType(header, null);
+        }
+        if (primary == null && headers != null) {
+            for (HttpHeader h : headers) {
+                if (h != null && h.name() != null && "content-type".equalsIgnoreCase(h.name())) {
+                    primary = mediaType(h.value(), null);
+                    if (primary != null) break;
+                }
+            }
+        }
+        return !isExplicitlyBinaryMediaType(primary);
+    }
+
+    /**
+     * Computes the {@code request.inferred_content_type} verdict from body bytes alone.
+     *
+     * <p>Mirrors the role of Burp's {@code response.inferredMimeType()} on the request side,
+     * where Montoya does not expose an equivalent accessor. Preserves declared
+     * {@code content_type} verbatim; consumers can compare the two to flag Content-Type
+     * spoofing. Also feeds {@link #shouldIncludeBodyParameters} as the primary override
+     * signal for binary bodies.</p>
+     *
+     * <p>Sniff ordering (first match wins):</p>
+     * <ol>
+     *   <li>Null or empty body → {@value #INFERRED_CT_EMPTY}.</li>
+     *   <li>Any NUL byte in the first {@value #TEXT_SNIFF_BYTES} scanned → {@value #INFERRED_CT_BINARY}.</li>
+     *   <li>Bytes fail UTF-8 / charset-hint decode, or post-decode control-character ratio is above
+     *       {@link #MAX_CONTROL_CHAR_RATIO} → {@value #INFERRED_CT_BINARY}.</li>
+     *   <li>First non-whitespace character classifies textual content:
+     *       <ul>
+     *         <li>{@code '{'} / {@code '['} → {@value #INFERRED_CT_JSON}.</li>
+     *         <li>{@code '<'} → {@value #INFERRED_CT_XML}.</li>
+     *         <li>{@code "--"} prefix → {@value #INFERRED_CT_MULTIPART}.</li>
+     *         <li>Any other printable content → {@value #INFERRED_CT_TEXT}.</li>
+     *       </ul>
+     *   </li>
+     *   <li>Purely whitespace text → {@value #INFERRED_CT_TEXT}.</li>
+     * </ol>
+     */
+    static String inferRequestContentType(byte[] bodyBytes, List<HttpHeader> headers) {
+        if (bodyBytes == null || bodyBytes.length == 0) {
+            return INFERRED_CT_EMPTY;
+        }
+        int scanLen = Math.min(bodyBytes.length, TEXT_SNIFF_BYTES);
+        byte[] sample;
+        if (scanLen == bodyBytes.length) {
+            sample = bodyBytes;
+        } else {
+            sample = new byte[scanLen];
+            System.arraycopy(bodyBytes, 0, sample, 0, scanLen);
+        }
+        if (containsNul(sample)) {
+            return INFERRED_CT_BINARY;
+        }
+        Charset charset = charsetFromContentType(headerValue(headers, "Content-Type"));
+        String decoded = decodeTextWithFallback(sample, charset);
+        if (decoded == null || !hasLowControlCharacterRatio(decoded)) {
+            return INFERRED_CT_BINARY;
+        }
+        int i = 0;
+        int n = decoded.length();
+        while (i < n && Character.isWhitespace(decoded.charAt(i))) {
+            i++;
+        }
+        if (i >= n) {
+            return INFERRED_CT_TEXT;
+        }
+        char first = decoded.charAt(i);
+        if (first == '{' || first == '[') {
+            return INFERRED_CT_JSON;
+        }
+        if (first == '<') {
+            return INFERRED_CT_XML;
+        }
+        if (first == '-' && i + 1 < n && decoded.charAt(i + 1) == '-') {
+            return INFERRED_CT_MULTIPART;
+        }
+        return INFERRED_CT_TEXT;
+    }
+
+    /**
+     * Result of converting Burp's {@code request.parameters()} into the doc representation,
+     * carrying both the retained entries and the count of synthesized {@code BODY}-typed entries
+     * filtered out because the body was binary. The {@code droppedSynthesized} count feeds the
+     * high-cardinality WARN threshold and the {@code ExportStats} telemetry counters.
+     */
+    record ParametersResult(List<Map<String, Object>> entries, int droppedSynthesized) {
+        static final ParametersResult EMPTY = new ParametersResult(List.of(), 0);
+    }
+
+    /**
+     * Converts {@code request.parameters()} to the exported list form, optionally filtering
+     * synthesized {@code BODY}-typed entries when the body is not form-encoded, and enforcing
+     * the {@link #PARAMETERS_HARD_CAP} safety ceiling against Content-Type spoofing.
+     *
+     * <p>When {@code includeBody} is {@code false}, {@link HttpParameterType#BODY} entries are
+     * skipped and counted; all other types (URL, COOKIE, XML, JSON, MULTIPART_ATTRIBUTE, and
+     * {@code null}/unknown) are preserved. When {@code includeBody} is {@code true}, BODY
+     * entries are retained up to the hard cap.</p>
+     *
+     * <p>The hard cap is applied in two stages. First, if {@code includeBody} is {@code true}
+     * and the total parameter count exceeds {@link #PARAMETERS_HARD_CAP} <em>and</em> BODY
+     * entries alone exceed the cap, all BODY entries are dropped (Burp's parser is treating a
+     * non-form body as form-encoded). Second, if the remaining list still exceeds the cap it is
+     * truncated, so no single request can emit more than {@link #PARAMETERS_HARD_CAP} nested
+     * parameter documents. Dropped entries at both stages are counted in the returned result.</p>
+     */
+    static ParametersResult parametersToList(List<ParsedHttpParameter> parameters, boolean includeBody) {
+        if (parameters == null || parameters.isEmpty()) {
+            return ParametersResult.EMPTY;
+        }
+        boolean effectiveIncludeBody = includeBody;
+        if (effectiveIncludeBody && parameters.size() > PARAMETERS_HARD_CAP) {
+            int bodyCount = 0;
+            for (ParsedHttpParameter p : parameters) {
+                if (p != null && p.type() == HttpParameterType.BODY) {
+                    bodyCount++;
+                    if (bodyCount > PARAMETERS_HARD_CAP) {
+                        effectiveIncludeBody = false;
+                        break;
+                    }
+                }
+            }
+        }
+        List<Map<String, Object>> out = new ArrayList<>(Math.min(parameters.size(), PARAMETERS_HARD_CAP));
+        int dropped = 0;
         for (ParsedHttpParameter p : parameters) {
+            HttpParameterType type = p.type();
+            if (!effectiveIncludeBody && type == HttpParameterType.BODY) {
+                dropped++;
+                continue;
+            }
+            if (out.size() >= PARAMETERS_HARD_CAP) {
+                dropped++;
+                continue;
+            }
             Map<String, Object> entry = new LinkedHashMap<>(3);
             entry.put("name", p.name());
             entry.put("value", p.value());
-            HttpParameterType type = p.type();
             entry.put("type", type == null ? null : type.name());
             out.add(entry);
         }
-        return out;
+        return new ParametersResult(out, dropped);
+    }
+
+    /**
+     * Records parameter-cardinality telemetry for one request and, when a threshold is crossed,
+     * emits a single log line classified by the kind of cardinality observed.
+     *
+     * <p>Split-level logging so users are not confused by WARN output on the common case:</p>
+     * <ul>
+     *   <li><b>Real anomaly</b> ({@code retained >= PARAMETERS_WARN_THRESHOLD}): legitimate
+     *       request with thousands of real parameters. Emits {@code WARN} on the panel so
+     *       operators notice. Message tag: {@code [ParameterCardinality][retained]}.</li>
+     *   <li><b>Routine filter activity</b> ({@code droppedSynthesized >= PARAMETERS_WARN_THRESHOLD}
+     *       while {@code retained} stays below threshold): a Content-Type mismatch caused Burp's
+     *       parameter parser to fabricate synthetic {@code BODY} entries from a binary request
+     *       body whose declared Content-Type (typically {@code URL_ENCODED}) did not match the
+     *       actual bytes, and our synthetic-BODY filter dropped them. Expected and common on
+     *       protobuf, gRPC, or other binary request bodies mis-declared as form-encoded, so only
+     *       {@code DEBUG} is emitted. Message tag: {@code [ParameterCardinality][synthesized_dropped]}.</li>
+     * </ul>
+     *
+     * <p>Both the {@code Synthesized Body Params Dropped} counter (on every non-zero drop) and
+     * the {@code Docs Over Param Threshold} counter (on every threshold crossing, regardless of
+     * branch) always update in {@link ai.attackframework.tools.burp.utils.ExportStats} so
+     * dashboards stay complete independent of log level.</p>
+     */
+    /** Package-private for direct testing of the threshold branches. */
+    static void recordParameterTelemetry(
+            HttpRequest request,
+            burp.api.montoya.http.message.ContentType contentType,
+            int retained,
+            int droppedSynthesized) {
+        if (droppedSynthesized > 0) {
+            ai.attackframework.tools.burp.utils.ExportStats.recordSynthesizedBodyParamsDropped(droppedSynthesized);
+        }
+        boolean retainedHigh = retained >= PARAMETERS_WARN_THRESHOLD;
+        boolean droppedHigh = droppedSynthesized >= PARAMETERS_WARN_THRESHOLD;
+        if (!retainedHigh && !droppedHigh) {
+            return;
+        }
+        ai.attackframework.tools.burp.utils.ExportStats.recordDocsOverParamsThreshold();
+        String ct = contentType == null ? "unknown" : contentType.toString();
+        String commonFields = formatCommonFields(
+                safeMethod(request),
+                safeTruncatedUrl(request),
+                ct,
+                retained,
+                droppedSynthesized);
+        if (retainedHigh) {
+            Logger.logWarnPanelOnly("[ParameterCardinality][retained] High retained parameter count; "
+                    + "likely a legitimate request with unusual cardinality - review: " + commonFields);
+        } else {
+            Logger.logDebug("[ParameterCardinality][synthesized_dropped] Content-Type mismatch "
+                    + "caused Burp's parameters() API to mis-infer "
+                    + droppedSynthesized
+                    + " synthetic BODY parameters: the request declared a form-encoded "
+                    + "Content-Type (" + ct + ") but carried a binary body, so Burp scanned the "
+                    + "raw bytes as if form-encoded and fabricated entries. All dropped. "
+                    + "Expected on binary request bodies such as protobuf/gRPC: " + commonFields);
+        }
+    }
+
+    private static String safeMethod(HttpRequest request) {
+        try {
+            if (request != null && request.method() != null) {
+                return request.method();
+            }
+        } catch (RuntimeException ignored) { /* fall through to "unknown" */ }
+        return "unknown";
+    }
+
+    private static String safeTruncatedUrl(HttpRequest request) {
+        String url = normalizeBlank(safeRequestUrl(request, "ParameterCardinality"));
+        if (url == null) {
+            return "unknown";
+        }
+        if (url.length() > PARAMETERS_WARN_URL_MAX_LEN) {
+            return url.substring(0, PARAMETERS_WARN_URL_MAX_LEN) + "...";
+        }
+        return url;
+    }
+
+    private static String formatCommonFields(
+            String method, String url, String contentType, int retained, int droppedSynthesized) {
+        return "method=" + method
+                + " url=" + url
+                + " content_type=" + contentType
+                + " retained=" + retained
+                + " dropped_synthesized=" + droppedSynthesized;
     }
 
     private static burp.api.montoya.http.message.ContentType safeContentType(HttpRequest request) {
@@ -464,12 +781,19 @@ public final class RequestResponseDocBuilder {
         }
     }
 
-    private static List<Map<String, Object>> safeParameters(HttpRequest request) {
+    private static List<Map<String, Object>> safeParameters(
+            HttpRequest request,
+            burp.api.montoya.http.message.ContentType contentType,
+            List<HttpHeader> headers,
+            String inferredContentType) {
         if (request == null) {
             return List.of();
         }
         try {
-            return parametersToList(request.parameters());
+            boolean includeBody = shouldIncludeBodyParameters(contentType, headers, inferredContentType);
+            ParametersResult result = parametersToList(request.parameters(), includeBody);
+            recordParameterTelemetry(request, contentType, result.entries().size(), result.droppedSynthesized());
+            return result.entries();
         } catch (RuntimeException ignored) {
             return List.of();
         }
@@ -874,6 +1198,7 @@ public final class RequestResponseDocBuilder {
                     || mediaType.equals("application/x-brotli")
                     || mediaType.equals("application/vnd.ms-fontobject")
                     || mediaType.contains("protobuf")
+                    || mediaType.contains("grpc")
                     || mediaType.contains("pkcs")
                     || mediaType.contains("font")
                     || mediaType.contains("zip")

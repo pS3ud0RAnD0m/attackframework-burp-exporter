@@ -3,18 +3,18 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "name": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-      "severity": { "type": "keyword" },
-      "confidence": { "type": "keyword" },
-      "host": { "type": "keyword" },
+      "name": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+      "severity": { "type": "keyword", "ignore_above": 8191 },
+      "confidence": { "type": "keyword", "ignore_above": 8191 },
+      "host": { "type": "keyword", "ignore_above": 8191 },
       "port": { "type": "integer" },
-      "protocol_transport": { "type": "keyword" },
-      "protocol_application": { "type": "keyword" },
-      "protocol_sub": { "type": "keyword" },
-      "url": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-      "param": { "type": "keyword" },
+      "protocol_transport": { "type": "keyword", "ignore_above": 8191 },
+      "protocol_application": { "type": "keyword", "ignore_above": 8191 },
+      "protocol_sub": { "type": "keyword", "ignore_above": 8191 },
+      "url": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+      "param": { "type": "keyword", "ignore_above": 8191 },
       "issue_type_id": { "type": "integer" },
-      "typical_severity": { "type": "keyword" },
+      "typical_severity": { "type": "keyword", "ignore_above": 8191 },
       "description": { "type": "text" },
       "background": { "type": "text" },
       "remediation_background": { "type": "text" },
@@ -31,20 +31,21 @@
         "properties": {
           "request": {
             "properties": {
-              "method": { "type": "keyword" },
-              "path": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-              "path_without_query": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-              "query": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-              "file_extension": { "type": "keyword" },
-              "content_type": { "type": "keyword" },
-              "http_version": { "type": "keyword" },
+              "method": { "type": "keyword", "ignore_above": 8191 },
+              "path": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "path_without_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "file_extension": { "type": "keyword", "ignore_above": 8191 },
+              "content_type": { "type": "keyword", "ignore_above": 8191 },
+              "inferred_content_type": { "type": "keyword", "ignore_above": 8191 },
+              "http_version": { "type": "keyword", "ignore_above": 8191 },
               "headers": {
                 "properties": {
                   "full": {
                     "type": "nested",
                     "properties": {
-                      "name": { "type": "keyword" },
-                      "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+                      "name": { "type": "keyword", "ignore_above": 8191 },
+                      "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
                     }
                   }
                 }
@@ -52,12 +53,12 @@
               "parameters": {
                 "type": "nested",
                 "properties": {
-                  "name": { "type": "keyword" },
-                  "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-                  "type": { "type": "keyword" }
+                  "name": { "type": "keyword", "ignore_above": 8191 },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                  "type": { "type": "keyword", "ignore_above": 8191 }
                 }
               },
-              "content_type_enum": { "type": "keyword" },
+              "content_type_enum": { "type": "keyword", "ignore_above": 8191 },
               "markers": {
                 "type": "nested",
                 "properties": {
@@ -78,37 +79,37 @@
           "response": {
             "properties": {
               "status": { "type": "integer" },
-              "reason_phrase": { "type": "keyword" },
-              "http_version": { "type": "keyword" },
+              "reason_phrase": { "type": "keyword", "ignore_above": 8191 },
+              "http_version": { "type": "keyword", "ignore_above": 8191 },
               "headers": {
                 "properties": {
                   "full": {
                     "type": "nested",
                     "properties": {
-                      "name": { "type": "keyword" },
-                      "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } }
+                      "name": { "type": "keyword", "ignore_above": 8191 },
+                      "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
                     }
                   },
-                  "names": { "type": "keyword" },
-                  "etag": { "type": "keyword" },
-                  "last_modified": { "type": "keyword" },
-                  "content_location": { "type": "keyword" }
+                  "names": { "type": "keyword", "ignore_above": 8191 },
+                  "etag": { "type": "keyword", "ignore_above": 8191 },
+                  "last_modified": { "type": "keyword", "ignore_above": 8191 },
+                  "content_location": { "type": "keyword", "ignore_above": 8191 }
                 }
               },
               "cookies": {
                 "type": "nested",
                 "properties": {
-                  "name": { "type": "keyword" },
-                  "value": { "type": "text", "fields": { "raw": { "type": "keyword" } } },
-                  "domain": { "type": "keyword" },
-                  "path": { "type": "keyword" },
+                  "name": { "type": "keyword", "ignore_above": 8191 },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                  "domain": { "type": "keyword", "ignore_above": 8191 },
+                  "path": { "type": "keyword", "ignore_above": 8191 },
                   "expiration": { "type": "date" }
                 }
               },
-              "mime_type": { "type": "keyword" },
-              "stated_mime_type": { "type": "keyword" },
-              "inferred_mime_type": { "type": "keyword" },
-              "status_code_class": { "type": "keyword" },
+              "mime_type": { "type": "keyword", "ignore_above": 8191 },
+              "stated_mime_type": { "type": "keyword", "ignore_above": 8191 },
+              "inferred_mime_type": { "type": "keyword", "ignore_above": 8191 },
+              "status_code_class": { "type": "keyword", "ignore_above": 8191 },
               "markers": {
                 "type": "nested",
                 "properties": {
@@ -131,8 +132,8 @@
       "request_responses_missing": { "type": "boolean" },
       "document_meta": {
         "properties": {
-          "schema_version": { "type": "keyword" },
-          "extension_version": { "type": "keyword" },
+          "schema_version": { "type": "keyword", "ignore_above": 8191 },
+          "extension_version": { "type": "keyword", "ignore_above": 8191 },
           "indexed_at": { "type": "date" }
         }
       }

@@ -11,11 +11,17 @@ import java.util.concurrent.LinkedBlockingQueue;
  * Per-index bounded queues for failed OpenSearch index operations.
  * When a push fails, documents can be offered to the queue; a drain thread
  * later retries them. When the queue is full, new documents are rejected.
+ *
+ * <p>Each queued document is wrapped with its enqueue timestamp so callers can observe
+ * the age of the oldest retry-pending document per index.</p>
  */
 public final class RetryQueue {
 
+    /** A document waiting to be retried, tagged with the time it was enqueued. */
+    record QueuedDoc(Map<String, Object> document, long enqueuedAtMs) {}
+
     private final int maxSizePerIndex;
-    private final ConcurrentHashMap<String, BlockingQueue<Map<String, Object>>> queues = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, BlockingQueue<QueuedDoc>> queues = new ConcurrentHashMap<>();
 
     public RetryQueue(int maxSizePerIndex) {
         this.maxSizePerIndex = maxSizePerIndex;
@@ -29,8 +35,8 @@ public final class RetryQueue {
      * @return true if accepted, false if queue full
      */
     public boolean offer(String indexName, Map<String, Object> document) {
-        BlockingQueue<Map<String, Object>> q = queueFor(indexName);
-        return q.offer(document);
+        BlockingQueue<QueuedDoc> q = queueFor(indexName);
+        return q.offer(new QueuedDoc(document, System.currentTimeMillis()));
     }
 
     /**
@@ -45,10 +51,11 @@ public final class RetryQueue {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
-        BlockingQueue<Map<String, Object>> q = queueFor(indexName);
+        BlockingQueue<QueuedDoc> q = queueFor(indexName);
+        long now = System.currentTimeMillis();
         int added = 0;
         for (Map<String, Object> doc : documents) {
-            if (!q.offer(doc)) {
+            if (!q.offer(new QueuedDoc(doc, now))) {
                 return added;
             }
             added++;
@@ -64,12 +71,16 @@ public final class RetryQueue {
      * @return list of documents (may be empty, never null)
      */
     public List<Map<String, Object>> pollBatch(String indexName, int maxSize) {
-        BlockingQueue<Map<String, Object>> q = queues.get(indexName);
+        BlockingQueue<QueuedDoc> q = queues.get(indexName);
         if (q == null) {
             return List.of();
         }
-        List<Map<String, Object>> batch = new ArrayList<>(Math.min(maxSize, q.size()));
-        q.drainTo(batch, maxSize);
+        List<QueuedDoc> wrapped = new ArrayList<>(Math.min(maxSize, q.size()));
+        q.drainTo(wrapped, maxSize);
+        List<Map<String, Object>> batch = new ArrayList<>(wrapped.size());
+        for (QueuedDoc qd : wrapped) {
+            batch.add(qd.document());
+        }
         return batch;
     }
 
@@ -77,8 +88,24 @@ public final class RetryQueue {
      * Returns the current number of documents queued for the given index.
      */
     public int size(String indexName) {
-        BlockingQueue<Map<String, Object>> q = queues.get(indexName);
+        BlockingQueue<QueuedDoc> q = queues.get(indexName);
         return q == null ? 0 : q.size();
+    }
+
+    /**
+     * Returns the enqueue timestamp (epoch ms) of the oldest queued document for the given index,
+     * or {@code -1} when the queue is empty or absent.
+     *
+     * <p>Uses a non-blocking {@link BlockingQueue#peek()} so reads are cheap and safe from any
+     * thread; the returned value is a snapshot and may change immediately after reading.</p>
+     */
+    public long oldestEnqueuedAtMs(String indexName) {
+        BlockingQueue<QueuedDoc> q = queues.get(indexName);
+        if (q == null) {
+            return -1L;
+        }
+        QueuedDoc head = q.peek();
+        return head == null ? -1L : head.enqueuedAtMs();
     }
 
     /**
@@ -109,7 +136,7 @@ public final class RetryQueue {
         queues.values().forEach(BlockingQueue::clear);
     }
 
-    private BlockingQueue<Map<String, Object>> queueFor(String indexName) {
+    private BlockingQueue<QueuedDoc> queueFor(String indexName) {
         return queues.computeIfAbsent(indexName, k -> new LinkedBlockingQueue<>(maxSizePerIndex));
     }
 }

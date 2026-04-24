@@ -275,14 +275,6 @@ public class OpenSearchClientWrapper {
     }
 
     /**
-     * One-shot bulk (no retry, no queue). Returns number of successes.
-     */
-    static int doPushBulk(String baseUrl, String indexName, List<Map<String, Object>> documents) {
-        BulkResult result = doPushBulkWithDetails(baseUrl, indexName, documents);
-        return result.successCount;
-    }
-
-    /**
      * One-shot bulk with per-item failure details. Response items match request order.
      */
     static BulkResult doPushBulkWithDetails(String baseUrl, String indexName, List<Map<String, Object>> documents) {
@@ -301,7 +293,7 @@ public class OpenSearchClientWrapper {
             }
             BulkResponse response = client.bulk(builder.build());
             int successCount = 0;
-            List<Integer> failedIndices = new ArrayList<>();
+            List<FailedItem> failedItems = new ArrayList<>();
             final int maxLoggedPerBulk = 3;
             int i = 0;
             int logged = 0;
@@ -309,19 +301,23 @@ public class OpenSearchClientWrapper {
                 if (item.error() == null) {
                     successCount++;
                 } else {
-                    failedIndices.add(i);
+                    var err = item.error();
+                    String type = err.type() != null ? err.type() : "unknown";
+                    String reason = err.reason() != null ? err.reason() : "unknown";
+                    failedItems.add(new FailedItem(i, type, reason));
                     if (logged < maxLoggedPerBulk) {
-                        var err = item.error();
-                        Logger.logDebug("Bulk item error at " + i + ": " + (err != null ? err.reason() : "unknown"));
+                        Logger.logError(formatBulkItemFailure(indexName, i, type, reason));
                         logged++;
                     }
                 }
                 i++;
             }
-            if (failedIndices.size() > maxLoggedPerBulk) {
-                Logger.logDebug("Bulk index " + indexName + ": " + (failedIndices.size() - maxLoggedPerBulk) + " more item errors in this batch (total failed: " + failedIndices.size() + ")");
+            if (failedItems.size() > maxLoggedPerBulk) {
+                Logger.logError("[OpenSearch] Bulk item failure summary: index=" + indexName
+                        + " additional=" + (failedItems.size() - maxLoggedPerBulk)
+                        + " totalFailed=" + failedItems.size());
             }
-            return new BulkResult(successCount, failedIndices);
+            return new BulkResult(successCount, failedItems);
         } catch (IOException | RuntimeException e) {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             Logger.logDebug("doPushBulk failed for " + indexName + ": " + msg);
@@ -333,13 +329,38 @@ public class OpenSearchClientWrapper {
         }
     }
 
+    /**
+     * Formats one per-item bulk failure as a single structured ERROR log line.
+     *
+     * <p>Format is line-stable so log greps and tests can rely on it. Reason is clamped to
+     * avoid a single pathological doc flooding the log panel.</p>
+     */
+    static String formatBulkItemFailure(String indexName, int opIndex, String type, String reason) {
+        String clampedReason = reason == null ? "unknown" : reason;
+        if (clampedReason.length() > 500) {
+            clampedReason = clampedReason.substring(0, 497) + "...";
+        }
+        return "[OpenSearch] Bulk item failure: index=" + indexName
+                + " op=" + opIndex
+                + " type=" + (type == null || type.isBlank() ? "unknown" : type)
+                + " reason=" + clampedReason;
+    }
+
+    /** Single failed bulk item: zero-based request index, OpenSearch error type, and reason. */
+    record FailedItem(int index, String type, String reason) {
+        FailedItem {
+            type = type == null ? "unknown" : type;
+            reason = reason == null ? "unknown" : reason;
+        }
+    }
+
     static final class BulkResult {
         final int successCount;
-        final List<Integer> failedIndices;
+        final List<FailedItem> failedItems;
 
-        BulkResult(int successCount, List<Integer> failedIndices) {
+        BulkResult(int successCount, List<FailedItem> failedItems) {
             this.successCount = successCount;
-            this.failedIndices = failedIndices != null ? List.copyOf(failedIndices) : List.of();
+            this.failedItems = failedItems != null ? List.copyOf(failedItems) : List.of();
         }
     }
 

@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.utils;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,6 +41,23 @@ class ExportStatsTest {
         long totalBefore = ExportStats.getTotalFailureCount();
         ExportStats.recordFailure("exporter", 1);
         assertThat(ExportStats.getTotalFailureCount()).isEqualTo(totalBefore + 1);
+    }
+
+    @Test
+    void recordPermanentDrop_incrementsPerIndexAndTotal() {
+        long beforeTraffic = ExportStats.getPermanentDrops("traffic");
+        long beforeTotal = ExportStats.getTotalPermanentDrops();
+        ExportStats.recordPermanentDrop("traffic", 3);
+        assertThat(ExportStats.getPermanentDrops("traffic")).isEqualTo(beforeTraffic + 3);
+        assertThat(ExportStats.getTotalPermanentDrops()).isEqualTo(beforeTotal + 3);
+    }
+
+    @Test
+    void recordPermanentDrop_withZeroOrNegative_doesNotChangeCount() {
+        long before = ExportStats.getPermanentDrops("sitemap");
+        ExportStats.recordPermanentDrop("sitemap", 0);
+        ExportStats.recordPermanentDrop("sitemap", -5);
+        assertThat(ExportStats.getPermanentDrops("sitemap")).isEqualTo(before);
     }
 
     @Test
@@ -167,6 +185,48 @@ class ExportStatsTest {
         ExportStats.recordRetryQueueDrop("sitemap", 0);
         ExportStats.recordRetryQueueDrop("sitemap", -1);
         assertThat(ExportStats.getRetryQueueDrops("sitemap")).isEqualTo(before);
+    }
+
+    @Test
+    void recordOpenSearchSuccess_updatesLastSuccessAndResetsConsecutiveFailures() {
+        ExportStats.resetForTests();
+        assertThat(ExportStats.getOpenSearchLastSuccessAtMs()).isEqualTo(-1L);
+        assertThat(ExportStats.getOpenSearchConsecutiveFailures()).isEqualTo(0L);
+
+        ExportStats.recordOpenSearchFailure();
+        ExportStats.recordOpenSearchFailure();
+        assertThat(ExportStats.getOpenSearchConsecutiveFailures()).isEqualTo(2L);
+
+        long beforeSuccess = System.currentTimeMillis();
+        ExportStats.recordOpenSearchSuccess();
+        assertThat(ExportStats.getOpenSearchConsecutiveFailures()).isEqualTo(0L);
+        assertThat(ExportStats.getOpenSearchLastSuccessAtMs()).isGreaterThanOrEqualTo(beforeSuccess);
+    }
+
+    @Test
+    void recordSkipReason_incrementsPerReasonAndTotal_andIgnoresBlankOrZero() {
+        ExportStats.resetForTests();
+        ExportStats.recordSkipReason("scope", 3);
+        ExportStats.recordSkipReason("tool_disabled", 1);
+        ExportStats.recordSkipReason(null, 5);
+        ExportStats.recordSkipReason("  ", 2);
+        ExportStats.recordSkipReason("scope", 0);
+        ExportStats.recordSkipReason("scope", -4);
+
+        assertThat(ExportStats.getSkipReasonCount("scope")).isEqualTo(3);
+        assertThat(ExportStats.getSkipReasonCount("tool_disabled")).isEqualTo(1);
+        assertThat(ExportStats.getTotalSkipCount()).isEqualTo(4);
+
+        Map<String, Long> counts = ExportStats.getSkipReasonCounts();
+        assertThat(counts).containsEntry("scope", 3L).containsEntry("tool_disabled", 1L);
+    }
+
+    @Test
+    void getOldestQueuedAgeMs_withEmptyQueue_returnsMinusOne() {
+        ExportStats.resetForTests();
+        for (String indexKey : ExportStats.getIndexKeys()) {
+            assertThat(ExportStats.getOldestQueuedAgeMs(indexKey)).isEqualTo(-1L);
+        }
     }
 
     @Test

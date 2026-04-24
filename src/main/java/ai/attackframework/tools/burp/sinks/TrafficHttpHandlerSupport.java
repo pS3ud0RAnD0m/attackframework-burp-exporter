@@ -143,16 +143,19 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 "TrafficHttpHandler");
         if (!ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), scopeUrl, request.isInScope())) {
+            ExportStats.recordSkipReason(ExportStats.SKIP_REASON_SCOPE, 1);
             return RequestToBeSentAction.continueWith(request);
         }
         ToolSource toolSource = request.toolSource();
         ToolType toolType = toolSource == null ? null : toolSource.toolType();
         if (!shouldExportTrafficByToolSource(toolType)) {
+            ExportStats.recordSkipReason(ExportStats.SKIP_REASON_TOOL_DISABLED, 1);
             return RequestToBeSentAction.continueWith(request);
         }
         if (toolType == ToolType.EXTENSIONS) {
             HttpService svc = request.httpService();
             if (svc != null && isRequestToConfiguredOpenSearch(svc.host(), svc.port())) {
+                ExportStats.recordSkipReason(ExportStats.SKIP_REASON_SELF_OPENSEARCH, 1);
                 return RequestToBeSentAction.continueWith(request);
             }
         }
@@ -200,6 +203,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         boolean inScope = ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), scopeUrl, burpInScope);
         if (!inScope) {
+            ExportStats.recordSkipReason(ExportStats.SKIP_REASON_SCOPE, 1);
             return ResponseReceivedAction.continueWith(response);
         }
 
@@ -219,6 +223,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         } else if (responseType == null && requestFallbackType == null && shouldExportNullToolSourceTraffic()) {
             toolType = null; // allowed unknown source when proxy traffic export is enabled
         } else {
+            ExportStats.recordSkipReason(ExportStats.SKIP_REASON_TOOL_DISABLED, 1);
             pendingOrphans.remove(response.messageId());
             return ResponseReceivedAction.continueWith(response);
         }
@@ -226,6 +231,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         if (toolType == ToolType.EXTENSIONS || toolType == null) {
             HttpService svc = request.httpService();
             if (svc != null && isRequestToConfiguredOpenSearch(svc.host(), svc.port())) {
+                ExportStats.recordSkipReason(ExportStats.SKIP_REASON_SELF_OPENSEARCH, 1);
                 pendingOrphans.remove(response.messageId());
                 return ResponseReceivedAction.continueWith(response);
             }

@@ -66,6 +66,7 @@ import ai.attackframework.tools.burp.sinks.TrafficRouteBucket;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.SystemMetrics;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
@@ -254,6 +255,20 @@ public class StatsPanel extends JPanel {
     private final JLabel fileTotalExportedValue;
     private final JLabel fileTotalDocsPushedValue;
     private final JLabel fileTotalFailuresValue;
+    private final JLabel uptimeValue;
+    private final JLabel heapUsedMaxValue;
+    private final JLabel nonHeapUsedValue;
+    private final JLabel threadsLivePeakValue;
+    private final JLabel gcCountTimeValue;
+    private final JLabel processCpuLoadValue;
+    private final JLabel availableProcessorsValue;
+    private final JLabel permanentDropsTotalValue;
+    private final JLabel synthesizedBodyParamsDroppedValue;
+    private final JLabel docsOverParamsThresholdValue;
+    private final JLabel openSearchLastSuccessValue;
+    private final JLabel openSearchConsecutiveFailuresValue;
+    private final JLabel oldestQueuedAgeValue;
+    private final JLabel skipReasonsValue;
     private final DefaultTableModel trafficBySourceModel;
     private final DefaultTableModel byIndexModel;
     private final DefaultTableModel fileTrafficBySourceModel;
@@ -353,11 +368,19 @@ public class StatsPanel extends JPanel {
                         "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
                         "Repeater Metadata Sources"
                 }),
+                new MetricSection("Process", new String[] {
+                        "Uptime", "Heap Used / Max", "Non-Heap Used", "Threads (Live / Peak)",
+                        "GC (Count / Time)", "Process CPU Load", "Available Processors"
+                }),
                 new MetricSection("OpenSearch", new String[] {
                         "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
                         "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)", "Spill Directory",
                         "OpenSearch Throughput (Last 10s)", "OpenSearch Total Size Exported",
-                        "OpenSearch Total Docs Exported", "OpenSearch Total Failures"
+                        "OpenSearch Total Docs Exported", "OpenSearch Total Failures",
+                        "Permanent Drops (Total)", "Synthesized Body Params Dropped",
+                        "Docs Over Param Threshold",
+                        "OpenSearch Last Success", "OpenSearch Consecutive Failures",
+                        "Oldest Queued Age", "Skips by Reason"
                 }),
                 new MetricSection("Files", new String[] {
                         "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
@@ -385,6 +408,20 @@ public class StatsPanel extends JPanel {
         fileTotalExportedValue = miscValues.get("File Total Size Exported");
         fileTotalDocsPushedValue = miscValues.get("File Total Docs Exported");
         fileTotalFailuresValue = miscValues.get("File Total Failures");
+        uptimeValue = miscValues.get("Uptime");
+        heapUsedMaxValue = miscValues.get("Heap Used / Max");
+        nonHeapUsedValue = miscValues.get("Non-Heap Used");
+        threadsLivePeakValue = miscValues.get("Threads (Live / Peak)");
+        gcCountTimeValue = miscValues.get("GC (Count / Time)");
+        processCpuLoadValue = miscValues.get("Process CPU Load");
+        availableProcessorsValue = miscValues.get("Available Processors");
+        permanentDropsTotalValue = miscValues.get("Permanent Drops (Total)");
+        synthesizedBodyParamsDroppedValue = miscValues.get("Synthesized Body Params Dropped");
+        docsOverParamsThresholdValue = miscValues.get("Docs Over Param Threshold");
+        openSearchLastSuccessValue = miscValues.get("OpenSearch Last Success");
+        openSearchConsecutiveFailuresValue = miscValues.get("OpenSearch Consecutive Failures");
+        oldestQueuedAgeValue = miscValues.get("Oldest Queued Age");
+        skipReasonsValue = miscValues.get("Skips by Reason");
 
         tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
         tablesRow.setOpaque(false);
@@ -396,7 +433,8 @@ public class StatsPanel extends JPanel {
         trafficBySourceTable = createStatsTable(trafficBySourceModel);
 
         byIndexModel = new DefaultTableModel(
-                new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+                new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Permanent Drops",
+                        "Failures", "Last Push (ms)", "Last Error" }, 0);
         byIndexTable = createStatsTable(byIndexModel);
         fileTrafficBySourceModel = new DefaultTableModel(
                 new String[] { "Source", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
@@ -475,6 +513,14 @@ public class StatsPanel extends JPanel {
         totalFailuresValue.setText(formatWhole(totalFailure));
         fileTotalDocsPushedValue.setText(formatWhole(FileExportStats.getTotalSuccessCount()));
         fileTotalFailuresValue.setText(formatWhole(FileExportStats.getTotalFailureCount()));
+        permanentDropsTotalValue.setText(formatWhole(ExportStats.getTotalPermanentDrops()));
+        synthesizedBodyParamsDroppedValue.setText(formatWhole(ExportStats.getSynthesizedBodyParamsDropped()));
+        docsOverParamsThresholdValue.setText(formatWhole(ExportStats.getDocsOverParamsThreshold()));
+        openSearchLastSuccessValue.setText(StatsPanelFormatters.formatRelativeTime(ExportStats.getOpenSearchLastSuccessAtMs()));
+        openSearchConsecutiveFailuresValue.setText(formatWhole(ExportStats.getOpenSearchConsecutiveFailures()));
+        oldestQueuedAgeValue.setText(StatsPanelFormatters.formatOldestQueuedAges());
+        skipReasonsValue.setText(StatsPanelFormatters.formatSkipReasons());
+        applySystemMetrics(SystemMetrics.snapshot());
 
         rebuildTrafficBySourceTable();
         rebuildByIndexTable();
@@ -522,13 +568,15 @@ public class StatsPanel extends JPanel {
             long success = ExportStats.getSuccessCount(indexKey);
             int queued = ExportStats.getQueueSize(indexKey);
             long retryDrops = ExportStats.getRetryQueueDrops(indexKey);
+            long permanentDrops = ExportStats.getPermanentDrops(indexKey);
             long failure = ExportStats.getFailureCount(indexKey);
             long lastPushMs = ExportStats.getLastPushDurationMs(indexKey);
             String lastPushStr = lastPushMs >= 0 ? String.valueOf(lastPushMs) : "-";
             String lastError = ExportStats.getLastError(indexKey);
             String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
             byIndexModel.addRow(new Object[] {
-                    formatKeyLabel(indexKey), success, queued, retryDrops, failure, lastPushStr, errStr
+                    formatKeyLabel(indexKey), success, queued, retryDrops, permanentDrops,
+                    failure, lastPushStr, errStr
             });
         }
     }
@@ -594,7 +642,11 @@ public class StatsPanel extends JPanel {
         table.setFillsViewportHeight(true);
         table.setAutoCreateRowSorter(true);
         if (table.getRowSorter() instanceof TableRowSorter<?> sorter) {
-            for (int columnIndex = 1; columnIndex <= 5 && columnIndex < table.getColumnCount(); columnIndex++) {
+            // Every column between the leading label and the trailing free-text "Last Error"
+            // holds a numeric or "-" sentinel; use the numeric comparator for all of them so the
+            // table stays sortable regardless of how many counters a given table exposes.
+            int lastNumericColumn = Math.max(1, table.getColumnCount() - 2);
+            for (int columnIndex = 1; columnIndex <= lastNumericColumn; columnIndex++) {
                 sorter.setComparator(columnIndex, StatsPanel::compareNumericCell);
             }
         }
@@ -911,6 +963,83 @@ public class StatsPanel extends JPanel {
             return formatWhole(safeBytes) + " " + unit;
         }
         return DECIMAL_ONE.format(value) + " " + unit;
+    }
+
+    /**
+     * Applies the latest {@link SystemMetrics.Snapshot} to the Misc Stats "Process" rows.
+     *
+     * <p>Unavailable fields fall back to {@code "n/a"}. Uptime is formatted as a human-readable
+     * {@code Dd Hh Mm Ss} string so long-running sessions stay scannable in the compact card.</p>
+     */
+    private void applySystemMetrics(SystemMetrics.Snapshot snapshot) {
+        uptimeValue.setText(snapshot.uptimeMs() >= 0 ? formatUptime(snapshot.uptimeMs()) : "n/a");
+        heapUsedMaxValue.setText(formatBytesPair(snapshot.heapUsedBytes(), snapshot.heapMaxBytes()));
+        nonHeapUsedValue.setText(snapshot.nonHeapUsedBytes() >= 0
+                ? formatHumanReadableBytes(snapshot.nonHeapUsedBytes())
+                : "n/a");
+        threadsLivePeakValue.setText(formatIntPair(snapshot.threadCount(), snapshot.peakThreadCount()));
+        gcCountTimeValue.setText(snapshot.gcCollectionCount() >= 0 && snapshot.gcCollectionTimeMs() >= 0
+                ? formatWhole(snapshot.gcCollectionCount()) + " / "
+                        + formatDurationMsCompact(snapshot.gcCollectionTimeMs())
+                : "n/a");
+        processCpuLoadValue.setText(Double.isNaN(snapshot.processCpuLoad())
+                ? "n/a"
+                : DECIMAL_ONE.format(snapshot.processCpuLoad() * 100.0) + "%");
+        availableProcessorsValue.setText(snapshot.availableProcessors() > 0
+                ? formatWhole(snapshot.availableProcessors())
+                : "n/a");
+    }
+
+    private static String formatBytesPair(long used, long max) {
+        String usedText = used >= 0 ? formatHumanReadableBytes(used) : "n/a";
+        String maxText = max > 0 ? formatHumanReadableBytes(max) : "n/a";
+        return usedText + " / " + maxText;
+    }
+
+    private static String formatIntPair(int live, int peak) {
+        String liveText = live >= 0 ? formatWhole(live) : "n/a";
+        String peakText = peak >= 0 ? formatWhole(peak) : "n/a";
+        return liveText + " / " + peakText;
+    }
+
+    /**
+     * Formats a millisecond uptime value as {@code Dd Hh Mm Ss}, trimming leading zero units so
+     * short sessions render as {@code 12s} while multi-day sessions render as {@code 2d 05h 30m}.
+     */
+    private static String formatUptime(long uptimeMs) {
+        long totalSeconds = Math.max(0L, uptimeMs / 1000L);
+        long days = totalSeconds / 86_400L;
+        long hours = (totalSeconds % 86_400L) / 3_600L;
+        long minutes = (totalSeconds % 3_600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        StringBuilder sb = new StringBuilder();
+        if (days > 0) {
+            sb.append(days).append("d ");
+        }
+        if (days > 0 || hours > 0) {
+            sb.append(String.format(Locale.ROOT, "%02dh ", hours));
+        }
+        if (days > 0 || hours > 0 || minutes > 0) {
+            sb.append(String.format(Locale.ROOT, "%02dm ", minutes));
+        }
+        sb.append(String.format(Locale.ROOT, "%02ds", seconds));
+        return sb.toString();
+    }
+
+    /**
+     * Formats cumulative GC pause time compactly using {@code ms}, {@code s}, or {@code m}
+     * depending on magnitude. Small values stay in milliseconds so short sessions do not round to
+     * zero.
+     */
+    private static String formatDurationMsCompact(long millis) {
+        long safe = Math.max(0L, millis);
+        if (safe < 1_000L) {
+            return formatWhole(safe) + " ms";
+        }
+        if (safe < 60_000L) {
+            return DECIMAL_ONE.format(safe / 1_000.0) + " s";
+        }
+        return DECIMAL_ONE.format(safe / 60_000.0) + " m";
     }
 
     private static void updateTablePreferredHeight(JTable table) {
@@ -1642,7 +1771,34 @@ public class StatsPanel extends JPanel {
         long totalFailure = ExportStats.getTotalFailureCount();
         sb.append("Session totals (this session)\n");
         sb.append("  total docs exported: ").append(totalSuccess).append("\n");
-        sb.append("  total failures: ").append(totalFailure).append("\n\n");
+        sb.append("  total failures: ").append(totalFailure).append("\n");
+        sb.append("  permanent drops: ").append(ExportStats.getTotalPermanentDrops()).append("\n");
+        sb.append("  synthesized body params dropped: ")
+                .append(ExportStats.getSynthesizedBodyParamsDropped()).append("\n");
+        sb.append("  docs over params threshold: ")
+                .append(ExportStats.getDocsOverParamsThreshold()).append("\n\n");
+
+        // Process metrics (JVM + OS)
+        SystemMetrics.Snapshot sys = SystemMetrics.snapshot();
+        sb.append("Process\n");
+        sb.append("  uptime ms: ").append(sys.uptimeMs() >= 0 ? sys.uptimeMs() : -1).append("\n");
+        sb.append("  heap used / max bytes: ")
+                .append(sys.heapUsedBytes() >= 0 ? sys.heapUsedBytes() : -1).append(" / ")
+                .append(sys.heapMaxBytes() > 0 ? sys.heapMaxBytes() : -1).append("\n");
+        sb.append("  non-heap used bytes: ")
+                .append(sys.nonHeapUsedBytes() >= 0 ? sys.nonHeapUsedBytes() : -1).append("\n");
+        sb.append("  threads live / peak: ")
+                .append(sys.threadCount() >= 0 ? sys.threadCount() : -1).append(" / ")
+                .append(sys.peakThreadCount() >= 0 ? sys.peakThreadCount() : -1).append("\n");
+        sb.append("  gc count / time ms: ")
+                .append(sys.gcCollectionCount() >= 0 ? sys.gcCollectionCount() : -1).append(" / ")
+                .append(sys.gcCollectionTimeMs() >= 0 ? sys.gcCollectionTimeMs() : -1).append("\n");
+        sb.append("  process cpu load: ")
+                .append(Double.isNaN(sys.processCpuLoad())
+                        ? "n/a"
+                        : String.format(Locale.ROOT, "%.3f", sys.processCpuLoad()))
+                .append("\n");
+        sb.append("  available processors: ").append(sys.availableProcessors()).append("\n\n");
 
         // Traffic by source
         sb.append("Traffic by source\n");
@@ -1664,20 +1820,26 @@ public class StatsPanel extends JPanel {
 
         // By index (table)
         sb.append("By index\n");
-        sb.append(String.format("  %-10s %-12s %-8s %-8s %-10s %-14s  %s%n",
-                "Index", "Docs exported", "Queued", "Rty drop", "Failures", "Last push (ms)", "Last error"));
-        sb.append("  ").append("-".repeat(10)).append(" ").append("-".repeat(12)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(8)).append(" ").append("-".repeat(10)).append(" ").append("-".repeat(14)).append("  ").append("-".repeat(ERROR_COL_MAX)).append("\n");
+        sb.append(String.format("  %-10s %-12s %-8s %-8s %-8s %-10s %-14s  %s%n",
+                "Index", "Docs exported", "Queued", "Rty drop", "Prm drop", "Failures",
+                "Last push (ms)", "Last error"));
+        sb.append("  ").append("-".repeat(10)).append(" ").append("-".repeat(12)).append(" ")
+                .append("-".repeat(8)).append(" ").append("-".repeat(8)).append(" ")
+                .append("-".repeat(8)).append(" ").append("-".repeat(10)).append(" ")
+                .append("-".repeat(14)).append("  ").append("-".repeat(ERROR_COL_MAX)).append("\n");
         for (String indexKey : ExportStats.getIndexKeys()) {
             long success = ExportStats.getSuccessCount(indexKey);
             int queued = ExportStats.getQueueSize(indexKey);
             long retryDrops = ExportStats.getRetryQueueDrops(indexKey);
+            long permanentDrops = ExportStats.getPermanentDrops(indexKey);
             long failure = ExportStats.getFailureCount(indexKey);
             long lastPushMs = ExportStats.getLastPushDurationMs(indexKey);
             String lastError = ExportStats.getLastError(indexKey);
             String lastPushStr = lastPushMs >= 0 ? String.valueOf(lastPushMs) : "-";
             String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
-            sb.append(String.format("  %-10s %-12d %-8d %-8d %-10d %-14s  %s%n",
-                    indexKey, success, queued, retryDrops, failure, lastPushStr, errStr));
+            sb.append(String.format("  %-10s %-12d %-8d %-8d %-8d %-10d %-14s  %s%n",
+                    indexKey, success, queued, retryDrops, permanentDrops, failure,
+                    lastPushStr, errStr));
         }
         sb.append("\n");
 

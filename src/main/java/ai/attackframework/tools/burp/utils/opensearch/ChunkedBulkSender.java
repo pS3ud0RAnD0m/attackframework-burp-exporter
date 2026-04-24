@@ -198,7 +198,7 @@ public final class ChunkedBulkSender {
                         + indexName + ": HTTP " + status + "." + detail);
                 return failedResult(attempted, attemptedBytes, attemptedTrafficRoutes);
             }
-            Result parsed = parseBulkResponse(responseBody, attempted, attemptedTrafficRoutes);
+            Result parsed = parseBulkResponse(responseBody, attempted, attemptedTrafficRoutes, indexName);
             long successBytes = parsed.successCount > 0 && attempted > 0
                     ? Math.round((double) attemptedBytes * parsed.successCount / attempted)
                     : 0;
@@ -247,15 +247,16 @@ public final class ChunkedBulkSender {
         return base + "/" + indexName + "/_bulk";
     }
 
-    /** Package-private for tests. */
+    /** Package-private for tests that do not need route-tracking context. */
     static Result parseBulkResponse(String responseBody, int attemptedCount) {
-        return parseBulkResponse(responseBody, attemptedCount, List.of());
+        return parseBulkResponse(responseBody, attemptedCount, List.of(), "");
     }
 
     static Result parseBulkResponse(
             String responseBody,
             int attemptedCount,
-            List<TrafficRouteBucket.Route> attemptedTrafficRoutes) {
+            List<TrafficRouteBucket.Route> attemptedTrafficRoutes,
+            String indexName) {
         if (responseBody == null || responseBody.isBlank()) {
             return failedResult(attemptedCount, 0, attemptedTrafficRoutes);
         }
@@ -273,6 +274,7 @@ public final class ChunkedBulkSender {
             Map<String, Integer> toolTypeFailureCounts = new LinkedHashMap<>();
             Map<String, Integer> sourceSuccessCounts = new LinkedHashMap<>();
             Map<String, Integer> sourceFailureCounts = new LinkedHashMap<>();
+            String effectiveIndex = indexName == null || indexName.isBlank() ? "unknown" : indexName;
             for (int i = 0; i < arr.size(); i++) {
                 JsonNode item = arr.get(i);
                 JsonNode op = item.get("index");
@@ -284,16 +286,20 @@ public final class ChunkedBulkSender {
                     recordRouteCount(attemptedTrafficRoutes, i, toolTypeSuccessCounts, sourceSuccessCounts);
                 } else if (logged < maxLogged) {
                     JsonNode err = op != null ? op.get("error") : null;
+                    String type = err != null && err.has("type") ? err.get("type").asText() : "unknown";
                     String reason = err != null && err.has("reason") ? err.get("reason").asText() : "unknown";
-                    Logger.logDebug("Bulk item error at " + i + ": " + reason);
+                    Logger.logError(OpenSearchClientWrapper.formatBulkItemFailure(effectiveIndex, i, type, reason));
                     logged++;
                     recordRouteCount(attemptedTrafficRoutes, i, toolTypeFailureCounts, sourceFailureCounts);
                 } else {
                     recordRouteCount(attemptedTrafficRoutes, i, toolTypeFailureCounts, sourceFailureCounts);
                 }
             }
-            if (arr.size() - successCount > maxLogged) {
-                Logger.logDebug("Bulk index: " + (arr.size() - successCount - maxLogged) + " more item errors (total failed: " + (arr.size() - successCount) + ")");
+            int totalFailed = arr.size() - successCount;
+            if (totalFailed > maxLogged) {
+                Logger.logError("[OpenSearch] Bulk item failure summary: index=" + effectiveIndex
+                        + " additional=" + (totalFailed - maxLogged)
+                        + " totalFailed=" + totalFailed);
             }
             return new Result(
                     successCount,

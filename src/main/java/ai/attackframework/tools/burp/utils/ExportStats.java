@@ -336,9 +336,26 @@ public final class ExportStats {
     /** Count of spill files pruned by retention policy before replay. */
     private static final AtomicLong trafficSpillExpiredPruned = new AtomicLong(0);
     /** Reason-coded drop counters for extreme traffic handling diagnostics. */
-    private static final Map<String, AtomicLong> trafficDropReasons = new ConcurrentHashMap<>();
+    private static final ReasonCounterSet trafficDropReasons = new ReasonCounterSet();
     /** Count of response-path exports that required request-side tool-type fallback. */
     private static final AtomicLong trafficToolSourceFallbacks = new AtomicLong(0);
+    /** Running total of synthesized BODY parameters dropped on binary request bodies. */
+    private static final AtomicLong synthesizedBodyParamsDropped = new AtomicLong(0);
+    /** Running count of documents whose retained or dropped-synthesized parameter count crossed the WARN threshold. */
+    private static final AtomicLong docsOverParamsThreshold = new AtomicLong(0);
+    /** OpenSearch connection-health: epoch ms of the most recent successful push, or -1 when none yet. */
+    private static final AtomicLong openSearchLastSuccessAtMs = new AtomicLong(-1L);
+    /** OpenSearch connection-health: consecutive push failures since the last success. */
+    private static final AtomicLong openSearchConsecutiveFailures = new AtomicLong(0L);
+    /** Reason-coded count of documents silently skipped by scope / tool-source / self-export filters. */
+    private static final ReasonCounterSet skipReasonCounts = new ReasonCounterSet();
+
+    /** Skip reason: document was dropped by the user's Burp scope filter. */
+    public static final String SKIP_REASON_SCOPE = "scope";
+    /** Skip reason: document originated from a Burp tool source the user did not enable for export. */
+    public static final String SKIP_REASON_TOOL_DISABLED = "tool_disabled";
+    /** Skip reason: request targets the configured OpenSearch destination (self-export guard). */
+    public static final String SKIP_REASON_SELF_OPENSEARCH = "self_opensearch";
 
     /**
      * Records that one or more documents were dropped from the traffic queue (queue full, drop oldest).
@@ -445,19 +462,12 @@ public final class ExportStats {
      * @param count number of dropped documents for that reason
      */
     public static void recordTrafficDropReason(String reason, long count) {
-        if (reason == null || reason.isBlank() || count <= 0) {
-            return;
-        }
-        trafficDropReasons.computeIfAbsent(reason, k -> new AtomicLong(0)).addAndGet(count);
+        trafficDropReasons.record(reason, count);
     }
 
     /** Returns the total for one reason-coded traffic drop key (0 when absent). */
     public static long getTrafficDropReasonCount(String reason) {
-        if (reason == null || reason.isBlank()) {
-            return 0;
-        }
-        AtomicLong counter = trafficDropReasons.get(reason);
-        return counter == null ? 0 : counter.get();
+        return trafficDropReasons.get(reason);
     }
 
     /**
@@ -473,6 +483,108 @@ public final class ExportStats {
     /** Returns total response-path tool-source fallbacks recorded this session. */
     public static long getTrafficToolSourceFallbacks() {
         return trafficToolSourceFallbacks.get();
+    }
+
+    /**
+     * Records synthesized BODY-typed parameters that were filtered out on binary request bodies.
+     *
+     * <p>Feeds the {@code Synthesized Body Params Dropped} telemetry counter; ignored when
+     * {@code count <= 0}.</p>
+     */
+    public static void recordSynthesizedBodyParamsDropped(long count) {
+        if (count > 0) {
+            synthesizedBodyParamsDropped.addAndGet(count);
+        }
+    }
+
+    /** Returns the session total of synthesized BODY parameters dropped across all exports. */
+    public static long getSynthesizedBodyParamsDropped() {
+        return synthesizedBodyParamsDropped.get();
+    }
+
+    /**
+     * Records one document whose retained or dropped-synthesized parameter count tripped
+     * the high-cardinality WARN threshold.
+     */
+    public static void recordDocsOverParamsThreshold() {
+        docsOverParamsThreshold.incrementAndGet();
+    }
+
+    /** Returns the session total of documents that tripped the parameter-cardinality threshold. */
+    public static long getDocsOverParamsThreshold() {
+        return docsOverParamsThreshold.get();
+    }
+
+    /**
+     * Records a successful OpenSearch push. Updates the connection-health timestamp and resets
+     * the consecutive-failure counter so the panel can surface live destination health.
+     */
+    public static void recordOpenSearchSuccess() {
+        openSearchLastSuccessAtMs.set(System.currentTimeMillis());
+        openSearchConsecutiveFailures.set(0L);
+    }
+
+    /**
+     * Records a failed OpenSearch push. Increments the consecutive-failure counter without
+     * disturbing the last-success timestamp so the panel shows both values side by side.
+     */
+    public static void recordOpenSearchFailure() {
+        openSearchConsecutiveFailures.incrementAndGet();
+    }
+
+    /** Returns the epoch-ms timestamp of the most recent successful OpenSearch push, or -1. */
+    public static long getOpenSearchLastSuccessAtMs() {
+        return openSearchLastSuccessAtMs.get();
+    }
+
+    /** Returns the count of consecutive OpenSearch push failures since the last success. */
+    public static long getOpenSearchConsecutiveFailures() {
+        return openSearchConsecutiveFailures.get();
+    }
+
+    /**
+     * Records a silent skip of a document at an exporter filter (scope, tool-source, self-export, etc.).
+     *
+     * <p>Surfaces in the Misc Stats {@code Skips by Reason} row so the UI can show where
+     * coverage gaps come from. Ignores {@code null}, blank, or non-positive counts.</p>
+     */
+    public static void recordSkipReason(String reason, long count) {
+        skipReasonCounts.record(reason, count);
+    }
+
+    /** Returns the session total for one skip-reason key (0 when absent). */
+    public static long getSkipReasonCount(String reason) {
+        return skipReasonCounts.get(reason);
+    }
+
+    /**
+     * Returns a live copy of the skip-reason counters.
+     *
+     * <p>Keys are the reason labels ({@code "scope"}, {@code "tool_disabled"},
+     * {@code "self_opensearch"}, etc.); values are the counts. The returned map is a snapshot
+     * and safe to iterate without synchronization.</p>
+     */
+    public static Map<String, Long> getSkipReasonCounts() {
+        return skipReasonCounts.snapshot();
+    }
+
+    /** Returns the session total across all skip reasons. */
+    public static long getTotalSkipCount() {
+        return skipReasonCounts.total();
+    }
+
+    /**
+     * Returns the age (ms) of the oldest document currently queued for the given index, or -1
+     * when the queue is empty. Surfaces in the Misc Stats {@code Oldest Queued Age} row.
+     */
+    public static long getOldestQueuedAgeMs(String indexKey) {
+        String indexName = RuntimeConfig.indexNameForKey(indexKey);
+        long enqueuedAt = IndexingRetryCoordinator.getInstance().getOldestQueuedEnqueuedAtMs(indexName);
+        if (enqueuedAt <= 0) {
+            return -1;
+        }
+        long age = System.currentTimeMillis() - enqueuedAt;
+        return age < 0 ? 0 : age;
     }
 
     /** Session total: sum of docs pushed across all indexes. */
@@ -518,6 +630,33 @@ public final class ExportStats {
         long sum = 0;
         for (String key : INDEX_KEYS) {
             sum += forIndex(key).retryQueueDrops.get();
+        }
+        return sum;
+    }
+
+    /**
+     * Per-index permanent-failure drops: count of documents rejected by OpenSearch with a
+     * mapping/parse/validation error (classified permanent) and therefore not re-queued for retry.
+     *
+     * <p>Distinct from {@link #recordRetryQueueDrop(String, long)} which counts capacity-driven
+     * drops. The poison-pill path in {@link IndexingRetryCoordinator} short-circuits permanently
+     * rejected items and records them here.</p>
+     */
+    public static void recordPermanentDrop(String indexKey, long count) {
+        if (count <= 0) return;
+        forIndex(indexKey).permanentDrops.addAndGet(count);
+    }
+
+    /** Returns the session total of permanently dropped documents for the given index. */
+    public static long getPermanentDrops(String indexKey) {
+        return forIndex(indexKey).permanentDrops.get();
+    }
+
+    /** Returns the session total of permanently dropped documents across all indexes. */
+    public static long getTotalPermanentDrops() {
+        long sum = 0;
+        for (String key : INDEX_KEYS) {
+            sum += forIndex(key).permanentDrops.get();
         }
         return sum;
     }
@@ -621,6 +760,11 @@ public final class ExportStats {
         trafficSpillExpiredPruned.set(0);
         trafficDropReasons.clear();
         trafficToolSourceFallbacks.set(0);
+        synthesizedBodyParamsDropped.set(0);
+        docsOverParamsThreshold.set(0);
+        openSearchLastSuccessAtMs.set(-1L);
+        openSearchConsecutiveFailures.set(0L);
+        skipReasonCounts.clear();
     }
 
     /**
@@ -674,6 +818,7 @@ public final class ExportStats {
         final AtomicLong lastPushDurationMs = new AtomicLong(-1);
         final AtomicReference<String> lastError = new AtomicReference<>(null);
         final AtomicLong retryQueueDrops = new AtomicLong(0);
+        final AtomicLong permanentDrops = new AtomicLong(0);
     }
 
     private static final class TrafficSourceStats {

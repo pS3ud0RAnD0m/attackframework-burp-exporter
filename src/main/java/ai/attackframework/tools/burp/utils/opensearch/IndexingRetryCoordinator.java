@@ -89,11 +89,13 @@ public final class IndexingRetryCoordinator {
             boolean success = OpenSearchClientWrapper.doPushDocument(activeBaseUrl, indexName, document);
             if (success) {
                 consecutiveFailures.set(0);
+                ExportStats.recordOpenSearchSuccess();
                 if (outageMode.get()) {
                     checkRecoveryAndLog(activeBaseUrl);
                 }
                 return true;
             }
+            ExportStats.recordOpenSearchFailure();
             int fails = consecutiveFailures.incrementAndGet();
             if (maybeEnterOutageMode(activeBaseUrl, fails)) {
                 return false;
@@ -145,6 +147,7 @@ public final class IndexingRetryCoordinator {
             OpenSearchClientWrapper.BulkResult result = OpenSearchClientWrapper.doPushBulkWithDetails(activeBaseUrl, indexName, documents);
             if (result.successCount == documents.size()) {
                 consecutiveFailures.set(0);
+                ExportStats.recordOpenSearchSuccess();
                 BatchSizeController.getInstance().recordSuccess(result.successCount);
                 if (outageMode.get()) {
                     checkRecoveryAndLog(activeBaseUrl);
@@ -154,20 +157,18 @@ public final class IndexingRetryCoordinator {
             if (result.successCount > 0) {
                 BatchSizeController.getInstance().recordPartialSuccess(result.successCount, documents.size());
                 consecutiveFailures.set(0);
+                ExportStats.recordOpenSearchSuccess();
                 if (outageMode.get()) {
                     checkRecoveryAndLog(activeBaseUrl);
                 }
-                for (int i : result.failedIndices) {
-                    if (i >= 0 && i < documents.size()) {
-                        toQueue.add(documents.get(i));
-                    }
-                }
+                toQueue = filterTransientFailures(documents, result.failedItems, indexName, indexKey);
                 successCount = result.successCount;
                 break;
             }
             if (attempt == maxAttempts) {
                 BatchSizeController.getInstance().recordFailure(documents.size());
-                toQueue = new ArrayList<>(documents);
+                ExportStats.recordOpenSearchFailure();
+                toQueue = filterTransientFailures(documents, result.failedItems, indexName, indexKey);
                 successCount = 0;
                 break;
             }
@@ -362,11 +363,14 @@ public final class IndexingRetryCoordinator {
                 List<Map<String, Object>> batch = queue.pollBatch(indexName, batchSize);
                 if (batch.isEmpty()) continue;
 
-                int sent = OpenSearchClientWrapper.doPushBulk(baseUrl, indexName, batch);
+                OpenSearchClientWrapper.BulkResult result =
+                        OpenSearchClientWrapper.doPushBulkWithDetails(baseUrl, indexName, batch);
+                int sent = result.successCount;
                 if (sent == batch.size()) {
                     BatchSizeController.getInstance().recordSuccess(sent);
                     ExportStats.recordSuccess(indexKey, sent);
                     ExportStats.recordExportedBytes(indexKey, estimateSuccessfulBytes(batch, sent));
+                    ExportStats.recordOpenSearchSuccess();
                     if (outageMode.get() && queue.allEmpty()) {
                         checkRecoveryAndLog(baseUrl);
                     }
@@ -374,11 +378,14 @@ public final class IndexingRetryCoordinator {
                     BatchSizeController.getInstance().recordPartialSuccess(sent, batch.size());
                     ExportStats.recordSuccess(indexKey, sent);
                     ExportStats.recordExportedBytes(indexKey, estimateSuccessfulBytes(batch, sent));
-                    List<Map<String, Object>> reQueue = batch.subList(sent, batch.size());
+                    ExportStats.recordOpenSearchSuccess();
+                    List<Map<String, Object>> reQueue = filterTransientFailures(batch, result.failedItems, indexName, indexKey);
                     queue.offerAll(indexName, reQueue);
                 } else {
                     BatchSizeController.getInstance().recordFailure(batch.size());
-                    queue.offerAll(indexName, batch);
+                    ExportStats.recordOpenSearchFailure();
+                    List<Map<String, Object>> reQueue = filterTransientFailures(batch, result.failedItems, indexName, indexKey);
+                    queue.offerAll(indexName, reQueue);
                 }
             }
         }
@@ -424,6 +431,15 @@ public final class IndexingRetryCoordinator {
         return queue.size(indexName);
     }
 
+    /**
+     * Returns the enqueue timestamp (epoch ms) of the oldest queued document for the given index,
+     * or {@code -1} when the queue is empty. Used by {@link ExportStats#getOldestQueuedAgeMs(String)}
+     * to surface the {@code Oldest Queued Age} row on the Misc Stats panel.
+     */
+    public long getOldestQueuedEnqueuedAtMs(String indexName) {
+        return queue.oldestEnqueuedAtMs(indexName);
+    }
+
     private static boolean waitBackoffDelay(int attempt) {
         long delayMs = BACKOFF_BASE_MS * (long) Math.pow(BACKOFF_MULTIPLIER, attempt - 1);
         return waitInterval(delayMs);
@@ -444,6 +460,51 @@ public final class IndexingRetryCoordinator {
             remainingNanos = deadline - System.nanoTime();
         }
         return true;
+    }
+
+    /**
+     * Partitions failed bulk items into transient (re-queued) and permanent (dropped) sets.
+     *
+     * <p>Transient failures (cluster backpressure, 429s, timeouts, unknown types) are returned as
+     * the re-queue list so the drain thread tries them again. Permanent failures (mapping and
+     * parse errors - see {@link BulkErrorClassification}) are counted via
+     * {@link ExportStats#recordPermanentDrop(String, long)}, counted in the per-index failure
+     * total, and otherwise discarded.</p>
+     *
+     * <p>When no per-item detail is available (e.g. network error before OpenSearch responded)
+     * the whole batch is treated as transient so the drain can retry on a later pass.</p>
+     */
+    /** Package-private for direct testing of the poison-pill branch. */
+    static List<Map<String, Object>> filterTransientFailures(
+            List<Map<String, Object>> batch,
+            List<OpenSearchClientWrapper.FailedItem> failedItems,
+            String indexName,
+            String indexKey) {
+        if (batch == null || batch.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if (failedItems == null || failedItems.isEmpty()) {
+            return new ArrayList<>(batch);
+        }
+        List<Map<String, Object>> toRetry = new ArrayList<>();
+        int permanentCount = 0;
+        for (OpenSearchClientWrapper.FailedItem item : failedItems) {
+            int idx = item.index();
+            if (idx < 0 || idx >= batch.size()) {
+                continue;
+            }
+            if (BulkErrorClassification.of(item.type()) == BulkErrorClassification.PERMANENT) {
+                permanentCount++;
+            } else {
+                toRetry.add(batch.get(idx));
+            }
+        }
+        if (permanentCount > 0) {
+            ExportStats.recordPermanentDrop(indexKey, permanentCount);
+            Logger.logErrorPanelOnly("[OpenSearch] Dropped " + permanentCount
+                    + " permanently rejected document(s) from retry for index " + indexName + ".");
+        }
+        return toRetry;
     }
 
     private static long estimateSuccessfulBytes(List<Map<String, Object>> batch, int successCount) {

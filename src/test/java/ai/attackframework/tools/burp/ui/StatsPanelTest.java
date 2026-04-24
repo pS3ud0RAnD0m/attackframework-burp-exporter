@@ -160,12 +160,20 @@ class StatsPanelTest {
         DefaultTableModel indexModel = get(panel, "byIndexModel");
         JPanel cardsRow = get(panel, "cardsRow");
 
-        assertThat(sourceModel.getColumnCount()).isEqualTo(indexModel.getColumnCount());
         assertThat(sourceModel.getColumnName(0)).isEqualTo("Source");
         assertThat(indexModel.getColumnName(0)).isEqualTo("Index");
-        for (int i = 1; i < indexModel.getColumnCount(); i++) {
-            assertThat(sourceModel.getColumnName(i)).isEqualTo(indexModel.getColumnName(i));
-        }
+
+        // The OpenSearch Index Counts table carries an extra "Permanent Drops" column between
+        // Retry Drops and Failures; every other numeric column stays aligned with the per-source
+        // table so the user's mental model of "same columns per row" still holds.
+        assertThat(indexModel.getColumnCount()).isEqualTo(sourceModel.getColumnCount() + 1);
+        assertThat(sourceModel.getColumnName(1)).isEqualTo(indexModel.getColumnName(1));
+        assertThat(sourceModel.getColumnName(2)).isEqualTo(indexModel.getColumnName(2));
+        assertThat(sourceModel.getColumnName(3)).isEqualTo(indexModel.getColumnName(3));
+        assertThat(indexModel.getColumnName(4)).isEqualTo("Permanent Drops");
+        assertThat(sourceModel.getColumnName(4)).isEqualTo(indexModel.getColumnName(5));
+        assertThat(sourceModel.getColumnName(5)).isEqualTo(indexModel.getColumnName(6));
+        assertThat(sourceModel.getColumnName(6)).isEqualTo(indexModel.getColumnName(7));
         assertThat(cardsRow.getComponentCount()).isEqualTo(1);
     }
 
@@ -574,7 +582,7 @@ class StatsPanelTest {
         long trafficIndexBefore = sourceTableLong(indexModel, "Traffic", 1);
         long proxyHistoryFailuresBefore = sourceTableLong(sourceModel, "Proxy History", 4);
         long sourceTotalFailuresBefore = sourceTableLong(sourceModel, "Total", 4);
-        long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 4);
+        long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 5);
 
         ExportStats.recordSuccess("traffic", 7);
         ExportStats.recordTrafficSourceSuccess("proxy_websocket", 7);
@@ -588,7 +596,7 @@ class StatsPanelTest {
         assertThat(sourceTableLong(indexModel, "Traffic", 1) - trafficIndexBefore).isEqualTo(7);
         assertThat(sourceTableLong(sourceModel, "Proxy History", 4) - proxyHistoryFailuresBefore).isEqualTo(2);
         assertThat(sourceTableLong(sourceModel, "Total", 4) - sourceTotalFailuresBefore).isEqualTo(2);
-        assertThat(sourceTableLong(indexModel, "Traffic", 4) - trafficIndexFailuresBefore).isEqualTo(2);
+        assertThat(sourceTableLong(indexModel, "Traffic", 5) - trafficIndexFailuresBefore).isEqualTo(2);
     }
 
     @Test
@@ -602,7 +610,7 @@ class StatsPanelTest {
         long sourceTotalBefore = sourceTableLong(sourceModel, "Total", 1);
         long trafficIndexBefore = sourceTableLong(indexModel, "Traffic", 1);
         long sourceTotalFailuresBefore = sourceTableLong(sourceModel, "Total", 4);
-        long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 4);
+        long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 5);
 
         ExportStats.recordSuccess("traffic", 17);
         ExportStats.recordTrafficToolTypeSuccess("PROXY", 5);
@@ -619,7 +627,7 @@ class StatsPanelTest {
         assertThat(sourceTableLong(sourceModel, "Total", 1) - sourceTotalBefore).isEqualTo(17);
         assertThat(sourceTableLong(indexModel, "Traffic", 1) - trafficIndexBefore).isEqualTo(17);
         assertThat(sourceTableLong(sourceModel, "Total", 4) - sourceTotalFailuresBefore).isEqualTo(4);
-        assertThat(sourceTableLong(indexModel, "Traffic", 4) - trafficIndexFailuresBefore).isEqualTo(4);
+        assertThat(sourceTableLong(indexModel, "Traffic", 5) - trafficIndexFailuresBefore).isEqualTo(4);
     }
 
     @Test
@@ -838,9 +846,9 @@ class StatsPanelTest {
             sourceTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.DESCENDING)));
 
             indexModel.setRowCount(0);
-            indexModel.addRow(new Object[] { "Traffic", 3242L, 0, 0L, 0L, "154083", "-" });
-            indexModel.addRow(new Object[] { "Sitemap", 423L, 0, 0L, 0L, "-", "-" });
-            indexModel.addRow(new Object[] { "Findings", 505L, 0, 0L, 0L, "-", "-" });
+            indexModel.addRow(new Object[] { "Traffic", 3242L, 0, 0L, 0L, 0L, "154083", "-" });
+            indexModel.addRow(new Object[] { "Sitemap", 423L, 0, 0L, 0L, 0L, "-", "-" });
+            indexModel.addRow(new Object[] { "Findings", 505L, 0, 0L, 0L, 0L, "-", "-" });
             indexTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.DESCENDING)));
         });
 

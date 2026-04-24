@@ -1,10 +1,5 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
-import java.lang.management.RuntimeMXBean;
-import java.lang.management.ThreadMXBean;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.SystemMetrics;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
@@ -148,37 +144,15 @@ public final class ExporterIndexStatsReporter {
     }
 
     private static Map<String, Object> buildSnapshotDoc() {
-        Runtime rt = Runtime.getRuntime();
-        long heapUsed = rt.totalMemory() - rt.freeMemory();
-        long heapMax = rt.maxMemory();
-
-        long nonHeapUsed = -1;
-        long nonHeapMax = -1;
-        int threadCount = -1;
-        long uptimeMs = -1;
-        long gcCount = -1;
-        long gcTimeMs = -1;
-
-        try {
-            MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-            MemoryUsage nonHeap = memoryBean.getNonHeapMemoryUsage();
-            if (nonHeap != null) {
-                nonHeapUsed = nonHeap.getUsed() >= 0 ? nonHeap.getUsed() : -1;
-                nonHeapMax = nonHeap.getMax() >= 0 ? nonHeap.getMax() : -1;
-            }
-            ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
-            threadCount = threadBean.getThreadCount();
-            RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
-            uptimeMs = runtimeBean.getUptime();
-            gcCount = ManagementFactory.getGarbageCollectorMXBeans().stream()
-                    .mapToLong(gc -> gc.getCollectionCount() >= 0 ? gc.getCollectionCount() : 0)
-                    .sum();
-            gcTimeMs = ManagementFactory.getGarbageCollectorMXBeans().stream()
-                    .mapToLong(gc -> gc.getCollectionTime() >= 0 ? gc.getCollectionTime() : 0)
-                    .sum();
-        } catch (Exception ignored) {
-            // JMX may be restricted in some environments
-        }
+        SystemMetrics.Snapshot sys = SystemMetrics.snapshot();
+        long heapUsed = sys.heapUsedBytes();
+        long heapMax = sys.heapMaxBytes();
+        long nonHeapUsed = sys.nonHeapUsedBytes();
+        long nonHeapMax = sys.nonHeapMaxBytes();
+        int threadCount = sys.threadCount();
+        long uptimeMs = sys.uptimeMs();
+        long gcCount = sys.gcCollectionCount();
+        long gcTimeMs = sys.gcCollectionTimeMs();
 
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("heap_used_bytes", heapUsed);
@@ -192,8 +166,17 @@ public final class ExporterIndexStatsReporter {
         if (threadCount >= 0) {
             message.put("thread_count", threadCount);
         }
+        if (sys.peakThreadCount() >= 0) {
+            message.put("peak_thread_count", sys.peakThreadCount());
+        }
         if (uptimeMs >= 0) {
             message.put("uptime_ms", uptimeMs);
+        }
+        if (sys.availableProcessors() > 0) {
+            message.put("available_processors", sys.availableProcessors());
+        }
+        if (!Double.isNaN(sys.processCpuLoad())) {
+            message.put("process_cpu_load", sys.processCpuLoad());
         }
         message.put("traffic_indexed_count", ExportStats.getSuccessCount("traffic"));
         message.put("traffic_failure_count", ExportStats.getFailureCount("traffic"));
@@ -209,6 +192,9 @@ public final class ExporterIndexStatsReporter {
         message.put("repeater_live_metadata_source_summary", ExportStats.describeRepeaterMetadataSourceCounts());
         putTrafficRouteCounts(message);
         message.put("retry_queue_drops_total", ExportStats.getTotalRetryQueueDrops());
+        message.put("permanent_drops_total", ExportStats.getTotalPermanentDrops());
+        message.put("synthesized_body_params_dropped_total", ExportStats.getSynthesizedBodyParamsDropped());
+        message.put("docs_over_params_threshold_total", ExportStats.getDocsOverParamsThreshold());
         message.put("throughput_docs_per_sec_60", ExportStats.getThroughputDocsPerSecLast60s());
         message.put("total_indexed_bytes", ExportStats.getTotalExportedBytes());
         for (String key : ExportStats.getIndexKeys()) {
