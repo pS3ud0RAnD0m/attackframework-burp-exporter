@@ -245,6 +245,18 @@ public final class Logger {
     /** Logs at TRACE without notifying UI listeners. */
     public static void internalTrace(String msg) { if (LOG.isTraceEnabled()) LOG.trace(safe(msg)); }
 
+    /**
+     * Returns whether DEBUG-level internal logging is enabled. Hot paths can use this to skip
+     * message-string concatenation entirely when the level is disabled.
+     */
+    public static boolean isInternalDebugEnabled() { return LOG.isDebugEnabled(); }
+
+    /**
+     * Returns whether TRACE-level internal logging is enabled. Hot paths can use this to skip
+     * message-string concatenation entirely when the level is disabled.
+     */
+    public static boolean isInternalTraceEnabled() { return LOG.isTraceEnabled(); }
+
     // -------- Internals --------
 
     /**

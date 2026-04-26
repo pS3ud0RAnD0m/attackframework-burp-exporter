@@ -19,6 +19,15 @@ class TrafficExportQueueTest {
     }
 
     @Test
+    void getCurrentBytesEstimate_returnsNonNegativeAndTracksOffers() {
+        long before = TrafficExportQueue.getCurrentBytesEstimate();
+        assertThat(before).isGreaterThanOrEqualTo(0);
+        TrafficExportQueue.offer(Map.of("url", "https://example.com/bytes-probe", "status", 200));
+        long after = TrafficExportQueue.getCurrentBytesEstimate();
+        assertThat(after).isGreaterThanOrEqualTo(before);
+    }
+
+    @Test
     void offer_emptyMap_doesNotThrow() {
         assertThatCode(() -> TrafficExportQueue.offer(Map.of())).doesNotThrowAnyException();
     }

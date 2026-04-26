@@ -30,6 +30,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.sinks.FileExportService;
 import ai.attackframework.tools.burp.sinks.TrafficRouteBucket;
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
@@ -159,7 +160,7 @@ public final class ChunkedBulkSender {
                         ? queueStream.attemptedTrafficRoutes()
                         : List.of();
 
-        try {
+        try (ExportStats.BulkInFlightTicket ignored = ExportStats.openBulk()) {
             return executeRequest(baseUrl, post, attemptedRef, attemptedBytesRef, indexName, attemptedTrafficRoutes);
         } catch (IOException | RuntimeException e) {
             long attemptedBytes = attemptedBytesRef.get();

@@ -8,12 +8,15 @@ import java.awt.HeadlessException;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
+import java.awt.event.HierarchyEvent;
+import java.awt.event.HierarchyListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
 import java.io.Serial;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -34,6 +37,7 @@ import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
+import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
@@ -90,6 +94,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private static final String[] LEVEL_LABELS = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR"};
     private static final int MAX_MODEL_ENTRIES     = 5000;
 
+    /** Debounce window for search highlight recomputation under high-rate ingest. */
+    private static final int SEARCH_RECOMPUTE_DEBOUNCE_MS = 150;
+
     // Editor and renderer (JTextArea for reliable line wrap; no horizontal scroll)
     private final JTextArea logTextPane;
     private final transient LogRenderer renderer;
@@ -133,6 +140,43 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     // Model
     private final transient LogStore store;
     private transient boolean applyingUiPreferences;
+
+    /**
+     * Mirror of the visible aggregates currently rendered into the document. Maintained in
+     * lockstep with {@link LogRenderer#append}/{@link LogRenderer#replaceLast}/incremental
+     * trim so that {@link #applyIncrementalTrim} can compute a suffix-diff against the
+     * canonical {@link LogStore#buildVisibleAggregated()} without paying for a full rebuild.
+     */
+    private transient List<LogStore.Aggregate> renderedAggregates = new ArrayList<>();
+
+    /**
+     * Visibility gate driving whether ingest performs view work.
+     *
+     * <p>Defaults to {@code true} so that:</p>
+     * <ul>
+     *   <li>Construction-time {@link #rebuildView()} runs.</li>
+     *   <li>Headless tests that never call {@link #addNotify()} still see ingests render
+     *       into the document.</li>
+     * </ul>
+     *
+     * <p>Real Burp use re-evaluates this in {@link #addNotify()} and through a
+     * {@link HierarchyListener} on {@link HierarchyEvent#SHOWING_CHANGED}. While
+     * {@code viewActive == false}, ingest still feeds {@link LogStore} so the model stays
+     * authoritative; document edits and search recomputes are deferred. When the panel
+     * becomes visible again {@link #rebuildView()} resyncs the document in one pass.</p>
+     */
+    private transient boolean viewActive = true;
+
+    /** Set whenever an ingest or trim is processed while {@link #viewActive} is {@code false}. */
+    private transient boolean viewDirty;
+
+    private final transient HierarchyListener visibilityListener = this::onHierarchyChanged;
+
+    /**
+     * Coalesces search match recomputation during high-throughput ingest. Empty-query and
+     * user-initiated paths bypass the timer ({@link #recomputeMatchesNow()}).
+     */
+    private final transient Timer searchRecomputeTimer;
 
     /** Constructs and wires the UI (EDT). */
     public LogPanel() {
@@ -334,6 +378,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             Logger.internalDebug("LogPanel: clear requested");
             store.clear();
             renderer.clear();
+            renderedAggregates.clear();
+            viewDirty = false;
             clearSearchHighlights();
             matches = List.of();
             matchIndex = -1;
@@ -357,6 +403,10 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
         runtimeStateListener = this::onRuntimeStateChanged;
 
+        searchRecomputeTimer = new Timer(SEARCH_RECOMPUTE_DEBOUNCE_MS, e -> doRecomputeMatches());
+        searchRecomputeTimer.setRepeats(false);
+        searchRecomputeTimer.setCoalesce(true);
+
         rebuildView();
         computeMatchesAndJumpFirst();
         syncRuntimePreferencesFromUi();
@@ -372,8 +422,23 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     @Override
     public void addNotify() {
         super.addNotify();
+        // Reset visibility gating to a clean baseline. removeNotify() may have flipped
+        // viewActive=false in response to a SHOWING_CHANGED event fired during teardown;
+        // on re-add we want a fresh evaluation rather than carrying forward stale state.
+        viewActive = true;
+        viewDirty = false;
         Logger.registerListener(this);
         RuntimeConfig.registerStateListener(runtimeStateListener);
+        addHierarchyListener(visibilityListener);
+        // Re-evaluate visibility only when there is a real parent hierarchy. Headless tests
+        // call addNotify() without attaching the panel to a frame; isShowing() is false in
+        // that case but it does not represent the "user on another tab" scenario the gating
+        // is designed for. We therefore key off the presence of a parent and rely on
+        // SHOWING_CHANGED to toggle once the panel is actually attached to a visible frame.
+        if (getParent() != null && !isShowing()) {
+            viewActive = false;
+            viewDirty = true;
+        }
     }
 
     /**
@@ -417,13 +482,36 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      */
     @Override
     public void removeNotify() {
+        // Detach the hierarchy listener before super.removeNotify() so the SHOWING_CHANGED
+        // event fired during teardown does not flip our visibility gating to "hidden" (which
+        // would persist into the next addNotify() and silently defer log replay).
+        removeHierarchyListener(visibilityListener);
         super.removeNotify();
         Logger.unregisterListener(this);
         RuntimeConfig.unregisterStateListener(runtimeStateListener);
+        searchRecomputeTimer.stop();
         try { if (filterIndicatorBinding != null) filterIndicatorBinding.close(); }
         catch (Exception ex) { Logger.internalDebug("regex filter binder close skipped: " + ex); }
         try { if (searchIndicatorBinding != null) searchIndicatorBinding.close(); }
         catch (Exception ex) { Logger.internalDebug("regex search binder close skipped: " + ex); }
+    }
+
+    /**
+     * Listens for hierarchy changes so we can pause document edits while the panel is hidden
+     * (the user is on another sub-tab). When the panel becomes visible again, we resync via a
+     * single {@link #rebuildView()} so the user sees exactly what they would have seen had we
+     * been rendering live.
+     */
+    private void onHierarchyChanged(HierarchyEvent e) {
+        if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) == 0) return;
+        boolean showing = isShowing();
+        if (showing == viewActive) return;
+        viewActive = showing;
+        if (showing && viewDirty) {
+            viewDirty = false;
+            rebuildView();
+            recomputeMatchesNow();
+        }
     }
 
     private void onRuntimeStateChanged(ConfigState.State state) {
@@ -528,31 +616,131 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      */
     private void ingest(String levelStr, String message) {
         LogStore.Level lvl = LogStore.Level.fromString(levelStr);
-        Logger.internalTrace("LogPanel ingest -> level=" + lvl + " msg=" + (message == null ? "" : message));
+        if (Logger.isInternalTraceEnabled()) {
+            Logger.internalTrace("LogPanel ingest -> level=" + lvl + " msg=" + (message == null ? "" : message));
+        }
         LocalDateTime now = LocalDateTime.now();
 
         LogStore.Decision d = store.ingest(lvl, message, now);
+
+        if (!viewActive) {
+            // Defer document edits while hidden. The store is now authoritative; a single
+            // rebuildView() runs on re-show. Trim still runs so the cap is enforced
+            // while hidden; whether it changed the visible window is folded into viewDirty.
+            LogStore.TrimResult trimHidden = store.trimIfNeeded();
+            boolean visibleChange =
+                    d.kind() != LogStore.Decision.Kind.NONE
+                            || trimHidden.removedVisible() > 0;
+            if (visibleChange) viewDirty = true;
+            return;
+        }
+
         switch (d.kind()) {
             case APPEND -> {
-                String line = renderer.formatLine(d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats());
-                renderer.append(line, d.entry().level);
-                Logger.internalTrace("LogPanel render=APPEND");
+                LogStore.Entry e = d.entry();
+                String line = renderer.formatLine(e.ts, e.level, e.message, e.repeats());
+                renderer.append(line, e.level);
+                renderedAggregates.add(new LogStore.Aggregate(e.ts, e.level, e.message, e.repeats()));
+                if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=APPEND");
                 renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
                 recomputeMatchesAfterDocChange();
             }
             case REPLACE -> {
-                String line = renderer.formatLine(d.entry().ts, d.entry().level, d.entry().message, d.entry().repeats());
-                renderer.replaceLast(line, d.entry().level);
-                Logger.internalTrace("LogPanel render=REPLACE");
+                LogStore.Entry e = d.entry();
+                String line = renderer.formatLine(e.ts, e.level, e.message, e.repeats());
+                renderer.replaceLast(line, e.level);
+                if (!renderedAggregates.isEmpty()) {
+                    LogStore.Aggregate prev = renderedAggregates.getLast();
+                    renderedAggregates.set(renderedAggregates.size() - 1,
+                            new LogStore.Aggregate(e.ts, e.level, e.message, prev.count() + 1));
+                }
+                if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=REPLACE");
                 renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
                 recomputeMatchesAfterDocChange();
             }
-            default -> Logger.internalTrace("LogPanel render=NONE (filtered)");
+            default -> {
+                if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=NONE (filtered)");
+            }
         }
-        if (store.trimIfNeeded()) {
-            Logger.internalTrace("LogPanel cap reached -> rebuild");
+
+        // Only run the suffix-diff when something visible was actually trimmed; a filter-only
+        // trim (e.g. all dropped entries were filter-rejected) leaves the document untouched
+        // and avoids paying for store.buildVisibleAggregated() on every cap-driven trim.
+        LogStore.TrimResult trim = store.trimIfNeeded();
+        if (trim.removedVisible() > 0) {
+            applyIncrementalTrim();
+        }
+    }
+
+    /**
+     * Applies a suffix-diff between the currently rendered aggregates and the canonical
+     * {@link LogStore#buildVisibleAggregated()} so the document edits are minimal but the
+     * resulting state is byte-identical to a full {@link #rebuildView()}.
+     *
+     * <p>Mechanism:</p>
+     * <ol>
+     *   <li>Walk both lists from the tail while elements are equal. Everything past the walk
+     *       point is bit-for-bit unchanged in the document and stays put.</li>
+     *   <li>Remove the differing-old prefix from the document with a single
+     *       {@link LogRenderer#removeLeadingLines} call.</li>
+     *   <li>Concatenate the differing-new prefix lines into one string and prepend with a
+     *       single {@link LogRenderer#prependLines} call.</li>
+     * </ol>
+     *
+     * <p>In the common case (no aggregation merge across the trim boundary) the differing-old
+     * prefix is just the K trimmed visible aggregates and the differing-new prefix is empty,
+     * so this collapses to a single {@code remove}. In the merge case (a filter caused two
+     * non-adjacent equal entries to become adjacent after trim) the diff is at most a couple
+     * of aggregates on each side and still resolves with one {@code remove} + one
+     * {@code insertString}.</p>
+     *
+     * <p>Sanity guard: if we ever observe that {@link #renderedAggregates} is shorter than
+     * the canonical visible aggregation by more than the diff window can explain, fall back
+     * to a full {@link #rebuildView()}. The property tests cover the suffix-diff invariant,
+     * so this branch should be unreachable in production -- it exists as a self-correcting
+     * safety net should a future change introduce drift.</p>
+     */
+    private void applyIncrementalTrim() {
+        List<LogStore.Aggregate> oldVisible = renderedAggregates;
+        List<LogStore.Aggregate> newVisible = store.buildVisibleAggregated();
+
+        // Sanity: if the rendered mirror is shorter than the canonical visible aggregation,
+        // suffix-diff cannot explain it (trim only ever removes from the head). Resync via
+        // rebuildView() and return; we lose this iteration's micro-optimisation but stay
+        // byte-identical to the canonical state.
+        if (oldVisible.size() < newVisible.size()) {
+            Logger.internalWarn("LogPanel incremental-trim drift detected: rendered="
+                    + oldVisible.size() + " visible=" + newVisible.size() + "; resyncing via rebuildView()");
             rebuildView();
+            return;
         }
+
+        int oldEnd = oldVisible.size();
+        int newEnd = newVisible.size();
+        while (oldEnd > 0 && newEnd > 0
+                && oldVisible.get(oldEnd - 1).equals(newVisible.get(newEnd - 1))) {
+            oldEnd--;
+            newEnd--;
+        }
+
+        if (oldEnd > 0) {
+            renderer.removeLeadingLines(oldEnd);
+        }
+        if (newEnd > 0) {
+            StringBuilder sb = new StringBuilder(newEnd * 80);
+            for (int i = 0; i < newEnd; i++) {
+                LogStore.Aggregate a = newVisible.get(i);
+                sb.append(renderer.formatLine(a.ts(), a.level(), a.message(), a.count()));
+            }
+            renderer.prependLines(sb.toString());
+        }
+
+        renderedAggregates = newVisible;
+        if (Logger.isInternalTraceEnabled()) {
+            Logger.internalTrace("LogPanel incremental-trim removedOld=" + oldEnd + " addedNew=" + newEnd
+                    + " visibleNow=" + newVisible.size());
+        }
+        recomputeMatchesAfterDocChange();
     }
 
     /**
@@ -615,15 +803,17 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private void rebuildView() {
         store.setFilter(this::visible);
         renderer.clear();
-        int rendered = 0;
-        for (LogStore.Aggregate a : store.buildVisibleAggregated()) {
+        List<LogStore.Aggregate> visible = store.buildVisibleAggregated();
+        for (LogStore.Aggregate a : visible) {
             String line = renderer.formatLine(a.ts(), a.level(), a.message(), a.count());
             renderer.append(line, a.level());
-            rendered++;
         }
+        renderedAggregates = new ArrayList<>(visible);
         renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
         recomputeMatchesAfterDocChange();
-        Logger.internalTrace("LogPanel rebuild done, lines=" + rendered);
+        if (Logger.isInternalTraceEnabled()) {
+            Logger.internalTrace("LogPanel rebuild done, lines=" + visible.size());
+        }
     }
 
     // ---- Search / highlight ----
@@ -632,7 +822,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      * Recomputes search matches and jumps to the first result when present.
      */
     private void computeMatchesAndJumpFirst() {
-        recomputeMatchesAfterDocChange();
+        recomputeMatchesNow();
         if (!matches.isEmpty()) {
             matchIndex = 0;
             revealMatch(matchIndex);
@@ -643,9 +833,35 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     }
 
     /**
-     * Recomputes search highlights after the document changes.
+     * Schedules a coalesced search recompute. Cheap when the query is empty (we clear
+     * highlights immediately and skip the timer altogether). For non-empty queries we kick
+     * the {@link #searchRecomputeTimer}; multiple ingest events within the debounce window
+     * collapse into a single {@link TextSearchEngine#findAll} pass.
      */
     private void recomputeMatchesAfterDocChange() {
+        final String q = searchField.getText();
+        if (q == null || q.isEmpty()) {
+            searchRecomputeTimer.stop();
+            clearSearchHighlights();
+            matches = List.of();
+            updateMatchCount();
+            return;
+        }
+        if (!searchRecomputeTimer.isRunning()) {
+            searchRecomputeTimer.start();
+        }
+    }
+
+    /**
+     * Synchronous recompute used by user-initiated paths (search field edit, toggle change,
+     * filter/level change, re-show). Cancels any pending debounced recompute.
+     */
+    private void recomputeMatchesNow() {
+        searchRecomputeTimer.stop();
+        doRecomputeMatches();
+    }
+
+    private void doRecomputeMatches() {
         clearSearchHighlights();
 
         final String q = searchField.getText();

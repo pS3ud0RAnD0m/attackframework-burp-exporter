@@ -13,6 +13,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RetryQueueTest {
 
     @Test
+    void bytesEstimate_returnsZeroWhenEmptyOrAbsent() {
+        RetryQueue queue = new RetryQueue(10);
+        assertThat(queue.bytesEstimate("never-seen")).isZero();
+        queue.offer("seen", Map.of("k", "v"));
+        queue.pollBatch("seen", 10);
+        assertThat(queue.bytesEstimate("seen")).isZero();
+    }
+
+    @Test
+    void bytesEstimate_tracksDocumentSize() {
+        RetryQueue queue = new RetryQueue(10);
+        String indexName = "size-index";
+        queue.offer(indexName, Map.of("short", "x"));
+        long oneDocBytes = queue.bytesEstimate(indexName);
+        assertThat(oneDocBytes).isPositive();
+        queue.offer(indexName, Map.of("another", "y"));
+        long twoDocsBytes = queue.bytesEstimate(indexName);
+        assertThat(twoDocsBytes).isGreaterThan(oneDocBytes);
+    }
+
+    @Test
     void offer_pollBatch_roundTrip() {
         RetryQueue queue = new RetryQueue(100);
         String indexName = "test-index";

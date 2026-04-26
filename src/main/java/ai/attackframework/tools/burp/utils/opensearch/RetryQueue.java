@@ -1,5 +1,7 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +115,26 @@ public final class RetryQueue {
      */
     public boolean isEmpty(String indexName) {
         return size(indexName) == 0;
+    }
+
+    /**
+     * Returns the approximate total bytes of documents currently queued for the given index.
+     *
+     * <p>Computed on demand by iterating a snapshot of the queue and summing
+     * {@link BulkPayloadEstimator#estimateBytes(Map)}. Intended for low-frequency callers
+     * (StatsPanel refresh) because it is O(N) in queue depth.
+     * Returns {@code 0} when the queue is empty or absent.</p>
+     */
+    public long bytesEstimate(String indexName) {
+        BlockingQueue<QueuedDoc> q = queues.get(indexName);
+        if (q == null || q.isEmpty()) {
+            return 0L;
+        }
+        long total = 0L;
+        for (QueuedDoc qd : q) {
+            total += BulkPayloadEstimator.estimateBytes(qd.document());
+        }
+        return total;
     }
 
     /**

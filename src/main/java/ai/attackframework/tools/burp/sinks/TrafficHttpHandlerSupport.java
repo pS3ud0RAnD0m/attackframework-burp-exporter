@@ -87,6 +87,16 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         pendingOrphans.clear();
     }
 
+    /**
+     * Returns the current number of pending request/response orphan entries awaiting
+     * correlation or timeout-driven flush. Used by Misc Stats and the periodic memory-sample
+     * log to detect unbounded orphan growth (a symptom of listener misbehavior or network
+     * stalls that keep responses from arriving within the orphan TTL).
+     */
+    public static int getPendingOrphansSize() {
+        return pendingOrphans.size();
+    }
+
     /** Whether traffic from this tool source should be exported (user-selected tool types only). */
     private static boolean shouldExportTrafficByToolSource(ToolType toolType) {
         if (toolType == null) {

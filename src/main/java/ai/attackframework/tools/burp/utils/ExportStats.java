@@ -7,6 +7,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -343,12 +344,27 @@ public final class ExportStats {
     private static final AtomicLong synthesizedBodyParamsDropped = new AtomicLong(0);
     /** Running count of documents whose retained or dropped-synthesized parameter count crossed the WARN threshold. */
     private static final AtomicLong docsOverParamsThreshold = new AtomicLong(0);
+    /**
+     * Running count of documents that took the heap-safety typed-accessor fast path, where Burp's
+     * unfiltered {@code parameters()} call was skipped to avoid materializing synthetic BODY
+     * entries from Content-Type-spoofed binary bodies. Tracks how often the E3 protection fired.
+     */
+    private static final AtomicLong docsWithSkippedBodyEnumeration = new AtomicLong(0);
     /** OpenSearch connection-health: epoch ms of the most recent successful push, or -1 when none yet. */
     private static final AtomicLong openSearchLastSuccessAtMs = new AtomicLong(-1L);
     /** OpenSearch connection-health: consecutive push failures since the last success. */
     private static final AtomicLong openSearchConsecutiveFailures = new AtomicLong(0L);
     /** Reason-coded count of documents silently skipped by scope / tool-source / self-export filters. */
     private static final ReasonCounterSet skipReasonCounts = new ReasonCounterSet();
+    /**
+     * Live count of bulk requests currently being serialized or awaiting a response.
+     *
+     * <p>Incremented by every bulk entry point ({@code ChunkedBulkSender} streaming path and the
+     * single-shot {@code doPushBulkWithDetails} retry path) and decremented in the matching
+     * {@code finally}, so the panel always reads a non-negative live value even when a call
+     * throws. Surfaced in the Misc Stats {@code Bulk Requests In-Flight} row.</p>
+     */
+    private static final AtomicInteger bulkInFlight = new AtomicInteger(0);
 
     /** Skip reason: document was dropped by the user's Burp scope filter. */
     public static final String SKIP_REASON_SCOPE = "scope";
@@ -516,6 +532,20 @@ public final class ExportStats {
     }
 
     /**
+     * Records one document where the typed-accessor fast path was taken to avoid Burp's synthetic
+     * BODY enumeration. Bumped exactly once per qualifying document in
+     * {@link ai.attackframework.tools.burp.sinks.RequestResponseDocBuilder#collectParameters}.
+     */
+    public static void recordSkippedBodyParameterEnumeration() {
+        docsWithSkippedBodyEnumeration.incrementAndGet();
+    }
+
+    /** Returns the session total of documents that took the typed-accessor parameter fast path. */
+    public static long getDocsWithSkippedBodyEnumeration() {
+        return docsWithSkippedBodyEnumeration.get();
+    }
+
+    /**
      * Records a successful OpenSearch push. Updates the connection-health timestamp and resets
      * the consecutive-failure counter so the panel can surface live destination health.
      */
@@ -571,6 +601,70 @@ public final class ExportStats {
     /** Returns the session total across all skip reasons. */
     public static long getTotalSkipCount() {
         return skipReasonCounts.total();
+    }
+
+    /**
+     * Marks the start of a bulk request. Pair with {@link #recordBulkEnd()} in a finally block.
+     * Increments the live {@code Bulk Requests In-Flight} counter surfaced on the Misc Stats card.
+     *
+     * <p>Prefer {@link #openBulk()} in new code so the increment / decrement cannot drift
+     * apart on early-return or exceptional paths.</p>
+     */
+    public static void recordBulkStart() {
+        bulkInFlight.incrementAndGet();
+    }
+
+    /**
+     * Marks the end of a bulk request. Never drops below zero even if callers decrement
+     * more than they increment, so misuse cannot produce misleading negative readings.
+     */
+    public static void recordBulkEnd() {
+        bulkInFlight.updateAndGet(v -> v > 0 ? v - 1 : 0);
+    }
+
+    /**
+     * Opens a {@link BulkInFlightTicket} that increments the in-flight counter immediately and
+     * decrements it on {@link AutoCloseable#close()}. Use with try-with-resources:
+     *
+     * <pre>{@code
+     * try (ExportStats.BulkInFlightTicket ignored = ExportStats.openBulk()) {
+     *     return executeRequest(...);
+     * }
+     * }</pre>
+     *
+     * <p>Equivalent to {@link #recordBulkStart()} + {@link #recordBulkEnd()} in a finally block,
+     * but enforces pairing at the type level so an early return or unhandled exception cannot
+     * leave the counter elevated.</p>
+     */
+    public static BulkInFlightTicket openBulk() {
+        return new BulkInFlightTicket();
+    }
+
+    /** Returns the current count of bulk requests in flight. */
+    public static int getBulkInFlight() {
+        return bulkInFlight.get();
+    }
+
+    /**
+     * AutoCloseable handle for the {@code Bulk Requests In-Flight} counter. The constructor
+     * increments the counter and {@link #close()} decrements it exactly once, even if called
+     * more than once on the same ticket.
+     */
+    public static final class BulkInFlightTicket implements AutoCloseable {
+        private boolean closed;
+
+        private BulkInFlightTicket() {
+            recordBulkStart();
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            recordBulkEnd();
+        }
     }
 
     /**
@@ -762,9 +856,11 @@ public final class ExportStats {
         trafficToolSourceFallbacks.set(0);
         synthesizedBodyParamsDropped.set(0);
         docsOverParamsThreshold.set(0);
+        docsWithSkippedBodyEnumeration.set(0);
         openSearchLastSuccessAtMs.set(-1L);
         openSearchConsecutiveFailures.set(0L);
         skipReasonCounts.clear();
+        bulkInFlight.set(0);
     }
 
     /**

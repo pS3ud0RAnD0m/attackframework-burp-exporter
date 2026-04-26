@@ -1,6 +1,8 @@
 package ai.attackframework.tools.burp.ui;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
@@ -114,5 +116,71 @@ final class StatsPanelFormatters {
 
     private static String formatWhole(long value) {
         return String.format(Locale.ROOT, "%,d", value);
+    }
+
+    /**
+     * Formats a byte count for a Misc Stats row, choosing KiB / MiB / GiB scale automatically.
+     * Returns {@code "-"} for negative inputs so callers can feed "missing" sentinels through
+     * without guarding each call site.
+     */
+    static String formatBytesHuman(long bytes) {
+        if (bytes < 0) {
+            return "-";
+        }
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        double kib = bytes / 1024.0;
+        if (kib < 1024.0) {
+            return DECIMAL_ONE.format(kib) + " KiB";
+        }
+        double mib = kib / 1024.0;
+        if (mib < 1024.0) {
+            return DECIMAL_ONE.format(mib) + " MiB";
+        }
+        double gib = mib / 1024.0;
+        return DECIMAL_ONE.format(gib) + " GiB";
+    }
+
+    /**
+     * Builds a "index=X MiB" compact row for per-index retry-queue byte estimates. Keys are in
+     * the stable {@link ExportStats#getIndexKeys()} alphabetical order; empty queues render as
+     * {@code "index=0 B"} so the row width is stable across refreshes.
+     */
+    static String formatRetryQueueBytesPerIndex() {
+        List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
+        sortedKeys.sort(String::compareToIgnoreCase);
+        IndexingRetryCoordinator coord = IndexingRetryCoordinator.getInstance();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < sortedKeys.size(); i++) {
+            String indexKey = sortedKeys.get(i);
+            String indexName = RuntimeConfig.indexNameForKey(indexKey);
+            long bytes = coord.getQueueBytesEstimate(indexName);
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(indexKey).append('=').append(formatBytesHuman(bytes));
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    /**
+     * Builds a "index=N" compact row for per-index retry-queue doc counts.
+     */
+    static String formatRetryQueueDepthPerIndex() {
+        List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
+        sortedKeys.sort(String::compareToIgnoreCase);
+        IndexingRetryCoordinator coord = IndexingRetryCoordinator.getInstance();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < sortedKeys.size(); i++) {
+            String indexKey = sortedKeys.get(i);
+            String indexName = RuntimeConfig.indexNameForKey(indexKey);
+            int depth = coord.getQueueSize(indexName);
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(indexKey).append('=').append(formatWhole(depth));
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
     }
 }

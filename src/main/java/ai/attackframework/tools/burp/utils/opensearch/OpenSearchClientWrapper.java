@@ -283,7 +283,7 @@ public class OpenSearchClientWrapper {
             // here so every reporter/bulk entry point shares the same guard as the chunked path.
             return new BulkResult(0, List.of());
         }
-        try {
+        try (ExportStats.BulkInFlightTicket ignored = ExportStats.openBulk()) {
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl,
                     RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
             BulkRequest.Builder builder = new BulkRequest.Builder();

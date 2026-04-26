@@ -17,6 +17,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -263,7 +265,7 @@ class RequestResponseDocBuilderParametersFilterTest {
 
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
-                        request, ContentType.JSON, 10, 4_999));
+                        request, ContentType.JSON, 10, 4_999, false));
 
         assertThat(events).noneMatch(e -> e.message().contains("[ParameterCardinality]"));
         assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isEqualTo(4_999);
@@ -277,7 +279,8 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.URL_ENCODED,
-                        /* retained */ 2, /* dropped */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD));
+                        /* retained */ 2, /* dropped */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD,
+                        /* bodyEnumerationSkipped */ false));
 
         assertThat(events).anySatisfy(e -> {
             assertThat(e.level()).isEqualToIgnoringCase("debug");
@@ -308,7 +311,8 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.JSON,
-                        /* retained */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, /* dropped */ 0));
+                        /* retained */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, /* dropped */ 0,
+                        /* bodyEnumerationSkipped */ false));
 
         assertThat(events).anySatisfy(e -> {
             assertThat(e.level()).isEqualToIgnoringCase("warn");
@@ -328,7 +332,8 @@ class RequestResponseDocBuilderParametersFilterTest {
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.MULTIPART,
                         /* retained */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD,
-                        /* dropped */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD));
+                        /* dropped */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD,
+                        /* bodyEnumerationSkipped */ false));
 
         assertThat(events).anySatisfy(e -> {
             assertThat(e.level()).isEqualToIgnoringCase("warn");
@@ -346,7 +351,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.UNKNOWN,
-                        0, RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD));
+                        0, RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, false));
 
         assertThat(events).anySatisfy(e -> {
             assertThat(e.message()).contains("[ParameterCardinality][synthesized_dropped]");
@@ -359,7 +364,7 @@ class RequestResponseDocBuilderParametersFilterTest {
     void recordParameterTelemetry_nullRequest_doesNotThrow_andStillLogs() throws Exception {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
-                        null, ContentType.NONE, 0, RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD));
+                        null, ContentType.NONE, 0, RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, false));
 
         assertThat(events).anySatisfy(e -> assertThat(e.message())
                 .contains("[ParameterCardinality][synthesized_dropped]")
@@ -381,6 +386,105 @@ class RequestResponseDocBuilderParametersFilterTest {
                 null, headers, RequestResponseDocBuilder.INFERRED_CT_TEXT))
                 .as("header '%s' should classify body as textual", contentTypeHeader)
                 .isTrue();
+    }
+
+    @Test
+    void collectParameters_includeBodyFalse_usesTypedAccessors_andNeverCallsUnfilteredParameters() {
+        // Build mocks BEFORE nesting them inside when(...).thenReturn(...) — Mockito otherwise
+        // raises UnfinishedStubbingException when a stubbed method is created inside another
+        // stubbing call.
+        ParsedHttpParameter url1 = param("q", "1", HttpParameterType.URL);
+        ParsedHttpParameter url2 = param("page", "2", HttpParameterType.URL);
+        ParsedHttpParameter cookie = param("session", "abc", HttpParameterType.COOKIE);
+        List<ParsedHttpParameter> urlParams = List.of(url1, url2);
+        List<ParsedHttpParameter> cookieParams = List.of(cookie);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.hasParameters(HttpParameterType.URL)).thenReturn(true);
+        when(request.parameters(HttpParameterType.URL)).thenReturn(urlParams);
+        when(request.hasParameters(HttpParameterType.COOKIE)).thenReturn(true);
+        when(request.parameters(HttpParameterType.COOKIE)).thenReturn(cookieParams);
+        when(request.hasParameters(HttpParameterType.JSON)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML_ATTRIBUTE)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.MULTIPART_ATTRIBUTE)).thenReturn(false);
+
+        RequestResponseDocBuilder.ParametersResult result =
+                RequestResponseDocBuilder.collectParameters(request, false);
+
+        assertThat(result.entries()).hasSize(3);
+        assertThat(result.droppedSynthesized()).isZero();
+        assertThat(result.bodyEnumerationSkipped()).isTrue();
+        verify(request, never()).parameters();
+        verify(request, never()).parameters(HttpParameterType.BODY);
+    }
+
+    @Test
+    void collectParameters_includeBodyTrue_callsUnfilteredParameters_andDoesNotMarkSkipped() {
+        ParsedHttpParameter urlParam = param("u", "1", HttpParameterType.URL);
+        ParsedHttpParameter bodyParam = param("b1", "x", HttpParameterType.BODY);
+        List<ParsedHttpParameter> all = List.of(urlParam, bodyParam);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(all);
+
+        RequestResponseDocBuilder.ParametersResult result =
+                RequestResponseDocBuilder.collectParameters(request, true);
+
+        assertThat(result.entries()).hasSize(2);
+        assertThat(result.bodyEnumerationSkipped()).isFalse();
+        verify(request).parameters();
+    }
+
+    @Test
+    void collectParameters_nullRequest_returnsEmpty() {
+        RequestResponseDocBuilder.ParametersResult result =
+                RequestResponseDocBuilder.collectParameters(null, false);
+        assertThat(result.entries()).isEmpty();
+        assertThat(result.bodyEnumerationSkipped()).isFalse();
+    }
+
+    @Test
+    void collectParameters_includeBodyFalse_swallowsTypedAccessorThrows_andCollectsRest() {
+        ParsedHttpParameter cookie = param("session", "abc", HttpParameterType.COOKIE);
+        List<ParsedHttpParameter> cookieParams = List.of(cookie);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.hasParameters(HttpParameterType.URL)).thenReturn(true);
+        when(request.parameters(HttpParameterType.URL)).thenThrow(new RuntimeException("malformed url params"));
+        when(request.hasParameters(HttpParameterType.COOKIE)).thenReturn(true);
+        when(request.parameters(HttpParameterType.COOKIE)).thenReturn(cookieParams);
+        when(request.hasParameters(HttpParameterType.JSON)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML_ATTRIBUTE)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.MULTIPART_ATTRIBUTE)).thenReturn(false);
+
+        RequestResponseDocBuilder.ParametersResult result =
+                RequestResponseDocBuilder.collectParameters(request, false);
+
+        assertThat(result.entries()).hasSize(1);
+        assertThat(result.bodyEnumerationSkipped()).isTrue();
+        verify(request, never()).parameters();
+    }
+
+    @Test
+    void recordParameterTelemetry_skippedBody_underThreshold_emitsDebugAndBumpsCounter() throws Exception {
+        HttpRequest request = mockRequest("POST", "https://example.test/binary-misdeclared");
+
+        SwingUtilities.invokeAndWait(() ->
+                RequestResponseDocBuilder.recordParameterTelemetry(
+                        request, ContentType.URL_ENCODED, /* retained */ 3, /* dropped */ 0,
+                        /* bodyEnumerationSkipped */ true));
+
+        assertThat(events).anySatisfy(e -> {
+            assertThat(e.level()).isEqualToIgnoringCase("debug");
+            assertThat(e.message())
+                    .contains("[ParameterCardinality][skipped_body_enumeration]")
+                    .contains("Skipped synthetic BODY enumeration")
+                    .contains("method=POST")
+                    .contains("url=https://example.test/binary-misdeclared");
+        });
+        assertThat(events).noneMatch(e -> "warn".equalsIgnoreCase(e.level()));
+        assertThat(ExportStats.getDocsWithSkippedBodyEnumeration()).isEqualTo(1);
+        assertThat(ExportStats.getDocsOverParamsThreshold()).isZero();
+        assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isZero();
     }
 
     private static HttpRequest mockRequest(String method, String url) {

@@ -1,10 +1,13 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.opensearch.client.opensearch.OpenSearchClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * Unit tests for {@link OpenSearchConnector}.
@@ -14,6 +17,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenSearchConnectorTest {
 
     private static final String DUMMY_URL = "https://localhost:9243";
+
+    // The connector uses static caches; ensure each test starts and ends with a clean slate so
+    // interactions between tests (identity checks, rebuild-after-close) do not bleed over.
+
+    @BeforeEach
+    void clearCachesBefore() {
+        OpenSearchConnector.closeAll();
+    }
+
+    @AfterEach
+    void clearCachesAfter() {
+        OpenSearchConnector.closeAll();
+    }
 
     @Test
     void getClient_returnsNonNull() {
@@ -45,5 +61,56 @@ class OpenSearchConnectorTest {
         CloseableHttpClient a = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
         CloseableHttpClient b = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
         assertThat(a).isSameAs(b);
+    }
+
+    @Test
+    void closeAll_dropsCachedClientsSoNextGetRebuilds() {
+        // Prime both caches so there's something for closeAll() to release.
+        OpenSearchClient opensearchBefore = OpenSearchConnector.getClient(DUMMY_URL);
+        CloseableHttpClient classicBefore = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
+
+        OpenSearchConnector.closeAll();
+
+        // After closeAll(), a second getClient(...) must rebuild rather than return the closed
+        // instance; identity comparison is the simplest observable way to assert cache clearance
+        // without exposing package-private state.
+        OpenSearchClient opensearchAfter = OpenSearchConnector.getClient(DUMMY_URL);
+        CloseableHttpClient classicAfter = OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
+        assertThat(opensearchAfter).isNotSameAs(opensearchBefore);
+        assertThat(classicAfter).isNotSameAs(classicBefore);
+    }
+
+    @Test
+    void redactKey_stripsCredentialsAndPreservesInsecureMarker() {
+        // Auth-bearing key: "<url>|<user>|<pass>|insecure=<bool>|tls=...|pin=...". The redacted
+        // form must drop the user/password segment but keep the |insecure= tail so debug/warn
+        // logs still surface useful environmental signal without leaking credentials.
+        String redacted = OpenSearchConnector.redactKey(
+                "https://os.example:9200|admin|s3cret|insecure=false|tls=DEFAULT|pin=");
+        assertThat(redacted)
+                .doesNotContain("admin")
+                .doesNotContain("s3cret")
+                .startsWith("https://os.example:9200")
+                .contains("|insecure=false");
+    }
+
+    @Test
+    void redactKey_handlesNullAndAuthlessKeys() {
+        // No-auth key: no "|" separator; redaction must be a no-op.
+        assertThat(OpenSearchConnector.redactKey(null)).isEqualTo("null");
+        assertThat(OpenSearchConnector.redactKey("https://os.example:9200"))
+                .isEqualTo("https://os.example:9200");
+    }
+
+    @Test
+    void closeAll_isIdempotentOnEmptyAndPopulatedCaches() {
+        // Empty: no clients primed.
+        assertThatCode(OpenSearchConnector::closeAll).doesNotThrowAnyException();
+
+        // Populated: prime, close, then call again.
+        OpenSearchConnector.getClient(DUMMY_URL);
+        OpenSearchConnector.getClassicHttpClient(DUMMY_URL, "user", "pass");
+        OpenSearchConnector.closeAll();
+        assertThatCode(OpenSearchConnector::closeAll).doesNotThrowAnyException();
     }
 }

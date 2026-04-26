@@ -23,6 +23,7 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
@@ -133,10 +134,16 @@ public final class ProxyWebSocketIndexReporter {
             int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
             List<String> batchKeys = new ArrayList<>(batchSize);
             List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
+            int processed = 0;
             for (ProxyWebSocketMessage msg : history) {
                 if (!RuntimeConfig.isExportRunning()) {
                     break;
                 }
+                // Cooperative pacing: brief yield + GC duty-cycle gate every Nth iteration so a
+                // very large websocket history does not starve the EDT or saturate G1's
+                // concurrent threads.
+                SnapshotPacing.paceItem(processed);
+                processed++;
                 String key = messageKey(msg);
                 if (!pushAll && pushedKeys.contains(key)) {
                     continue;

@@ -871,6 +871,65 @@ class StatsPanelTest {
         assertThat(indexOrder).containsExactly("Traffic", "Findings", "Sitemap");
     }
 
+    @Test
+    void timerTick_whileExportRunning_refreshesEveryTick() {
+        boolean originalRunning = RuntimeConfig.isExportRunning();
+        try {
+            ExportStats.resetForTests();
+            RuntimeConfig.setExportRunning(true);
+            StatsPanel panel = onEdt(StatsPanel::new);
+
+            ExportStats.recordSuccess("traffic", 1);
+            long before = onEdt(() -> ExportStats.getTotalSuccessCount());
+            onEdt(() -> call(panel, "timerTick"));
+
+            JLabel totalDocsValue = get(panel, "totalDocsPushedValue");
+            assertThat(totalDocsValue.getText()).isEqualTo(String.format(java.util.Locale.ROOT, "%,d", before));
+
+            ExportStats.recordSuccess("traffic", 2);
+            onEdt(() -> call(panel, "timerTick"));
+            assertThat(totalDocsValue.getText())
+                    .as("running ticks should always refresh, no skip")
+                    .isEqualTo(String.format(java.util.Locale.ROOT, "%,d", ExportStats.getTotalSuccessCount()));
+        } finally {
+            RuntimeConfig.setExportRunning(originalRunning);
+            ExportStats.resetForTests();
+        }
+    }
+
+    @Test
+    void timerTick_whileIdle_skipsAllButEveryFifthTick() {
+        boolean originalRunning = RuntimeConfig.isExportRunning();
+        try {
+            ExportStats.resetForTests();
+            RuntimeConfig.setExportRunning(false);
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JLabel totalDocsValue = get(panel, "totalDocsPushedValue");
+
+            // Constructor's initial refresh paints 0; bump counter and confirm idle ticks skip.
+            ExportStats.recordSuccess("traffic", 7);
+            // First idle tick after construction: counter == 0 means it RUNS the refresh.
+            onEdt(() -> call(panel, "timerTick"));
+            assertThat(totalDocsValue.getText()).isEqualTo("7");
+
+            ExportStats.recordSuccess("traffic", 100);
+            // Next four idle ticks should all skip (counter values 1..4 are non-zero mod 5).
+            for (int i = 0; i < 4; i++) {
+                onEdt(() -> call(panel, "timerTick"));
+            }
+            assertThat(totalDocsValue.getText())
+                    .as("idle ticks 1..4 should not refresh, label is stale")
+                    .isEqualTo("7");
+
+            // Fifth idle tick (counter == 5 -> 5 % 5 == 0) refreshes again.
+            onEdt(() -> call(panel, "timerTick"));
+            assertThat(totalDocsValue.getText()).isEqualTo("107");
+        } finally {
+            RuntimeConfig.setExportRunning(originalRunning);
+            ExportStats.resetForTests();
+        }
+    }
+
     private static void onEdt(Runnable runnable) {
         if (SwingUtilities.isEventDispatchThread()) {
             runnable.run();

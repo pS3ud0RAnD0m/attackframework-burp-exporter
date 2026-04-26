@@ -68,6 +68,25 @@ public final class TrafficExportQueue {
         return queue.size();
     }
 
+    /**
+     * Returns the approximate total bytes of documents currently held in the in-memory queue.
+     *
+     * <p>Computed on demand by iterating a snapshot of the queue and summing
+     * {@link BulkPayloadEstimator#estimateBytes(Map)}. Intended for low-frequency callers
+     * (StatsPanel refresh). Does not include spilled documents;
+     * those are already tracked as bytes by {@link #getCurrentSpillBytes()}.</p>
+     */
+    public static long getCurrentBytesEstimate() {
+        if (queue.isEmpty()) {
+            return 0L;
+        }
+        long total = 0L;
+        for (Map<String, Object> doc : queue) {
+            total += BulkPayloadEstimator.estimateBytes(doc);
+        }
+        return total;
+    }
+
     /** Returns current spill queue depth for StatsPanel observability. */
     public static int getCurrentSpillSize() {
         return spillQueue.size();

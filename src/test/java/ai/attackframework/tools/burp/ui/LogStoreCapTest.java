@@ -28,9 +28,9 @@ class LogStoreCapTest {
         for (int i = 1; i <= 8; i++) {
             store.ingest(LogStore.Level.DEBUG, "m" + i, LocalDateTime.now());
             if (i > cap) {
-                assertTrue(store.trimIfNeeded(), "Expected trim when over cap");
+                assertTrue(store.trimIfNeeded().trimmed(), "Expected trim when over cap");
             } else {
-                assertFalse(store.trimIfNeeded(), "No trim at/below cap");
+                assertFalse(store.trimIfNeeded().trimmed(), "No trim at/below cap");
             }
         }
 

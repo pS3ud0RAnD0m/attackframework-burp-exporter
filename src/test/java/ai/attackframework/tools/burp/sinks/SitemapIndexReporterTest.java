@@ -17,6 +17,8 @@ import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.params.HttpParameterType;
+import burp.api.montoya.http.message.params.ParsedHttpParameter;
 import burp.api.montoya.http.message.requests.HttpRequest;
 
 /**
@@ -106,6 +108,52 @@ class SitemapIndexReporterTest {
         assertThat(doc.get("method")).isEqualTo("GET");
         assertThat(doc.get("path")).isEqualTo("/login");
         assertThat(doc.get("host")).isEqualTo("auth.example.com");
+    }
+
+    @Test
+    void buildSitemapDoc_paramNames_onlyContainsUrlParams_notBodyEnumeration() {
+        // Production code uses request.parameters(HttpParameterType.URL) so binary bodies
+        // mislabeled as form-urlencoded cannot inflate param_names with synthetic BODY entries.
+        // We prove that here by stubbing two distinct lists for parameters() and parameters(URL):
+        // the doc's param_names must reflect only the typed URL list.
+        ParsedHttpParameter urlParam = mock(ParsedHttpParameter.class);
+        when(urlParam.name()).thenReturn("user");
+        ParsedHttpParameter bodyParam = mock(ParsedHttpParameter.class);
+        when(bodyParam.name()).thenReturn("synthetic_body_only");
+        List<ParsedHttpParameter> urlOnly = List.of(urlParam);
+        List<ParsedHttpParameter> allIncludingBody = List.of(urlParam, bodyParam);
+
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenReturn("https://api.example.com/login?user=alice");
+        when(request.method()).thenReturn("POST");
+        when(request.path()).thenReturn("/login");
+        when(request.pathWithoutQuery()).thenReturn("/login");
+        when(request.query()).thenReturn("user=alice");
+        when(request.fileExtension()).thenReturn("");
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.headers()).thenReturn(List.of());
+        when(request.parameters()).thenReturn(allIncludingBody);
+        when(request.parameters(HttpParameterType.URL)).thenReturn(urlOnly);
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.contentType()).thenReturn(null);
+
+        HttpService service = mock(HttpService.class);
+        when(service.host()).thenReturn("api.example.com");
+        when(service.port()).thenReturn(443);
+        when(service.secure()).thenReturn(true);
+
+        HttpRequestResponse item = mock(HttpRequestResponse.class);
+        when(item.request()).thenReturn(request);
+        when(item.httpService()).thenReturn(service);
+        when(item.hasResponse()).thenReturn(false);
+
+        Map<?, ?> doc = (Map<?, ?>) callStatic(SitemapIndexReporter.class, "buildSitemapDoc", item);
+
+        assertThat(doc).isNotNull();
+        assertThat(doc.get("param_names"))
+                .as("param_names must be drawn from the URL accessor, not the all-types accessor")
+                .isEqualTo(List.of("user"));
     }
 
     @Test

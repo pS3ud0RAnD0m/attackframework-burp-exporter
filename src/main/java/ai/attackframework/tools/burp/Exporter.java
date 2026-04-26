@@ -13,6 +13,7 @@ import ai.attackframework.tools.burp.ui.ConfigPanel;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import burp.api.montoya.BurpExtension;
@@ -115,6 +116,11 @@ public class Exporter implements BurpExtension {
 
         BatchSizeController.getInstance().setOnChangeListener(null);
         ExportReporterLifecycle.stopAndClearSessionState();
+        // Unload is the last chance to release pooled connections, TLS session caches, and the
+        // HTTP/2 reactor/scheduler threads owned by the cached OpenSearch transports. Run
+        // synchronously here so the classloader can be GC'd cleanly; closeAll() is idempotent
+        // if a Stop-triggered async closeAll() already ran.
+        OpenSearchConnector.closeAll();
         ConfigPanel.shutdownStartupExecutor();
         Logger.resetState();
 

@@ -10,6 +10,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ExportStatsTest {
 
     @Test
+    void bulkInFlight_startAndEndBracketActivity() {
+        ExportStats.resetForTests();
+        assertThat(ExportStats.getBulkInFlight()).isZero();
+        ExportStats.recordBulkStart();
+        ExportStats.recordBulkStart();
+        assertThat(ExportStats.getBulkInFlight()).isEqualTo(2);
+        ExportStats.recordBulkEnd();
+        assertThat(ExportStats.getBulkInFlight()).isEqualTo(1);
+        ExportStats.recordBulkEnd();
+        assertThat(ExportStats.getBulkInFlight()).isZero();
+    }
+
+    @Test
+    void recordBulkEnd_neverDropsBelowZero() {
+        ExportStats.resetForTests();
+        ExportStats.recordBulkEnd();
+        ExportStats.recordBulkEnd();
+        assertThat(ExportStats.getBulkInFlight()).isZero();
+    }
+
+    @Test
+    void resetForTests_clearsBulkInFlight() {
+        ExportStats.recordBulkStart();
+        ExportStats.recordBulkStart();
+        ExportStats.resetForTests();
+        assertThat(ExportStats.getBulkInFlight()).isZero();
+    }
+
+    @Test
     void getIndexKeys_returnsAllFiveIndexKeys() {
         List<String> keys = ExportStats.getIndexKeys();
         assertThat(keys).containsExactly("traffic", "exporter", "settings", "sitemap", "findings");

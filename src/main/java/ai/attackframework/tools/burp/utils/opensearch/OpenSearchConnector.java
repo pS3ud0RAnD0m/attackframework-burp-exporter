@@ -1,8 +1,15 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import ai.attackframework.tools.burp.utils.Logger;
+
+import java.io.IOException;
 import java.net.URI;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.net.ssl.SSLContext;
 
@@ -203,5 +210,80 @@ public final class OpenSearchConnector {
 
     private static boolean hasCredentials(String username, String password) {
         return username != null && !username.isBlank() && password != null && !password.isBlank();
+    }
+
+    /**
+     * Closes every cached OpenSearch client and classic HTTP client, then clears both caches.
+     *
+     * <p>Each client owns a pooled connection manager, TLS session cache, and reactor/scheduler
+     * threads that hold substantial off-heap state (direct {@code ByteBuffer}s, SSL session state).
+     * Because the caches are {@code static}, those resources outlive any Stop/Start cycle unless
+     * this method runs; otherwise they are released only on extension unload via classloader GC.</p>
+     *
+     * <p>Close exceptions are logged at debug and swallowed so a single misbehaving client cannot
+     * prevent the other entries from being released. The method is idempotent: subsequent calls
+     * on an already-empty cache are no-ops, and a later {@link #getClient(String)} rebuilds a
+     * fresh client rather than returning a closed one.</p>
+     */
+    public static void closeAll() {
+        AtomicInteger failures = new AtomicInteger();
+
+        // Drain entries out of each cache *before* closing them. If we instead closed-then-cleared,
+        // a concurrent getClient(...) call (e.g., the async stop-reclaim thread racing with a later
+        // request) could observe an entry whose transport was already closed and return that
+        // instance to the caller, surfacing as "Connection pool shut down" on the next request.
+        List<Map.Entry<String, OpenSearchClient>> drainedClients = new ArrayList<>(clientCache.entrySet());
+        clientCache.clear();
+        for (Map.Entry<String, OpenSearchClient> entry : drainedClients) {
+            try {
+                entry.getValue()._transport().close();
+            } catch (IOException | RuntimeException e) {
+                failures.incrementAndGet();
+                Logger.logDebug("OpenSearchConnector: failed to close transport for "
+                        + redactKey(entry.getKey()) + ": "
+                        + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+        }
+
+        List<Map.Entry<String, CloseableHttpClient>> drainedClassic = new ArrayList<>(classicClientCache.entrySet());
+        classicClientCache.clear();
+        for (Map.Entry<String, CloseableHttpClient> entry : drainedClassic) {
+            try {
+                entry.getValue().close();
+            } catch (IOException | RuntimeException e) {
+                failures.incrementAndGet();
+                Logger.logDebug("OpenSearchConnector: failed to close classic client for "
+                        + redactKey(entry.getKey()) + ": "
+                        + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+        }
+
+        // Per-client failures land in the debug log (high-frequency tabs only). Promote a single
+        // aggregate WARN to the panel so an operator who unloads the extension still sees that
+        // not every cached client closed cleanly, without having to enable debug logging.
+        int total = failures.get();
+        if (total > 0) {
+            Logger.logWarnPanelOnly("[OpenSearch] closeAll: " + total
+                    + " cached client(s) failed to close cleanly; see debug log for details.");
+        }
+    }
+
+    /**
+     * Strips the credential segment from a cache key so it is safe to log. Package-private so
+     * the redaction contract can be exercised directly without forcing real connection failures.
+     */
+    static String redactKey(String key) {
+        if (key == null) {
+            return "null";
+        }
+        int firstPipe = key.indexOf('|');
+        if (firstPipe < 0) {
+            return key;
+        }
+        int insecureMarker = key.indexOf("|insecure=");
+        if (insecureMarker < 0 || insecureMarker <= firstPipe) {
+            return key.substring(0, firstPipe);
+        }
+        return key.substring(0, firstPipe) + key.substring(insecureMarker);
     }
 }

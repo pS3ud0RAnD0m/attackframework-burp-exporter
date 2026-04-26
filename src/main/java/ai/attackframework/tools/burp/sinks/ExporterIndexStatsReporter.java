@@ -163,6 +163,12 @@ public final class ExporterIndexStatsReporter {
         if (nonHeapMax >= 0) {
             message.put("non_heap_max_bytes", nonHeapMax);
         }
+        if (sys.directBufferUsedBytes() >= 0) {
+            message.put("direct_buffer_used_bytes", sys.directBufferUsedBytes());
+        }
+        if (sys.mappedBufferUsedBytes() >= 0) {
+            message.put("mapped_buffer_used_bytes", sys.mappedBufferUsedBytes());
+        }
         if (threadCount >= 0) {
             message.put("thread_count", threadCount);
         }
@@ -195,6 +201,7 @@ public final class ExporterIndexStatsReporter {
         message.put("permanent_drops_total", ExportStats.getTotalPermanentDrops());
         message.put("synthesized_body_params_dropped_total", ExportStats.getSynthesizedBodyParamsDropped());
         message.put("docs_over_params_threshold_total", ExportStats.getDocsOverParamsThreshold());
+        message.put("docs_with_skipped_body_enumeration_total", ExportStats.getDocsWithSkippedBodyEnumeration());
         message.put("throughput_docs_per_sec_60", ExportStats.getThroughputDocsPerSecLast60s());
         message.put("total_indexed_bytes", ExportStats.getTotalExportedBytes());
         for (String key : ExportStats.getIndexKeys()) {

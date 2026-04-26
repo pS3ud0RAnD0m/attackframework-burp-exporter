@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.utils;
 
+import java.lang.management.BufferPoolMXBean;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
@@ -40,7 +41,9 @@ public final class SystemMetrics {
             long gcCollectionTimeMs,
             long uptimeMs,
             int availableProcessors,
-            double processCpuLoad) {}
+            double processCpuLoad,
+            long directBufferUsedBytes,
+            long mappedBufferUsedBytes) {}
 
     /** Returns {@code true} when any JMX field above reported a usable value. */
     public static Snapshot snapshot() {
@@ -121,6 +124,29 @@ public final class SystemMetrics {
             // Non-HotSpot JVM or restricted; leave as NaN.
         }
 
+        // Off-heap buffer pool totals (NIO direct + memory-mapped). These do not count against
+        // heap_used or non_heap_used; they are separate process-level allocations tracked by the
+        // JVM. Reporting them closes the observability gap where HTTP client TLS buffers and
+        // other direct allocations inflate RSS without showing up in heap metrics.
+        long directBufferUsed = -1L;
+        long mappedBufferUsed = -1L;
+        try {
+            for (BufferPoolMXBean pool : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
+                String name = pool.getName();
+                long used = pool.getMemoryUsed();
+                if (used < 0) {
+                    continue;
+                }
+                if ("direct".equals(name)) {
+                    directBufferUsed = used;
+                } else if ("mapped".equals(name)) {
+                    mappedBufferUsed = used;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // BufferPoolMXBean may be unavailable on some JVMs; keep defaults.
+        }
+
         return new Snapshot(
                 heapUsed,
                 heapMax,
@@ -132,6 +158,8 @@ public final class SystemMetrics {
                 gcTimeMs,
                 uptimeMs,
                 availableProcessors,
-                processCpuLoad);
+                processCpuLoad,
+                directBufferUsed,
+                mappedBufferUsed);
     }
 }

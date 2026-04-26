@@ -26,6 +26,7 @@ import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.burpsuite.BurpSuite;
 import burp.api.montoya.core.ByteArray;
@@ -133,6 +134,62 @@ class ExportReporterLifecycleTest {
         } finally {
             ExportReporterLifecycle.resetForTests();
         }
+    }
+
+    @Test
+    void awaitStopReclaim_returnsImmediately_whenNoAsyncCloseHasBeenFired() {
+        // No releaseRunResourcesAsync() was triggered, so awaitStopReclaim must not block.
+        // A 5 s budget is generous; the call should return in under 50 ms.
+        long startNs = System.nanoTime();
+        ExportReporterLifecycle.awaitStopReclaim(5_000L);
+        long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+        assertThat(elapsedMs).as("awaitStopReclaim should be a no-op when no daemon was fired")
+                .isLessThan(500L);
+    }
+
+    @Test
+    void releaseRunResourcesAsync_thenAwaitStopReclaim_joinsTheDaemonThread() {
+        // Drain the OpenSearch client cache up front so the daemon's closeAll() is a no-op and
+        // this test asserts the join contract rather than real-cluster TLS/reactor teardown
+        // timing. Earlier integration tests in the same JVM may have populated the cache with
+        // live clients whose close() can take several seconds.
+        OpenSearchConnector.closeAll();
+        ExportReporterLifecycle.awaitStopReclaim(30_000L);
+
+        ExportReporterLifecycle.releaseRunResourcesAsync();
+
+        long startNs = System.nanoTime();
+        ExportReporterLifecycle.awaitStopReclaim(30_000L);
+        long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+        assertThat(elapsedMs).as("daemon must terminate within the budget when cache is empty")
+                .isLessThan(30_000L);
+
+        // After awaitStopReclaim, the tracked reference must have been consumed: a second call
+        // must be a no-op rather than re-joining the same already-terminated thread.
+        long secondStartNs = System.nanoTime();
+        ExportReporterLifecycle.awaitStopReclaim(30_000L);
+        long secondElapsedMs = (System.nanoTime() - secondStartNs) / 1_000_000L;
+        assertThat(secondElapsedMs).as("second awaitStopReclaim should observe the cleared reference")
+                .isLessThan(500L);
+    }
+
+    @Test
+    void releaseRunResourcesAsync_isIndependent_acrossSuccessiveStopCycles() {
+        // Two Stop cycles in succession is the realistic operator pattern (Start -> Stop ->
+        // Start -> Stop). The second fire must replace the tracked thread reference; awaiting
+        // after each fire must join only the corresponding daemon. Drain the cache first so
+        // closeAll() work is bounded and not dominated by live-cluster reactor teardown.
+        OpenSearchConnector.closeAll();
+        ExportReporterLifecycle.awaitStopReclaim(30_000L);
+
+        ExportReporterLifecycle.releaseRunResourcesAsync();
+        ExportReporterLifecycle.awaitStopReclaim(30_000L);
+
+        ExportReporterLifecycle.releaseRunResourcesAsync();
+        long startNs = System.nanoTime();
+        ExportReporterLifecycle.awaitStopReclaim(30_000L);
+        long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+        assertThat(elapsedMs).isLessThan(30_000L);
     }
 
     @Test

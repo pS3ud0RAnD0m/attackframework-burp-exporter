@@ -392,6 +392,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::startExportAsync,
                 () -> {
                     ExportReporterLifecycle.stopAndClearPendingExportWork();
+                    // Off-thread: close pooled OpenSearch clients without holding up the Stop button.
+                    ExportReporterLifecycle.releaseRunResourcesAsync();
                     Logger.logInfoPanelOnly("[Export] Stopped.");
                 }
         ).build(), MIG_FILL_WRAP);

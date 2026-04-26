@@ -440,6 +440,15 @@ public final class IndexingRetryCoordinator {
         return queue.oldestEnqueuedAtMs(indexName);
     }
 
+    /**
+     * Returns the approximate total bytes of documents currently queued for retry on the given
+     * index. Delegates to {@link RetryQueue#bytesEstimate(String)}; intended for low-frequency
+     * observability callers (StatsPanel).
+     */
+    public long getQueueBytesEstimate(String indexName) {
+        return queue.bytesEstimate(indexName);
+    }
+
     private static boolean waitBackoffDelay(int attempt) {
         long delayMs = BACKOFF_BASE_MS * (long) Math.pow(BACKOFF_MULTIPLIER, attempt - 1);
         return waitInterval(delayMs);

@@ -20,12 +20,15 @@ import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.params.HttpParameterType;
+import burp.api.montoya.http.message.params.ParsedHttpParameter;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.http.message.responses.analysis.AttributeType;
@@ -169,10 +172,16 @@ public final class SitemapIndexReporter {
             boolean fileActive = pushAll && RuntimeConfig.isAnyFileExportEnabled();
             long startNs = pushAll ? System.nanoTime() : 0L;
 
+            int processed = 0;
             for (HttpRequestResponse item : items) {
                 if (!RuntimeConfig.isExportRunning()) {
                     break;
                 }
+                // Cooperative pacing: brief yield + GC duty-cycle gate every Nth iteration so a
+                // very large sitemap (tens of thousands of items) does not starve the EDT or
+                // saturate G1's concurrent threads.
+                SnapshotPacing.paceItem(processed);
+                processed++;
                 HttpRequest request = item.request();
                 if (request == null) {
                     continue;
@@ -311,11 +320,21 @@ public final class SitemapIndexReporter {
             doc.put("title", null);
         }
 
-        if (request != null && request.parameters() != null) {
-            List<String> paramNames = request.parameters().stream()
-                    .map(p -> p.name() != null ? p.name() : "")
-                    .collect(Collectors.toList());
-            doc.put("param_names", paramNames);
+        // Sitemap structure cares about query/URL parameter names only. Calling the unfiltered
+        // request.parameters() here would also enumerate Burp's synthetic BODY entries from
+        // Content-Type-spoofed binary bodies, which can balloon to millions of fake names per
+        // request and is the dominant heap-pressure source on heavy traffic. Using the typed
+        // URL accessor sidesteps that completely.
+        if (request != null) {
+            List<ParsedHttpParameter> urlParams = request.parameters(HttpParameterType.URL);
+            if (urlParams != null && !urlParams.isEmpty()) {
+                List<String> paramNames = urlParams.stream()
+                        .map(p -> p.name() != null ? p.name() : "")
+                        .collect(Collectors.toList());
+                doc.put("param_names", paramNames);
+            } else {
+                doc.put("param_names", List.of());
+            }
         } else {
             doc.put("param_names", List.of());
         }

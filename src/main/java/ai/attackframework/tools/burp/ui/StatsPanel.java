@@ -18,8 +18,10 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -87,10 +89,24 @@ public class StatsPanel extends JPanel {
     private static final int PANEL_BASE_HEIGHT = 900;
     private static final int CONTENT_VERTICAL_PADDING = 56;
     private static final int REFRESH_INTERVAL_MS = 3000;
+    /**
+     * Skip factor applied to {@link #refreshVisibleStats} when no export is running. With the 3 s
+     * base interval and factor 5, idle refreshes happen every 15 s instead of every 3 s. This
+     * matches the E4 quiesce-idle-allocation goal: when Stop has been pressed but the panel is
+     * still on screen, we want minimal background churn until the next Start.
+     */
+    private static final int IDLE_REFRESH_SKIP_FACTOR = 5;
     private static final int ERROR_COL_MAX = 50;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
     private static final int CHART_MAX_POINTS = (int) (CHART_WINDOW_MAX_MS / REFRESH_INTERVAL_MS) + 5;
     private static final int CHART_PANEL_HEIGHT = 360;
+    /**
+     * Vertical pixels reserved per table card for the Copy button row that
+     * {@link CardCopySupport#attachCopyButton} stacks above the column header. Empirically the
+     * compact Copy button (plain-weight body font, height-4 of preferred) renders at roughly
+     * 18-22px on Windows LAF, so 24px is a safe non-clipping budget.
+     */
+    private static final int COPY_HEADER_RESERVED_HEIGHT = 24;
     private static final double DEFAULT_RATE_RANGE_MAX = 10.0;
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
     private static final int DOMAIN_TARGET_LABELS = 14;
@@ -99,8 +115,8 @@ public class StatsPanel extends JPanel {
     private static final Font CHART_AXIS_LABEL_FONT = uiFont(Font.PLAIN, 15f);
     private static final Font CHART_TICK_FONT = uiFont(Font.PLAIN, 11f);
     private static final Font CHART_LEGEND_FONT = uiFont(Font.PLAIN, 15f);
-    private static final Font CARD_KEY_FONT = uiFont(Font.PLAIN, 12f);
-    private static final Font CARD_VALUE_FONT = uiFont(Font.PLAIN, 12f);
+    private static final Font CARD_KEY_FONT = cardFont();
+    private static final Font CARD_VALUE_FONT = cardFont();
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
     private static final Color TEXT_FG = uiColor("Label.foreground", new Color(235, 235, 235));
     private static final int LEGEND_ICON_WIDTH = 28;
@@ -218,6 +234,8 @@ public class StatsPanel extends JPanel {
     }
 
     private final Timer refreshTimer;
+    /** Idle-cadence tick counter for {@link #refreshVisibleStats}; reset whenever export runs. */
+    private long idleRefreshSkipCounter;
     private final TimeSeriesCollection docsPerSecondDataset;
     private final TimeSeriesCollection kibPerSecondDataset;
     private final TimeSeriesCollection fileDocsPerSecondDataset;
@@ -269,6 +287,11 @@ public class StatsPanel extends JPanel {
     private final JLabel openSearchConsecutiveFailuresValue;
     private final JLabel oldestQueuedAgeValue;
     private final JLabel skipReasonsValue;
+    private final JLabel trafficQueueBytesValue;
+    private final JLabel retryQueueBytesValue;
+    private final JLabel retryQueueDepthValue;
+    private final JLabel pendingOrphansValue;
+    private final JLabel bulkInFlightValue;
     private final DefaultTableModel trafficBySourceModel;
     private final DefaultTableModel byIndexModel;
     private final DefaultTableModel fileTrafficBySourceModel;
@@ -365,11 +388,12 @@ public class StatsPanel extends JPanel {
 
         MetricCardState miscState = addGroupedMetricCard(cardsRow, "Misc Stats", List.of(
                 new MetricSection("Global", new String[] {
-                        "Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops",
-                        "Repeater Metadata Sources"
+                        "Export Running", "Current Batch Size", "Traffic Queue Size", "Traffic Queue Bytes (est.)",
+                        "Queue Drops", "Pending Orphans", "Repeater Metadata Sources"
                 }),
                 new MetricSection("Process", new String[] {
-                        "Uptime", "Heap Used / Max", "Non-Heap Used", "Threads (Live / Peak)",
+                        "Uptime", "Heap Used / Max", "Non-Heap Used",
+                        "Threads (Live / Peak)",
                         "GC (Count / Time)", "Process CPU Load", "Available Processors"
                 }),
                 new MetricSection("OpenSearch", new String[] {
@@ -380,7 +404,8 @@ public class StatsPanel extends JPanel {
                         "Permanent Drops (Total)", "Synthesized Body Params Dropped",
                         "Docs Over Param Threshold",
                         "OpenSearch Last Success", "OpenSearch Consecutive Failures",
-                        "Oldest Queued Age", "Skips by Reason"
+                        "Oldest Queued Age", "Retry Queue Depth (per index)", "Retry Queue Bytes (per index)",
+                        "Bulk Requests In-Flight", "Skips by Reason"
                 }),
                 new MetricSection("Files", new String[] {
                         "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
@@ -388,7 +413,9 @@ public class StatsPanel extends JPanel {
         ));
         miscStatsCard = miscState.card();
         miscSectionComponents = miscState.sections();
-        Map<String, JLabel> miscValues = miscState.values();
+        final Map<String, JLabel> miscValues = miscState.values();
+        CardCopySupport.attachCopyButton(miscStatsCard, "Misc Stats",
+                () -> renderMiscStatsForClipboard(miscValues));
         exportRunningValue = miscValues.get("Export Running");
         currentBatchSizeValue = miscValues.get("Current Batch Size");
         trafficQueueValue = miscValues.get("Traffic Queue Size");
@@ -422,6 +449,11 @@ public class StatsPanel extends JPanel {
         openSearchConsecutiveFailuresValue = miscValues.get("OpenSearch Consecutive Failures");
         oldestQueuedAgeValue = miscValues.get("Oldest Queued Age");
         skipReasonsValue = miscValues.get("Skips by Reason");
+        trafficQueueBytesValue = miscValues.get("Traffic Queue Bytes (est.)");
+        retryQueueBytesValue = miscValues.get("Retry Queue Bytes (per index)");
+        retryQueueDepthValue = miscValues.get("Retry Queue Depth (per index)");
+        pendingOrphansValue = miscValues.get("Pending Orphans");
+        bulkInFlightValue = miscValues.get("Bulk Requests In-Flight");
 
         tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
         tablesRow.setOpaque(false);
@@ -446,6 +478,10 @@ public class StatsPanel extends JPanel {
         tablesRow.add(createTableCard("OpenSearch Traffic Counts", trafficBySourceTable));
         fileTablesRow.add(createTableCard("File Index Counts", fileByIndexTable));
         fileTablesRow.add(createTableCard("File Traffic Counts", fileTrafficBySourceTable));
+        installTableCopyButton(tablesRow.getComponent(0), "OpenSearch Index Counts", byIndexTable);
+        installTableCopyButton(tablesRow.getComponent(1), "OpenSearch Traffic Counts", trafficBySourceTable);
+        installTableCopyButton(fileTablesRow.getComponent(0), "File Index Counts", fileByIndexTable);
+        installTableCopyButton(fileTablesRow.getComponent(1), "File Traffic Counts", fileTrafficBySourceTable);
 
         lowerPanel = new JPanel();
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
@@ -458,7 +494,7 @@ public class StatsPanel extends JPanel {
         contentPanel.add(lowerPanel, BorderLayout.CENTER);
         add(contentPanel, BorderLayout.CENTER);
 
-        refreshTimer = new Timer(REFRESH_INTERVAL_MS, e -> refreshVisibleStats());
+        refreshTimer = new Timer(REFRESH_INTERVAL_MS, e -> timerTick());
         refreshTimer.setRepeats(true);
 
         refreshVisibleStats();
@@ -468,6 +504,32 @@ public class StatsPanel extends JPanel {
     private void refreshVisibleStats() {
         sampleRateSeries();
         refreshDashboard();
+    }
+
+    /**
+     * Timer-tick wrapper around {@link #refreshVisibleStats} that applies the idle-cadence gate.
+     *
+     * <p>While {@link RuntimeConfig#isExportRunning()} is {@code true} every tick refreshes the
+     * dashboard. While idle, only one in {@link #IDLE_REFRESH_SKIP_FACTOR} ticks runs, so the
+     * table-model rebuilds, formatters, and chart sampling that dominate the per-tick allocation
+     * cost stop running on the 3 s base cadence and effectively drop to one per 15 s. The
+     * counter resets to zero whenever a run resumes, so the next idle period starts with a fresh
+     * "emit-the-first-tick" sample.</p>
+     *
+     * <p>Constructor and direct callers (including tests) bypass this gate and always do a full
+     * refresh, so unit-test paths that call {@code refreshVisibleStats} reflectively are not
+     * affected by the idle counter.</p>
+     */
+    private void timerTick() {
+        if (!RuntimeConfig.isExportRunning()) {
+            long tick = idleRefreshSkipCounter++;
+            if (tick % IDLE_REFRESH_SKIP_FACTOR != 0) {
+                return;
+            }
+        } else {
+            idleRefreshSkipCounter = 0L;
+        }
+        refreshVisibleStats();
     }
 
     private void refreshDashboard() {
@@ -520,6 +582,13 @@ public class StatsPanel extends JPanel {
         openSearchConsecutiveFailuresValue.setText(formatWhole(ExportStats.getOpenSearchConsecutiveFailures()));
         oldestQueuedAgeValue.setText(StatsPanelFormatters.formatOldestQueuedAges());
         skipReasonsValue.setText(StatsPanelFormatters.formatSkipReasons());
+        trafficQueueBytesValue.setText(StatsPanelFormatters.formatBytesHuman(
+                ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentBytesEstimate()));
+        retryQueueBytesValue.setText(StatsPanelFormatters.formatRetryQueueBytesPerIndex());
+        retryQueueDepthValue.setText(StatsPanelFormatters.formatRetryQueueDepthPerIndex());
+        pendingOrphansValue.setText(formatWhole(
+                ai.attackframework.tools.burp.sinks.TrafficHttpHandler.pendingOrphansSize()));
+        bulkInFlightValue.setText(formatWhole(ExportStats.getBulkInFlight()));
         applySystemMetrics(SystemMetrics.snapshot());
 
         rebuildTrafficBySourceTable();
@@ -631,6 +700,62 @@ public class StatsPanel extends JPanel {
         return card;
     }
 
+    /**
+     * Attaches a Copy button to a table card produced by {@link #createTableCard}. The existing
+     * table header row is preserved; the copy button is stacked above it and emits TSV that
+     * pastes directly into spreadsheets.
+     */
+    private static void installTableCopyButton(Component cardComponent, String title, JTable table) {
+        if (!(cardComponent instanceof JPanel card)) {
+            return;
+        }
+        CardCopySupport.attachCopyButton(card, title, () -> CardCopySupport.tableToTsv(table));
+    }
+
+    /**
+     * Renders the current Misc Stats values grouped by section for the clipboard. Reads each
+     * section's rows from {@link MetricSection} keys and pulls the live label text from
+     * {@code miscValues} so the copy reflects whatever is on screen right now.
+     */
+    private String renderMiscStatsForClipboard(Map<String, JLabel> miscValues) {
+        LinkedHashMap<String, LinkedHashMap<String, String>> grouped = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Component>> sectionEntry : miscSectionComponents.entrySet()) {
+            LinkedHashMap<String, String> rows = new LinkedHashMap<>();
+            for (Component c : sectionEntry.getValue()) {
+                if (c instanceof JPanel row) {
+                    String keyText = null;
+                    String valueText = null;
+                    for (Component child : row.getComponents()) {
+                        if (child instanceof JLabel lbl) {
+                            if (keyText == null) {
+                                keyText = lbl.getText();
+                            } else {
+                                valueText = lbl.getText();
+                            }
+                        }
+                    }
+                    if (keyText != null) {
+                        rows.put(keyText, valueText == null ? "" : valueText);
+                    }
+                }
+            }
+            if (!rows.isEmpty()) {
+                grouped.put(sectionEntry.getKey(), rows);
+            }
+        }
+        // Fallback used only if section iteration produced no rows (defensive: section components
+        // never observed empty in practice). Iterate the raw label map so operators still get a
+        // snapshot of what is on screen.
+        if (grouped.isEmpty() && miscValues != null) {
+            LinkedHashMap<String, String> rows = new LinkedHashMap<>();
+            for (Map.Entry<String, JLabel> entry : miscValues.entrySet()) {
+                rows.put(entry.getKey(), entry.getValue() == null ? "" : entry.getValue().getText());
+            }
+            grouped.put("Misc Stats", rows);
+        }
+        return CardCopySupport.sectionsToText("Misc Stats", Collections.unmodifiableMap(grouped));
+    }
+
     private static JTable createStatsTable(DefaultTableModel model) {
         model.setRowCount(0);
         JTable table = new JTable(model) {
@@ -662,11 +787,14 @@ public class StatsPanel extends JPanel {
     }
 
     private static MetricCardState addGroupedMetricCard(JPanel parent, String title, List<MetricSection> sections) {
-        JPanel card = new JPanel();
+        JPanel card = new JPanel(new BorderLayout());
         card.setName("miscStatsCard");
-        card.setLayout(new javax.swing.BoxLayout(card, javax.swing.BoxLayout.Y_AXIS));
         card.setBorder(BorderFactory.createTitledBorder(title));
         card.setOpaque(false);
+
+        // Probe every section's keys with the card key font so both columns end up with the same
+        // key-column width and labels visually line up across the card even though their rows
+        // live in separate sub-panels.
         int maxKeyWidth = 0;
         for (MetricSection section : sections) {
             for (String key : section.keys()) {
@@ -675,8 +803,43 @@ public class StatsPanel extends JPanel {
                 maxKeyWidth = Math.max(maxKeyWidth, probe.getPreferredSize().width);
             }
         }
+
         Map<String, JLabel> values = new HashMap<>();
         Map<String, List<Component>> sectionComponents = new HashMap<>();
+
+        // Two-column layout. Sections are distributed across columns so the card uses the full
+        // panel width (matching the count tables above) without leaving the right half blank.
+        // Splitting by section count rather than row count keeps semantically related sections
+        // grouped: general / process info on the left, sink-specific info on the right.
+        int splitIndex = (sections.size() + 1) / 2;
+        JPanel leftColumn = buildMiscStatsColumn(
+                sections.subList(0, splitIndex), maxKeyWidth, values, sectionComponents);
+        JPanel rightColumn = buildMiscStatsColumn(
+                sections.subList(splitIndex, sections.size()), maxKeyWidth, values, sectionComponents);
+
+        JPanel columnsPanel = new JPanel(new GridLayout(1, 2, 16, 0));
+        columnsPanel.setOpaque(false);
+        columnsPanel.add(leftColumn);
+        columnsPanel.add(rightColumn);
+        card.add(columnsPanel, BorderLayout.NORTH);
+
+        parent.add(card);
+        return new MetricCardState(card, values, sectionComponents);
+    }
+
+    /**
+     * Builds one column of the Misc Stats card. Caller distributes sections across columns; this
+     * helper just stacks the supplied sections vertically with the same row styling, alternating
+     * row backgrounds, and section/row component naming the single-column layout previously used.
+     */
+    private static JPanel buildMiscStatsColumn(
+            List<MetricSection> sections,
+            int maxKeyWidth,
+            Map<String, JLabel> values,
+            Map<String, List<Component>> sectionComponents) {
+        JPanel column = new JPanel();
+        column.setLayout(new javax.swing.BoxLayout(column, javax.swing.BoxLayout.Y_AXIS));
+        column.setOpaque(false);
         int rowIndex = 0;
         for (MetricSection section : sections) {
             JLabel sectionLabel = new JLabel(section.title());
@@ -687,7 +850,7 @@ public class StatsPanel extends JPanel {
             sectionLabel.setAlignmentX(LEFT_ALIGNMENT);
             Dimension sectionPref = sectionLabel.getPreferredSize();
             sectionLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, sectionPref.height));
-            card.add(sectionLabel);
+            column.add(sectionLabel);
             List<Component> components = new ArrayList<>();
             components.add(sectionLabel);
             sectionComponents.put(section.title(), components);
@@ -715,17 +878,13 @@ public class StatsPanel extends JPanel {
                 row.add(valueLabel, BorderLayout.CENTER);
                 Dimension rowPref = row.getPreferredSize();
                 row.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowPref.height));
-                card.add(row);
+                column.add(row);
                 components.add(row);
                 rowIndex++;
             }
         }
-        card.add(javax.swing.Box.createVerticalGlue());
-        Dimension preferred = card.getPreferredSize();
-        card.setPreferredSize(new Dimension(Math.max(520, preferred.width), preferred.height));
-        card.setMinimumSize(new Dimension(420, preferred.height));
-        parent.add(card);
-        return new MetricCardState(card, values, sectionComponents);
+        column.add(javax.swing.Box.createVerticalGlue());
+        return column;
     }
 
     private static Color rowBackground(int rowIndex) {
@@ -759,6 +918,26 @@ public class StatsPanel extends JPanel {
         return base.deriveFont(style, size);
     }
 
+    /**
+     * Returns the LAF's table-cell font so the Misc Stats card renders at the same point size as
+     * the adjacent JTable count cards. Falls back through {@code Table.font} ->
+     * {@code Label.font} -> a default {@link JLabel} font so the card never depends on a single
+     * UIManager key being populated.
+     */
+    private static Font cardFont() {
+        Font base = UIManager.getFont("Table.font");
+        if (base == null) {
+            base = UIManager.getFont("Label.font");
+        }
+        if (base == null) {
+            base = new JLabel().getFont();
+        }
+        if (base == null) {
+            base = new Font("SansSerif", Font.PLAIN, 12);
+        }
+        return base.deriveFont(Font.PLAIN);
+    }
+
     private static Color uiColor(String key, Color fallback) {
         Color color = UIManager.getColor(key);
         return color != null ? color : fallback;
@@ -773,15 +952,19 @@ public class StatsPanel extends JPanel {
     }
 
     private void updateDashboardSectionSizing() {
+        // Reserve vertical space for the Copy button row that CardCopySupport stacks above each
+        // table card's column header. Without this, the table's preferred height plus its header
+        // exceeds the card's CENTER slot and the final "Total" row gets clipped at the bottom.
+        int copyHeaderHeight = COPY_HEADER_RESERVED_HEIGHT;
         int leftTableHeight = trafficBySourceTable.getPreferredSize().height
-                + trafficBySourceTable.getTableHeader().getPreferredSize().height + 28;
+                + trafficBySourceTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
         int rightTableHeight = byIndexTable.getPreferredSize().height
-                + byIndexTable.getTableHeader().getPreferredSize().height + 28;
+                + byIndexTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
         int tablesHeight = Math.max(leftTableHeight, rightTableHeight);
         int fileLeftTableHeight = fileTrafficBySourceTable.getPreferredSize().height
-                + fileTrafficBySourceTable.getTableHeader().getPreferredSize().height + 28;
+                + fileTrafficBySourceTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
         int fileRightTableHeight = fileByIndexTable.getPreferredSize().height
-                + fileByIndexTable.getTableHeader().getPreferredSize().height + 28;
+                + fileByIndexTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
         int fileTablesHeight = Math.max(fileLeftTableHeight, fileRightTableHeight);
         tablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, tablesHeight));
         tablesRow.setMinimumSize(new Dimension(800, tablesHeight));

@@ -67,6 +67,20 @@ public final class LogStore {
     /** Aggregated line for full rebuilds. */
     public record Aggregate(LocalDateTime ts, Level level, String message, int count) {}
 
+    /**
+     * Result of a single {@link #trimIfNeeded()} call.
+     *
+     * <p>{@code removedEntries} is the count of entries removed from the head of the unfiltered
+     * model. {@code removedVisible} is the subset of those entries that would have rendered
+     * under the current visibility filter. Callers performing incremental view updates need
+     * {@code removedVisible} to know whether the visible window changed; the boolean answer
+     * loses that information.</p>
+     */
+    public record TrimResult(int removedEntries, int removedVisible) {
+        public static final TrimResult NONE = new TrimResult(0, 0);
+        public boolean trimmed() { return removedEntries > 0; }
+    }
+
     private final List<Entry> entries = new ArrayList<>();
     private final int maxEntries;
     private VisibilityFilter filter;
@@ -130,14 +144,36 @@ public final class LogStore {
         return Decision.none();
     }
 
-    /** Enforces cap; returns true when a full rebuild is required. */
-    public boolean trimIfNeeded() {
-        if (entries.size() > maxEntries) {
-            int remove = entries.size() - maxEntries;
-            entries.subList(0, remove).clear();
-            return true;
+    /**
+     * Enforces the entry cap.
+     *
+     * <p>Returns {@link TrimResult#NONE} when no trim was required. Otherwise returns the
+     * count of removed (unfiltered) entries and the count of those that would have been
+     * visible under the current filter. The visible count lets callers decide whether the
+     * rendered document needs to change at all (filter-rejected entries can be trimmed
+     * silently with no document edit).</p>
+     */
+    public TrimResult trimIfNeeded() {
+        int over = entries.size() - maxEntries;
+        if (over <= 0) return TrimResult.NONE;
+
+        int removedVisible = 0;
+        // Count visible entries within the to-be-removed prefix; aggregate across consecutive
+        // duplicates so the count matches one document line per logical aggregate.
+        Level prevLvl = null;
+        String prevMsg = null;
+        for (int i = 0; i < over; i++) {
+            Entry e = entries.get(i);
+            if (!filter.test(e.level, e.message)) continue;
+            boolean continuation = (e.level == prevLvl && Objects.equals(e.message, prevMsg));
+            if (!continuation) {
+                removedVisible++;
+                prevLvl = e.level;
+                prevMsg = e.message;
+            }
         }
-        return false;
+        entries.subList(0, over).clear();
+        return new TrimResult(over, removedVisible);
     }
 
     /** Builds filtered, aggregated lines for a full repaint. */

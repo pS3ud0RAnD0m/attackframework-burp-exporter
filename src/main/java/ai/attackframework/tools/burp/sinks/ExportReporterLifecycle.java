@@ -8,6 +8,9 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Coordinates intentional shutdown and reset of long-lived export reporters.
@@ -19,6 +22,15 @@ import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
  */
 public final class ExportReporterLifecycle {
     private ExportReporterLifecycle() {}
+
+    /**
+     * Holds the most recent {@link #releaseRunResourcesAsync()} worker so test teardown can join
+     * it deterministically. Production callers do not need to await; the daemon thread completes
+     * on its own. Tests must await before issuing further OpenSearch traffic in the same JVM,
+     * because {@link OpenSearchConnector#closeAll()} closes pooled clients that other tests may
+     * still hold references to.
+     */
+    private static final AtomicReference<Thread> lastStopReclaimThread = new AtomicReference<>();
 
     /**
      * Stops recurring background reporters and clears their in-memory session state.
@@ -56,6 +68,48 @@ public final class ExportReporterLifecycle {
     }
 
     /**
+     * Releases run-scoped resources off-thread so the user-Stop click path stays responsive.
+     *
+     * <p>Closes the cached OpenSearch transport and classic HTTP client pools. Apache HC5 pool
+     * shutdown can briefly block while pending connections drain, so the call runs on a
+     * short-lived daemon thread rather than the EDT or the start-abort worker.</p>
+     *
+     * <p>Intentionally NOT invoked from auto-abort paths: a failed Start did not establish a
+     * running export, and synchronously closing pools mid-abort can starve the EDT during the
+     * abort acknowledgement. The unload path performs the same closure synchronously via
+     * {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector#closeAll()}.</p>
+     */
+    public static void releaseRunResourcesAsync() {
+        Thread t = new Thread(
+                OpenSearchConnector::closeAll,
+                "attackframework-stop-reclaim");
+        t.setDaemon(true);
+        lastStopReclaimThread.set(t);
+        t.start();
+    }
+
+    /**
+     * Awaits completion of the most recent {@link #releaseRunResourcesAsync()} worker, if any.
+     *
+     * <p>Intended for test teardown so a Stop-triggered async {@link OpenSearchConnector#closeAll()}
+     * cannot race with a subsequent integration test that fetches a cached client. Returns once
+     * the thread terminates or the wait expires; thread-interruption is preserved.</p>
+     *
+     * @param timeoutMillis maximum time to wait, in milliseconds; {@code 0} waits indefinitely
+     */
+    public static void awaitStopReclaim(long timeoutMillis) {
+        Thread t = lastStopReclaimThread.getAndSet(null);
+        if (t == null) {
+            return;
+        }
+        try {
+            t.join(timeoutMillis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
      * Stops recurring reporters and clears process-local exporter session state.
      *
      * <p>Used by extension unload and test teardown so reloads start from a clean
@@ -77,6 +131,10 @@ public final class ExportReporterLifecycle {
      * tests start from a clean process-local baseline.</p>
      */
     public static void resetForTests() {
+        // Wait for any in-flight Stop-triggered async closeAll() worker to finish before clearing
+        // session state. Otherwise the daemon can close cached OpenSearch clients while a later
+        // test is mid-call, surfacing as "Connection pool shut down" or "Socket closed".
+        awaitStopReclaim(5_000L);
         stopAndClearSessionState();
         ControlStatusBridge.clear();
         DiskSpaceGuard.resetForTests();

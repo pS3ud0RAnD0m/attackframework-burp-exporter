@@ -210,9 +210,10 @@ public final class RequestResponseDocBuilder {
         req.put("inferred_content_type", inferredContentType);
         req.put("headers", buildHeadersObject(requestHeaders));
         boolean includeBody = shouldIncludeBodyParameters(contentType, requestHeaders, inferredContentType);
-        ParametersResult parametersResult = parametersToList(request.parameters(), includeBody);
+        ParametersResult parametersResult = collectParameters(request, includeBody);
         req.put("parameters", parametersResult.entries());
-        recordParameterTelemetry(request, contentType, parametersResult.entries().size(), parametersResult.droppedSynthesized());
+        recordParameterTelemetry(request, contentType, parametersResult.entries().size(),
+                parametersResult.droppedSynthesized(), parametersResult.bodyEnumerationSkipped());
 
         putBodyFields(
                 req,
@@ -606,13 +607,76 @@ public final class RequestResponseDocBuilder {
     }
 
     /**
-     * Result of converting Burp's {@code request.parameters()} into the doc representation,
-     * carrying both the retained entries and the count of synthesized {@code BODY}-typed entries
-     * filtered out because the body was binary. The {@code droppedSynthesized} count feeds the
-     * high-cardinality WARN threshold and the {@code ExportStats} telemetry counters.
+     * Result of converting Burp's request parameters into the doc representation.
+     *
+     * <p>Carries the retained entries, the count of synthesized {@code BODY}-typed entries
+     * filtered out because the body was binary, and a flag indicating whether the typed-accessor
+     * fast path was used (i.e. Burp's unfiltered {@code parameters()} call was skipped to avoid
+     * materializing millions of synthetic BODY entries on Content-Type-spoofed binary bodies).
+     * The {@code droppedSynthesized} count feeds the {@code ExportStats} telemetry counters; the
+     * {@code bodyEnumerationSkipped} flag drives the {@code Skipped BODY Enumeration} counter.</p>
      */
-    record ParametersResult(List<Map<String, Object>> entries, int droppedSynthesized) {
-        static final ParametersResult EMPTY = new ParametersResult(List.of(), 0);
+    record ParametersResult(List<Map<String, Object>> entries, int droppedSynthesized, boolean bodyEnumerationSkipped) {
+        static final ParametersResult EMPTY = new ParametersResult(List.of(), 0, false);
+    }
+
+    /** Non-BODY parameter types enumerated by the typed-accessor fast path. */
+    private static final HttpParameterType[] NON_BODY_PARAMETER_TYPES = new HttpParameterType[] {
+            HttpParameterType.URL,
+            HttpParameterType.COOKIE,
+            HttpParameterType.JSON,
+            HttpParameterType.XML,
+            HttpParameterType.XML_ATTRIBUTE,
+            HttpParameterType.MULTIPART_ATTRIBUTE
+    };
+
+    /**
+     * Collects request parameters for the doc representation, choosing between Burp's unfiltered
+     * {@link HttpRequest#parameters()} and the typed-by-type fast path based on whether BODY
+     * entries are wanted.
+     *
+     * <p>When {@code includeBody} is {@code false} the typed-accessor fast path enumerates only
+     * non-BODY parameter types. This is the heap-safety primary defence against Content-Type
+     * spoofing, where a binary request body declared as {@code application/x-www-form-urlencoded}
+     * would otherwise cause Burp's parser to synthesize tens of millions of fake BODY entries
+     * before our hard cap can drop them. By querying typed accessors directly we never trigger
+     * the synthetic enumeration in the first place and {@code droppedSynthesized} is reported as
+     * {@code 0} for that branch (with the {@code Skipped BODY Enumeration} counter incrementing
+     * instead).</p>
+     *
+     * <p>When {@code includeBody} is {@code true} the unfiltered {@code parameters()} call is
+     * used (legitimate form-encoded bodies need every type) and dropping/capping is delegated to
+     * the existing {@link #parametersToList(List, boolean)} routine.</p>
+     */
+    static ParametersResult collectParameters(HttpRequest request, boolean includeBody) {
+        if (request == null) {
+            return ParametersResult.EMPTY;
+        }
+        if (includeBody) {
+            ParametersResult fullScan = parametersToList(request.parameters(), true);
+            return new ParametersResult(fullScan.entries(), fullScan.droppedSynthesized(), false);
+        }
+        List<ParsedHttpParameter> merged = new ArrayList<>();
+        for (HttpParameterType type : NON_BODY_PARAMETER_TYPES) {
+            try {
+                if (!request.hasParameters(type)) {
+                    continue;
+                }
+                List<ParsedHttpParameter> typed = request.parameters(type);
+                if (typed == null || typed.isEmpty()) {
+                    continue;
+                }
+                merged.addAll(typed);
+                if (merged.size() >= PARAMETERS_HARD_CAP) {
+                    break;
+                }
+            } catch (RuntimeException ignored) {
+                // Per-type accessor may throw on malformed inputs; skip that type and keep going
+                // so a single bad accessor does not lose the whole parameter list.
+            }
+        }
+        ParametersResult capped = parametersToList(merged, true);
+        return new ParametersResult(capped.entries(), 0, true);
     }
 
     /**
@@ -667,7 +731,7 @@ public final class RequestResponseDocBuilder {
             entry.put("type", type == null ? null : type.name());
             out.add(entry);
         }
-        return new ParametersResult(out, dropped);
+        return new ParametersResult(out, dropped, false);
     }
 
     /**
@@ -698,16 +762,22 @@ public final class RequestResponseDocBuilder {
             HttpRequest request,
             burp.api.montoya.http.message.ContentType contentType,
             int retained,
-            int droppedSynthesized) {
+            int droppedSynthesized,
+            boolean bodyEnumerationSkipped) {
         if (droppedSynthesized > 0) {
             ai.attackframework.tools.burp.utils.ExportStats.recordSynthesizedBodyParamsDropped(droppedSynthesized);
         }
+        if (bodyEnumerationSkipped) {
+            ai.attackframework.tools.burp.utils.ExportStats.recordSkippedBodyParameterEnumeration();
+        }
         boolean retainedHigh = retained >= PARAMETERS_WARN_THRESHOLD;
         boolean droppedHigh = droppedSynthesized >= PARAMETERS_WARN_THRESHOLD;
-        if (!retainedHigh && !droppedHigh) {
+        if (!retainedHigh && !droppedHigh && !bodyEnumerationSkipped) {
             return;
         }
-        ai.attackframework.tools.burp.utils.ExportStats.recordDocsOverParamsThreshold();
+        if (retainedHigh || droppedHigh) {
+            ai.attackframework.tools.burp.utils.ExportStats.recordDocsOverParamsThreshold();
+        }
         String ct = contentType == null ? "unknown" : contentType.toString();
         String commonFields = formatCommonFields(
                 safeMethod(request),
@@ -718,7 +788,7 @@ public final class RequestResponseDocBuilder {
         if (retainedHigh) {
             Logger.logWarnPanelOnly("[ParameterCardinality][retained] High retained parameter count; "
                     + "likely a legitimate request with unusual cardinality - review: " + commonFields);
-        } else {
+        } else if (droppedHigh) {
             Logger.logDebug("[ParameterCardinality][synthesized_dropped] Content-Type mismatch "
                     + "caused Burp's parameters() API to mis-infer "
                     + droppedSynthesized
@@ -726,6 +796,10 @@ public final class RequestResponseDocBuilder {
                     + "Content-Type (" + ct + ") but carried a binary body, so Burp scanned the "
                     + "raw bytes as if form-encoded and fabricated entries. All dropped. "
                     + "Expected on binary request bodies such as protobuf/gRPC: " + commonFields);
+        } else {
+            Logger.logDebug("[ParameterCardinality][skipped_body_enumeration] Skipped synthetic BODY "
+                    + "enumeration on a non-form / binary body to keep heap bounded; only non-BODY "
+                    + "parameter types were collected: " + commonFields);
         }
     }
 
@@ -791,8 +865,9 @@ public final class RequestResponseDocBuilder {
         }
         try {
             boolean includeBody = shouldIncludeBodyParameters(contentType, headers, inferredContentType);
-            ParametersResult result = parametersToList(request.parameters(), includeBody);
-            recordParameterTelemetry(request, contentType, result.entries().size(), result.droppedSynthesized());
+            ParametersResult result = collectParameters(request, includeBody);
+            recordParameterTelemetry(request, contentType, result.entries().size(),
+                    result.droppedSynthesized(), result.bodyEnumerationSkipped());
             return result.entries();
         } catch (RuntimeException ignored) {
             return List.of();

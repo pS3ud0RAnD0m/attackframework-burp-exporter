@@ -18,6 +18,29 @@ class StatsPanelFormattersTest {
     }
 
     @Test
+    void formatBytesHuman_handlesEachUnitBoundaryAndNegative() {
+        assertThat(StatsPanelFormatters.formatBytesHuman(-1L)).isEqualTo("-");
+        assertThat(StatsPanelFormatters.formatBytesHuman(0L)).isEqualTo("0 B");
+        assertThat(StatsPanelFormatters.formatBytesHuman(1023L)).isEqualTo("1023 B");
+        assertThat(StatsPanelFormatters.formatBytesHuman(1024L)).isEqualTo("1.0 KiB");
+        assertThat(StatsPanelFormatters.formatBytesHuman(1024L * 1024L)).isEqualTo("1.0 MiB");
+        assertThat(StatsPanelFormatters.formatBytesHuman(1024L * 1024L * 1024L)).isEqualTo("1.0 GiB");
+    }
+
+    @Test
+    void formatRetryQueueDepthPerIndex_zeroDepthRendersAllIndexes() {
+        String rendered = StatsPanelFormatters.formatRetryQueueDepthPerIndex();
+        assertThat(rendered).contains("traffic=").contains("exporter=").contains("settings=")
+                .contains("sitemap=").contains("findings=");
+    }
+
+    @Test
+    void formatRetryQueueBytesPerIndex_zeroBytesRendersAllIndexes() {
+        String rendered = StatsPanelFormatters.formatRetryQueueBytesPerIndex();
+        assertThat(rendered).contains("traffic=").contains("0 B");
+    }
+
+    @Test
     void formatRelativeTime_nonPositiveEpoch_returnsNever() {
         assertThat(StatsPanelFormatters.formatRelativeTime(0L, 1_000_000L)).isEqualTo("never");
         assertThat(StatsPanelFormatters.formatRelativeTime(-1L, 1_000_000L)).isEqualTo("never");
