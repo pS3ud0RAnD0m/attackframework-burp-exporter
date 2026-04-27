@@ -3,9 +3,11 @@ package ai.attackframework.tools.burp.ui;
 import java.awt.Component;
 import java.awt.Container;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -390,6 +392,17 @@ class ConfigPanelCommunityEditionHeadlessTest {
         return null;
     }
 
+    /**
+     * Best-effort recursive delete of a temp directory tree.
+     *
+     * <p>Uses {@link Files#walkFileTree} with a {@link SimpleFileVisitor} so per-entry I/O failures
+     * (which happen when an in-flight async start probe such as {@code FileUtil.ensureDirectoryWritable}
+     * creates and deletes {@code .attackframework-write-probe-*.tmp} files concurrently with
+     * cleanup) do not abort the walk. Returning {@link FileVisitResult#CONTINUE} from
+     * {@code visitFileFailed} lets the rest of the tree still be cleaned up rather than leaking
+     * remaining files when the first vanished entry would otherwise turn an in-stream
+     * {@code NoSuchFileException} into an {@code UncheckedIOException} that escapes the cleanup.</p>
+     */
     private static void deleteRecursively(Path root) {
         if (root == null) {
             return;
@@ -398,15 +411,33 @@ class ConfigPanelCommunityEditionHeadlessTest {
             if (!Files.exists(root)) {
                 return;
             }
-            Files.walk(root)
-                    .sorted(Comparator.reverseOrder())
-                    .forEach(path -> {
-                        try {
-                            Files.deleteIfExists(path);
-                        } catch (java.io.IOException ignored) {
-                            // Best-effort temp cleanup for tests.
-                        }
-                    });
+            Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    try {
+                        Files.deleteIfExists(file);
+                    } catch (java.io.IOException ignored) {
+                        // Best-effort temp cleanup for tests.
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, java.io.IOException exc) {
+                    // Entry vanished or could not be stat'd mid-walk; keep cleaning the rest.
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, java.io.IOException exc) {
+                    try {
+                        Files.deleteIfExists(dir);
+                    } catch (java.io.IOException ignored) {
+                        // Best-effort temp cleanup for tests.
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
         } catch (java.io.IOException ignored) {
             // Best-effort temp cleanup for tests.
         }
