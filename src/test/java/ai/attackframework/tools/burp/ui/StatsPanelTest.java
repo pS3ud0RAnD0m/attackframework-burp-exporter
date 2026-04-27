@@ -104,6 +104,11 @@ class StatsPanelTest {
         assertThat(text).doesNotContain("Burp + other extensions");
         assertThat(text).doesNotContain("heap (MB)");
         assertThat(text).doesNotContain("thread count:");
+
+        assertThat(text).contains("heap used / max bytes:");
+        assertThat(text).contains("heap committed bytes:");
+        assertThat(text).contains("direct buffer used bytes:");
+        assertThat(text).contains("mapped buffer used bytes:");
     }
 
     @Test
@@ -154,41 +159,42 @@ class StatsPanelTest {
     }
 
     @Test
-    void trafficBySourceTable_matchesIndexTableColumns_andMiscStatsShowsSingleStackedCard() {
+    void mergedSinkTables_haveExpectedColumnSchema_andMiscStatsCardSpansFullWidth() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
         DefaultTableModel indexModel = get(panel, "byIndexModel");
+        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
         JPanel cardsRow = get(panel, "cardsRow");
 
-        assertThat(sourceModel.getColumnName(0)).isEqualTo("Source");
+        // OpenSearch carries 8 columns including "Permanent Drops". File carries 5 columns
+        // total: Index, Docs Exported, Failures, Last Push (ms), Last Error. The file sink
+        // is synchronous to disk with no queue, no retry path, and no permanent-drop
+        // concept, so those three columns are deliberately omitted from the file schema.
+        // Both tables nest source rows under the Traffic index row.
+        assertThat(indexModel.getColumnCount()).isEqualTo(8);
         assertThat(indexModel.getColumnName(0)).isEqualTo("Index");
-
-        // The OpenSearch Index Counts table carries an extra "Permanent Drops" column between
-        // Retry Drops and Failures; every other numeric column stays aligned with the per-source
-        // table so the user's mental model of "same columns per row" still holds.
-        assertThat(indexModel.getColumnCount()).isEqualTo(sourceModel.getColumnCount() + 1);
-        assertThat(sourceModel.getColumnName(1)).isEqualTo(indexModel.getColumnName(1));
-        assertThat(sourceModel.getColumnName(2)).isEqualTo(indexModel.getColumnName(2));
-        assertThat(sourceModel.getColumnName(3)).isEqualTo(indexModel.getColumnName(3));
         assertThat(indexModel.getColumnName(4)).isEqualTo("Permanent Drops");
-        assertThat(sourceModel.getColumnName(4)).isEqualTo(indexModel.getColumnName(5));
-        assertThat(sourceModel.getColumnName(5)).isEqualTo(indexModel.getColumnName(6));
-        assertThat(sourceModel.getColumnName(6)).isEqualTo(indexModel.getColumnName(7));
+        assertThat(fileIndexModel.getColumnCount()).isEqualTo(5);
+        assertThat(fileIndexModel.getColumnName(0)).isEqualTo("Index");
+        assertThat(fileIndexModel.getColumnName(1)).isEqualTo("Docs Exported");
+        assertThat(fileIndexModel.getColumnName(2)).isEqualTo("Failures");
+        assertThat(fileIndexModel.getColumnName(3)).isEqualTo("Last Push (ms)");
+        assertThat(fileIndexModel.getColumnName(4)).isEqualTo("Last Error");
         assertThat(cardsRow.getComponentCount()).isEqualTo(1);
     }
 
     @Test
-    void trafficBySourceTables_packFirstColumnToFitRepeaterHistoryLabel() {
+    void mergedSinkTables_packFirstColumnToFitIndentedRepeaterHistorySubRowLabel() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JTable openSearchTable = get(panel, "trafficBySourceTable");
-        JTable fileTable = get(panel, "fileTrafficBySourceTable");
+        JTable openSearchTable = get(panel, "byIndexTable");
+        JTable fileTable = get(panel, "fileByIndexTable");
+        String subRowLabel = ((String) getStatic(StatsPanel.class, "SUBROW_INDENT")) + "Repeater History";
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
         assertThat(firstColumnPreferredWidth(openSearchTable))
-                .isGreaterThanOrEqualTo(requiredLabelColumnWidth(openSearchTable, "Repeater History"));
+                .isGreaterThanOrEqualTo(requiredLabelColumnWidth(openSearchTable, subRowLabel));
         assertThat(firstColumnPreferredWidth(fileTable))
-                .isGreaterThanOrEqualTo(requiredLabelColumnWidth(fileTable, "Repeater History"));
+                .isGreaterThanOrEqualTo(requiredLabelColumnWidth(fileTable, subRowLabel));
     }
 
     @Test
@@ -204,20 +210,33 @@ class StatsPanelTest {
     void byIndexTable_remainsAlphabeticallySortedAfterRefresh() throws Exception {
         StatsPanel panel = onEdt(StatsPanel::new);
         JTable byIndexTable = get(panel, "byIndexTable");
+        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
 
         ExportStats.recordSuccess("traffic", 11);
         onEdt(() -> call(panel, "refreshVisibleStats"));
 
-        List<String> visibleIndexes = onEdt(() -> {
+        List<String> allRows = onEdt(() -> {
             List<String> rows = new ArrayList<>();
             for (int row = 0; row < byIndexTable.getRowCount(); row++) {
                 rows.add(String.valueOf(byIndexTable.getValueAt(row, 0)));
             }
             return rows;
         });
-        List<String> sorted = new ArrayList<>(visibleIndexes);
+        // The trailing "Total" summary row is appended unconditionally; before it sits a block
+        // of indented traffic-source sub-rows that are nested under the Traffic index row but
+        // not part of the alphabetical group. Strip the indented block and the Total row, then
+        // verify the remaining index rows stay alphabetically sorted across rebuilds.
+        assertThat(allRows).isNotEmpty();
+        assertThat(allRows.get(allRows.size() - 1)).isEqualTo("Total");
+        List<String> indexRows = new ArrayList<>();
+        for (String row : allRows.subList(0, allRows.size() - 1)) {
+            if (!row.startsWith(indent)) {
+                indexRows.add(row);
+            }
+        }
+        List<String> sorted = new ArrayList<>(indexRows);
         Collections.sort(sorted);
-        assertThat(visibleIndexes).isEqualTo(sorted);
+        assertThat(indexRows).isEqualTo(sorted);
     }
 
     @Test
@@ -303,14 +322,37 @@ class StatsPanelTest {
     }
 
     @Test
-    void tablesRow_placesTrafficByIndexBeforeTrafficBySource() {
+    void sinkCards_nestTrafficSourceSubRowsDirectlyUnderTrafficIndexRow() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel tablesRow = get(panel, "tablesRow");
-        JTable byIndexTable = get(panel, "byIndexTable");
-        JTable trafficBySourceTable = get(panel, "trafficBySourceTable");
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
+        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
 
-        assertThat(findDescendant((Container) tablesRow.getComponent(0), JTable.class)).isSameAs(byIndexTable);
-        assertThat(findDescendant((Container) tablesRow.getComponent(1), JTable.class)).isSameAs(trafficBySourceTable);
+        ExportStats.recordSuccess("traffic", 1);
+        FileExportStats.recordSuccess("traffic", 1);
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        // Sub-rows live inline within the merged model; their position is determined entirely
+        // by the alphabetical placement of the Traffic index row, with the indent on column 0
+        // distinguishing them from index rows. Verify the row immediately following the
+        // Traffic index row is an indented sub-row, not the next alphabetical index row.
+        assertSubRowsFollowTrafficIndexRow(indexModel, indent);
+        assertSubRowsFollowTrafficIndexRow(fileIndexModel, indent);
+    }
+
+    private static void assertSubRowsFollowTrafficIndexRow(DefaultTableModel model, String indent) {
+        int trafficRow = -1;
+        for (int row = 0; row < model.getRowCount(); row++) {
+            if ("Traffic".equals(String.valueOf(model.getValueAt(row, 0)))) {
+                trafficRow = row;
+                break;
+            }
+        }
+        assertThat(trafficRow).as("Traffic index row").isGreaterThanOrEqualTo(0);
+        // At least one indented sub-row exists right after the Traffic row.
+        assertThat(trafficRow + 1).isLessThan(model.getRowCount());
+        String firstSubLabel = String.valueOf(model.getValueAt(trafficRow + 1, 0));
+        assertThat(firstSubLabel).startsWith(indent);
     }
 
     @Test
@@ -321,25 +363,25 @@ class StatsPanelTest {
             StatsPanel fileOnlyPanel = onEdt(StatsPanel::new);
             JPanel fileChartsSection = get(fileOnlyPanel, "fileChartsSectionPanel");
             JPanel openSearchChartsSection = get(fileOnlyPanel, "openSearchChartsSectionPanel");
-            JPanel fileTablesRow = get(fileOnlyPanel, "fileTablesRow");
-            JPanel tablesRow = get(fileOnlyPanel, "tablesRow");
+            JPanel fileSinkRow = get(fileOnlyPanel, "fileSinkRow");
+            JPanel openSearchSinkRow = get(fileOnlyPanel, "openSearchSinkRow");
             onEdt(() -> call(fileOnlyPanel, "refreshDashboard"));
             assertThat(onEdt(fileChartsSection::isVisible)).isTrue();
             assertThat(onEdt(openSearchChartsSection::isVisible)).isFalse();
-            assertThat(onEdt(fileTablesRow::isVisible)).isTrue();
-            assertThat(onEdt(tablesRow::isVisible)).isFalse();
+            assertThat(onEdt(fileSinkRow::isVisible)).isTrue();
+            assertThat(onEdt(openSearchSinkRow::isVisible)).isFalse();
 
             RuntimeConfig.updateState(runtimeState(false, true));
             StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
             JPanel osFileChartsSection = get(openSearchOnlyPanel, "fileChartsSectionPanel");
             JPanel osOpenSearchChartsSection = get(openSearchOnlyPanel, "openSearchChartsSectionPanel");
-            JPanel osFileTablesRow = get(openSearchOnlyPanel, "fileTablesRow");
-            JPanel osTablesRow = get(openSearchOnlyPanel, "tablesRow");
+            JPanel osFileSinkRow = get(openSearchOnlyPanel, "fileSinkRow");
+            JPanel osOpenSearchSinkRow = get(openSearchOnlyPanel, "openSearchSinkRow");
             onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
             assertThat(onEdt(osFileChartsSection::isVisible)).isFalse();
             assertThat(onEdt(osOpenSearchChartsSection::isVisible)).isTrue();
-            assertThat(onEdt(osFileTablesRow::isVisible)).isFalse();
-            assertThat(onEdt(osTablesRow::isVisible)).isTrue();
+            assertThat(onEdt(osFileSinkRow::isVisible)).isFalse();
+            assertThat(onEdt(osOpenSearchSinkRow::isVisible)).isTrue();
         } finally {
             RuntimeConfig.updateState(previous);
         }
@@ -351,19 +393,111 @@ class StatsPanelTest {
         JPanel chartSectionsPanel = get(panel, "chartSectionsPanel");
         JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
         JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
-        JPanel fileTablesRow = get(panel, "fileTablesRow");
-        JPanel tablesRow = get(panel, "tablesRow");
+        JPanel memoryChartsSection = get(panel, "memoryChartSectionPanel");
+        JPanel lowerPanel = get(panel, "lowerPanel");
+        JPanel fileSinkRow = get(panel, "fileSinkRow");
+        JPanel openSearchSinkRow = get(panel, "openSearchSinkRow");
 
+        // Chart ordering: file pair on top, OpenSearch pair in the middle, memory chart at
+        // the bottom (heap usage is JVM-wide so it is shared regardless of which sink runs).
         assertThat(chartSectionsPanel.getComponent(0)).isSameAs(fileChartsSection);
         assertThat(chartSectionsPanel.getComponent(1)).isSameAs(openSearchChartsSection);
-        assertThat(findDescendant((Container) fileTablesRow.getComponent(0), JTable.class))
-                .isSameAs(get(panel, "fileByIndexTable"));
-        assertThat(findDescendant((Container) fileTablesRow.getComponent(1), JTable.class))
-                .isSameAs(get(panel, "fileTrafficBySourceTable"));
-        assertThat(findDescendant((Container) tablesRow.getComponent(0), JTable.class))
-                .isSameAs(get(panel, "byIndexTable"));
-        assertThat(findDescendant((Container) tablesRow.getComponent(1), JTable.class))
-                .isSameAs(get(panel, "trafficBySourceTable"));
+        assertThat(chartSectionsPanel.getComponent(2)).isSameAs(memoryChartsSection);
+        // Per-sink rows mirror the chart ordering: file row precedes OpenSearch row.
+        assertThat(indexOfChild(lowerPanel, fileSinkRow))
+                .isLessThan(indexOfChild(lowerPanel, openSearchSinkRow));
+    }
+
+    @Test
+    void byIndexTables_appendTotalRowAfterRefresh() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
+        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+
+        ExportStats.recordSuccess("traffic", 4);
+        ExportStats.recordSuccess("findings", 2);
+        FileExportStats.recordSuccess("traffic", 3);
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        // Trailing Total row aggregates only the index rows, not the indented traffic-source
+        // sub-rows nested under the Traffic index row. The "Last Push (ms)" / "Last Error"
+        // columns are rendered as "-" because totals do not have a meaningful per-row
+        // last-push or last-error attribution.
+        assertTotalRowMatchesIndexRowSum(indexModel, indent);
+        assertTotalRowMatchesIndexRowSum(fileIndexModel, indent);
+    }
+
+    private static void assertTotalRowMatchesIndexRowSum(DefaultTableModel model, String indent) {
+        int lastRow = model.getRowCount() - 1;
+        assertThat(model.getValueAt(lastRow, 0)).isEqualTo("Total");
+        long total = ((Number) model.getValueAt(lastRow, 1)).longValue();
+        long sumOfIndexRows = 0L;
+        for (int row = 0; row < lastRow; row++) {
+            String label = String.valueOf(model.getValueAt(row, 0));
+            if (label.startsWith(indent)) {
+                continue;
+            }
+            sumOfIndexRows += ((Number) model.getValueAt(row, 1)).longValue();
+        }
+        assertThat(total).isEqualTo(sumOfIndexRows);
+    }
+
+    @Test
+    void mergedSinkCards_eachExposeOneCopyButtonForTheWholeTable() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel openSearchSinkCard = get(panel, "openSearchSinkCard");
+        JPanel fileSinkCard = get(panel, "fileSinkCard");
+
+        // One Copy button per merged card; the user already has full-table TSV from a single
+        // click, no need for a separate per-section button now that traffic + index counts
+        // share one model.
+        assertThat(findByName(openSearchSinkCard, "copy.OpenSearch Counts", JButton.class))
+                .as("OpenSearch Counts copy button")
+                .isNotNull();
+        assertThat(findByName(fileSinkCard, "copy.File Counts", JButton.class))
+                .as("File Counts copy button")
+                .isNotNull();
+    }
+
+    @Test
+    void byIndexTable_storesUntruncatedLastErrorTextAfterRefresh() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        DefaultTableModel indexModel = get(panel, "byIndexModel");
+
+        // 200-char error string is the longest message ExportStats stores verbatim (anything
+        // longer is truncated at the storage layer with an ellipsis); blowing past the legacy
+        // 50-char cell-truncation cap proves the table cell now holds the full string. The
+        // visual width cap is purely a renderer concern - the model yields the full string so
+        // per-table TSV copy returns it verbatim.
+        String longError = "X".repeat(200);
+        ExportStats.recordFailure("traffic", 1);
+        ExportStats.recordLastError("traffic", longError);
+        try {
+            onEdt(() -> call(panel, "refreshDashboard"));
+
+            String stored = null;
+            for (int row = 0; row < indexModel.getRowCount(); row++) {
+                if ("Traffic".equals(String.valueOf(indexModel.getValueAt(row, 0)))) {
+                    // Last Error sits in the last column of the OpenSearch counts table
+                    // (column index 7 with the 8-column schema).
+                    stored = String.valueOf(indexModel.getValueAt(row, indexModel.getColumnCount() - 1));
+                    break;
+                }
+            }
+            assertThat(stored).as("Traffic row Last Error column").isEqualTo(longError);
+        } finally {
+            ExportStats.recordLastError("traffic", null);
+        }
+    }
+
+    private static int indexOfChild(Container parent, Component child) {
+        for (int i = 0; i < parent.getComponentCount(); i++) {
+            if (parent.getComponent(i) == child) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Test
@@ -506,6 +640,165 @@ class StatsPanelTest {
     }
 
     @Test
+    void formatBytesPairWithPercent_appendsPercentOfMax() {
+        assertThat(callStatic(StatsPanel.class, "formatBytesPairWithPercent",
+                512L * 1024L * 1024L, 1024L * 1024L * 1024L))
+                .isEqualTo("512.0 MB / 1.0 GB (50.0%)");
+        assertThat(callStatic(StatsPanel.class, "formatBytesPairWithPercent",
+                8L * 1024L * 1024L * 1024L, 32L * 1024L * 1024L * 1024L))
+                .isEqualTo("8.0 GB / 32.0 GB (25.0%)");
+    }
+
+    @Test
+    void formatBytesPairWithPercent_omitsPercent_whenMaxUnknown() {
+        String unknownMax = (String) callStatic(
+                StatsPanel.class, "formatBytesPairWithPercent", 1024L, -1L);
+        assertThat(unknownMax).doesNotContain("%");
+        assertThat(callStatic(StatsPanel.class, "formatBytesPairWithPercent", -1L, 1024L * 1024L))
+                .isEqualTo("n/a / 1.0 MB");
+    }
+
+    @Test
+    void formatBytesWithPercentOf_appendsPercent_andHandlesNegatives() {
+        assertThat(callStatic(StatsPanel.class, "formatBytesWithPercentOf",
+                256L * 1024L * 1024L, 1024L * 1024L * 1024L))
+                .isEqualTo("256.0 MB (25.0%)");
+        assertThat(callStatic(StatsPanel.class, "formatBytesWithPercentOf", -1L, 1024L))
+                .isEqualTo("n/a");
+        assertThat(callStatic(StatsPanel.class, "formatBytesWithPercentOf", 1024L, -1L))
+                .isEqualTo("1.0 KB");
+    }
+
+    @Test
+    void miscStatsCard_exposesHeapCommittedAndBufferPoolRows() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JLabel heapUsedMaxValue = get(panel, "heapUsedMaxValue");
+        JLabel heapCommittedValue = get(panel, "heapCommittedValue");
+        JLabel directBufferUsedValue = get(panel, "directBufferUsedValue");
+        JLabel mappedBufferUsedValue = get(panel, "mappedBufferUsedValue");
+
+        onEdt(() -> call(panel, "refreshDashboard"));
+
+        // Heap rows are populated from a live SystemMetrics.snapshot(), so we cannot pin exact
+        // values - just confirm they contain a percent annotation and a unit suffix.
+        assertThat(heapUsedMaxValue.getText()).matches(".+ / .+ \\(\\d+\\.\\d+%\\)");
+        assertThat(heapCommittedValue.getText()).matches(".+ \\(\\d+\\.\\d+%\\)");
+        assertThat(directBufferUsedValue.getText()).isNotEmpty();
+        assertThat(mappedBufferUsedValue.getText()).isNotEmpty();
+    }
+
+    @Test
+    void memoryChart_isAppendedAfterPerSinkChartSections_andSamplesHeapUsedAndCommitted() throws Exception {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JFreeChart memoryChart = get(panel, "memoryChart");
+        JPanel chartSectionsPanel = get(panel, "chartSectionsPanel");
+        JPanel memoryChartSectionPanel = get(panel, "memoryChartSectionPanel");
+        TimeSeries heapUsedSeries = get(panel, "heapUsedSeries");
+        TimeSeries heapCommittedSeries = get(panel, "heapCommittedSeries");
+
+        // Section ordering: file pair, OpenSearch pair, memory pair last (heap usage is JVM-
+        // wide and unrelated to which sink is active).
+        assertThat(chartSectionsPanel.getComponent(2)).isSameAs(memoryChartSectionPanel);
+
+        // Memory chart uses MiB on the Y axis and a positive-only range type so the line
+        // never dips below zero on transient negative readings.
+        NumberAxis range = (NumberAxis) memoryChart.getXYPlot().getRangeAxis();
+        assertThat(range.getRangeType()).isEqualTo(RangeType.POSITIVE);
+
+        int beforeUsed = onEdt(heapUsedSeries::getItemCount);
+        int beforeCommitted = onEdt(heapCommittedSeries::getItemCount);
+        Thread.sleep(20L);
+        onEdt(() -> call(panel, "refreshVisibleStats"));
+        assertThat(onEdt(heapUsedSeries::getItemCount)).isGreaterThanOrEqualTo(beforeUsed);
+        assertThat(onEdt(heapCommittedSeries::getItemCount)).isGreaterThanOrEqualTo(beforeCommitted);
+    }
+
+    @Test
+    void memoryLegendPanel_sitsAtTopOfMemorySection_andHasHeapUsedAndCommittedItems() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel memoryLegendPanel = get(panel, "memoryLegendPanel");
+        JPanel memoryChartSectionPanel = get(panel, "memoryChartSectionPanel");
+
+        assertThat(memoryChartSectionPanel.getComponent(0)).isSameAs(memoryLegendPanel);
+        assertThat(memoryLegendPanel.getLayout()).isInstanceOf(FlowLayout.class);
+
+        List<String> labelTexts = new ArrayList<>();
+        for (Component c : memoryLegendPanel.getComponents()) {
+            if (c instanceof JLabel label) {
+                labelTexts.add(label.getText());
+            }
+        }
+        assertThat(labelTexts).containsExactly("Heap Used", "Heap Committed");
+    }
+
+    @Test
+    void memoryChart_seriesPaintsTrackThroughputPaletteForGreenAndYellow() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JFreeChart memoryChart = get(panel, "memoryChart");
+        XYLineAndShapeRenderer renderer =
+                (XYLineAndShapeRenderer) memoryChart.getXYPlot().getRenderer();
+
+        // The memory chart's two series adopt the throughput chart's Traffic (green) and
+        // Sitemap (yellow) palette through MEMORY_SERIES_TO_STYLE.
+        assertThat(renderer.getSeriesPaint(0)).isEqualTo(call(panel, "seriesLinePaint", 0));
+        assertThat(renderer.getSeriesPaint(1)).isEqualTo(call(panel, "seriesLinePaint", 3));
+        // Memory lines stay marker-free at every chart style; markers add visual noise to
+        // the dense heap samples.
+        assertThat(renderer.getSeriesShapesVisible(0)).isFalse();
+        assertThat(renderer.getSeriesShapesVisible(1)).isFalse();
+    }
+
+    @Test
+    void chartStyleButton_alsoSwitchesMemoryChartRenderer() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JFreeChart memoryChart = get(panel, "memoryChart");
+            JButton styleButton = get(panel, "chartStyleButton");
+
+            assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+
+            onEdt((Runnable) styleButton::doClick); // Smooth
+            assertThat(memoryChart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
+
+            onEdt((Runnable) styleButton::doClick); // Accessible
+            assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+            XYLineAndShapeRenderer renderer =
+                    (XYLineAndShapeRenderer) memoryChart.getXYPlot().getRenderer();
+            // The memory chart picks up the throughput palette but never the dashed strokes that
+            // SeriesStyle attaches in Accessible style.
+            BasicStroke stroke0 = (BasicStroke) renderer.getSeriesStroke(0);
+            BasicStroke stroke1 = (BasicStroke) renderer.getSeriesStroke(1);
+            assertThat(stroke0.getDashArray()).isNull();
+            assertThat(stroke1.getDashArray()).isNull();
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void miscStatsCard_processSection_includesNewMemoryRows() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JPanel cardsRow = get(panel, "cardsRow");
+        JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
+        assertThat(miscCard).isNotNull();
+
+        List<String> labels = collectLabelTexts(miscCard);
+        assertThat(labels).contains("Heap Used / Max", "Heap Committed",
+                "Non-Heap Used", "Direct Buffer Used", "Mapped Buffer Used");
+    }
+
+    @Test
     void refreshDashboard_updatesTotalExportedValueWithHumanReadableSize() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JLabel totalExportedValue = get(panel, "totalExportedValue");
@@ -570,18 +863,16 @@ class StatsPanelTest {
     }
 
     @Test
-    void trafficBySourceTable_countsProxyWebSocketsUnderProxyHistoryAndTotal() {
+    void mergedTable_countsProxyWebSocketsUnderProxyHistorySubRowAndTrafficIndex() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
         DefaultTableModel indexModel = get(panel, "byIndexModel");
+        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
-        long proxyHistoryBefore = sourceTableLong(sourceModel, "Proxy History", 1);
-        long sourceTotalBefore = sourceTableLong(sourceModel, "Total", 1);
+        long proxyHistoryBefore = sourceTableLong(indexModel, indent + "Proxy History", 1);
         long trafficIndexBefore = sourceTableLong(indexModel, "Traffic", 1);
-        long proxyHistoryFailuresBefore = sourceTableLong(sourceModel, "Proxy History", 4);
-        long sourceTotalFailuresBefore = sourceTableLong(sourceModel, "Total", 4);
+        long proxyHistoryFailuresBefore = sourceTableLong(indexModel, indent + "Proxy History", 5);
         long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 5);
 
         ExportStats.recordSuccess("traffic", 7);
@@ -591,25 +882,26 @@ class StatsPanelTest {
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
-        assertThat(sourceTableLong(sourceModel, "Proxy History", 1) - proxyHistoryBefore).isEqualTo(7);
-        assertThat(sourceTableLong(sourceModel, "Total", 1) - sourceTotalBefore).isEqualTo(7);
+        // Proxy WebSocket success/failure counts roll up into the Proxy History sub-row in
+        // the merged table (TrafficRouteBucket.resolveOpenSearchSourceSuccess folds them in)
+        // and into the Traffic index row.
+        assertThat(sourceTableLong(indexModel, indent + "Proxy History", 1) - proxyHistoryBefore).isEqualTo(7);
         assertThat(sourceTableLong(indexModel, "Traffic", 1) - trafficIndexBefore).isEqualTo(7);
-        assertThat(sourceTableLong(sourceModel, "Proxy History", 4) - proxyHistoryFailuresBefore).isEqualTo(2);
-        assertThat(sourceTableLong(sourceModel, "Total", 4) - sourceTotalFailuresBefore).isEqualTo(2);
+        assertThat(sourceTableLong(indexModel, indent + "Proxy History", 5) - proxyHistoryFailuresBefore).isEqualTo(2);
         assertThat(sourceTableLong(indexModel, "Traffic", 5) - trafficIndexFailuresBefore).isEqualTo(2);
     }
 
     @Test
-    void trafficBySourceTotal_matchesTrafficIndexAfterMixedTrafficSources() {
+    void mergedTable_subRowSumMatchesTrafficIndexAfterMixedTrafficSources() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
         DefaultTableModel indexModel = get(panel, "byIndexModel");
+        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
-        long sourceTotalBefore = sourceTableLong(sourceModel, "Total", 1);
+        long subRowSumBefore = sumSubRowsForColumn(indexModel, indent, 1);
         long trafficIndexBefore = sourceTableLong(indexModel, "Traffic", 1);
-        long sourceTotalFailuresBefore = sourceTableLong(sourceModel, "Total", 4);
+        long subRowFailureSumBefore = sumSubRowsForColumn(indexModel, indent, 5);
         long trafficIndexFailuresBefore = sourceTableLong(indexModel, "Traffic", 5);
 
         ExportStats.recordSuccess("traffic", 17);
@@ -624,10 +916,31 @@ class StatsPanelTest {
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
-        assertThat(sourceTableLong(sourceModel, "Total", 1) - sourceTotalBefore).isEqualTo(17);
-        assertThat(sourceTableLong(indexModel, "Traffic", 1) - trafficIndexBefore).isEqualTo(17);
-        assertThat(sourceTableLong(sourceModel, "Total", 4) - sourceTotalFailuresBefore).isEqualTo(4);
-        assertThat(sourceTableLong(indexModel, "Traffic", 5) - trafficIndexFailuresBefore).isEqualTo(4);
+        // Data integrity: the indented per-source sub-rows must sum to the same number as
+        // the parent Traffic index row for both successes and failures. This is the merged
+        // table's analog of the old "source-table Total == traffic-index row" invariant.
+        long subRowSumAfter = sumSubRowsForColumn(indexModel, indent, 1);
+        long trafficIndexAfter = sourceTableLong(indexModel, "Traffic", 1);
+        long subRowFailureSumAfter = sumSubRowsForColumn(indexModel, indent, 5);
+        long trafficIndexFailuresAfter = sourceTableLong(indexModel, "Traffic", 5);
+        assertThat(subRowSumAfter - subRowSumBefore).isEqualTo(trafficIndexAfter - trafficIndexBefore);
+        assertThat(subRowFailureSumAfter - subRowFailureSumBefore)
+                .isEqualTo(trafficIndexFailuresAfter - trafficIndexFailuresBefore);
+    }
+
+    private static long sumSubRowsForColumn(DefaultTableModel model, String indent, int columnIndex) {
+        long sum = 0L;
+        for (int row = 0; row < model.getRowCount(); row++) {
+            String label = String.valueOf(model.getValueAt(row, 0));
+            if (!label.startsWith(indent)) {
+                continue;
+            }
+            Object value = model.getValueAt(row, columnIndex);
+            if (value instanceof Number number) {
+                sum += number.longValue();
+            }
+        }
+        return sum;
     }
 
     @Test
@@ -776,18 +1089,33 @@ class StatsPanelTest {
         StatsPanel panel = onEdt(StatsPanel::new);
         JPanel chartsPanel = get(panel, "chartsPanel");
         JPanel sharedLegendPanel = get(panel, "sharedLegendPanel");
+        JPanel memoryLegendPanel = get(panel, "memoryLegendPanel");
         JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
         JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
+        JPanel memoryChartSectionPanel = get(panel, "memoryChartSectionPanel");
+        javax.swing.JLabel fileChartsSectionHeader = get(panel, "fileChartsSectionHeader");
+        javax.swing.JLabel openSearchChartsSectionHeader = get(panel, "openSearchChartsSectionHeader");
         JPanel lowerPanel = get(panel, "lowerPanel");
         JPanel cardsRow = get(panel, "cardsRow");
         JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
         int chartHeight = ((Integer) getStatic(StatsPanel.class, "CHART_PANEL_HEIGHT")) / 2;
+        int memoryHeight = getStatic(StatsPanel.class, "MEMORY_CHART_PANEL_HEIGHT");
         int padding = getStatic(StatsPanel.class, "CONTENT_VERTICAL_PADDING");
 
         java.awt.Dimension preferred = onEdt(panel::getPreferredSize);
+        int memoryLegendBudget = onEdt(memoryLegendPanel::isVisible)
+                ? memoryLegendPanel.getPreferredSize().height + 4
+                : 0;
+        int sectionHeadersBudget =
+                (onEdt(fileChartsSection::isVisible)
+                        ? fileChartsSectionHeader.getPreferredSize().height + 4 : 0)
+                + (onEdt(openSearchChartsSection::isVisible)
+                        ? openSearchChartsSectionHeader.getPreferredSize().height + 4 : 0);
         int expectedChartsHeight = (onEdt(fileChartsSection::isVisible) ? chartHeight * 2 : 0)
                 + (onEdt(openSearchChartsSection::isVisible) ? chartHeight * 2 : 0)
-                + (onEdt(sharedLegendPanel::isVisible) ? sharedLegendPanel.getPreferredSize().height + 4 : 0);
+                + (onEdt(sharedLegendPanel::isVisible) ? sharedLegendPanel.getPreferredSize().height + 4 : 0)
+                + (onEdt(memoryChartSectionPanel::isVisible) ? memoryHeight + memoryLegendBudget + 12 : 0)
+                + sectionHeadersBudget;
         int requiredMinHeight = expectedChartsHeight
                 + lowerPanel.getPreferredSize().height
                 + padding;
@@ -799,12 +1127,12 @@ class StatsPanelTest {
     @Test
     void fileTablesAndCharts_updateFromFileExportStats() throws Exception {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel fileSourceModel = get(panel, "fileTrafficBySourceModel");
         DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
         Map<String, TimeSeries> fileDocsSeriesByIndex = get(panel, "fileDocsSeriesByIndex");
+        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
 
         onEdt(() -> call(panel, "refreshDashboard"));
-        long proxyBefore = sourceTableLong(fileSourceModel, "Proxy", 1);
+        long proxyBefore = sourceTableLong(fileIndexModel, indent + "Proxy", 1);
         long trafficBefore = sourceTableLong(fileIndexModel, "Traffic", 1);
 
         FileExportStats.recordSuccess("traffic", 5);
@@ -813,7 +1141,7 @@ class StatsPanelTest {
         Thread.sleep(20L);
         onEdt(() -> call(panel, "refreshVisibleStats"));
 
-        assertThat(sourceTableLong(fileSourceModel, "Proxy", 1) - proxyBefore).isEqualTo(5);
+        assertThat(sourceTableLong(fileIndexModel, indent + "Proxy", 1) - proxyBefore).isEqualTo(5);
         assertThat(sourceTableLong(fileIndexModel, "Traffic", 1) - trafficBefore).isEqualTo(5);
         assertThat(onEdt(() -> {
             TimeSeries traffic = fileDocsSeriesByIndex.get("traffic");
@@ -831,20 +1159,12 @@ class StatsPanelTest {
     }
 
     @Test
-    void sourceAndIndexTables_sortNumericColumnsNumerically() {
+    void mergedIndexTable_sortsNumericColumnsNumerically() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JTable sourceTable = get(panel, "trafficBySourceTable");
         JTable indexTable = get(panel, "byIndexTable");
-        DefaultTableModel sourceModel = get(panel, "trafficBySourceModel");
         DefaultTableModel indexModel = get(panel, "byIndexModel");
 
         onEdt(() -> {
-            sourceModel.setRowCount(0);
-            sourceModel.addRow(new Object[] { "Proxy", "58", "-", "-", "0", "-", "-" });
-            sourceModel.addRow(new Object[] { "Total", "4616", "-", "-", "0", "-", "-" });
-            sourceModel.addRow(new Object[] { "Scanner", "1316", "-", "-", "0", "-", "-" });
-            sourceTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.DESCENDING)));
-
             indexModel.setRowCount(0);
             indexModel.addRow(new Object[] { "Traffic", 3242L, 0, 0L, 0L, 0L, "154083", "-" });
             indexModel.addRow(new Object[] { "Sitemap", 423L, 0, 0L, 0L, 0L, "-", "-" });
@@ -852,15 +1172,9 @@ class StatsPanelTest {
             indexTable.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(1, SortOrder.DESCENDING)));
         });
 
-        List<String> sourceOrder = onEdt(() -> {
-            List<String> rows = new ArrayList<>();
-            for (int i = 0; i < sourceTable.getRowCount(); i++) {
-                rows.add(String.valueOf(sourceTable.getValueAt(i, 0)));
-            }
-            return rows;
-        });
-        assertThat(sourceOrder).containsExactly("Total", "Scanner", "Proxy");
-
+        // Numeric column 1 ("Docs Exported") sorts by long value, not lexicographically: with
+        // descending sort the row with 3242 sits above 505 even though its first digit is "3"
+        // and a string sort would place "5..." above "3...".
         List<String> indexOrder = onEdt(() -> {
             List<String> rows = new ArrayList<>();
             for (int i = 0; i < indexTable.getRowCount(); i++) {

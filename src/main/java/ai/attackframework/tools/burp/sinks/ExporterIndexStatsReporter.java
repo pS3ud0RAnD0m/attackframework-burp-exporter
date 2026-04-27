@@ -156,6 +156,9 @@ public final class ExporterIndexStatsReporter {
 
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("heap_used_bytes", heapUsed);
+        if (sys.heapCommittedBytes() >= 0) {
+            message.put("heap_committed_bytes", sys.heapCommittedBytes());
+        }
         message.put("heap_max_bytes", heapMax);
         if (nonHeapUsed >= 0) {
             message.put("non_heap_used_bytes", nonHeapUsed);

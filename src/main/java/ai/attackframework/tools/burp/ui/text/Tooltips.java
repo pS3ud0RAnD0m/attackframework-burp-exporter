@@ -15,6 +15,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
@@ -60,6 +61,29 @@ public final class Tooltips {
 
         public HtmlLabel(String text, int horizontalAlignment) {
             super(text, horizontalAlignment);
+            putClientProperty(HTML_DISABLE, Boolean.FALSE);
+        }
+
+        @Override
+        public JToolTip createToolTip() {
+            return createHtmlToolTip(this);
+        }
+    }
+
+    /**
+     * {@link JPanel} variant whose {@link JToolTip} is configured to render HTML so callers can
+     * pass tooltips produced by {@link #htmlRaw(String...)} / {@link #html(String...)}. Plain
+     * {@code JPanel} produces a default {@code JToolTip} without the {@code html.disable=FALSE}
+     * client property, which causes Swing to render HTML markup as literal text.
+     */
+    public static final class HtmlPanel extends JPanel {
+        public HtmlPanel() {
+            super();
+            putClientProperty(HTML_DISABLE, Boolean.FALSE);
+        }
+
+        public HtmlPanel(java.awt.LayoutManager layout) {
+            super(layout);
             putClientProperty(HTML_DISABLE, Boolean.FALSE);
         }
 

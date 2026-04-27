@@ -14,6 +14,10 @@ import java.awt.GridLayout;
 import java.awt.Paint;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
@@ -27,8 +31,8 @@ import java.util.Locale;
 import java.util.Map;
 
 import javax.swing.BorderFactory;
-import javax.swing.JButton;
 import javax.swing.Icon;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -58,13 +62,9 @@ import org.jfree.data.RangeType;
 import org.jfree.data.time.Millisecond;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
-import java.awt.geom.Ellipse2D;
-import java.awt.geom.Line2D;
-import java.awt.geom.Path2D;
-import java.awt.geom.Rectangle2D;
 
-import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.sinks.TrafficRouteBucket;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -101,6 +101,19 @@ public class StatsPanel extends JPanel {
     private static final int CHART_MAX_POINTS = (int) (CHART_WINDOW_MAX_MS / REFRESH_INTERVAL_MS) + 5;
     private static final int CHART_PANEL_HEIGHT = 360;
     /**
+     * Vertical pixels reserved for the standalone memory time-series chart that lives at the
+     * bottom of the chart stack. Sized roughly the same as the per-sink Docs/sec or KiB/sec
+     * panes so the three chart rows render at a consistent visual rhythm.
+     */
+    private static final int MEMORY_CHART_PANEL_HEIGHT = CHART_PANEL_HEIGHT / 2;
+    /**
+     * Visual indent applied to traffic-source sub-rows nested under the {@code Traffic} index
+     * row in the merged sink-counts tables. The leading whitespace is the entire mechanism that
+     * marks a row as a sub-row, so {@link CardCopySupport#tableToTsv} preserves the indent in
+     * clipboard output as well.
+     */
+    private static final String SUBROW_INDENT = "    ";
+    /**
      * Vertical pixels reserved per table card for the Copy button row that
      * {@link CardCopySupport#attachCopyButton} stacks above the column header. Empirically the
      * compact Copy button (plain-weight body font, height-4 of preferred) renders at roughly
@@ -123,6 +136,14 @@ public class StatsPanel extends JPanel {
     private static final int LEGEND_ICON_HEIGHT = 14;
     private static final DecimalFormat DECIMAL_ONE =
             new DecimalFormat("0.0", DecimalFormatSymbols.getInstance(Locale.ROOT));
+    /**
+     * Maps memory-chart series indexes (0 = Heap Used, 1 = Heap Committed) to the throughput
+     * chart's {@link #SERIES_STYLES} slots, so the memory chart picks up the same theme-aware
+     * green and yellow that the per-sink charts use for their {@code Traffic} and
+     * {@code Sitemap} series respectively.
+     */
+    private static final int[] MEMORY_SERIES_TO_STYLE = { 0, 3 };
+
     private static final SeriesStyle[] SERIES_STYLES = new SeriesStyle[] {
             new SeriesStyle(
                     "Traffic",
@@ -233,6 +254,48 @@ public class StatsPanel extends JPanel {
         }
     }
 
+    /**
+     * Legend icon for the memory chart. Mirrors {@link LegendSampleIcon}'s styling rhythm
+     * (theme-aware paint, chart-style-aware stroke) but always renders a plain solid line:
+     * the memory chart never shows shape markers and never inherits the dashed stroke
+     * patterns from {@link SeriesStyle}, so the legend icon must not either.
+     */
+    private final class MemoryLegendIcon implements Icon {
+
+        private final int memorySeriesIndex;
+
+        private MemoryLegendIcon(int memorySeriesIndex) {
+            this.memorySeriesIndex = memorySeriesIndex;
+        }
+
+        @Override
+        public void paintIcon(java.awt.Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int centerY = y + (LEGEND_ICON_HEIGHT / 2);
+                int startX = x + 1;
+                int endX = x + LEGEND_ICON_WIDTH - 2;
+                int seriesStyleIndex = MEMORY_SERIES_TO_STYLE[memorySeriesIndex];
+                g2.setPaint(legendPaint(seriesStyleIndex, y, y + LEGEND_ICON_HEIGHT));
+                g2.setStroke(memoryLineStroke());
+                g2.draw(new Line2D.Float(startX, centerY, endX, centerY));
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public int getIconWidth() {
+            return LEGEND_ICON_WIDTH;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return LEGEND_ICON_HEIGHT;
+        }
+    }
+
     private final Timer refreshTimer;
     /** Idle-cadence tick counter for {@link #refreshVisibleStats}; reset whenever export runs. */
     private long idleRefreshSkipCounter;
@@ -240,19 +303,28 @@ public class StatsPanel extends JPanel {
     private final TimeSeriesCollection kibPerSecondDataset;
     private final TimeSeriesCollection fileDocsPerSecondDataset;
     private final TimeSeriesCollection fileKibPerSecondDataset;
+    private final TimeSeriesCollection memoryDataset;
+    private final TimeSeries heapUsedSeries;
+    private final TimeSeries heapCommittedSeries;
     private final JFreeChart docsChart;
     private final JFreeChart kibChart;
     private final JFreeChart fileDocsChart;
     private final JFreeChart fileKibChart;
+    private final JFreeChart memoryChart;
     private final JPanel chartsPanel;
     private final JPanel chartSectionsPanel;
     private final JPanel fileChartsSectionPanel;
     private final JPanel openSearchChartsSectionPanel;
+    private final JLabel fileChartsSectionHeader;
+    private final JLabel openSearchChartsSectionHeader;
+    private final JPanel memoryChartSectionPanel;
     private final JPanel openSearchDocsChartPanel;
     private final JPanel openSearchKibChartPanel;
     private final JPanel fileDocsChartPanel;
     private final JPanel fileKibChartPanel;
+    private final JPanel memoryChartPanel;
     private final JPanel sharedLegendPanel;
+    private final JPanel memoryLegendPanel;
     private final JButton chartStyleButton;
     private final JLabel exportRunningValue;
     private final JLabel currentBatchSizeValue;
@@ -275,7 +347,10 @@ public class StatsPanel extends JPanel {
     private final JLabel fileTotalFailuresValue;
     private final JLabel uptimeValue;
     private final JLabel heapUsedMaxValue;
+    private final JLabel heapCommittedValue;
     private final JLabel nonHeapUsedValue;
+    private final JLabel directBufferUsedValue;
+    private final JLabel mappedBufferUsedValue;
     private final JLabel threadsLivePeakValue;
     private final JLabel gcCountTimeValue;
     private final JLabel processCpuLoadValue;
@@ -292,16 +367,14 @@ public class StatsPanel extends JPanel {
     private final JLabel retryQueueDepthValue;
     private final JLabel pendingOrphansValue;
     private final JLabel bulkInFlightValue;
-    private final DefaultTableModel trafficBySourceModel;
     private final DefaultTableModel byIndexModel;
-    private final DefaultTableModel fileTrafficBySourceModel;
     private final DefaultTableModel fileByIndexModel;
-    private final JTable trafficBySourceTable;
     private final JTable byIndexTable;
-    private final JTable fileTrafficBySourceTable;
     private final JTable fileByIndexTable;
-    private final JPanel tablesRow;
-    private final JPanel fileTablesRow;
+    private final JPanel openSearchSinkCard;
+    private final JPanel fileSinkCard;
+    private final JPanel openSearchSinkRow;
+    private final JPanel fileSinkRow;
     private final JPanel cardsRow;
     private final JPanel lowerPanel;
     private final JPanel miscStatsCard;
@@ -333,30 +406,34 @@ public class StatsPanel extends JPanel {
         kibPerSecondDataset = new TimeSeriesCollection();
         fileDocsPerSecondDataset = new TimeSeriesCollection();
         fileKibPerSecondDataset = new TimeSeriesCollection();
+        memoryDataset = new TimeSeriesCollection();
+        heapUsedSeries = new TimeSeries("Heap Used");
+        heapUsedSeries.setMaximumItemCount(CHART_MAX_POINTS);
+        heapCommittedSeries = new TimeSeries("Heap Committed");
+        heapCommittedSeries.setMaximumItemCount(CHART_MAX_POINTS);
+        memoryDataset.addSeries(heapUsedSeries);
+        memoryDataset.addSeries(heapCommittedSeries);
         docsChart = createRateChart(
-                "OpenSearch Export - Docs/sec",
                 "Docs per second",
                 docsPerSecondDataset,
                 false,
                 false);
         kibChart = createRateChart(
-                "OpenSearch Export - KiB/sec",
                 "KiB per second",
                 kibPerSecondDataset,
                 false,
                 true);
         fileDocsChart = createRateChart(
-                "File Export - Docs/sec",
                 "Docs per second",
                 fileDocsPerSecondDataset,
                 false,
                 false);
         fileKibChart = createRateChart(
-                "File Export - KiB/sec",
                 "KiB per second",
                 fileKibPerSecondDataset,
                 false,
                 true);
+        memoryChart = createMemoryChart(memoryDataset);
 
         chartsPanel = new JPanel(new BorderLayout(0, 4));
         chartSectionsPanel = new JPanel();
@@ -366,10 +443,21 @@ public class StatsPanel extends JPanel {
         fileKibChartPanel = createRateChartPanel(fileKibChart);
         openSearchDocsChartPanel = createRateChartPanel(docsChart);
         openSearchKibChartPanel = createRateChartPanel(kibChart);
-        fileChartsSectionPanel = buildChartSection(fileDocsChartPanel, fileKibChartPanel, 12);
-        openSearchChartsSectionPanel = buildChartSection(openSearchDocsChartPanel, openSearchKibChartPanel, 0);
+        memoryChartPanel = createRateChartPanel(memoryChart);
+        memoryLegendPanel = createMemoryLegendPanel();
+        String memoryChartTooltip = memoryChartTooltip();
+        Tooltips.apply(memoryLegendPanel, memoryChartTooltip);
+        fileChartsSectionHeader = buildChartSectionHeader("File Export");
+        openSearchChartsSectionHeader = buildChartSectionHeader("OpenSearch Export");
+        fileChartsSectionPanel = buildChartSection(
+                fileChartsSectionHeader, fileDocsChartPanel, fileKibChartPanel, 12);
+        openSearchChartsSectionPanel = buildChartSection(
+                openSearchChartsSectionHeader, openSearchDocsChartPanel, openSearchKibChartPanel, 12);
+        memoryChartSectionPanel = buildMemoryChartSection(memoryLegendPanel, memoryChartPanel);
+        Tooltips.apply(memoryChartSectionPanel, memoryChartTooltip);
         chartSectionsPanel.add(fileChartsSectionPanel);
         chartSectionsPanel.add(openSearchChartsSectionPanel);
+        chartSectionsPanel.add(memoryChartSectionPanel);
         chartsPanel.add(chartSectionsPanel, BorderLayout.CENTER);
         sharedLegendPanel = createSharedLegendPanel();
         chartStyleButton = createChartStyleButton();
@@ -392,7 +480,8 @@ public class StatsPanel extends JPanel {
                         "Queue Drops", "Pending Orphans", "Repeater Metadata Sources"
                 }),
                 new MetricSection("Process", new String[] {
-                        "Uptime", "Heap Used / Max", "Non-Heap Used",
+                        "Uptime", "Heap Used / Max", "Heap Committed",
+                        "Non-Heap Used", "Direct Buffer Used", "Mapped Buffer Used",
                         "Threads (Live / Peak)",
                         "GC (Count / Time)", "Process CPU Load", "Available Processors"
                 }),
@@ -437,7 +526,10 @@ public class StatsPanel extends JPanel {
         fileTotalFailuresValue = miscValues.get("File Total Failures");
         uptimeValue = miscValues.get("Uptime");
         heapUsedMaxValue = miscValues.get("Heap Used / Max");
+        heapCommittedValue = miscValues.get("Heap Committed");
         nonHeapUsedValue = miscValues.get("Non-Heap Used");
+        directBufferUsedValue = miscValues.get("Direct Buffer Used");
+        mappedBufferUsedValue = miscValues.get("Mapped Buffer Used");
         threadsLivePeakValue = miscValues.get("Threads (Live / Peak)");
         gcCountTimeValue = miscValues.get("GC (Count / Time)");
         processCpuLoadValue = miscValues.get("Process CPU Load");
@@ -455,40 +547,38 @@ public class StatsPanel extends JPanel {
         pendingOrphansValue = miscValues.get("Pending Orphans");
         bulkInFlightValue = miscValues.get("Bulk Requests In-Flight");
 
-        tablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
-        tablesRow.setOpaque(false);
-        fileTablesRow = new JPanel(new GridLayout(1, 2, 10, 0));
-        fileTablesRow.setOpaque(false);
-
-        trafficBySourceModel = new DefaultTableModel(
-                new String[] { "Source", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
-        trafficBySourceTable = createStatsTable(trafficBySourceModel);
-
+        // Merged sink-counts model: index rows on top, traffic-source sub-rows nested directly
+        // under the Traffic index row (visually distinguished by SUBROW_INDENT on column 0),
+        // followed by a trailing Total row that aggregates only the index rows. The OpenSearch
+        // table carries Queued / Retry Drops / Permanent Drops because the sink genuinely
+        // queues, retries, and permanently drops; sub-rows fill those columns with "-" because
+        // those counters live at the index level only. The File schema deliberately omits all
+        // three -- file writes are synchronous to disk with no queue, no retry path, and no
+        // permanent-drop concept, so those columns would always read 0 across every row and
+        // would only steal horizontal space from the Last Error column.
         byIndexModel = new DefaultTableModel(
                 new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Permanent Drops",
                         "Failures", "Last Push (ms)", "Last Error" }, 0);
         byIndexTable = createStatsTable(byIndexModel);
-        fileTrafficBySourceModel = new DefaultTableModel(
-                new String[] { "Source", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
-        fileTrafficBySourceTable = createStatsTable(fileTrafficBySourceModel);
         fileByIndexModel = new DefaultTableModel(
-                new String[] { "Index", "Docs Exported", "Queued", "Retry Drops", "Failures", "Last Push (ms)", "Last Error" }, 0);
+                new String[] { "Index", "Docs Exported", "Failures", "Last Push (ms)", "Last Error" }, 0);
         fileByIndexTable = createStatsTable(fileByIndexModel);
-        tablesRow.add(createTableCard("OpenSearch Index Counts", byIndexTable));
-        tablesRow.add(createTableCard("OpenSearch Traffic Counts", trafficBySourceTable));
-        fileTablesRow.add(createTableCard("File Index Counts", fileByIndexTable));
-        fileTablesRow.add(createTableCard("File Traffic Counts", fileTrafficBySourceTable));
-        installTableCopyButton(tablesRow.getComponent(0), "OpenSearch Index Counts", byIndexTable);
-        installTableCopyButton(tablesRow.getComponent(1), "OpenSearch Traffic Counts", trafficBySourceTable);
-        installTableCopyButton(fileTablesRow.getComponent(0), "File Index Counts", fileByIndexTable);
-        installTableCopyButton(fileTablesRow.getComponent(1), "File Traffic Counts", fileTrafficBySourceTable);
+
+        // One titled card per sink wrapped in a 1x1 GridLayout row so the card always fills the
+        // panel width (matches the cardsRow / Misc Stats pattern). The card's body is a single
+        // table because traffic-source rows are now nested directly under the Traffic index row,
+        // freeing horizontal room for long Last-Error strings.
+        fileSinkCard = createSinkCard("File Counts", "fileSinkCard", fileByIndexTable);
+        openSearchSinkCard = createSinkCard("OpenSearch Counts", "openSearchSinkCard", byIndexTable);
+        fileSinkRow = wrapSinkCardInFullWidthRow(fileSinkCard, "fileSinkRow");
+        openSearchSinkRow = wrapSinkCardInFullWidthRow(openSearchSinkCard, "openSearchSinkRow");
 
         lowerPanel = new JPanel();
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
         lowerPanel.setOpaque(false);
-        lowerPanel.add(fileTablesRow);
+        lowerPanel.add(fileSinkRow);
         lowerPanel.add(javax.swing.Box.createVerticalStrut(10));
-        lowerPanel.add(tablesRow);
+        lowerPanel.add(openSearchSinkRow);
         lowerPanel.add(javax.swing.Box.createVerticalStrut(10));
         lowerPanel.add(cardsRow);
         contentPanel.add(lowerPanel, BorderLayout.CENTER);
@@ -591,48 +681,32 @@ public class StatsPanel extends JPanel {
         bulkInFlightValue.setText(formatWhole(ExportStats.getBulkInFlight()));
         applySystemMetrics(SystemMetrics.snapshot());
 
-        rebuildTrafficBySourceTable();
         rebuildByIndexTable();
-        rebuildFileTrafficBySourceTable();
         rebuildFileByIndexTable();
-        updateTablePreferredHeight(trafficBySourceTable);
         updateTablePreferredHeight(byIndexTable);
-        updateTablePreferredHeight(fileTrafficBySourceTable);
         updateTablePreferredHeight(fileByIndexTable);
         updateSectionVisibility();
         updateDashboardSectionSizing();
         revalidate();
     }
 
-    private void rebuildTrafficBySourceTable() {
-        trafficBySourceModel.setRowCount(0);
-        long sourceTotalSuccess = 0;
-        long sourceTotalFailure = 0;
-        for (String sourceKey : ExportStats.getTrafficToolTypeKeys()) {
-            if ("UNKNOWN".equals(sourceKey)) {
-                continue;
-            }
-            long sourceSuccess = resolveSourceSuccess(sourceKey);
-            long sourceFailure = resolveSourceFailure(sourceKey);
-            sourceTotalSuccess += sourceSuccess;
-            sourceTotalFailure += sourceFailure;
-            trafficBySourceModel.addRow(new Object[] {
-                    formatKeyLabel(sourceKey),
-                    sourceSuccess,
-                    "-",
-                    "-",
-                    sourceFailure,
-                    "-",
-                    "-"
-            });
-        }
-        trafficBySourceModel.addRow(new Object[] { "Total", sourceTotalSuccess, "-", "-", sourceTotalFailure, "-", "-" });
-    }
-
+    /**
+     * Rebuilds the merged OpenSearch counts table.
+     *
+     * <p>Row order is: index rows in alphabetical order, the Traffic row, traffic-source
+     * sub-rows directly under it (indented via {@link #SUBROW_INDENT}), then a Total row that
+     * aggregates only the index rows. Sub-rows fill non-source columns with {@code "-"} since
+     * queue / retry / permanent-drop counters live at the index level only.</p>
+     */
     private void rebuildByIndexTable() {
         byIndexModel.setRowCount(0);
         List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
         sortedKeys.sort(String::compareToIgnoreCase);
+        long totalSuccess = 0;
+        long totalQueued = 0;
+        long totalRetryDrops = 0;
+        long totalPermanentDrops = 0;
+        long totalFailure = 0;
         for (String indexKey : sortedKeys) {
             long success = ExportStats.getSuccessCount(indexKey);
             int queued = ExportStats.getQueueSize(indexKey);
@@ -642,74 +716,204 @@ public class StatsPanel extends JPanel {
             long lastPushMs = ExportStats.getLastPushDurationMs(indexKey);
             String lastPushStr = lastPushMs >= 0 ? String.valueOf(lastPushMs) : "-";
             String lastError = ExportStats.getLastError(indexKey);
-            String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
+            String errStr = lastError != null ? lastError : "-";
+            totalSuccess += success;
+            totalQueued += queued;
+            totalRetryDrops += retryDrops;
+            totalPermanentDrops += permanentDrops;
+            totalFailure += failure;
             byIndexModel.addRow(new Object[] {
                     formatKeyLabel(indexKey), success, queued, retryDrops, permanentDrops,
                     failure, lastPushStr, errStr
             });
+            if ("traffic".equalsIgnoreCase(indexKey)) {
+                appendOpenSearchTrafficSourceSubRows();
+            }
         }
+        byIndexModel.addRow(new Object[] {
+                "Total", totalSuccess, totalQueued, totalRetryDrops, totalPermanentDrops,
+                totalFailure, "-", "-"
+        });
     }
 
-    private void rebuildFileTrafficBySourceTable() {
-        fileTrafficBySourceModel.setRowCount(0);
-        long sourceTotalSuccess = 0;
-        long sourceTotalFailure = 0;
-        for (String sourceKey : FileExportStats.getTrafficToolTypeKeys()) {
+    /** Appends per-source sub-rows for OpenSearch traffic right after the Traffic index row. */
+    private void appendOpenSearchTrafficSourceSubRows() {
+        for (String sourceKey : ExportStats.getTrafficToolTypeKeys()) {
             if ("UNKNOWN".equals(sourceKey)) {
                 continue;
             }
-            long sourceSuccess = resolveFileSourceSuccess(sourceKey);
-            long sourceFailure = resolveFileSourceFailure(sourceKey);
-            sourceTotalSuccess += sourceSuccess;
-            sourceTotalFailure += sourceFailure;
-            fileTrafficBySourceModel.addRow(new Object[] {
-                    formatKeyLabel(sourceKey),
-                    sourceSuccess,
-                    0,
-                    0,
-                    sourceFailure,
-                    "-",
-                    "-"
+            long sourceSuccess = resolveSourceSuccess(sourceKey);
+            long sourceFailure = resolveSourceFailure(sourceKey);
+            byIndexModel.addRow(new Object[] {
+                    SUBROW_INDENT + formatKeyLabel(sourceKey),
+                    sourceSuccess, "-", "-", "-", sourceFailure, "-", "-"
             });
         }
-        fileTrafficBySourceModel.addRow(new Object[] { "Total", sourceTotalSuccess, 0, 0, sourceTotalFailure, "-", "-" });
     }
 
+    /**
+     * Rebuilds the merged File counts table; mirrors {@link #rebuildByIndexTable} but uses
+     * the trimmed 5-column file schema. Queue / retry-drop / permanent-drop columns are
+     * omitted entirely because file writes are synchronous and have no such concepts.
+     */
     private void rebuildFileByIndexTable() {
         fileByIndexModel.setRowCount(0);
         List<String> sortedKeys = new ArrayList<>(FileExportStats.getIndexKeys());
         sortedKeys.sort(String::compareToIgnoreCase);
+        long totalSuccess = 0;
+        long totalFailure = 0;
         for (String indexKey : sortedKeys) {
             long success = FileExportStats.getSuccessCount(indexKey);
             long failure = FileExportStats.getFailureCount(indexKey);
             long lastWriteMs = FileExportStats.getLastWriteDurationMs(indexKey);
             String lastWriteStr = lastWriteMs >= 0 ? String.valueOf(lastWriteMs) : "-";
             String lastError = FileExportStats.getLastError(indexKey);
-            String errStr = lastError != null ? truncateForColumn(lastError, ERROR_COL_MAX) : "-";
+            String errStr = lastError != null ? lastError : "-";
+            totalSuccess += success;
+            totalFailure += failure;
             fileByIndexModel.addRow(new Object[] {
-                    formatKeyLabel(indexKey), success, 0, 0, failure, lastWriteStr, errStr
+                    formatKeyLabel(indexKey), success, failure, lastWriteStr, errStr
+            });
+            if ("traffic".equalsIgnoreCase(indexKey)) {
+                appendFileTrafficSourceSubRows();
+            }
+        }
+        fileByIndexModel.addRow(new Object[] {
+                "Total", totalSuccess, totalFailure, "-", "-"
+        });
+    }
+
+    /** Appends per-source sub-rows for File traffic right after the Traffic index row. */
+    private void appendFileTrafficSourceSubRows() {
+        for (String sourceKey : FileExportStats.getTrafficToolTypeKeys()) {
+            if ("UNKNOWN".equals(sourceKey)) {
+                continue;
+            }
+            long sourceSuccess = resolveFileSourceSuccess(sourceKey);
+            long sourceFailure = resolveFileSourceFailure(sourceKey);
+            fileByIndexModel.addRow(new Object[] {
+                    SUBROW_INDENT + formatKeyLabel(sourceKey),
+                    sourceSuccess, sourceFailure, "-", "-"
             });
         }
     }
 
-    private static JPanel createTableCard(String title, JTable table) {
-        JPanel card = new JPanel(new BorderLayout(0, 6));
-        card.setBorder(BorderFactory.createTitledBorder(title));
-        card.add(table.getTableHeader(), BorderLayout.NORTH);
-        card.add(table, BorderLayout.CENTER);
+    /**
+     * Builds a single per-sink card: a titled outer panel containing one merged counts table.
+     *
+     * <p>The card uses {@link BorderLayout} with the table column header + body in the
+     * {@code CENTER} slot. {@link CardCopySupport#attachCopyButton} stacks a Copy header
+     * above the column header so a single click captures the full TSV including index rows
+     * and indented traffic-source sub-rows.</p>
+     */
+    private static JPanel createSinkCard(String cardTitle, String cardName, JTable table) {
+        JPanel card = new JPanel(new BorderLayout(0, 0));
+        card.setName(cardName);
+        card.setBorder(BorderFactory.createTitledBorder(cardTitle));
+        card.setOpaque(false);
+
+        JPanel tableContainer = new JPanel(new BorderLayout(0, 0));
+        tableContainer.setOpaque(false);
+        tableContainer.add(table.getTableHeader(), BorderLayout.NORTH);
+        tableContainer.add(table, BorderLayout.CENTER);
+        card.add(tableContainer, BorderLayout.CENTER);
+
+        CardCopySupport.attachCopyButton(card, cardTitle, () -> CardCopySupport.tableToTsv(table));
         return card;
     }
 
     /**
-     * Attaches a Copy button to a table card produced by {@link #createTableCard}. The existing
-     * table header row is preserved; the copy button is stacked above it and emits TSV that
-     * pastes directly into spreadsheets.
+     * Wraps a sink card in a {@code GridLayout(1, 1)} row so it always stretches to the full
+     * lower-panel width. Mirrors the {@link #cardsRow} pattern used by the Misc Stats card and
+     * eliminates the leading whitespace gap that would otherwise appear when {@link javax.swing.BoxLayout}
+     * sized the card to its narrower preferred width.
      */
-    private static void installTableCopyButton(Component cardComponent, String title, JTable table) {
-        if (!(cardComponent instanceof JPanel card)) {
-            return;
+    private static JPanel wrapSinkCardInFullWidthRow(JPanel sinkCard, String rowName) {
+        JPanel row = new JPanel(new GridLayout(1, 1, 10, 0));
+        row.setName(rowName);
+        row.setOpaque(false);
+        row.add(sinkCard);
+        return row;
+    }
+
+    /**
+     * Builds the standalone memory time-series chart that lives at the bottom of the chart
+     * stack. The Y axis renders in MiB (the dataset stores MiB directly so axis labels need
+     * no extra formatting). Series paints, strokes, and the renderer flavor (line vs. spline)
+     * are applied later by {@link #applyMemoryChartStyle(JFreeChart)} so the memory chart
+     * picks up the user's currently-selected chart style. The built-in JFreeChart legend is
+     * disabled here; a custom JPanel-based legend ({@link #memoryLegendPanel}) is rendered
+     * above the chart so the layout matches the per-sink charts' shared legend at the top.
+     */
+    private static JFreeChart createMemoryChart(TimeSeriesCollection dataset) {
+        Color chartBackground = chartBackgroundPaint();
+        Color plotBackground = plotBackgroundPaint();
+        Color gridForeground = gridPaint();
+        JFreeChart chart = ChartFactory.createTimeSeriesChart(
+                "JVM Heap (Burp + Extensions)", "Time", "MiB",
+                dataset, false, false, false);
+        chart.setBackgroundPaint(chartBackground);
+        chart.setPadding(RectangleInsets.ZERO_INSETS);
+        TextTitle titleNode = chart.getTitle();
+        titleNode.setPaint(TEXT_FG);
+        titleNode.setFont(CHART_TITLE_FONT);
+        titleNode.setVerticalAlignment(VerticalAlignment.BOTTOM);
+        titleNode.setMargin(RectangleInsets.ZERO_INSETS);
+        titleNode.setPadding(RectangleInsets.ZERO_INSETS);
+        XYPlot plot = chart.getXYPlot();
+        plot.setInsets(new RectangleInsets(1, 2, 2, 2));
+        plot.setBackgroundPaint(plotBackground);
+        plot.setDomainGridlinePaint(gridForeground);
+        plot.setRangeGridlinePaint(gridForeground);
+        plot.setDomainGridlinesVisible(true);
+        plot.setRangeGridlinesVisible(true);
+        ValueAxis domain = plot.getDomainAxis();
+        ValueAxis range = plot.getRangeAxis();
+        if (range instanceof NumberAxis numberAxis) {
+            numberAxis.setRangeType(RangeType.POSITIVE);
+            numberAxis.setAutoRangeIncludesZero(true);
+            numberAxis.setAutoRangeStickyZero(true);
+            numberAxis.setLowerMargin(0.0);
+            numberAxis.setUpperMargin(0.12);
+            numberAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            numberAxis.setLabelPaint(TEXT_FG);
+            numberAxis.setTickLabelPaint(TEXT_FG);
+            numberAxis.setLabelFont(CHART_AXIS_LABEL_FONT);
+            numberAxis.setTickLabelFont(CHART_TICK_FONT);
         }
-        CardCopySupport.attachCopyButton(card, title, () -> CardCopySupport.tableToTsv(table));
+        if (domain != null) {
+            domain.setLabelPaint(TEXT_FG);
+            domain.setTickLabelPaint(TEXT_FG);
+            domain.setLabelFont(CHART_AXIS_LABEL_FONT);
+            domain.setTickLabelFont(CHART_TICK_FONT);
+            domain.setTickLabelsVisible(true);
+            domain.setLabel(null);
+            if (domain instanceof DateAxis dateAxis) {
+                dateAxis.setDateFormatOverride(new SimpleDateFormat(DOMAIN_TIME_PATTERN));
+            }
+        }
+        return chart;
+    }
+
+    /**
+     * Wraps the memory chart panel in a section panel matching the per-sink chart sections so
+     * the Y_AXIS BoxLayout in {@link #chartSectionsPanel} renders three consistently spaced
+     * chart blocks. The legend panel is stacked at the top of the section (mirroring the
+     * shared legend that sits above the per-sink charts), and the chart panel is forced to
+     * {@link #MEMORY_CHART_PANEL_HEIGHT} so the memory section is roughly half the height of
+     * a per-sink section (which renders two stacked sub-charts).
+     */
+    private static JPanel buildMemoryChartSection(JPanel memoryLegendPanel, JPanel memoryChartPanel) {
+        memoryChartPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, MEMORY_CHART_PANEL_HEIGHT));
+        memoryChartPanel.setMinimumSize(new Dimension(800, MEMORY_CHART_PANEL_HEIGHT));
+        memoryChartPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, MEMORY_CHART_PANEL_HEIGHT));
+        JPanel section = new Tooltips.HtmlPanel();
+        section.setLayout(new javax.swing.BoxLayout(section, javax.swing.BoxLayout.Y_AXIS));
+        section.setOpaque(false);
+        section.setBorder(BorderFactory.createEmptyBorder(0, 0, 12, 0));
+        section.add(memoryLegendPanel);
+        section.add(memoryChartPanel);
+        return section;
     }
 
     /**
@@ -952,29 +1156,44 @@ public class StatsPanel extends JPanel {
     }
 
     private void updateDashboardSectionSizing() {
-        // Reserve vertical space for the Copy button row that CardCopySupport stacks above each
-        // table card's column header. Without this, the table's preferred height plus its header
-        // exceeds the card's CENTER slot and the final "Total" row gets clipped at the bottom.
+        // Each per-sink card now hosts a single merged counts table, so the height budget is
+        // the outer titled-border padding + the Copy-header allowance + the table column
+        // header + the table body's preferred height. {@link #updateTablePreferredHeight}
+        // keeps the body height in sync with the row count.
         int copyHeaderHeight = COPY_HEADER_RESERVED_HEIGHT;
-        int leftTableHeight = trafficBySourceTable.getPreferredSize().height
-                + trafficBySourceTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
-        int rightTableHeight = byIndexTable.getPreferredSize().height
-                + byIndexTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
-        int tablesHeight = Math.max(leftTableHeight, rightTableHeight);
-        int fileLeftTableHeight = fileTrafficBySourceTable.getPreferredSize().height
-                + fileTrafficBySourceTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
-        int fileRightTableHeight = fileByIndexTable.getPreferredSize().height
-                + fileByIndexTable.getTableHeader().getPreferredSize().height + 28 + copyHeaderHeight;
-        int fileTablesHeight = Math.max(fileLeftTableHeight, fileRightTableHeight);
-        tablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, tablesHeight));
-        tablesRow.setMinimumSize(new Dimension(800, tablesHeight));
-        fileTablesRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, fileTablesHeight));
-        fileTablesRow.setMinimumSize(new Dimension(800, fileTablesHeight));
+        int sinkOuterPadding = 28;
+
+        int openSearchHeight = sinkOuterPadding
+                + sinkCardBodyHeight(byIndexTable, copyHeaderHeight);
+        int fileHeight = sinkOuterPadding
+                + sinkCardBodyHeight(fileByIndexTable, copyHeaderHeight);
+
+        openSearchSinkCard.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, openSearchHeight));
+        openSearchSinkCard.setMinimumSize(new Dimension(800, openSearchHeight));
+        openSearchSinkCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, openSearchHeight));
+        fileSinkCard.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, fileHeight));
+        fileSinkCard.setMinimumSize(new Dimension(800, fileHeight));
+        fileSinkCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, fileHeight));
+        // The 1x1 GridLayout row eats the full lower-panel width and forces its child card
+        // to do the same. Setting matching preferred / max sizes on the row keeps the parent
+        // BoxLayout from collapsing the row to its minimum height.
+        openSearchSinkRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, openSearchHeight));
+        openSearchSinkRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, openSearchHeight));
+        fileSinkRow.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, fileHeight));
+        fileSinkRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, fileHeight));
 
         int visibleChartCount = visibleChartPanelCount();
         int visibleLegendHeight = sharedLegendPanel.isVisible() ? sharedLegendPanel.getPreferredSize().height + 4 : 0;
+        int memoryLegendHeight = memoryLegendPanel.isVisible() ? memoryLegendPanel.getPreferredSize().height + 4 : 0;
+        int memoryChartHeight = memoryChartSectionPanel.isVisible()
+                ? MEMORY_CHART_PANEL_HEIGHT + memoryLegendHeight + 12
+                : 0;
+        int sectionHeadersHeight = chartSectionHeadersHeight();
         int chartsHeight = chartsPanel.isVisible()
-                ? Math.max(0, visibleChartCount * (CHART_PANEL_HEIGHT / 2)) + visibleLegendHeight
+                ? Math.max(0, visibleChartCount * (CHART_PANEL_HEIGHT / 2))
+                        + visibleLegendHeight
+                        + sectionHeadersHeight
+                        + memoryChartHeight
                 : 0;
         chartsPanel.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, chartsHeight));
 
@@ -998,6 +1217,19 @@ public class StatsPanel extends JPanel {
     }
 
     /**
+     * Returns the vertical pixels needed by one merged sink card body: Copy-header allowance
+     * + JTable's column-header row + the JTable's preferred body height.
+     * {@link #updateTablePreferredHeight} keeps the table's preferred size aligned with row
+     * count, so this stays accurate across rebuilds (sub-rows added under the Traffic index
+     * row are counted just like any other row).
+     */
+    private static int sinkCardBodyHeight(JTable table, int copyHeaderHeight) {
+        int header = table.getTableHeader() != null ? table.getTableHeader().getPreferredSize().height : 24;
+        int body = Math.max(table.getRowHeight(), table.getPreferredSize().height);
+        return copyHeaderHeight + header + body + 6;
+    }
+
+    /**
      * Shows only the sink-specific chart and table sections enabled by the current runtime config.
      *
      * <p>Files sections appear above OpenSearch sections. One sink is always expected to remain
@@ -1009,14 +1241,18 @@ public class StatsPanel extends JPanel {
         moveLegendToFirstVisibleSection(fileVisible, openSearchVisible);
 
         fileChartsSectionPanel.setVisible(fileVisible);
-        fileTablesRow.setVisible(fileVisible);
+        fileSinkRow.setVisible(fileVisible);
 
         openSearchChartsSectionPanel.setVisible(openSearchVisible);
-        tablesRow.setVisible(openSearchVisible);
+        openSearchSinkRow.setVisible(openSearchVisible);
         updateMiscStatsSectionVisibility(fileVisible, openSearchVisible);
 
         updateChartDomainLabels(fileVisible, openSearchVisible);
-        chartsPanel.setVisible(fileVisible || openSearchVisible);
+        // The chart container always stays visible because the memory chart at the bottom of
+        // the chart stack reflects JVM-wide heap usage and is unrelated to which sink (if any)
+        // is currently selected. The shared legend is per-sink, so it follows the per-sink
+        // chart visibility.
+        chartsPanel.setVisible(true);
         sharedLegendPanel.setVisible(fileVisible || openSearchVisible);
     }
 
@@ -1107,15 +1343,56 @@ public class StatsPanel extends JPanel {
         return count;
     }
 
-    private static JPanel buildChartSection(JPanel topChartPanel, JPanel bottomChartPanel, int bottomGap) {
+    /**
+     * Vertical pixels reserved for the per-pair "File Export" / "OpenSearch Export" section
+     * headers. Each visible chart-pair contributes its header's preferred height plus the 4px
+     * bottom border on the header so the histogram below it does not visually crash into the
+     * caption.
+     */
+    private int chartSectionHeadersHeight() {
+        int height = 0;
+        if (fileChartsSectionPanel.isVisible()) {
+            height += fileChartsSectionHeader.getPreferredSize().height + 4;
+        }
+        if (openSearchChartsSectionPanel.isVisible()) {
+            height += openSearchChartsSectionHeader.getPreferredSize().height + 4;
+        }
+        return height;
+    }
+
+    /**
+     * Builds a per-sink chart section containing one shared section header plus a vertical
+     * stack of two chart panels. The header sits at the top of the section so each pair of
+     * histograms shares a single "File Export" / "OpenSearch Export" caption, replacing the
+     * legacy per-chart titles that used to repeat the sink name in every header. When the
+     * shared legend lives in this section, {@link #moveLegendToFirstVisibleSection} inserts
+     * it above the header at index 0; the resulting stack is [legend, header, top chart,
+     * strut, bottom chart].
+     */
+    private static JPanel buildChartSection(JLabel header, JPanel topChartPanel, JPanel bottomChartPanel, int bottomGap) {
         JPanel section = new JPanel();
         section.setLayout(new javax.swing.BoxLayout(section, javax.swing.BoxLayout.Y_AXIS));
         section.setOpaque(false);
         section.setBorder(BorderFactory.createEmptyBorder(0, 0, bottomGap, 0));
+        section.add(header);
         section.add(topChartPanel);
         section.add(javax.swing.Box.createVerticalStrut(12));
         section.add(bottomChartPanel);
         return section;
+    }
+
+    /**
+     * Builds a centered, theme-aware label that captions a per-sink chart pair. Mirrors the
+     * memory chart's "Memory - Heap Used / Committed (MiB)" caption styling so all three
+     * chart blocks share a consistent visual rhythm.
+     */
+    private static JLabel buildChartSectionHeader(String text) {
+        JLabel label = new JLabel(text, SwingConstants.CENTER);
+        label.setForeground(TEXT_FG);
+        label.setFont(CHART_TITLE_FONT);
+        label.setAlignmentX(Component.CENTER_ALIGNMENT);
+        label.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+        return label;
     }
 
     private static String formatWhole(long value) {
@@ -1152,13 +1429,24 @@ public class StatsPanel extends JPanel {
      * Applies the latest {@link SystemMetrics.Snapshot} to the Misc Stats "Process" rows.
      *
      * <p>Unavailable fields fall back to {@code "n/a"}. Uptime is formatted as a human-readable
-     * {@code Dd Hh Mm Ss} string so long-running sessions stay scannable in the compact card.</p>
+     * {@code Dd Hh Mm Ss} string so long-running sessions stay scannable in the compact card.
+     * Heap rows include a percent of {@code heapMax} so operators can spot saturation at a
+     * glance without doing the division themselves.</p>
      */
     private void applySystemMetrics(SystemMetrics.Snapshot snapshot) {
         uptimeValue.setText(snapshot.uptimeMs() >= 0 ? formatUptime(snapshot.uptimeMs()) : "n/a");
-        heapUsedMaxValue.setText(formatBytesPair(snapshot.heapUsedBytes(), snapshot.heapMaxBytes()));
+        heapUsedMaxValue.setText(formatBytesPairWithPercent(
+                snapshot.heapUsedBytes(), snapshot.heapMaxBytes()));
+        heapCommittedValue.setText(formatBytesWithPercentOf(
+                snapshot.heapCommittedBytes(), snapshot.heapMaxBytes()));
         nonHeapUsedValue.setText(snapshot.nonHeapUsedBytes() >= 0
                 ? formatHumanReadableBytes(snapshot.nonHeapUsedBytes())
+                : "n/a");
+        directBufferUsedValue.setText(snapshot.directBufferUsedBytes() >= 0
+                ? formatHumanReadableBytes(snapshot.directBufferUsedBytes())
+                : "n/a");
+        mappedBufferUsedValue.setText(snapshot.mappedBufferUsedBytes() >= 0
+                ? formatHumanReadableBytes(snapshot.mappedBufferUsedBytes())
                 : "n/a");
         threadsLivePeakValue.setText(formatIntPair(snapshot.threadCount(), snapshot.peakThreadCount()));
         gcCountTimeValue.setText(snapshot.gcCollectionCount() >= 0 && snapshot.gcCollectionTimeMs() >= 0
@@ -1177,6 +1465,43 @@ public class StatsPanel extends JPanel {
         String usedText = used >= 0 ? formatHumanReadableBytes(used) : "n/a";
         String maxText = max > 0 ? formatHumanReadableBytes(max) : "n/a";
         return usedText + " / " + maxText;
+    }
+
+    /**
+     * Formats {@code used / max} as bytes plus a percent suffix when both values are
+     * positive (e.g. {@code "5.2 GB / 10.0 GB (52%)"}). Falls back to plain bytes if the
+     * percent cannot be computed.
+     */
+    private static String formatBytesPairWithPercent(long used, long max) {
+        String paired = formatBytesPair(used, max);
+        if (used < 0 || max <= 0) {
+            return paired;
+        }
+        return paired + " (" + formatPercentOfMax(used, max) + ")";
+    }
+
+    /**
+     * Formats a single byte value annotated with its percent of {@code max}. Used for rows
+     * that share an implicit denominator already shown elsewhere on the card (Heap Committed
+     * lives next to Heap Used / Max, so repeating the cap as bytes would be redundant).
+     */
+    private static String formatBytesWithPercentOf(long value, long max) {
+        if (value < 0) {
+            return "n/a";
+        }
+        if (max <= 0) {
+            return formatHumanReadableBytes(value);
+        }
+        return formatHumanReadableBytes(value) + " (" + formatPercentOfMax(value, max) + ")";
+    }
+
+    /**
+     * Formats {@code numerator / denominator} as a one-decimal-place percent, e.g.
+     * {@code "52.3%"}. Caller guarantees {@code denominator > 0}.
+     */
+    private static String formatPercentOfMax(long numerator, long denominator) {
+        double pct = (numerator * 100.0) / denominator;
+        return DECIMAL_ONE.format(pct) + "%";
     }
 
     private static String formatIntPair(int live, int peak) {
@@ -1226,7 +1551,7 @@ public class StatsPanel extends JPanel {
     }
 
     private static void updateTablePreferredHeight(JTable table) {
-        updatePrimaryLabelColumnWidth(table);
+        updateAllColumnWidths(table);
         int rows = Math.max(1, table.getRowCount());
         int headerHeight = table.getTableHeader() != null ? table.getTableHeader().getPreferredSize().height : 24;
         int totalHeight = headerHeight + (rows * table.getRowHeight()) + 6;
@@ -1236,22 +1561,39 @@ public class StatsPanel extends JPanel {
     }
 
     /**
-     * Packs the first label column to the widest visible label so entries such as
-     * {@code Repeater History} are not clipped in fixed-width tables.
+     * Sizes every column to fit its widest visible cell or header text. Column 0 (the label
+     * column) gets a comfortable minimum so source/index names like {@code Repeater History}
+     * always fit, and every column has a generous max cap so a single long {@code Last Error}
+     * cannot blow the table beyond what the panel can render. When a cell still overflows the
+     * cap the default {@link DefaultTableCellRenderer} truncates the visible text with an
+     * ellipsis; the underlying model keeps the full string so {@link CardCopySupport#tableToTsv}
+     * still copies the complete error.
      */
-    private static void updatePrimaryLabelColumnWidth(JTable table) {
+    private static void updateAllColumnWidths(JTable table) {
         if (table == null || table.getColumnCount() == 0) {
             return;
         }
-        javax.swing.table.TableColumn column = table.getColumnModel().getColumn(0);
-        int preferredWidth = preferredColumnWidth(table, 0);
-        column.setPreferredWidth(preferredWidth);
-        column.setWidth(preferredWidth);
+        for (int columnIndex = 0; columnIndex < table.getColumnCount(); columnIndex++) {
+            int preferredWidth = preferredColumnWidth(table, columnIndex);
+            javax.swing.table.TableColumn column = table.getColumnModel().getColumn(columnIndex);
+            column.setPreferredWidth(preferredWidth);
+            column.setWidth(preferredWidth);
+        }
     }
 
     /**
-     * Measures the larger of the header text or any visible cell in the column, then adds a small
-     * padding buffer so packed labels do not render flush against the divider.
+     * Vertical pixel cap applied to any auto-fit column. Long error strings beyond this width
+     * fall back to ellipsis truncation in the cell, but the model still holds the full text so
+     * the per-table Copy button reproduces it verbatim.
+     */
+    private static final int COLUMN_MAX_AUTO_WIDTH = 800;
+
+    /**
+     * Measures the larger of the header text or any visible cell in the column, then adds a
+     * small padding buffer so packed labels do not render flush against the divider. Column 0
+     * uses a comfortable minimum suited for display labels; trailing columns get a smaller
+     * minimum since they hold short numeric values. Every column shares the same upper cap so
+     * outliers (one giant error string) cannot dominate the layout.
      */
     private static int preferredColumnWidth(JTable table, int columnIndex) {
         int widest = 0;
@@ -1275,7 +1617,8 @@ public class StatsPanel extends JPanel {
             Component cellComponent = table.prepareRenderer(renderer, rowIndex, columnIndex);
             widest = Math.max(widest, cellComponent.getPreferredSize().width);
         }
-        return Math.max(120, widest + 18);
+        int min = (columnIndex == 0) ? 120 : 60;
+        return Math.clamp(widest + 18, min, COLUMN_MAX_AUTO_WIDTH);
     }
 
     private static int compareNumericCell(Object left, Object right) {
@@ -1379,8 +1722,26 @@ public class StatsPanel extends JPanel {
             previousFileSuccessByIndex.put(indexKey, currentFileSuccess);
             previousFileBytesByIndex.put(indexKey, currentFileBytes);
         }
+        sampleMemorySeries(tick);
         previousSampleAtMs = now;
         updateChartWindow(now);
+    }
+
+    /**
+     * Appends one sample of {@code Heap Used} and {@code Heap Committed} (in MiB) to the
+     * memory time-series. Negative readings (rare; only happen if the snapshot is missing
+     * data) are skipped rather than charted as zeros so the line doesn't dip artificially.
+     */
+    private void sampleMemorySeries(Millisecond tick) {
+        SystemMetrics.Snapshot snapshot = SystemMetrics.snapshot();
+        long heapUsedBytes = snapshot.heapUsedBytes();
+        long heapCommittedBytes = snapshot.heapCommittedBytes();
+        if (heapUsedBytes >= 0) {
+            heapUsedSeries.addOrUpdate(tick, heapUsedBytes / (1024.0 * 1024.0));
+        }
+        if (heapCommittedBytes >= 0) {
+            heapCommittedSeries.addOrUpdate(tick, heapCommittedBytes / (1024.0 * 1024.0));
+        }
     }
 
     private void ensureSeries(String indexKey) {
@@ -1420,8 +1781,14 @@ public class StatsPanel extends JPanel {
         return Character.toUpperCase(indexKey.charAt(0)) + indexKey.substring(1);
     }
 
+    /**
+     * Builds a per-sink throughput time-series chart. The chart itself never carries a built-in
+     * title -- the merged "File Export" / "OpenSearch Export" section headers above each chart
+     * pair (see {@link #fileChartsSectionHeader} / {@link #openSearchChartsSectionHeader})
+     * provide the sink context, and the Y-axis label disambiguates Docs/sec vs KiB/sec on the
+     * left edge of each individual chart.
+     */
     private static JFreeChart createRateChart(
-            String title,
             String yLabel,
             TimeSeriesCollection dataset,
             boolean showLegend,
@@ -1429,16 +1796,9 @@ public class StatsPanel extends JPanel {
         Color chartBackground = chartBackgroundPaint();
         Color plotBackground = plotBackgroundPaint();
         Color gridForeground = gridPaint();
-        JFreeChart chart = ChartFactory.createTimeSeriesChart(title, "Time", yLabel, dataset, showLegend, false, false);
+        JFreeChart chart = ChartFactory.createTimeSeriesChart(null, "Time", yLabel, dataset, showLegend, false, false);
         chart.setBackgroundPaint(chartBackground);
         chart.setPadding(RectangleInsets.ZERO_INSETS);
-        TextTitle titleNode = chart.getTitle();
-        titleNode.setPaint(TEXT_FG);
-        titleNode.setFont(CHART_TITLE_FONT);
-        titleNode.setVerticalAlignment(VerticalAlignment.BOTTOM);
-        // Keep title visually attached to the chart area.
-        titleNode.setMargin(RectangleInsets.ZERO_INSETS);
-        titleNode.setPadding(RectangleInsets.ZERO_INSETS);
         XYPlot plot = chart.getXYPlot();
         plot.setInsets(new RectangleInsets(1, 2, 2, 2));
         plot.setBackgroundPaint(plotBackground);
@@ -1494,6 +1854,49 @@ public class StatsPanel extends JPanel {
         applyChartStyle(kibChart);
         applyChartStyle(fileDocsChart);
         applyChartStyle(fileKibChart);
+        applyMemoryChartStyle(memoryChart);
+    }
+
+    /**
+     * Applies the currently-selected chart style to the memory chart. Mirrors the
+     * paint/stroke/renderer logic of {@link #applyChartStyle(JFreeChart)} but operates on the
+     * memory chart's two series (mapped through {@link #MEMORY_SERIES_TO_STYLE} so they
+     * inherit the throughput chart's green/yellow palette) and never enables shape markers
+     * or dashed strokes -- the memory chart shows dense heap-sample lines where markers and
+     * dashes would just add visual noise.
+     */
+    private void applyMemoryChartStyle(JFreeChart chart) {
+        XYPlot plot = chart.getXYPlot();
+        XYLineAndShapeRenderer renderer = rendererForStyle(chart);
+        BasicStroke stroke = memoryLineStroke();
+        renderer.setDefaultStroke(stroke);
+        for (int i = 0; i < MEMORY_SERIES_TO_STYLE.length; i++) {
+            int styleIndex = MEMORY_SERIES_TO_STYLE[i];
+            renderer.setSeriesPaint(i, seriesLinePaint(styleIndex));
+            renderer.setSeriesStroke(i, stroke);
+            renderer.setSeriesShapesVisible(i, false);
+            renderer.setSeriesShapesFilled(i, false);
+        }
+        if (chartStyleIndex == 1) {
+            XYSplineRenderer slickRenderer = (XYSplineRenderer) renderer;
+            slickRenderer.setFillType(XYSplineRenderer.FillType.TO_LOWER_BOUND);
+            for (int i = 0; i < MEMORY_SERIES_TO_STYLE.length; i++) {
+                int styleIndex = MEMORY_SERIES_TO_STYLE[i];
+                slickRenderer.setSeriesFillPaint(i, seriesAreaPaint(styleIndex));
+            }
+        }
+        plot.setDataset(1, null);
+        plot.setRenderer(1, null);
+    }
+
+    /**
+     * Stroke used for both the memory chart lines and the matching legend-icon strokes. Held
+     * to a single thin {@link #CHART_LINE_STROKE_WIDTH} value so the memory chart stays
+     * visually quiet under all three chart styles (the throughput charts already match this
+     * width via {@link #seriesStroke(int)}).
+     */
+    private BasicStroke memoryLineStroke() {
+        return new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
     }
 
     private void applyChartStyle(JFreeChart chart) {
@@ -1559,6 +1962,45 @@ public class StatsPanel extends JPanel {
         return legendPanel;
     }
 
+    /**
+     * Creates the memory chart's standalone legend panel. Uses the same FlowLayout/insets as
+     * {@link #createSharedLegendPanel()} so the memory legend visually rhymes with the shared
+     * legend at the top of the per-sink charts. Items are populated by
+     * {@link #refreshMemoryLegendPanel()}.
+     */
+    private JPanel createMemoryLegendPanel() {
+        JPanel legendPanel = new Tooltips.HtmlPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        legendPanel.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 0));
+        legendPanel.setOpaque(false);
+        return legendPanel;
+    }
+
+    /**
+     * Tooltip explaining the JVM-wide scope of the memory chart, so users do not assume the
+     * series represent only the exporter extension's allocations.
+     */
+    private static String memoryChartTooltip() {
+        return Tooltips.htmlRaw(
+                "<b>JVM Heap (Burp + Extensions)</b>",
+                "Process-wide heap usage for the JVM that hosts Burp Suite. The exporter cannot",
+                "be isolated from Burp itself or from other loaded extensions, because Java does",
+                "not partition heap by classloader.",
+                "",
+                "Series:",
+                "&nbsp;&nbsp;<b>Heap Used</b> &mdash; live heap currently retained by all reachable objects.",
+                "&nbsp;&nbsp;<b>Heap Committed</b> &mdash; heap currently reserved by the JVM from the OS.",
+                "",
+                "Y axis: MiB (mebibytes).",
+                "",
+                "How to read it:",
+                "&nbsp;&nbsp;- A non-zero baseline when the exporter is stopped is normal; that memory",
+                "&nbsp;&nbsp;&nbsp;&nbsp;belongs to Burp and other extensions, not this exporter.",
+                "&nbsp;&nbsp;- Sustained <b>Heap Used</b> approaching <b>Heap Committed</b> indicates JVM",
+                "&nbsp;&nbsp;&nbsp;&nbsp;memory pressure during the run.",
+                "&nbsp;&nbsp;- Sawtooth dips reflect garbage collection cycles and are expected."
+        );
+    }
+
     private JButton createChartStyleButton() {
         JButton button = new Tooltips.HtmlButton(chartStyleButtonLabel());
         button.setFocusable(false);
@@ -1582,6 +2024,32 @@ public class StatsPanel extends JPanel {
         chartStyleButton.setText(chartStyleButtonLabel());
         sharedLegendPanel.revalidate();
         sharedLegendPanel.repaint();
+        refreshMemoryLegendPanel();
+    }
+
+    /**
+     * Rebuilds the memory chart's legend so the two heap series ({@code Heap Used} and
+     * {@code Heap Committed}) render with the same theme-aware paint (mapped through
+     * {@link #MEMORY_SERIES_TO_STYLE}) that the chart itself uses. Called from
+     * {@link #refreshSharedLegendPanel()} so style cycles always update both legends in
+     * lock-step.
+     */
+    private void refreshMemoryLegendPanel() {
+        memoryLegendPanel.removeAll();
+        String[] labels = new String[] { "Heap Used", "Heap Committed" };
+        String tooltip = memoryChartTooltip();
+        for (int i = 0; i < labels.length; i++) {
+            JLabel legendItem = new Tooltips.HtmlLabel(labels[i]);
+            legendItem.setIcon(new MemoryLegendIcon(i));
+            legendItem.setHorizontalAlignment(SwingConstants.LEFT);
+            legendItem.setForeground(TEXT_FG);
+            legendItem.setFont(CHART_LEGEND_FONT);
+            legendItem.setIconTextGap(6);
+            Tooltips.apply(legendItem, tooltip);
+            memoryLegendPanel.add(legendItem);
+        }
+        memoryLegendPanel.revalidate();
+        memoryLegendPanel.repaint();
     }
 
     private void cycleChartStyle() {
@@ -1654,9 +2122,12 @@ public class StatsPanel extends JPanel {
     }
 
     private BasicStroke seriesStroke(int index) {
+        // All three styles share a single thin stroke width matching the memory chart's
+        // lines; only the Accessible style adds dash patterns (carried by SeriesStyle) on
+        // top of that width to differentiate series for color-blind users.
         return switch (chartStyleIndex) {
-            case 0 -> new BasicStroke(2.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-            case 1 -> new BasicStroke(2.25f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 0 -> new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 1 -> new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
             case 2 -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
             default -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
         };
@@ -1754,6 +2225,7 @@ public class StatsPanel extends JPanel {
         updateDomainRange(kibChart, minMs, nowMs);
         updateDomainRange(fileDocsChart, minMs, nowMs);
         updateDomainRange(fileKibChart, minMs, nowMs);
+        updateDomainRange(memoryChart, minMs, nowMs);
         applyReasonableDefaultRange(docsChart, docsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
         applyReasonableDefaultRange(kibChart, kibPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
         applyReasonableDefaultRange(fileDocsChart, fileDocsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
@@ -1968,8 +2440,14 @@ public class StatsPanel extends JPanel {
         sb.append("  heap used / max bytes: ")
                 .append(sys.heapUsedBytes() >= 0 ? sys.heapUsedBytes() : -1).append(" / ")
                 .append(sys.heapMaxBytes() > 0 ? sys.heapMaxBytes() : -1).append("\n");
+        sb.append("  heap committed bytes: ")
+                .append(sys.heapCommittedBytes() >= 0 ? sys.heapCommittedBytes() : -1).append("\n");
         sb.append("  non-heap used bytes: ")
                 .append(sys.nonHeapUsedBytes() >= 0 ? sys.nonHeapUsedBytes() : -1).append("\n");
+        sb.append("  direct buffer used bytes: ")
+                .append(sys.directBufferUsedBytes() >= 0 ? sys.directBufferUsedBytes() : -1).append("\n");
+        sb.append("  mapped buffer used bytes: ")
+                .append(sys.mappedBufferUsedBytes() >= 0 ? sys.mappedBufferUsedBytes() : -1).append("\n");
         sb.append("  threads live / peak: ")
                 .append(sys.threadCount() >= 0 ? sys.threadCount() : -1).append(" / ")
                 .append(sys.peakThreadCount() >= 0 ? sys.peakThreadCount() : -1).append("\n");

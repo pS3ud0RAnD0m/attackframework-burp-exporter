@@ -29,9 +29,16 @@ public final class SystemMetrics {
      * platform does not expose the metric. {@link #processCpuLoad} returns {@link Double#NaN}
      * when the {@code com.sun.management} extension is not reachable (for example on non-HotSpot
      * JVMs or restricted security managers).</p>
+     *
+     * <p>{@code heapCommittedBytes} is the heap currently allocated from the OS
+     * ({@link Runtime#totalMemory()}). It bounds {@code heapUsedBytes} from above and
+     * tracks more closely with process RSS than {@code heapUsedBytes} alone -- HotSpot does not
+     * eagerly return committed heap to the OS after a peak, so committed often stays high after
+     * used drops, which is what makes Task Manager / RSS still look elevated post-Stop.</p>
      */
     public record Snapshot(
             long heapUsedBytes,
+            long heapCommittedBytes,
             long heapMaxBytes,
             long nonHeapUsedBytes,
             long nonHeapMaxBytes,
@@ -48,7 +55,8 @@ public final class SystemMetrics {
     /** Returns {@code true} when any JMX field above reported a usable value. */
     public static Snapshot snapshot() {
         Runtime rt = Runtime.getRuntime();
-        long heapUsed = Math.max(-1L, rt.totalMemory() - rt.freeMemory());
+        long heapCommitted = rt.totalMemory();
+        long heapUsed = Math.max(-1L, heapCommitted - rt.freeMemory());
         long heapMax = rt.maxMemory();
 
         long nonHeapUsed = -1L;
@@ -149,6 +157,7 @@ public final class SystemMetrics {
 
         return new Snapshot(
                 heapUsed,
+                heapCommitted,
                 heapMax,
                 nonHeapUsed,
                 nonHeapMax,
