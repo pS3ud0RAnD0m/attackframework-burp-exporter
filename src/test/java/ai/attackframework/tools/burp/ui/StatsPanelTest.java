@@ -6,7 +6,9 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics2D;
 import java.awt.Shape;
+import java.awt.image.BufferedImage;
 import java.lang.reflect.InvocationTargetException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -742,10 +744,12 @@ class StatsPanelTest {
         // Sitemap (yellow) palette through MEMORY_SERIES_TO_STYLE.
         assertThat(renderer.getSeriesPaint(0)).isEqualTo(call(panel, "seriesLinePaint", 0));
         assertThat(renderer.getSeriesPaint(1)).isEqualTo(call(panel, "seriesLinePaint", 3));
-        // Memory lines stay marker-free at every chart style; markers add visual noise to
-        // the dense heap samples.
-        assertThat(renderer.getSeriesShapesVisible(0)).isFalse();
-        assertThat(renderer.getSeriesShapesVisible(1)).isFalse();
+        // The default chart style (Simple) hides shape markers on every chart, including the
+        // memory chart; the Accessible-style coverage is verified separately.
+        assertThat(renderer.getSeriesShapesVisible(0))
+                .isEqualTo(call(panel, "seriesShapesVisible", 0));
+        assertThat(renderer.getSeriesShapesVisible(1))
+                .isEqualTo(call(panel, "seriesShapesVisible", 3));
     }
 
     @Test
@@ -775,12 +779,49 @@ class StatsPanelTest {
             assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
             XYLineAndShapeRenderer renderer =
                     (XYLineAndShapeRenderer) memoryChart.getXYPlot().getRenderer();
-            // The memory chart picks up the throughput palette but never the dashed strokes that
-            // SeriesStyle attaches in Accessible style.
+            // In Accessible style the memory chart inherits the same dashed strokes and shape
+            // markers that SeriesStyle attaches to the throughput chart, so heap-used and
+            // heap-committed remain distinguishable for color-blind users without color alone.
             BasicStroke stroke0 = (BasicStroke) renderer.getSeriesStroke(0);
             BasicStroke stroke1 = (BasicStroke) renderer.getSeriesStroke(1);
-            assertThat(stroke0.getDashArray()).isNull();
-            assertThat(stroke1.getDashArray()).isNull();
+            assertThat(stroke0.getDashArray()).isNotNull();
+            assertThat(stroke1.getDashArray()).isNotNull();
+            assertThat(renderer.getSeriesShapesVisible(0)).isTrue();
+            assertThat(renderer.getSeriesShapesVisible(1)).isTrue();
+            assertThat(renderer.getSeriesShape(0))
+                    .isEqualTo(call(panel, "seriesMarkerShape", 0));
+            assertThat(renderer.getSeriesShape(1))
+                    .isEqualTo(call(panel, "seriesMarkerShape", 3));
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void memoryLegendIcons_paintWithoutErrorAcrossEveryChartStyle() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JPanel memoryLegendPanel = get(panel, "memoryLegendPanel");
+            JButton styleButton = get(panel, "chartStyleButton");
+
+            // Cover Simple, Smooth, and Accessible. The Accessible pass is the regression
+            // guard: the icon must paint a shape marker plus dashed stroke without throwing
+            // even when no chart pixels have been laid out yet.
+            for (int i = 0; i < 3; i++) {
+                BufferedImage canvas = new BufferedImage(32, 16, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2 = canvas.createGraphics();
+                try {
+                    for (Component c : memoryLegendPanel.getComponents()) {
+                        if (c instanceof JLabel label && label.getIcon() != null) {
+                            label.getIcon().paintIcon(label, g2, 0, 0);
+                        }
+                    }
+                } finally {
+                    g2.dispose();
+                }
+                onEdt((Runnable) styleButton::doClick);
+            }
         } finally {
             RuntimeConfig.updateState(previous);
         }
@@ -1311,23 +1352,6 @@ class StatsPanelTest {
                     .getTableCellRendererComponent(table, table.getColumnName(0), false, false, -1, 0);
             return Math.max(120, Math.max(header.getPreferredSize().width, cell.getPreferredSize().width) + 18);
         });
-    }
-
-    private static <T extends Component> T findDescendant(Container root, Class<T> type) {
-        if (type.isInstance(root)) {
-            return type.cast(root);
-        }
-        for (Component component : root.getComponents()) {
-            if (component instanceof Container child) {
-                T found = findDescendant(child, type);
-                if (found != null) {
-                    return found;
-                }
-            } else if (type.isInstance(component)) {
-                return type.cast(component);
-            }
-        }
-        return null;
     }
 
     private static List<String> collectLabelTexts(Container root) {

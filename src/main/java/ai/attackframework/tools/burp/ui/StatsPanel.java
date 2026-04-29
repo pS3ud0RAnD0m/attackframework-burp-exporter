@@ -256,9 +256,11 @@ public class StatsPanel extends JPanel {
 
     /**
      * Legend icon for the memory chart. Mirrors {@link LegendSampleIcon}'s styling rhythm
-     * (theme-aware paint, chart-style-aware stroke) but always renders a plain solid line:
-     * the memory chart never shows shape markers and never inherits the dashed stroke
-     * patterns from {@link SeriesStyle}, so the legend icon must not either.
+     * (theme-aware paint, chart-style-aware stroke and marker) but reads its style from the
+     * throughput-chart slot that {@link #MEMORY_SERIES_TO_STYLE} points the memory series at.
+     * Picking up the same dash pattern and shape marker as the chart in Accessible style
+     * keeps the legend in lock-step with the rendered series, so heap-used and heap-committed
+     * remain distinguishable for color-blind users without relying on color alone.
      */
     private final class MemoryLegendIcon implements Icon {
 
@@ -278,8 +280,19 @@ public class StatsPanel extends JPanel {
                 int endX = x + LEGEND_ICON_WIDTH - 2;
                 int seriesStyleIndex = MEMORY_SERIES_TO_STYLE[memorySeriesIndex];
                 g2.setPaint(legendPaint(seriesStyleIndex, y, y + LEGEND_ICON_HEIGHT));
-                g2.setStroke(memoryLineStroke());
+                g2.setStroke(seriesStroke(seriesStyleIndex));
                 g2.draw(new Line2D.Float(startX, centerY, endX, centerY));
+
+                g2.translate(x + (LEGEND_ICON_WIDTH / 2.0), centerY);
+                g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                Shape marker = seriesMarkerShape(seriesStyleIndex);
+                if (seriesShapesVisible(seriesStyleIndex) && marker != null) {
+                    g2.setPaint(seriesSolidColor(seriesStyleIndex));
+                    if (seriesShapesFilled(seriesStyleIndex)) {
+                        g2.fill(marker);
+                    }
+                    g2.draw(marker);
+                }
             } finally {
                 g2.dispose();
             }
@@ -1860,22 +1873,22 @@ public class StatsPanel extends JPanel {
     /**
      * Applies the currently-selected chart style to the memory chart. Mirrors the
      * paint/stroke/renderer logic of {@link #applyChartStyle(JFreeChart)} but operates on the
-     * memory chart's two series (mapped through {@link #MEMORY_SERIES_TO_STYLE} so they
-     * inherit the throughput chart's green/yellow palette) and never enables shape markers
-     * or dashed strokes -- the memory chart shows dense heap-sample lines where markers and
-     * dashes would just add visual noise.
+     * memory chart's two series, mapped through {@link #MEMORY_SERIES_TO_STYLE} so they
+     * inherit the throughput chart's green/yellow palette and the same Accessible-style
+     * cues (dashed strokes plus shape markers) so heap-used and heap-committed remain
+     * distinguishable for color-blind users when the Accessible style is active.
      */
     private void applyMemoryChartStyle(JFreeChart chart) {
         XYPlot plot = chart.getXYPlot();
         XYLineAndShapeRenderer renderer = rendererForStyle(chart);
-        BasicStroke stroke = memoryLineStroke();
-        renderer.setDefaultStroke(stroke);
+        renderer.setDefaultStroke(memoryLineStroke());
         for (int i = 0; i < MEMORY_SERIES_TO_STYLE.length; i++) {
             int styleIndex = MEMORY_SERIES_TO_STYLE[i];
             renderer.setSeriesPaint(i, seriesLinePaint(styleIndex));
-            renderer.setSeriesStroke(i, stroke);
-            renderer.setSeriesShapesVisible(i, false);
-            renderer.setSeriesShapesFilled(i, false);
+            renderer.setSeriesStroke(i, seriesStroke(styleIndex));
+            renderer.setSeriesShape(i, seriesMarkerShape(styleIndex));
+            renderer.setSeriesShapesVisible(i, seriesShapesVisible(styleIndex));
+            renderer.setSeriesShapesFilled(i, seriesShapesFilled(styleIndex));
         }
         if (chartStyleIndex == 1) {
             XYSplineRenderer slickRenderer = (XYSplineRenderer) renderer;
@@ -1890,10 +1903,10 @@ public class StatsPanel extends JPanel {
     }
 
     /**
-     * Stroke used for both the memory chart lines and the matching legend-icon strokes. Held
-     * to a single thin {@link #CHART_LINE_STROKE_WIDTH} value so the memory chart stays
-     * visually quiet under all three chart styles (the throughput charts already match this
-     * width via {@link #seriesStroke(int)}).
+     * Default stroke applied to the memory chart's renderer as a fallback for series that
+     * have not yet had a per-series stroke installed by {@link #applyMemoryChartStyle}.
+     * Held to a single thin {@link #CHART_LINE_STROKE_WIDTH} so any transient un-styled
+     * series matches the throughput charts' line weight.
      */
     private BasicStroke memoryLineStroke() {
         return new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
@@ -2122,9 +2135,9 @@ public class StatsPanel extends JPanel {
     }
 
     private BasicStroke seriesStroke(int index) {
-        // All three styles share a single thin stroke width matching the memory chart's
-        // lines; only the Accessible style adds dash patterns (carried by SeriesStyle) on
-        // top of that width to differentiate series for color-blind users.
+        // All three styles share the same CHART_LINE_STROKE_WIDTH; only the Accessible style
+        // layers per-series dash patterns (carried by SeriesStyle) on top of that width so
+        // series remain distinguishable for color-blind users without relying on color.
         return switch (chartStyleIndex) {
             case 0 -> new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
             case 1 -> new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
