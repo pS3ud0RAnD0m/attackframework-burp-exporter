@@ -52,7 +52,7 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
         String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
                 "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox",
-                "trafficRepeaterHistoryCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
+                "trafficRepeaterTabsCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
 
         // Start with at least one Traffic option selected; section should be enabled
         SwingUtilities.invokeAndWait(() -> {

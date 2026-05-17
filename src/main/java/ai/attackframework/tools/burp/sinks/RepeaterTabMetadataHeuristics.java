@@ -20,7 +20,7 @@ import javax.swing.SwingUtilities;
  * Collects selected Repeater tab snapshots and infers tab/group metadata from them.
  *
  * <p>This helper isolates Burp-specific Repeater header heuristics from
- * {@link RepeaterHistoryIndexReporter} so startup-walk orchestration and editor capture do not also
+ * {@link RepeaterTabsIndexReporter} so startup-walk orchestration and editor capture do not also
  * need to carry the detailed label parsing rules. Caller must invoke Swing traversal methods on
  * the EDT because they inspect live tab selection state.</p>
  */

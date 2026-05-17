@@ -118,7 +118,7 @@ class JsonTypedRoundTripTest {
                 List.of("traffic"), "all", List.of(),
                 new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("proxy", "proxy_history", "repeater", "repeater_history"),
+                List.of("proxy", "proxy_history", "repeater", "repeater_tabs"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
@@ -126,7 +126,7 @@ class JsonTypedRoundTripTest {
         );
         String json = ConfigJsonMapper.build(state);
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
-        assertThat(parsed.trafficToolTypes()).containsExactlyInAnyOrder("proxy", "proxy_history", "repeater", "repeater_history");
+        assertThat(parsed.trafficToolTypes()).containsExactlyInAnyOrder("proxy", "proxy_history", "repeater", "repeater_tabs");
     }
 
     @Test
@@ -236,7 +236,7 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.dataSources()).contains("traffic", ConfigKeys.SRC_EXPORTER);
         assertThat(parsed.trafficToolTypes()).containsExactly(
                 "burp_ai", "extensions", "intruder", "proxy",
-                "proxy_history", "repeater", "repeater_history", "scanner", "sequencer");
+                "proxy_history", "repeater", "repeater_tabs", "scanner", "sequencer");
         assertThat(parsed.settingsSub()).containsExactlyInAnyOrder(ConfigKeys.SRC_SETTINGS_PROJECT, ConfigKeys.SRC_SETTINGS_USER);
         assertThat(parsed.findingsSeverities()).containsExactlyInAnyOrder("critical", "high", "medium", "low", "informational");
         assertThat(parsed.exporterSubOptions()).containsExactlyElementsOf(ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS);

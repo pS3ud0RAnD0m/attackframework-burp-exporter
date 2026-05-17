@@ -12,30 +12,30 @@ import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 
-class ConfigPanelRepeaterHistoryHeadlessTest {
+class ConfigPanelRepeaterTabsHeadlessTest {
 
     @Test
-    void repeaterHistoryTrafficOption_defaultsEnabled_andPersistsIntoBuiltState() throws Exception {
+    void repeaterTabsTrafficOption_defaultsEnabled_andPersistsIntoBuiltState() throws Exception {
         ConfigPanel panel = createPanel();
 
-        JCheckBox repeaterHistoryCheckbox = Reflect.get(panel, "trafficRepeaterHistoryCheckbox");
+        JCheckBox repeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
 
         ConfigState.State state = (ConfigState.State) Reflect.call(panel, "buildCurrentState");
 
-        assertThat(repeaterHistoryCheckbox.isSelected()).isTrue();
-        assertThat(repeaterHistoryCheckbox.getToolTipText()).contains("Historic traffic from Repeater tabs");
-        assertThat(repeaterHistoryCheckbox.getToolTipText()).contains("one-time snapshot when Start is clicked");
-        assertThat(repeaterHistoryCheckbox.getToolTipText()).contains("best-effort Repeater tab and group labels");
-        assertThat(repeaterHistoryCheckbox.getToolTipText()).contains("For ongoing and future Repeater traffic, select Repeater");
-        assertThat(repeaterHistoryCheckbox.getToolTipText()).doesNotContain("may miss");
-        assertThat(repeaterHistoryCheckbox.getToolTipText()).doesNotContain("enable or disable each one independently");
-        assertThat(state.trafficToolTypes()).contains("repeater_history");
+        assertThat(repeaterTabsCheckbox.isSelected()).isTrue();
+        assertThat(repeaterTabsCheckbox.getToolTipText()).contains("Historic traffic from Repeater tabs");
+        assertThat(repeaterTabsCheckbox.getToolTipText()).contains("one-time snapshot when Start is clicked");
+        assertThat(repeaterTabsCheckbox.getToolTipText()).contains("best-effort Repeater tab and group labels");
+        assertThat(repeaterTabsCheckbox.getToolTipText()).contains("For ongoing and future Repeater traffic, select Repeater");
+        assertThat(repeaterTabsCheckbox.getToolTipText()).doesNotContain("may miss");
+        assertThat(repeaterTabsCheckbox.getToolTipText()).doesNotContain("enable or disable each one independently");
+        assertThat(state.trafficToolTypes()).contains("repeater_tabs");
     }
 
     @Test
-    void onImportResult_restoresRepeaterHistoryTrafficOption() throws Exception {
+    void onImportResult_restoresRepeaterTabsTrafficOption() throws Exception {
         ConfigPanel panel = createPanel();
-        JCheckBox repeaterHistoryCheckbox = Reflect.get(panel, "trafficRepeaterHistoryCheckbox");
+        JCheckBox repeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
 
         ConfigState.State imported = new ConfigState.State(
                 java.util.List.of("traffic"),
@@ -43,7 +43,7 @@ class ConfigPanelRepeaterHistoryHeadlessTest {
                 java.util.List.of(),
                 new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                java.util.List.of("proxy", "repeater_history"),
+                java.util.List.of("proxy", "repeater_tabs"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
@@ -51,7 +51,7 @@ class ConfigPanelRepeaterHistoryHeadlessTest {
 
         SwingUtilities.invokeAndWait(() -> panel.onImportResult(imported));
 
-        assertThat(repeaterHistoryCheckbox.isSelected()).isTrue();
+        assertThat(repeaterTabsCheckbox.isSelected()).isTrue();
     }
 
     private static ConfigPanel createPanel() throws Exception {

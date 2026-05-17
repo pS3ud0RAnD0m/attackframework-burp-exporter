@@ -326,10 +326,10 @@ public final class ExportFieldTooltips {
                     "HTTP docs use request.httpVersion(); WebSocket docs use ws.upgradeRequest().httpVersion().");
             case "tool" -> Tooltips.textWithSource(
                     "Burp tool display name.",
-                    "TrafficHttpHandler uses ToolType.toolName() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"Proxy History\"; RepeaterHistoryIndexReporter writes \"Repeater History\"; ProxyWebSocketIndexReporter writes \"Proxy WebSocket\".");
+                    "TrafficHttpHandler uses ToolType.toolName() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"Proxy History\"; RepeaterTabsIndexReporter writes \"Repeater Tabs\"; ProxyWebSocketIndexReporter writes \"Proxy WebSocket\".");
             case "tool_type" -> Tooltips.textWithSource(
                     "Burp tool enum/source label.",
-                    "TrafficHttpHandler uses ToolType.name() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"PROXY_HISTORY\"; RepeaterHistoryIndexReporter writes \"REPEATER_HISTORY\"; ProxyWebSocketIndexReporter writes \"PROXY_WEBSOCKET\".");
+                    "TrafficHttpHandler uses ToolType.name() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"PROXY_HISTORY\"; RepeaterTabsIndexReporter writes \"REPEATER_TABS\"; ProxyWebSocketIndexReporter writes \"PROXY_WEBSOCKET\".");
             case "burp_in_scope" -> Tooltips.textWithSource(
                     "Raw Burp Suite scope flag, not the extension's export-scope decision.",
                     "TrafficHttpHandler uses request.isInScope(); ProxyHistoryIndexReporter uses MontoyaApi.scope().isInScope(url); ProxyWebSocketIndexReporter uses MontoyaApi.scope().isInScope(url) via safeBurpInScope().");
@@ -366,7 +366,7 @@ public final class ExportFieldTooltips {
             case "repeater_tab_name" -> Tooltips.textWithSource(
                     "Best-effort Repeater tab label for Repeater-origin traffic. "
                             + "Live Repeater traffic can intentionally leave this empty when Burp cannot safely disambiguate identical concurrent tabs.",
-                    "RepeaterHistoryIndexReporter infers this from the currently selected non-view "
+                    "RepeaterTabsIndexReporter infers this from the currently selected non-view "
                             + "Repeater tab path during startup capture. TrafficHttpHandler "
                             + "uses short-lived correlation from Repeater editor rebinds for live "
                             + "Repeater traffic and writes null when correlation is ambiguous, "
@@ -375,7 +375,7 @@ public final class ExportFieldTooltips {
                     "Best-effort Repeater tab-group name when the selected tab belongs to a "
                             + "readable group. Live Repeater traffic can intentionally leave this "
                             + "empty for identical concurrent tabs or when no readable group label exists.",
-                    "RepeaterHistoryIndexReporter infers this from the selected Repeater tab-header "
+                    "RepeaterTabsIndexReporter infers this from the selected Repeater tab-header "
                             + "component during startup capture. TrafficHttpHandler uses "
                             + "short-lived correlation from Repeater editor rebinds for live "
                             + "Repeater traffic. Ungrouped tabs, non-Repeater traffic, ambiguous "

@@ -7,7 +7,7 @@ import javax.swing.SwingUtilities;
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ExporterIndexLogForwarder;
 import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
-import ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter;
+import ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.ui.ConfigPanel;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
@@ -64,11 +64,11 @@ public class Exporter implements BurpExtension {
             Logger.registerListener(logForwarder);
             BatchSizeController.getInstance().setOnChangeListener(size -> Logger.logDebug("Batch size: " + size));
             requestEditorRegistration = api.userInterface().registerHttpRequestEditorProvider(
-                    RepeaterHistoryIndexReporter.requestEditorProvider());
+                    RepeaterTabsIndexReporter.requestEditorProvider());
             responseEditorRegistration = api.userInterface().registerHttpResponseEditorProvider(
-                    RepeaterHistoryIndexReporter.responseEditorProvider());
+                    RepeaterTabsIndexReporter.responseEditorProvider());
             contextMenuRegistration = api.userInterface().registerContextMenuItemsProvider(
-                    RepeaterHistoryIndexReporter.contextMenuItemsProvider());
+                    RepeaterTabsIndexReporter.contextMenuItemsProvider());
 
             if (SwingUtilities.isEventDispatchThread()) {
                 registerUi(api, tabTitle);

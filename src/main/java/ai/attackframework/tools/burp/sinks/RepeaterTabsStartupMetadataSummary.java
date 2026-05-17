@@ -7,13 +7,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Aggregates startup Repeater-history observation diagnostics for user-visible summaries.
+ * Aggregates startup Repeater-tab observation diagnostics for user-visible summaries.
  *
  * <p>The unsupported startup walk is intentionally trace-heavy because Montoya does not expose a
- * first-class Repeater history API. This summary keeps the high-signal counters compact for info
+ * first-class Repeater tabs API. This summary keeps the high-signal counters compact for info
  * and debug logs while per-tab detail remains available at trace level.</p>
  */
-final class RepeaterHistoryStartupMetadataSummary {
+final class RepeaterTabsStartupMetadataSummary {
     private static final int DUPLICATE_SLOT_HIGHLIGHT_LIMIT = 5;
 
     private final Map<String, Integer> observationsByCapturePath = new LinkedHashMap<>();
@@ -48,20 +48,20 @@ final class RepeaterHistoryStartupMetadataSummary {
 
     synchronized void recordObservation(
             String capturePath,
-            RepeaterHistoryIndexReporter.RepeaterTabMetadata metadata) {
+            RepeaterTabsIndexReporter.RepeaterTabMetadata metadata) {
         totalObservations++;
         if (metadata != null && metadata.groupName() != null) {
             groupedObservations++;
             increment(observationsByGroupName, metadata.groupName());
         }
         increment(observationsByCapturePath, capturePath);
-        uniqueSlots.add(RepeaterHistoryCapturePolicy.safeLogValue(
-                RepeaterHistoryCapturePolicy.startupSlotKey(metadata)));
+        uniqueSlots.add(RepeaterTabsCapturePolicy.safeLogValue(
+                RepeaterTabsCapturePolicy.startupSlotKey(metadata)));
         String tabGroupKey = metadata == null
                 ? "<null>|<null>"
-                : RepeaterHistoryCapturePolicy.safeLogValue(metadata.tabName())
+                : RepeaterTabsCapturePolicy.safeLogValue(metadata.tabName())
                         + "|"
-                        + RepeaterHistoryCapturePolicy.safeLogValue(metadata.groupName());
+                        + RepeaterTabsCapturePolicy.safeLogValue(metadata.groupName());
         uniqueTabGroupPairs.add(tabGroupKey);
     }
 
@@ -106,7 +106,7 @@ final class RepeaterHistoryStartupMetadataSummary {
 
     private static void increment(Map<String, Integer> counts, String capturePath) {
         String normalizedCapturePath =
-                RepeaterHistoryCapturePolicy.safeLogValue(normalizeBlank(capturePath));
+                RepeaterTabsCapturePolicy.safeLogValue(normalizeBlank(capturePath));
         Integer currentCount = counts.get(normalizedCapturePath);
         counts.put(normalizedCapturePath, currentCount == null ? 1 : currentCount + 1);
     }
@@ -130,9 +130,9 @@ final class RepeaterHistoryStartupMetadataSummary {
     }
 
     private void incrementDuplicateSlotBySlotPath(String startupSlotKey, String capturePath) {
-        String slotPathKey = RepeaterHistoryCapturePolicy.safeLogValue(normalizeBlank(startupSlotKey))
+        String slotPathKey = RepeaterTabsCapturePolicy.safeLogValue(normalizeBlank(startupSlotKey))
                 + "|"
-                + RepeaterHistoryCapturePolicy.safeLogValue(normalizeBlank(capturePath));
+                + RepeaterTabsCapturePolicy.safeLogValue(normalizeBlank(capturePath));
         Integer currentCount = duplicateSlotSuppressionsBySlotPath.get(slotPathKey);
         duplicateSlotSuppressionsBySlotPath.put(slotPathKey, currentCount == null ? 1 : currentCount + 1);
     }

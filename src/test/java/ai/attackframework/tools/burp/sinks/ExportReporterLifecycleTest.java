@@ -195,7 +195,7 @@ class ExportReporterLifecycleTest {
     @Test
     void stopAndClearPendingExportWork_flushesQueuedTrafficDocsToFiles_beforeClearingBacklog() throws Exception {
         try {
-            Path root = TestPathSupport.createDirectory("repeater-history-stop-flush");
+            Path root = TestPathSupport.createDirectory("repeater-tabs-stop-flush");
             RuntimeConfig.updateState(fileExportState(root));
             RuntimeConfig.setExportRunning(true);
 
@@ -259,7 +259,7 @@ class ExportReporterLifecycleTest {
                         "",
                         ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("repeater_history"),
+                List.of("repeater_tabs"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null);
     }
@@ -281,8 +281,8 @@ class ExportReporterLifecycleTest {
         document.put("method", "GET");
         document.put("path", "/repeater");
         document.put("status", 200);
-        document.put("tool", "Repeater History");
-        document.put("tool_type", "REPEATER_HISTORY");
+        document.put("tool", "Repeater Tabs");
+        document.put("tool_type", "REPEATER_TABS");
         document.put("repeater_tab_name", repeaterTabName);
         document.put("repeater_group_name", "Large Set");
         document.put("request", request);

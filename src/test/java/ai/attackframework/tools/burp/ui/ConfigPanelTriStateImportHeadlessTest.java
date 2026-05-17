@@ -31,14 +31,14 @@ class ConfigPanelTriStateImportHeadlessTest {
 
         TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
 
-        // Imported state selects "traffic" at top-level but only "repeater_history" among children.
+        // Imported state selects "traffic" at top-level but only "repeater_tabs" among children.
         ConfigState.State imported = new ConfigState.State(
                 List.of("traffic"),
                 "all",
                 List.of(),
                 new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("repeater_history"),
+                List.of("repeater_tabs"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
@@ -50,9 +50,9 @@ class ConfigPanelTriStateImportHeadlessTest {
                 .as("Traffic parent must reflect partial sub-selection after import")
                 .isEqualTo(TriStateCheckBox.State.INDETERMINATE);
 
-        JCheckBox repeaterHistory = Reflect.get(panel, "trafficRepeaterHistoryCheckbox");
+        JCheckBox repeaterTabs = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
         JCheckBox proxy = Reflect.get(panel, "trafficProxyCheckbox");
-        assertThat(repeaterHistory.isSelected()).isTrue();
+        assertThat(repeaterTabs.isSelected()).isTrue();
         assertThat(proxy.isSelected()).isFalse();
     }
 
@@ -69,7 +69,7 @@ class ConfigPanelTriStateImportHeadlessTest {
                 new ConfigState.Sinks(false, null, false, null, null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("burp_ai", "extensions", "intruder", "proxy", "proxy_history",
-                        "repeater", "repeater_history", "scanner", "sequencer"),
+                        "repeater", "repeater_tabs", "scanner", "sequencer"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,

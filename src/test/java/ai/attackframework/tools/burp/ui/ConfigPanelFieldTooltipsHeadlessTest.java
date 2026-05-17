@@ -89,7 +89,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
                     .contains("Best-effort Repeater tab-group name")
                     .contains("<b>Source</b>")
                     .contains(
-                            "RepeaterHistoryIndexReporter infers this from the selected Repeater tab-header component during startup capture.")
+                            "RepeaterTabsIndexReporter infers this from the selected Repeater tab-header component during startup capture.")
                     .contains("TrafficHttpHandler uses short-lived correlation from Repeater editor rebinds for live Repeater traffic.");
         });
     }

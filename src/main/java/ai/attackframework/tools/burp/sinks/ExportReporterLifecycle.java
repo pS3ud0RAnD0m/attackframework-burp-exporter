@@ -58,7 +58,7 @@ public final class ExportReporterLifecycle {
         TrafficExportQueue.flushPendingWorkToFilesOnStop();
         RuntimeConfig.setExportRunning(false);
         stopBackgroundReporters();
-        RepeaterHistoryIndexReporter.clearRunState();
+        RepeaterTabsIndexReporter.clearRunState();
         RepeaterLiveMetadataTracker.clear();
         TrafficExportQueue.clearPendingWork();
         TrafficExportQueue.stopWorker();
@@ -117,7 +117,7 @@ public final class ExportReporterLifecycle {
      */
     public static void stopAndClearSessionState() {
         stopAndClearPendingExportWork();
-        RepeaterHistoryIndexReporter.clearSessionState();
+        RepeaterTabsIndexReporter.clearSessionState();
         BurpRuntimeMetadata.clear();
         MontoyaApiProvider.set(null);
         SecureCredentialStore.clearAll();

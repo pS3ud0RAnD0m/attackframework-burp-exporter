@@ -1,18 +1,18 @@
 package ai.attackframework.tools.burp.sinks;
 
 /**
- * Shared capture-policy helpers for startup Repeater-history observations.
+ * Shared capture-policy helpers for startup Repeater-tab observations.
  *
  * <p>This collaborator centralizes the logic that decides whether a startup editor callback maps to
  * a logical historic Repeater tab, what dedupe key that observation should use, and how metadata
  * should be described in trace logs.</p>
  */
-final class RepeaterHistoryCapturePolicy {
+final class RepeaterTabsCapturePolicy {
 
-    private RepeaterHistoryCapturePolicy() {}
+    private RepeaterTabsCapturePolicy() {}
 
     /**
-     * Builds the capture decision for one observed Repeater-history binding.
+     * Builds the capture decision for one observed Repeater-tab binding.
      *
      * <p>Startup captures prefer logical slot keys so distinct tabs with identical traffic still
      * export separately. Startup callbacks that expose no slot, tab, or group metadata are treated
@@ -20,7 +20,7 @@ final class RepeaterHistoryCapturePolicy {
      */
     static CaptureDecision decide(
             String fingerprint,
-            RepeaterHistoryIndexReporter.RepeaterTabMetadata metadata,
+            RepeaterTabsIndexReporter.RepeaterTabMetadata metadata,
             boolean startupCaptureWindowOpen) {
         String startupSlotKey = startupCaptureWindowOpen ? startupSlotKey(metadata) : null;
         String captureKey = startupSlotKey == null ? fingerprint : "slot:" + startupSlotKey;
@@ -32,14 +32,14 @@ final class RepeaterHistoryCapturePolicy {
         return new CaptureDecision(captureKey, startupSlotKey, ignoreAnonymousStartupBinding);
     }
 
-    static String startupSlotKey(RepeaterHistoryIndexReporter.RepeaterTabMetadata metadata) {
+    static String startupSlotKey(RepeaterTabsIndexReporter.RepeaterTabMetadata metadata) {
         if (metadata == null || metadata.slotIdentityKey() == null) {
             return null;
         }
         return metadata.slotIdentityKey();
     }
 
-    static String describeMetadata(RepeaterHistoryIndexReporter.RepeaterTabMetadata metadata) {
+    static String describeMetadata(RepeaterTabsIndexReporter.RepeaterTabMetadata metadata) {
         if (metadata == null) {
             return "tab=<null> group=<null> slot=<null> root=<null>";
         }
@@ -54,7 +54,7 @@ final class RepeaterHistoryCapturePolicy {
     }
 
     /**
-     * Capture-policy outcome for one observed Repeater-history binding.
+     * Capture-policy outcome for one observed Repeater-tab binding.
      *
      * @param captureKey dedupe/export key for this observation
      * @param startupSlotKey logical startup slot key when available

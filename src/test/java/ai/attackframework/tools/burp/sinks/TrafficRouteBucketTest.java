@@ -44,9 +44,9 @@ class TrafficRouteBucketTest {
 
     @Test
     void fromToolType_passesThroughOtherToolTypesAsToolType() {
-        TrafficRouteBucket.Route route = TrafficRouteBucket.fromToolType("REPEATER_HISTORY");
+        TrafficRouteBucket.Route route = TrafficRouteBucket.fromToolType("REPEATER_TABS");
         assertThat(route.kind()).isEqualTo(TrafficRouteBucket.Kind.TOOL_TYPE);
-        assertThat(route.key()).isEqualTo("REPEATER_HISTORY");
+        assertThat(route.key()).isEqualTo("REPEATER_TABS");
     }
 
     @Test
@@ -82,11 +82,11 @@ class TrafficRouteBucketTest {
     @Test
     void recordOpenSearchSuccess_routesSourceAndToolTypeSeparately() {
         TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.proxyHistorySnapshot(), 3);
-        TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.fromToolType("REPEATER_HISTORY"), 2);
+        TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.fromToolType("REPEATER_TABS"), 2);
 
         assertThat(ExportStats.getTrafficSourceSuccessCount(TrafficRouteBucket.SOURCE_PROXY_HISTORY_SNAPSHOT))
                 .isEqualTo(3);
-        assertThat(ExportStats.getTrafficToolTypeSuccessCount("REPEATER_HISTORY")).isEqualTo(2);
+        assertThat(ExportStats.getTrafficToolTypeSuccessCount("REPEATER_TABS")).isEqualTo(2);
     }
 
     @Test

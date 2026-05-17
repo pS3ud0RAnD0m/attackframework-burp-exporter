@@ -3,7 +3,7 @@ package ai.attackframework.tools.burp.sinks;
 /**
  * Shared label vocabulary for Repeater trace logging.
  *
- * <p>Repeater History and live Repeater export both rely on best-effort metadata inference. These
+ * <p>Repeater Tabs and live Repeater export both rely on best-effort metadata inference. These
  * constants keep trace logs and user-facing docs aligned so operators can interpret the same
  * {@code metadataSource} terms everywhere without reverse-engineering each code path.</p>
  */

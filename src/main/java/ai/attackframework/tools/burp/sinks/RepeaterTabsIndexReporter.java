@@ -58,19 +58,19 @@ import burp.api.montoya.ui.editor.extension.HttpResponseEditorProvider;
 /**
  * Best-effort Repeater tab snapshot capture for historic request/response pairs.
  *
- * <p>Montoya does not currently expose a first-class Repeater history API, so this reporter uses
+ * <p>Montoya does not currently expose a first-class Repeater tabs API, so this reporter uses
  * extension editor hooks plus a manual context-menu fallback to observe request/response pairs
  * currently bound into Repeater tabs. Captured items are de-duplicated by request/response content
  * hash, cached in memory for the extension session, and exported to the traffic index with
- * {@code tool_type=REPEATER_HISTORY} when that traffic option is enabled.</p>
+ * {@code tool_type=REPEATER_TABS} when that traffic option is enabled.</p>
  */
-public final class RepeaterHistoryIndexReporter {
+public final class RepeaterTabsIndexReporter {
 
-    private static final String CAPTION = "AF Repeater History Capture";
+    private static final String CAPTION = "AF Repeater Tabs Capture";
     private static final String REPEATER_TOOL_TITLE = "Repeater";
-    private static final String TOOL_LABEL = "Repeater History";
-    private static final String TOOL_TYPE = "REPEATER_HISTORY";
-    private static final String TOOL_TYPE_KEY = "repeater_history";
+    private static final String TOOL_LABEL = "Repeater Tabs";
+    private static final String TOOL_TYPE = "REPEATER_TABS";
+    private static final String TOOL_TYPE_KEY = "repeater_tabs";
     private static final int STARTUP_TAB_WALK_DELAY_MS = 350;
     private static final int STARTUP_TAB_WALK_SECOND_PASS_DELAY_MS = 1_600;
     private static final int STARTUP_TAB_WALK_STEP_DELAY_MS = 5;
@@ -81,8 +81,8 @@ public final class RepeaterHistoryIndexReporter {
     private static final Set<String> STARTUP_TRACE_LOGGED = ConcurrentHashMap.newKeySet();
     private static final Map<String, String> STARTUP_SLOT_TO_FINGERPRINT = new ConcurrentHashMap<>();
     private static final Map<String, AtomicInteger> STARTUP_DUPLICATE_SLOT_TRACE_COUNTS = new ConcurrentHashMap<>();
-    private static final RepeaterHistoryStartupMetadataSummary STARTUP_METADATA_SUMMARY =
-            new RepeaterHistoryStartupMetadataSummary();
+    private static final RepeaterTabsStartupMetadataSummary STARTUP_METADATA_SUMMARY =
+            new RepeaterTabsStartupMetadataSummary();
     private static final AtomicInteger RUN_GENERATION = new AtomicInteger(0);
     private static final AtomicInteger STARTUP_SESSION_SEQUENCE = new AtomicInteger(0);
     private static final AtomicInteger CAPTURE_WINDOW_GENERATION = new AtomicInteger(-1);
@@ -91,7 +91,7 @@ public final class RepeaterHistoryIndexReporter {
     private static volatile StartupExportStatsSnapshot startupExportStatsSnapshot =
             StartupExportStatsSnapshot.empty();
 
-    private RepeaterHistoryIndexReporter() {}
+    private RepeaterTabsIndexReporter() {}
 
     /** Provider registered with Burp to observe request-side Repeater editor bindings. */
     public static HttpRequestEditorProvider requestEditorProvider() {
@@ -105,23 +105,23 @@ public final class RepeaterHistoryIndexReporter {
 
     /** Returns the Repeater-only context-menu provider used for manual fallback capture. */
     public static ContextMenuItemsProvider contextMenuItemsProvider() {
-        return new RepeaterHistoryContextMenuItemsProvider();
+        return new RepeaterTabsContextMenuItemsProvider();
     }
 
-    /** Queues all cached Repeater-history items for the current export run when enabled. */
+    /** Queues all cached Repeater-tab items for the current export run when enabled. */
     public static void pushSnapshotNow() {
         if (!RuntimeConfig.isExportRunning()
                 || !RuntimeConfig.isAnyTrafficExportEnabled()
                 || !RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY)) {
-            Logger.logDebug("[RepeaterHistory] pushSnapshotNow skipped: running=" + RuntimeConfig.isExportRunning()
+            Logger.logDebug("[RepeaterTabs] pushSnapshotNow skipped: running=" + RuntimeConfig.isExportRunning()
                     + ", anyTraffic=" + RuntimeConfig.isAnyTrafficExportEnabled()
-                    + ", repeaterHistoryEnabled=" + RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY)
+                    + ", repeaterTabsEnabled=" + RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY)
                     + ", trafficToolTypes=" + describeRuntimeTrafficToolTypes());
             return;
         }
         CAPTURED.values().stream()
                 .sorted(Comparator.comparingLong(item -> item.firstSeenAtMs))
-                .forEach(RepeaterHistoryIndexReporter::queueForCurrentRun);
+                .forEach(RepeaterTabsIndexReporter::queueForCurrentRun);
     }
 
     /** Clears per-run dedupe so the next Start can export cached history again. */
@@ -138,7 +138,7 @@ public final class RepeaterHistoryIndexReporter {
         startupExportStatsSnapshot = StartupExportStatsSnapshot.empty();
     }
 
-    /** Clears all cached Repeater-history session state. */
+    /** Clears all cached Repeater-tab session state. */
     public static void clearSessionState() {
         CAPTURED.clear();
         clearRunState();
@@ -197,7 +197,7 @@ public final class RepeaterHistoryIndexReporter {
      *
      * <p>The key is usually the stable request/response fingerprint. During the startup walk, when
      * a logical Repeater tab slot is known, slot-specific keys are used instead so distinct tabs
-     * with identical traffic still export as separate Repeater-history documents.</p>
+     * with identical traffic still export as separate Repeater-tab documents.</p>
      *
      * @param captureKey stable per-run export dedupe key
      * @return {@code true} when this run has not queued the capture key yet
@@ -221,7 +221,7 @@ public final class RepeaterHistoryIndexReporter {
         return STARTUP_SLOT_TO_FINGERPRINT.putIfAbsent(slotKey, storedFingerprint);
     }
 
-    /** Opens the startup-only Repeater-history capture window for the current run generation. */
+    /** Opens the startup-only Repeater-tab capture window for the current run generation. */
     static void openCaptureWindowForCurrentRun() {
         int generation = RUN_GENERATION.get();
         CAPTURE_WINDOW_GENERATION.set(generation);
@@ -231,7 +231,7 @@ public final class RepeaterHistoryIndexReporter {
                 STARTUP_SESSION_SEQUENCE.incrementAndGet());
     }
 
-    /** Closes the startup-only Repeater-history capture window for the current run. */
+    /** Closes the startup-only Repeater-tab capture window for the current run. */
     static void closeCaptureWindowForCurrentRun() {
         CAPTURE_WINDOW_GENERATION.set(-1);
         currentStartupSessionId = RepeaterMetadataTraceLabels.NONE;
@@ -246,17 +246,17 @@ public final class RepeaterHistoryIndexReporter {
     public static void scheduleStartupTabWalk() {
         boolean exportRunning = RuntimeConfig.isExportRunning();
         boolean anyTrafficEnabled = RuntimeConfig.isAnyTrafficExportEnabled();
-        boolean repeaterHistoryEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
-        if (!exportRunning || !anyTrafficEnabled || !repeaterHistoryEnabled) {
-            Logger.logDebug("[RepeaterHistory] Startup tab walk skipped: running=" + exportRunning
+        boolean repeaterTabsEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
+        if (!exportRunning || !anyTrafficEnabled || !repeaterTabsEnabled) {
+            Logger.logDebug("[RepeaterTabs] Startup tab walk skipped: running=" + exportRunning
                     + ", anyTraffic=" + anyTrafficEnabled
-                    + ", repeaterHistoryEnabled=" + repeaterHistoryEnabled
+                    + ", repeaterTabsEnabled=" + repeaterTabsEnabled
                     + ", trafficToolTypes=" + describeRuntimeTrafficToolTypes());
             return;
         }
         int generation = RUN_GENERATION.get();
         openCaptureWindowForCurrentRun();
-        Logger.logDebug("[RepeaterHistory] Scheduling startup tab walk for generation "
+        Logger.logDebug("[RepeaterTabs] Scheduling startup tab walk for generation "
                 + generation
                 + " startupSession=" + currentStartupSessionId()
                 + " with trafficToolTypes=" + describeRuntimeTrafficToolTypes() + ".");
@@ -326,8 +326,8 @@ public final class RepeaterHistoryIndexReporter {
         }
         String fingerprint = fingerprintFor(requestResponse);
         boolean startupCaptureWindowOpen = isStartupCaptureWindowOpen();
-        RepeaterHistoryCapturePolicy.CaptureDecision captureDecision =
-                RepeaterHistoryCapturePolicy.decide(fingerprint, repeaterTabMetadata, startupCaptureWindowOpen);
+        RepeaterTabsCapturePolicy.CaptureDecision captureDecision =
+                RepeaterTabsCapturePolicy.decide(fingerprint, repeaterTabMetadata, startupCaptureWindowOpen);
         String previousStartupSlotFingerprint =
                 startupCaptureWindowOpen
                         ? rememberStartupSlotFingerprint(captureDecision.startupSlotKey(), fingerprint)
@@ -340,7 +340,7 @@ public final class RepeaterHistoryIndexReporter {
                     captureDecision.startupSlotKey(),
                     capturePath);
             if (duplicateTraceCount <= STARTUP_DUPLICATE_SLOT_TRACE_LIMIT) {
-                Logger.logTrace("[RepeaterHistory] Skipped additional startup editor observation for logical slot already captured "
+                Logger.logTrace("[RepeaterTabs] Skipped additional startup editor observation for logical slot already captured "
                         + "startupSession=" + currentStartupSessionId()
                         + " metadataSource=" + RepeaterMetadataTraceLabels.STARTUP_SLOT
                         + " capturePath=" + safeLogValue(capturePath)
@@ -349,9 +349,9 @@ public final class RepeaterHistoryIndexReporter {
                         + " existingFingerprint=" + previousStartupSlotFingerprint
                         + " slot=" + safeLogValue(captureDecision.startupSlotKey())
                         + " duplicateSlotObservation=" + duplicateTraceCount
-                        + " metadata={" + RepeaterHistoryCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
+                        + " metadata={" + RepeaterTabsCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
             } else if (duplicateTraceCount == STARTUP_DUPLICATE_SLOT_TRACE_LIMIT + 1) {
-                Logger.logTrace("[RepeaterHistory] Further duplicate startup editor observations for this logical slot "
+                Logger.logTrace("[RepeaterTabs] Further duplicate startup editor observations for this logical slot "
                         + "will be summarized instead of logged individually "
                         + "startupSession=" + currentStartupSessionId()
                         + " metadataSource=" + RepeaterMetadataTraceLabels.STARTUP_SLOT
@@ -370,13 +370,13 @@ public final class RepeaterHistoryIndexReporter {
                 repeaterTabMetadata);
         if (captureDecision.ignoreAnonymousStartupBinding()) {
             STARTUP_METADATA_SUMMARY.recordIgnoredAnonymousBinding(capturePath);
-            Logger.logTrace("[RepeaterHistory] Skipped startup editor observation because no logical tab identity was available "
+            Logger.logTrace("[RepeaterTabs] Skipped startup editor observation because no logical tab identity was available "
                     + "startupSession=" + currentStartupSessionId()
                     + " metadataSource=" + RepeaterMetadataTraceLabels.NONE
                     + " capturePath=" + safeLogValue(capturePath)
                     + " captureKey=" + safeLogValue(captureDecision.captureKey())
                     + " fingerprint=" + safeLogValue(fingerprint)
-                    + " metadata={" + RepeaterHistoryCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
+                    + " metadata={" + RepeaterTabsCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
             return false;
         }
         long now = System.currentTimeMillis();
@@ -412,26 +412,26 @@ public final class RepeaterHistoryIndexReporter {
         });
         if (metadataUpgraded[0]) {
             STARTUP_METADATA_SUMMARY.recordMetadataUpgrade(capturePath);
-            Logger.logTrace("[RepeaterHistory] Enriched captured Repeater metadata with a more descriptive observation "
+            Logger.logTrace("[RepeaterTabs] Enriched captured Repeater metadata with a more descriptive observation "
                     + "startupSession=" + currentStartupSessionId()
                     + " metadataSource=" + historyMetadataSource(captureKey)
                     + " capturePath=" + safeLogValue(capturePath)
                     + " captureKey=" + safeLogValue(captureKey)
                     + " fingerprint=" + safeLogValue(fingerprint)
-                    + " previous={" + RepeaterHistoryCapturePolicy.describeMetadata(previousMetadata[0]) + "}"
-                    + " incoming={" + RepeaterHistoryCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
+                    + " previous={" + RepeaterTabsCapturePolicy.describeMetadata(previousMetadata[0]) + "}"
+                    + " incoming={" + RepeaterTabsCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
         } else if (existingCaptureReused[0]) {
-            Logger.logTrace("[RepeaterHistory] Kept existing captured Repeater metadata because the new observation added no extra detail "
+            Logger.logTrace("[RepeaterTabs] Kept existing captured Repeater metadata because the new observation added no extra detail "
                     + "startupSession=" + currentStartupSessionId()
                     + " metadataSource=" + historyMetadataSource(captureKey)
                     + " capturePath=" + safeLogValue(capturePath)
                     + " captureKey=" + safeLogValue(captureKey)
                     + " fingerprint=" + safeLogValue(fingerprint)
-                    + " existing={" + RepeaterHistoryCapturePolicy.describeMetadata(previousMetadata[0]) + "}"
-                    + " incoming={" + RepeaterHistoryCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
+                    + " existing={" + RepeaterTabsCapturePolicy.describeMetadata(previousMetadata[0]) + "}"
+                    + " incoming={" + RepeaterTabsCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
         }
         if (newCapture[0] && !isStartupCaptureWindowOpen()) {
-            Logger.logDebug("[RepeaterHistory] Captured Repeater tab via " + capturePath + ".");
+            Logger.logDebug("[RepeaterTabs] Captured Repeater tab via " + capturePath + ".");
         }
         queueForCurrentRun(CAPTURED.get(captureKey));
         return true;
@@ -545,12 +545,12 @@ public final class RepeaterHistoryIndexReporter {
         if (!STARTUP_TRACE_LOGGED.add(logKey)) {
             return;
         }
-        Logger.logTrace("[RepeaterHistory] Startup metadata via " + capturePath
+        Logger.logTrace("[RepeaterTabs] Startup metadata via " + capturePath
                 + " startupSession=" + currentStartupSessionId()
                 + " metadataSource=" + historyMetadataSource(captureKey)
                 + " captureKey=" + safeLogValue(captureKey)
                 + " fingerprint=" + safeLogValue(fingerprint)
-                + " " + RepeaterHistoryCapturePolicy.describeMetadata(metadata));
+                + " " + RepeaterTabsCapturePolicy.describeMetadata(metadata));
     }
 
     static String describeStartupMetadataSummary() {
@@ -570,7 +570,7 @@ public final class RepeaterHistoryIndexReporter {
     }
 
     private static String safeLogValue(String value) {
-        return RepeaterHistoryCapturePolicy.safeLogValue(value);
+        return RepeaterTabsCapturePolicy.safeLogValue(value);
     }
 
     private static String currentStartupSessionId() {
@@ -585,7 +585,7 @@ public final class RepeaterHistoryIndexReporter {
         StartupExportStatsSnapshot snapshot = startupExportStatsSnapshot;
         int newCaptures = Math.max(0, CAPTURED.size() - snapshot.captureCountBefore());
         String body = SnapshotSummary.formatCompletionBody(snapshot.baseline(), true, true);
-        Logger.logInfoPanelOnly("[Traffic] Repeater History startup export complete startupSession="
+        Logger.logInfoPanelOnly("[Traffic] Repeater Tabs startup export complete startupSession="
                 + currentStartupSessionId()
                 + " captured " + newCaptures + " tab(s)"
                 + (body.isEmpty() ? "" : "; " + body)
@@ -619,21 +619,21 @@ public final class RepeaterHistoryIndexReporter {
         boolean generationMatches = generation == RUN_GENERATION.get();
         boolean exportRunning = RuntimeConfig.isExportRunning();
         boolean anyTrafficEnabled = RuntimeConfig.isAnyTrafficExportEnabled();
-        boolean repeaterHistoryEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
-        if (!generationMatches || !exportRunning || !anyTrafficEnabled || !repeaterHistoryEnabled) {
-            Logger.logDebug("[RepeaterHistory] Startup tab walk pass " + passNumber
+        boolean repeaterTabsEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
+        if (!generationMatches || !exportRunning || !anyTrafficEnabled || !repeaterTabsEnabled) {
+            Logger.logDebug("[RepeaterTabs] Startup tab walk pass " + passNumber
                     + " startupSession=" + currentStartupSessionId()
                     + " skipped: generationMatches=" + generationMatches
                     + ", running=" + exportRunning
                     + ", anyTraffic=" + anyTrafficEnabled
-                    + ", repeaterHistoryEnabled=" + repeaterHistoryEnabled
+                    + ", repeaterTabsEnabled=" + repeaterTabsEnabled
                     + ", trafficToolTypes=" + describeRuntimeTrafficToolTypes());
             return;
         }
         try {
             startIncrementalStartupTabWalk(generation, passNumber, delayMs);
         } catch (Throwable t) {
-            Logger.logErrorPanelOnly("[RepeaterHistory] Startup tab walk pass " + passNumber
+            Logger.logErrorPanelOnly("[RepeaterTabs] Startup tab walk pass " + passNumber
                     + " startupSession=" + currentStartupSessionId()
                     + " failed: " + summarizeThrowable(t));
         }
@@ -642,7 +642,7 @@ public final class RepeaterHistoryIndexReporter {
     private static void startIncrementalStartupTabWalk(int generation, int passNumber, int delayMs) {
         ToolTabLocation repeaterLocation = findToolTabLocation(List.of(Frame.getFrames()), REPEATER_TOOL_TITLE);
         if (repeaterLocation == null) {
-            Logger.logDebug("[RepeaterHistory] Startup tab walk pass " + passNumber
+            Logger.logDebug("[RepeaterTabs] Startup tab walk pass " + passNumber
                     + " startupSession=" + currentStartupSessionId()
                     + " (" + delayMs + " ms) could not locate Burp's Repeater tool tab.");
             scheduleFollowUpStartupTabWalkPass(generation, passNumber);
@@ -839,7 +839,7 @@ public final class RepeaterHistoryIndexReporter {
     }
 
     /**
-     * Queues one captured Repeater-history item for export when runtime gates allow it.
+     * Queues one captured Repeater-tab item for export when runtime gates allow it.
      *
      * <p>This helper applies per-run capture dedupe before building the traffic document so the
      * same logical historic tab is not exported twice within one Start/Stop cycle, while still
@@ -849,19 +849,19 @@ public final class RepeaterHistoryIndexReporter {
     private static void queueForCurrentRun(CapturedRepeaterItem item) {
         boolean exportRunning = RuntimeConfig.isExportRunning();
         boolean anyTrafficEnabled = RuntimeConfig.isAnyTrafficExportEnabled();
-        boolean repeaterHistoryEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
+        boolean repeaterTabsEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
         if (item == null
                 || !exportRunning
                 || !anyTrafficEnabled
-                || !repeaterHistoryEnabled) {
+                || !repeaterTabsEnabled) {
             return;
         }
         if (!markQueuedForCurrentRun(item.captureKey)) {
-            Logger.logTrace("[RepeaterHistory] Skipped queueing Repeater History capture already exported in this run captureKey="
+            Logger.logTrace("[RepeaterTabs] Skipped queueing Repeater Tabs capture already exported in this run captureKey="
                     + safeLogValue(item.captureKey)
                     + " metadataSource=" + historyMetadataSource(item.captureKey)
                     + " fingerprint=" + safeLogValue(item.fingerprint)
-                    + " metadata={" + RepeaterHistoryCapturePolicy.describeMetadata(item.asMetadata()) + "}");
+                    + " metadata={" + RepeaterTabsCapturePolicy.describeMetadata(item.asMetadata()) + "}");
             return;
         }
         Map<String, Object> document;
@@ -872,7 +872,7 @@ public final class RepeaterHistoryIndexReporter {
                     item.repeaterGroupName);
         } catch (RuntimeException e) {
             EXPORTED_THIS_RUN.remove(item.captureKey);
-            Logger.logErrorPanelOnly("[RepeaterHistory] Failed to build traffic document for captured tab: "
+            Logger.logErrorPanelOnly("[RepeaterTabs] Failed to build traffic document for captured tab: "
                     + summarizeThrowable(e));
             return;
         }
@@ -880,7 +880,7 @@ public final class RepeaterHistoryIndexReporter {
             EXPORTED_THIS_RUN.remove(item.captureKey);
             return;
         }
-        Logger.logTrace("[RepeaterHistory] Queued captured tab for export captureKey="
+        Logger.logTrace("[RepeaterTabs] Queued captured tab for export captureKey="
                 + safeLogValue(item.captureKey)
                 + " metadataSource=" + historyMetadataSource(item.captureKey)
                 + " fingerprint=" + safeLogValue(item.fingerprint)
@@ -952,13 +952,13 @@ public final class RepeaterHistoryIndexReporter {
             HttpRequestResponse tempFileCopy = requestResponse.copyToTempFile();
             return tempFileCopy != null ? tempFileCopy : requestResponse;
         } catch (RuntimeException e) {
-            Logger.logDebug("[RepeaterHistory] Failed to create temp-file copy: " + e.getMessage());
+            Logger.logDebug("[RepeaterTabs] Failed to create temp-file copy: " + e.getMessage());
             return requestResponse;
         }
     }
 
     /**
-     * Computes the stable request/response fingerprint used for Repeater-history correlation.
+     * Computes the stable request/response fingerprint used for Repeater-tab correlation.
      *
      * <p>The digest includes request bytes, response bytes when present, and Burp annotations so
      * edited or annotated tabs do not collapse onto unrelated request/response pairs. Startup
@@ -1046,7 +1046,7 @@ public final class RepeaterHistoryIndexReporter {
                 request,
                 service,
                 requestDoc,
-                "RepeaterHistory");
+                "RepeaterTabs");
         boolean burpInScope = isInScope(url);
         Object requestHttpVersion = requestDoc.get("http_version");
 
@@ -1114,7 +1114,7 @@ public final class RepeaterHistoryIndexReporter {
         try {
             return api.scope().isInScope(url);
         } catch (RuntimeException e) {
-            Logger.logDebug("[RepeaterHistory] Scope lookup failed: " + e.getMessage());
+            Logger.logDebug("[RepeaterTabs] Scope lookup failed: " + e.getMessage());
             return false;
         }
     }
@@ -1143,7 +1143,7 @@ public final class RepeaterHistoryIndexReporter {
                 }
             }
         } catch (RuntimeException e) {
-            Logger.logDebug("[RepeaterHistory] Timing data unavailable: " + e.getMessage());
+            Logger.logDebug("[RepeaterTabs] Timing data unavailable: " + e.getMessage());
         }
         document.put("time_request_sent", timeRequestSent);
         document.put("time_start", timeRequestSent);
@@ -1327,7 +1327,7 @@ public final class RepeaterHistoryIndexReporter {
         }
     }
 
-    private static final class RepeaterHistoryContextMenuItemsProvider implements ContextMenuItemsProvider {
+    private static final class RepeaterTabsContextMenuItemsProvider implements ContextMenuItemsProvider {
         @Override
         public List<Component> provideMenuItems(ContextMenuEvent event) {
             if (!isRepeaterContextMenuEvent(event)) {
@@ -1337,7 +1337,7 @@ public final class RepeaterHistoryIndexReporter {
             item.addActionListener(ignored -> {
                 boolean captured = captureCurrentRepeaterTab(event);
                 if (captured) {
-                    Logger.logInfoPanelOnly("[Traffic] Captured current Repeater tab for Repeater History export.");
+                    Logger.logInfoPanelOnly("[Traffic] Captured current Repeater tab for Repeater Tabs export.");
                 } else {
                     Logger.logWarnPanelOnly("[Traffic] Unable to capture the current Repeater tab from the context menu.");
                 }
@@ -1482,12 +1482,12 @@ public final class RepeaterHistoryIndexReporter {
             int newCaptures = result.captureCountAfter() - result.captureCountBefore();
             String metadataSummary = describeStartupMetadataSummary();
             if (newCaptures > 0) {
-                Logger.logInfoPanelOnly("[Traffic] Repeater History startup tab walk pass "
+                Logger.logInfoPanelOnly("[Traffic] Repeater Tabs startup tab walk pass "
                         + passNumber + " startupSession=" + currentStartupSessionId()
                         + " captured " + newCaptures + " tab(s); "
                         + metadataSummary + ".");
             }
-            Logger.logDebug("[RepeaterHistory] Startup tab walk pass " + passNumber
+            Logger.logDebug("[RepeaterTabs] Startup tab walk pass " + passNumber
                     + " startupSession=" + currentStartupSessionId()
                     + " (" + delayMs + " ms) visited "
                     + result.tabbedPaneCount() + " Repeater tab container(s) across "

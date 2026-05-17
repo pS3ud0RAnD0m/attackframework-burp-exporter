@@ -46,7 +46,7 @@ import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.OpenSearchSink;
 import ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter;
 import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
-import ai.attackframework.tools.burp.sinks.RepeaterHistoryIndexReporter;
+import ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
@@ -143,7 +143,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JCheckBox trafficProxyCheckbox        = new Tooltips.HtmlCheckBox("Proxy", true);
     private final JCheckBox trafficProxyHistoryCheckbox  = new Tooltips.HtmlCheckBox("Proxy History", true);
     private final JCheckBox trafficRepeaterCheckbox    = new Tooltips.HtmlCheckBox("Repeater", true);
-    private final JCheckBox trafficRepeaterHistoryCheckbox = new Tooltips.HtmlCheckBox("Repeater History", true);
+    private final JCheckBox trafficRepeaterTabsCheckbox = new Tooltips.HtmlCheckBox("Repeater Tabs", true);
     private final JCheckBox trafficScannerCheckbox      = new Tooltips.HtmlCheckBox("Scanner", true);
     private final JCheckBox trafficSequencerCheckbox     = new Tooltips.HtmlCheckBox("Sequencer", true);
 
@@ -290,7 +290,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 issuesCriticalCheckbox, issuesHighCheckbox, issuesMediumCheckbox, issuesLowCheckbox, issuesInformationalCheckbox));
         wireTriStateParentChild(trafficCheckbox, java.util.List.of(
                 trafficBurpAiCheckbox, trafficExtensionsCheckbox, trafficIntruderCheckbox, trafficProxyCheckbox,
-                trafficProxyHistoryCheckbox, trafficRepeaterCheckbox, trafficRepeaterHistoryCheckbox,
+                trafficProxyHistoryCheckbox, trafficRepeaterCheckbox, trafficRepeaterTabsCheckbox,
                 trafficScannerCheckbox, trafficSequencerCheckbox));
         wireTriStateParentChild(exporterCheckbox, java.util.List.of(
                 exporterTraceCheckbox, exporterDebugCheckbox, exporterInfoCheckbox, exporterWarnCheckbox,
@@ -515,7 +515,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Logger.logInfoPanelOnly("[Export] Starting. Selected destinations: "
                 + summarizeSelectedDestinations(filesSelected, openSearchSelected) + ".");
         RuntimeConfig.setExportRunning(true);
-        RepeaterHistoryIndexReporter.clearRunState();
+        RepeaterTabsIndexReporter.clearRunState();
         startupExecutor.execute(() -> runStartupPipeline(
                 url, sources, uiCallbacks, startupIssues, filesSelected, openSearchSelected));
     }
@@ -652,7 +652,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         SwingUtilities.invokeLater(() -> {
             uiCallbacks.onStartSuccess().run();
             onControlStatus(runningStatus);
-            RepeaterHistoryIndexReporter.scheduleStartupTabWalk();
+            RepeaterTabsIndexReporter.scheduleStartupTabWalk();
         });
         if (RuntimeConfig.isAnySinkEnabled()) {
             ExporterIndexConfigReporter.pushConfigSnapshot();
@@ -692,7 +692,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        RepeaterHistoryIndexReporter.pushSnapshotNow();
+        RepeaterTabsIndexReporter.pushSnapshotNow();
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
@@ -1046,7 +1046,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             trafficProxyCheckbox.setSelected(trafficTools.contains("proxy"));
             trafficProxyHistoryCheckbox.setSelected(trafficTools.contains("proxy_history"));
             trafficRepeaterCheckbox.setSelected(trafficTools.contains("repeater"));
-            trafficRepeaterHistoryCheckbox.setSelected(trafficTools.contains("repeater_history"));
+            trafficRepeaterTabsCheckbox.setSelected(trafficTools.contains("repeater_tabs"));
             trafficScannerCheckbox.setSelected(trafficTools.contains("scanner"));
             trafficSequencerCheckbox.setSelected(trafficTools.contains("sequencer"));
 
@@ -1199,7 +1199,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                     || issuesMediumCheckbox.isSelected() || issuesLowCheckbox.isSelected() || issuesInformationalCheckbox.isSelected();
             case "traffic" -> trafficCheckbox.isSelected() || trafficBurpAiCheckbox.isSelected() || trafficExtensionsCheckbox.isSelected() || trafficIntruderCheckbox.isSelected()
                     || trafficProxyCheckbox.isSelected() || trafficProxyHistoryCheckbox.isSelected() || trafficRepeaterCheckbox.isSelected()
-                    || trafficRepeaterHistoryCheckbox.isSelected()
+                    || trafficRepeaterTabsCheckbox.isSelected()
                     || trafficScannerCheckbox.isSelected() || trafficSequencerCheckbox.isSelected();
             case "exporter" -> exporterCheckbox.isSelected() || exporterTraceCheckbox.isSelected() || exporterDebugCheckbox.isSelected()
                     || exporterInfoCheckbox.isSelected() || exporterWarnCheckbox.isSelected() || exporterErrorCheckbox.isSelected()
@@ -1251,8 +1251,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         trafficProxyHistoryCheckbox.addActionListener(refreshFieldsSections);
         trafficRepeaterCheckbox.addActionListener(runtimeUpdater);
         trafficRepeaterCheckbox.addActionListener(refreshFieldsSections);
-        trafficRepeaterHistoryCheckbox.addActionListener(runtimeUpdater);
-        trafficRepeaterHistoryCheckbox.addActionListener(refreshFieldsSections);
+        trafficRepeaterTabsCheckbox.addActionListener(runtimeUpdater);
+        trafficRepeaterTabsCheckbox.addActionListener(refreshFieldsSections);
         trafficScannerCheckbox.addActionListener(runtimeUpdater);
         trafficScannerCheckbox.addActionListener(refreshFieldsSections);
         trafficSequencerCheckbox.addActionListener(runtimeUpdater);
@@ -1690,7 +1690,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         p.add(trafficProxyCheckbox);
         p.add(trafficProxyHistoryCheckbox);
         p.add(trafficRepeaterCheckbox);
-        p.add(trafficRepeaterHistoryCheckbox);
+        p.add(trafficRepeaterTabsCheckbox);
         p.add(buildTrafficToolRow(trafficScannerCheckbox, trafficScannerCommunityIndicator));
         p.add(trafficSequencerCheckbox);
         return p;
@@ -2040,7 +2040,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (trafficProxyCheckbox.isSelected()) trafficToolTypes.add("proxy");
         if (trafficProxyHistoryCheckbox.isSelected()) trafficToolTypes.add("proxy_history");
         if (trafficRepeaterCheckbox.isSelected()) trafficToolTypes.add("repeater");
-        if (trafficRepeaterHistoryCheckbox.isSelected()) trafficToolTypes.add("repeater_history");
+        if (trafficRepeaterTabsCheckbox.isSelected()) trafficToolTypes.add("repeater_tabs");
         if (trafficScannerCheckbox.isSelected()) trafficToolTypes.add("scanner");
         if (trafficSequencerCheckbox.isSelected()) trafficToolTypes.add("sequencer");
 
@@ -2244,7 +2244,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         trafficProxyCheckbox.setName("src.traffic.proxy");
         trafficProxyHistoryCheckbox.setName("src.traffic.proxy_history");
         trafficRepeaterCheckbox.setName("src.traffic.repeater");
-        trafficRepeaterHistoryCheckbox.setName("src.traffic.repeater_history");
+        trafficRepeaterTabsCheckbox.setName("src.traffic.repeater_tabs");
         trafficScannerCheckbox.setName("src.traffic.scanner");
         trafficSequencerCheckbox.setName("src.traffic.sequencer");
         trafficExpandButton.setName("src.traffic.expand");
@@ -2318,7 +2318,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 "Identical concurrent Repeater tabs can intentionally export null tab/group "
                         + "metadata instead of guessing."
         ));
-        Tooltips.apply(trafficRepeaterHistoryCheckbox, Tooltips.html(
+        Tooltips.apply(trafficRepeaterTabsCheckbox, Tooltips.html(
                 "Historic traffic from Repeater tabs.",
                 "This exports a one-time snapshot when Start is clicked.",
                 "When Burp exposes readable tab headers, the snapshot also writes best-effort "

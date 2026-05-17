@@ -13,7 +13,7 @@ import ai.attackframework.tools.burp.utils.Logger;
  * bounded, single-pass exports at Start. This helper captures counter deltas across the run
  * and emits a single {@code INFO}-level panel line with attempted, file, and OpenSearch
  * outcomes. The {@code file={...}; openSearch={...}} body shares the substructure with the
- * Repeater History startup completion summary so operators can visually align per-source
+ * Repeater Tabs startup completion summary so operators can visually align per-source
  * totals across reporters; the surrounding prefix and suffix differ per reporter.</p>
  *
  * <p>Two counter sources are supported via {@link #forRoute(TrafficRouteBucket.Route)} and

@@ -11,7 +11,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
  *
  * <p>Traffic exports can be attributed to either:
  * <ul>
- *   <li>a {@link Kind#TOOL_TYPE} bucket (for example {@code REPEATER_HISTORY}, {@code PROXY}),
+ *   <li>a {@link Kind#TOOL_TYPE} bucket (for example {@code REPEATER_TABS}, {@code PROXY}),
  *       which aligns with the live {@code tool_type} field Burp assigns to HTTP exchanges; or</li>
  *   <li>a {@link Kind#SOURCE} bucket (for example {@code proxy_history_snapshot},
  *       {@code proxy_websocket}), which aligns with the reporter or source that produced the
@@ -29,7 +29,7 @@ public final class TrafficRouteBucket {
     public enum Kind {
         /** Grouped by originating reporter/source (for example {@code proxy_history_snapshot}). */
         SOURCE,
-        /** Grouped by Burp tool type (for example {@code REPEATER_HISTORY}). */
+        /** Grouped by Burp tool type (for example {@code REPEATER_TABS}). */
         TOOL_TYPE
     }
 

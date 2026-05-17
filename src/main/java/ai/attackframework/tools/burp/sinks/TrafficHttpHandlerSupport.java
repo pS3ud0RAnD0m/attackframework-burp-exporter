@@ -176,7 +176,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 resolveRequestStageResolution(
                         request,
                         reqToolType,
-                        RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+                        RepeaterTabsIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
         Map<String, Object> skeleton = buildOrphanDocumentSkeleton(
                 request,
                 requestSentMs,
@@ -255,7 +255,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                         response,
                         toolType,
                         pending == null ? RequestStageResolution.none() : pending.requestStageResolution,
-                        RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+                        RepeaterTabsIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
 
         Map<String, Object> document =
                 buildDocument(response, request, burpInScope, requestSentMs, responseReceivedMs, toolType, repeaterMetadata);
@@ -465,7 +465,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         return resolveRequestStageRepeaterMetadata(
                 request,
                 toolType,
-                RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+                RepeaterTabsIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
     }
 
     /**
@@ -548,7 +548,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 response,
                 toolType,
                 requestStageMetadata,
-                RepeaterHistoryIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
+                RepeaterTabsIndexReporter::currentRepeaterSharedMetadataForLiveFallback);
     }
 
     /**

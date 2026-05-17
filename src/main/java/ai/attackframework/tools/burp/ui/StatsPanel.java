@@ -1575,7 +1575,7 @@ public class StatsPanel extends JPanel {
 
     /**
      * Sizes every column to fit its widest visible cell or header text. Column 0 (the label
-     * column) gets a comfortable minimum so source/index names like {@code Repeater History}
+     * column) gets a comfortable minimum so source/index names like {@code Repeater Tabs}
      * always fit, and every column has a generous max cap so a single long {@code Last Error}
      * cannot blow the table beyond what the panel can render. When a cell still overflows the
      * cap the default {@link DefaultTableCellRenderer} truncates the visible text with an

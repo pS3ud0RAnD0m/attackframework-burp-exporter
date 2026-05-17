@@ -28,7 +28,7 @@ public final class FileExportStats {
                     "PROXY",
                     "PROXY_HISTORY",
                     "REPEATER",
-                    "REPEATER_HISTORY",
+                    "REPEATER_TABS",
                     "SCANNER",
                     "SEQUENCER",
                     "UNKNOWN"));

@@ -185,11 +185,11 @@ class StatsPanelTest {
     }
 
     @Test
-    void mergedSinkTables_packFirstColumnToFitIndentedRepeaterHistorySubRowLabel() {
+    void mergedSinkTables_packFirstColumnToFitIndentedRepeaterTabsSubRowLabel() {
         StatsPanel panel = onEdt(StatsPanel::new);
         JTable openSearchTable = get(panel, "byIndexTable");
         JTable fileTable = get(panel, "fileByIndexTable");
-        String subRowLabel = ((String) getStatic(StatsPanel.class, "SUBROW_INDENT")) + "Repeater History";
+        String subRowLabel = ((String) getStatic(StatsPanel.class, "SUBROW_INDENT")) + "Repeater Tabs";
 
         onEdt(() -> call(panel, "refreshDashboard"));
 

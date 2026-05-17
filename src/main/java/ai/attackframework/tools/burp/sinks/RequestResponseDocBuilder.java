@@ -164,7 +164,7 @@ public final class RequestResponseDocBuilder {
      * @param request request whose direct URL accessor may throw
      * @param service HTTP service backing the request
      * @param requestDoc already-built request sub-document, usually from {@link #buildRequestDoc(HttpRequest)}
-     * @param logPrefix logger prefix without brackets, for example {@code "RepeaterHistory"}
+     * @param logPrefix logger prefix without brackets, for example {@code "RepeaterTabs"}
      * @return direct URL when available, otherwise a best-effort reconstructed URL or {@code null}
      */
     public static String buildBestEffortUrl(

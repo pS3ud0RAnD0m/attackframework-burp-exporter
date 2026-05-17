@@ -86,7 +86,7 @@ class ChunkedBulkSenderTest {
     void ndjsonQueueInputStream_stillWritesReservedFirstDoc_afterInitialDelay() throws Exception {
         LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
         Map<String, Object> firstDoc = new LinkedHashMap<>();
-        firstDoc.put("tool_type", "REPEATER_HISTORY");
+        firstDoc.put("tool_type", "REPEATER_TABS");
         firstDoc.put("status", 0);
         firstDoc.put("document_meta", new LinkedHashMap<>());
 
@@ -121,7 +121,7 @@ class ChunkedBulkSenderTest {
 
         byte[] payload = stream.readAllBytes();
         assertThat(payload).isNotEmpty();
-        assertThat(new String(payload, StandardCharsets.UTF_8)).contains("\"tool_type\":\"REPEATER_HISTORY\"");
+        assertThat(new String(payload, StandardCharsets.UTF_8)).contains("\"tool_type\":\"REPEATER_TABS\"");
         assertThat(attempted.get()).isEqualTo(1);
     }
 

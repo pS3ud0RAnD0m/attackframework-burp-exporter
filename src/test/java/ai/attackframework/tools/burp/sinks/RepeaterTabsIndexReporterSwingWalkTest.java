@@ -15,7 +15,7 @@ import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.Test;
 
-class RepeaterHistoryIndexReporterSwingWalkTest {
+class RepeaterTabsIndexReporterSwingWalkTest {
 
     @Test
     void inferRepeaterTabName_returnsSelectedTabLabel_whenGroupedHeaderAlsoContainsGroupName() throws Exception {
@@ -50,8 +50,8 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel repeaterRoot = new JPanel(new BorderLayout());
             repeaterRoot.add(groupedTabs, BorderLayout.CENTER);
 
-            tabNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterTabName(repeaterRoot));
-            groupNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterGroupName(repeaterRoot));
+            tabNameRef.set(RepeaterTabsIndexReporter.inferRepeaterTabName(repeaterRoot));
+            groupNameRef.set(RepeaterTabsIndexReporter.inferRepeaterGroupName(repeaterRoot));
         });
 
         assertThat(tabNameRef.get()).isEqualTo("2");
@@ -85,8 +85,8 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel repeaterRoot = new JPanel(new BorderLayout());
             repeaterRoot.add(groupedTabs, BorderLayout.CENTER);
 
-            tabNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterTabName(repeaterRoot));
-            groupNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterGroupName(repeaterRoot));
+            tabNameRef.set(RepeaterTabsIndexReporter.inferRepeaterTabName(repeaterRoot));
+            groupNameRef.set(RepeaterTabsIndexReporter.inferRepeaterGroupName(repeaterRoot));
         });
 
         assertThat(tabNameRef.get()).isEqualTo("2");
@@ -117,7 +117,7 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel repeaterRoot = new JPanel(new BorderLayout());
             repeaterRoot.add(groupTabs, BorderLayout.CENTER);
 
-            groupNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterGroupName(repeaterRoot));
+            groupNameRef.set(RepeaterTabsIndexReporter.inferRepeaterGroupName(repeaterRoot));
         });
 
         assertThat(groupNameRef.get()).isEqualTo("Group Alpha");
@@ -136,7 +136,7 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel repeaterRoot = new JPanel(new BorderLayout());
             repeaterRoot.add(repeaterTabs, BorderLayout.CENTER);
 
-            tabNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterTabName(repeaterRoot));
+            tabNameRef.set(RepeaterTabsIndexReporter.inferRepeaterTabName(repeaterRoot));
         });
 
         assertThat(tabNameRef.get()).isEqualTo("Req B");
@@ -155,7 +155,7 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel repeaterRoot = new JPanel(new BorderLayout());
             repeaterRoot.add(repeaterTabs, BorderLayout.CENTER);
 
-            groupNameRef.set(RepeaterHistoryIndexReporter.inferRepeaterGroupName(repeaterRoot));
+            groupNameRef.set(RepeaterTabsIndexReporter.inferRepeaterGroupName(repeaterRoot));
         });
 
         assertThat(groupNameRef.get()).isNull();
@@ -163,7 +163,7 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
 
     @Test
     void performStartupTabWalk_visitsRepeaterToolTree_andRestoresSelections() throws Exception {
-        AtomicReference<RepeaterHistoryIndexReporter.StartupTabWalkResult> resultRef = new AtomicReference<>();
+        AtomicReference<RepeaterTabsIndexReporter.StartupTabWalkResult> resultRef = new AtomicReference<>();
         AtomicReference<JTabbedPane> toolTabsRef = new AtomicReference<>();
         AtomicReference<JTabbedPane> repeaterTabsRef = new AtomicReference<>();
         AtomicReference<JTabbedPane> responseTabsRef = new AtomicReference<>();
@@ -195,13 +195,13 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel root = new JPanel(new BorderLayout());
             root.add(toolTabs, BorderLayout.CENTER);
 
-            resultRef.set(RepeaterHistoryIndexReporter.performStartupTabWalk(List.of(root)));
+            resultRef.set(RepeaterTabsIndexReporter.performStartupTabWalk(List.of(root)));
             toolTabsRef.set(toolTabs);
             repeaterTabsRef.set(repeaterTabs);
             responseTabsRef.set(responseTabs);
         });
 
-        RepeaterHistoryIndexReporter.StartupTabWalkResult result = resultRef.get();
+        RepeaterTabsIndexReporter.StartupTabWalkResult result = resultRef.get();
         assertThat(result.locatedRepeaterToolTab()).isTrue();
         assertThat(result.tabbedPaneCount()).isEqualTo(1);
         assertThat(result.selectionChangeCount()).isEqualTo(4);
@@ -212,7 +212,7 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
 
     @Test
     void performStartupTabWalk_returnsNotLocated_whenRepeaterToolTabMissing() throws Exception {
-        AtomicReference<RepeaterHistoryIndexReporter.StartupTabWalkResult> resultRef = new AtomicReference<>();
+        AtomicReference<RepeaterTabsIndexReporter.StartupTabWalkResult> resultRef = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
             JTabbedPane toolTabs = new JTabbedPane();
@@ -222,10 +222,10 @@ class RepeaterHistoryIndexReporterSwingWalkTest {
             JPanel root = new JPanel(new BorderLayout());
             root.add(toolTabs, BorderLayout.CENTER);
 
-            resultRef.set(RepeaterHistoryIndexReporter.performStartupTabWalk(List.of(root)));
+            resultRef.set(RepeaterTabsIndexReporter.performStartupTabWalk(List.of(root)));
         });
 
-        RepeaterHistoryIndexReporter.StartupTabWalkResult result = resultRef.get();
+        RepeaterTabsIndexReporter.StartupTabWalkResult result = resultRef.get();
         assertThat(result.locatedRepeaterToolTab()).isFalse();
         assertThat(result.tabbedPaneCount()).isZero();
         assertThat(result.selectionChangeCount()).isZero();

@@ -35,7 +35,7 @@ public final class ExportStats {
                     "PROXY",
                     "PROXY_HISTORY",
                     "REPEATER",
-                    "REPEATER_HISTORY",
+                    "REPEATER_TABS",
                     "SCANNER",
                     "SEQUENCER",
                     "UNKNOWN"));
