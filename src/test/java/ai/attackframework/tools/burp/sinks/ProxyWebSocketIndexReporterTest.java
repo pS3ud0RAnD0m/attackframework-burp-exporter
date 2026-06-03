@@ -39,6 +39,7 @@ class ProxyWebSocketIndexReporterTest {
     @AfterEach
     void resetRuntimeConfig() {
         ProxyWebSocketIndexReporter.stop();
+        TrafficExportQueue.setDrainDisabledForTests(false);
         TrafficExportQueue.stopWorker();
         TrafficExportQueue.clearPendingWork();
         RuntimeConfig.updateState(new ConfigState.State(
@@ -466,11 +467,11 @@ class ProxyWebSocketIndexReporterTest {
                 List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null));
-        ProxyWebSocketIndexReporter.pushNewItemsOnly();
-
-        assertThat(pushedKeys()).contains("5:9");
-        TrafficExportQueue.stopWorker();
-        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            ProxyWebSocketIndexReporter.pushNewItemsOnly();
+            assertThat(pushedKeys()).contains("5:9");
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+        });
     }
 
     @Test
@@ -496,16 +497,17 @@ class ProxyWebSocketIndexReporterTest {
         when(api.proxy().webSocketHistory()).thenReturn(shrunk);
         TrafficExportQueue.clearPendingWork();
 
-        ProxyWebSocketIndexReporter.pushNewItemsOnly();
-
-        assertThat(pushedKeys()).contains("2:1", "2:2");
-        TrafficExportQueue.stopWorker();
-        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(2);
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            ProxyWebSocketIndexReporter.pushNewItemsOnly();
+            assertThat(pushedKeys()).contains("2:1", "2:2");
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(2);
+        });
     }
 
     @Test
     void pushNewItemsOnly_withLargeSeededHistory_exportsOnlyTailAfterCursor() throws Exception {
         resetRuntimeConfig();
+        ProxyWebSocketIndexReporter.stop();
         RuntimeConfig.setExportRunning(true);
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"),
@@ -528,18 +530,17 @@ class ProxyWebSocketIndexReporterTest {
         when(api.scope().isInScope(anyString())).thenReturn(true);
         when(api.proxy().webSocketHistory()).thenReturn(history).thenReturn(extended);
         MontoyaApiProvider.set(api);
-        TrafficExportQueue.clearPendingWork();
 
         ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
         assertThat(liveHistoryCursor()).isEqualTo(100);
         assertThat(pushedKeys()).contains("1:100");
 
-        ProxyWebSocketIndexReporter.pushNewItemsOnly();
-
-        TrafficExportQueue.stopWorker();
-        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
-        assertThat(pushedKeys()).contains("1:101");
-        assertThat(liveHistoryCursor()).isEqualTo(101);
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            ProxyWebSocketIndexReporter.pushNewItemsOnly();
+            assertThat(pushedKeys()).contains("1:101");
+            assertThat(liveHistoryCursor()).isEqualTo(101);
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+        });
     }
 
     @Test

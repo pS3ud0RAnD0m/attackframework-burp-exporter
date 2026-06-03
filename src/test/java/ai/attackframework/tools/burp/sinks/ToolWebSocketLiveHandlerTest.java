@@ -38,6 +38,7 @@ class ToolWebSocketLiveHandlerTest {
     @BeforeEach
     @AfterEach
     void resetRuntimeConfig() {
+        TrafficExportQueue.setDrainDisabledForTests(false);
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"),
                 "all",
@@ -240,12 +241,12 @@ class ToolWebSocketLiveHandlerTest {
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
         when(api.scope().isInScope(anyString())).thenReturn(true);
         MontoyaApiProvider.set(api);
-        invokeExportFrame(handler, "text-frame".getBytes(java.nio.charset.StandardCharsets.UTF_8), Direction.CLIENT_TO_SERVER);
-        TrafficExportQueue.stopWorker();
-
-        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
-        Map<?, ?> websocket = nestedMap(queuedDocument(), "websocket");
-        assertThat(nestedMap(websocket, "payload").get("text")).isEqualTo("text-frame");
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            invokeExportFrame(handler, "text-frame".getBytes(java.nio.charset.StandardCharsets.UTF_8), Direction.CLIENT_TO_SERVER);
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+            Map<?, ?> websocket = nestedMap(queuedDocument(), "websocket");
+            assertThat(nestedMap(websocket, "payload").get("text")).isEqualTo("text-frame");
+        });
     }
 
     @Test
@@ -267,13 +268,13 @@ class ToolWebSocketLiveHandlerTest {
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
         when(api.scope().isInScope(anyString())).thenReturn(true);
         MontoyaApiProvider.set(api);
-        invokeExportFrame(handler, new byte[] {(byte) 0xDE, (byte) 0xAD}, Direction.SERVER_TO_CLIENT);
-        TrafficExportQueue.stopWorker();
-
-        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
-        Map<?, ?> payloadDoc = nestedMap(nestedMap(queuedDocument(), "websocket"), "payload");
-        assertThat(payloadDoc.get("b64")).isNotNull();
-        assertThat(payloadDoc.containsKey("length")).isTrue();
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            invokeExportFrame(handler, new byte[] {(byte) 0xDE, (byte) 0xAD}, Direction.SERVER_TO_CLIENT);
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+            Map<?, ?> payloadDoc = nestedMap(nestedMap(queuedDocument(), "websocket"), "payload");
+            assertThat(payloadDoc.get("b64")).isNotNull();
+            assertThat(payloadDoc.containsKey("length")).isTrue();
+        });
     }
 
     private static void invokeExportFrame(MessageHandler handler, byte[] payload, Direction direction) throws Exception {
@@ -327,20 +328,12 @@ class ToolWebSocketLiveHandlerTest {
         return handlerCaptor.getValue();
     }
 
-    private static Map<String, Object> queuedDocument() throws InterruptedException {
-        TrafficExportQueue.stopWorker();
+    private static Map<String, Object> queuedDocument() throws Exception {
         LinkedBlockingQueue<?> queue =
                 Reflect.getStatic(TrafficExportQueue.class, "queue", LinkedBlockingQueue.class);
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
-        while (System.nanoTime() < deadline) {
-            Map<String, Object> doc = asStringObjectMap(queue.peek());
-            if (doc != null) {
-                return doc;
-            }
-            Thread.sleep(10);
-        }
-        assertThat(queue.peek()).as("traffic export queue document").isNotNull();
-        return asStringObjectMap(queue.peek());
+        Map<String, Object> doc = asStringObjectMap(queue.peek());
+        assertThat(doc).as("traffic export queue document").isNotNull();
+        return doc;
     }
 
     private static Map<String, Object> asStringObjectMap(Object head) {

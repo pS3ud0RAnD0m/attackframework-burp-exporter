@@ -32,7 +32,7 @@ public final class Tooltips {
     private static final int STRUCTURED_TOOLTIP_THRESHOLD = 120;
 
     /** Hover delay before showing a tooltip (initial and when moving to another control). */
-    public static final int TOOLTIP_SHOW_DELAY_MS = 250;
+    public static final int TOOLTIP_SHOW_DELAY_MS = 100;
 
     private Tooltips() {}
 

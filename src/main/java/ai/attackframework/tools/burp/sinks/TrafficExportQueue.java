@@ -50,6 +50,12 @@ public final class TrafficExportQueue {
      * recreated by {@link #startWorkerIfNeeded()} on the next {@link #offer(Map)}.</p>
      */
     private static volatile Thread drainWorker;
+
+    /**
+     * When {@code true}, {@link #offer(Map)} may queue documents but does not start the drain worker.
+     * Used by unit tests that assert in-memory queue depth without racing the background drainer.
+     */
+    private static volatile boolean drainDisabledForTests;
     private static final long WORKER_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000;
     private static final long WORKER_INTERRUPT_SHUTDOWN_TIMEOUT_MS = 1_000;
 
@@ -72,6 +78,18 @@ public final class TrafficExportQueue {
      */
     public static int getCurrentSize() {
         return queue.size();
+    }
+
+    /**
+     * Suppresses drain-worker startup until reset. For unit tests in this package only.
+     *
+     * @param disabled {@code true} to keep offers on the in-memory queue without draining
+     */
+    static void setDrainDisabledForTests(boolean disabled) {
+        drainDisabledForTests = disabled;
+        if (disabled) {
+            stopWorker();
+        }
     }
 
     /**
@@ -218,6 +236,9 @@ public final class TrafficExportQueue {
     }
 
     private static void startWorkerIfNeeded() {
+        if (drainDisabledForTests) {
+            return;
+        }
         if (workerStarted.compareAndSet(false, true)) {
             long generation = workerGeneration.incrementAndGet();
             Thread t = new Thread(() -> TrafficExportQueue.drainLoop(generation), "attackframework-traffic-export");
@@ -340,7 +361,7 @@ public final class TrafficExportQueue {
             }
             if (currentOwner) {
                 workerStarted.set(false);
-                if (!queue.isEmpty() && RuntimeConfig.isExportReady()) {
+                if (!queue.isEmpty() && RuntimeConfig.isExportReady() && !drainDisabledForTests) {
                     startWorkerIfNeeded();
                 }
             }
