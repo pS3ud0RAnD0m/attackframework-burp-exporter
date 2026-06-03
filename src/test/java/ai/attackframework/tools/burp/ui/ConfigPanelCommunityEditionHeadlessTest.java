@@ -50,29 +50,29 @@ class ConfigPanelCommunityEditionHeadlessTest {
         try {
             ConfigPanel panel = createPanel(BurpSuiteEdition.COMMUNITY_EDITION);
 
-            TriStateCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox");
-            JButton issuesExpandButton = Reflect.get(panel, "issuesExpandButton");
-            JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox");
-            JCheckBox issuesHighCheckbox = Reflect.get(panel, "issuesHighCheckbox");
-            JCheckBox issuesMediumCheckbox = Reflect.get(panel, "issuesMediumCheckbox");
-            JCheckBox issuesLowCheckbox = Reflect.get(panel, "issuesLowCheckbox");
-            JCheckBox issuesInformationalCheckbox = Reflect.get(panel, "issuesInformationalCheckbox");
-            JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox");
-            JCheckBox trafficExtensionsCheckbox = Reflect.get(panel, "trafficExtensionsCheckbox");
-            JCheckBox trafficIntruderCheckbox = Reflect.get(panel, "trafficIntruderCheckbox");
-            JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
-            JCheckBox trafficProxyHistoryCheckbox = Reflect.get(panel, "trafficProxyHistoryCheckbox");
-            JCheckBox trafficRepeaterCheckbox = Reflect.get(panel, "trafficRepeaterCheckbox");
-            JCheckBox trafficRepeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
-            JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
-            JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox");
-            TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
+            TriStateCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox", TriStateCheckBox.class);
+            JButton issuesExpandButton = Reflect.get(panel, "issuesExpandButton", JButton.class);
+            JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox", JCheckBox.class);
+            JCheckBox issuesHighCheckbox = Reflect.get(panel, "issuesHighCheckbox", JCheckBox.class);
+            JCheckBox issuesMediumCheckbox = Reflect.get(panel, "issuesMediumCheckbox", JCheckBox.class);
+            JCheckBox issuesLowCheckbox = Reflect.get(panel, "issuesLowCheckbox", JCheckBox.class);
+            JCheckBox issuesInformationalCheckbox = Reflect.get(panel, "issuesInformationalCheckbox", JCheckBox.class);
+            JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox", JCheckBox.class);
+            JCheckBox trafficExtensionsCheckbox = Reflect.get(panel, "trafficExtensionsCheckbox", JCheckBox.class);
+            JCheckBox trafficIntruderCheckbox = Reflect.get(panel, "trafficIntruderCheckbox", JCheckBox.class);
+            JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox", JCheckBox.class);
+            JCheckBox trafficProxyHistoryCheckbox = Reflect.get(panel, "trafficProxyHistoryCheckbox", JCheckBox.class);
+            JCheckBox trafficRepeaterCheckbox = Reflect.get(panel, "trafficRepeaterCheckbox", JCheckBox.class);
+            JCheckBox trafficRepeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox", JCheckBox.class);
+            JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox", JCheckBox.class);
+            JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox", JCheckBox.class);
+            TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
             Map<?, ?> fieldsExpandButtons = Reflect.get(panel, "fieldsExpandButtons", Map.class);
             JButton findingsExpandButton = (JButton) fieldsExpandButtons.get("findings");
             Map<?, ?> fieldCheckboxesByIndexRaw = Reflect.get(panel, "fieldCheckboxesByIndex", Map.class);
             Map<?, ?> findingsFieldCheckboxes = fieldCheckboxesByIndexRaw.get("findings") instanceof Map<?, ?> findingsMap ? findingsMap : null;
             JCheckBox findingsSeverityField = findingsFieldCheckboxes != null
-                    ? (JCheckBox) findingsFieldCheckboxes.get("severity")
+                    ? (JCheckBox) findingsFieldCheckboxes.get("issue.severity")
                     : null;
             JLabel findingsLabel = findLabelByText(panel, "Findings");
             JPanel issuesNotice = findByName(panel, "src.issues.communityNotice", JPanel.class);
@@ -81,9 +81,9 @@ class ConfigPanelCommunityEditionHeadlessTest {
             JLabel trafficBurpAiNoticeIcon = findByName(panel, "src.traffic.burp_ai.communityNotice.icon", JLabel.class);
             JPanel trafficScannerNotice = findByName(panel, "src.traffic.scanner.communityNotice", JPanel.class);
             JLabel trafficScannerNoticeIcon = findByName(panel, "src.traffic.scanner.communityNotice.icon", JLabel.class);
-            Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-            Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-            Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+            Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
+            Map<String, JPanel> subPanels = Reflect.stringKeyedMap(panel, "fieldsSubPanels", JPanel.class);
+            Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.stringKeyedNestedMap(panel, "fieldCheckboxesByIndex", JCheckBox.class);
 
             runEdt(() -> {
                 assertThat(issuesCheckbox.isEnabled()).isFalse();
@@ -141,18 +141,18 @@ class ConfigPanelCommunityEditionHeadlessTest {
         try {
             ConfigPanel panel = createPanel(BurpSuiteEdition.PROFESSIONAL);
 
-            TriStateCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox");
-            JButton issuesExpandButton = Reflect.get(panel, "issuesExpandButton");
-            TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
-            JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox");
-            JCheckBox trafficExtensionsCheckbox = Reflect.get(panel, "trafficExtensionsCheckbox");
-            JCheckBox trafficIntruderCheckbox = Reflect.get(panel, "trafficIntruderCheckbox");
-            JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
-            JCheckBox trafficProxyHistoryCheckbox = Reflect.get(panel, "trafficProxyHistoryCheckbox");
-            JCheckBox trafficRepeaterCheckbox = Reflect.get(panel, "trafficRepeaterCheckbox");
-            JCheckBox trafficRepeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
-            JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
-            JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox");
+            TriStateCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox", TriStateCheckBox.class);
+            JButton issuesExpandButton = Reflect.get(panel, "issuesExpandButton", JButton.class);
+            TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
+            JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox", JCheckBox.class);
+            JCheckBox trafficExtensionsCheckbox = Reflect.get(panel, "trafficExtensionsCheckbox", JCheckBox.class);
+            JCheckBox trafficIntruderCheckbox = Reflect.get(panel, "trafficIntruderCheckbox", JCheckBox.class);
+            JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox", JCheckBox.class);
+            JCheckBox trafficProxyHistoryCheckbox = Reflect.get(panel, "trafficProxyHistoryCheckbox", JCheckBox.class);
+            JCheckBox trafficRepeaterCheckbox = Reflect.get(panel, "trafficRepeaterCheckbox", JCheckBox.class);
+            JCheckBox trafficRepeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox", JCheckBox.class);
+            JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox", JCheckBox.class);
+            JCheckBox trafficSequencerCheckbox = Reflect.get(panel, "trafficSequencerCheckbox", JCheckBox.class);
             JPanel issuesNotice = findByName(panel, "src.issues.communityNotice", JPanel.class);
             JPanel trafficBurpAiNotice = findByName(panel, "src.traffic.burp_ai.communityNotice", JPanel.class);
             JPanel trafficScannerNotice = findByName(panel, "src.traffic.scanner.communityNotice", JPanel.class);
@@ -186,18 +186,18 @@ class ConfigPanelCommunityEditionHeadlessTest {
     void importing_config_in_community_reapplies_source_restrictions() throws Exception {
         try {
             ConfigPanel panel = createPanel(BurpSuiteEdition.COMMUNITY_EDITION);
-            TriStateCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox");
-            TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
-            JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox");
-            JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox");
-            JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox");
-            JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
+            TriStateCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox", TriStateCheckBox.class);
+            TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
+            JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox", JCheckBox.class);
+            JCheckBox trafficBurpAiCheckbox = Reflect.get(panel, "trafficBurpAiCheckbox", JCheckBox.class);
+            JCheckBox trafficScannerCheckbox = Reflect.get(panel, "trafficScannerCheckbox", JCheckBox.class);
+            JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox", JCheckBox.class);
             Map<?, ?> fieldsExpandButtons = Reflect.get(panel, "fieldsExpandButtons", Map.class);
             JButton findingsExpandButton = (JButton) fieldsExpandButtons.get("findings");
             Map<?, ?> fieldCheckboxesByIndexRaw = Reflect.get(panel, "fieldCheckboxesByIndex", Map.class);
             Map<?, ?> findingsFieldCheckboxes = fieldCheckboxesByIndexRaw.get("findings") instanceof Map<?, ?> findingsMap ? findingsMap : null;
             JCheckBox findingsSeverityField = findingsFieldCheckboxes != null
-                    ? (JCheckBox) findingsFieldCheckboxes.get("severity")
+                    ? (JCheckBox) findingsFieldCheckboxes.get("issue.severity")
                     : null;
 
             ConfigState.State imported = new ConfigState.State(

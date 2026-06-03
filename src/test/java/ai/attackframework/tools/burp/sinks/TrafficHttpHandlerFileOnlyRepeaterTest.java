@@ -9,14 +9,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.testutils.TestPathSupport;
-import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
@@ -36,6 +38,7 @@ class TrafficHttpHandlerFileOnlyRepeaterTest {
             Path root = TestPathSupport.createDirectory("traffic-handler-file-only-repeater");
             RuntimeConfig.updateState(fileOnlyTrafficState(root));
             RuntimeConfig.setExportRunning(true);
+            FileExportService.createSelectedExportFiles(List.of(ConfigKeys.SRC_TRAFFIC));
 
             TrafficHttpHandler handler = new TrafficHttpHandler();
             HttpRequestToBeSent request = requestToBeSent(
@@ -63,24 +66,30 @@ class TrafficHttpHandlerFileOnlyRepeaterTest {
                             response,
                             ToolType.REPEATER,
                             requestStageMetadata);
-            TrafficExportQueue.offer(handler.buildDocument(
+            Map<String, Object> document = handler.buildDocument(
                     response,
                     request,
                     true,
                     1L,
                     2L,
                     ToolType.REPEATER,
-                    responseStageMetadata));
-            ExportReporterLifecycle.stopAndClearPendingExportWork();
+                    responseStageMetadata);
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
+                    TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, document);
+            FileExportService.emit(prepared);
 
-            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("traffic") + ".jsonl");
+            Path jsonlPath = root.resolve(RuntimeConfig.indexNameForKey("traffic") + ".jsonl");
             assertThat(jsonlPath).exists();
             String contents = Files.readString(jsonlPath);
-            assertThat(contents).contains("\"tool_type\":\"REPEATER\"");
-            assertThat(contents).contains("\"repeater_tab_name\":\"Manual Tab\"");
-            assertThat(contents).contains("\"repeater_group_name\":\"Manual Group\"");
+            assertThat(contents).contains("\"burp\":");
+            assertThat(contents).contains("\"reporting_tool\":\"Repeater\"");
+            assertThat(contents).doesNotContain("\"tool_type\"");
+            assertThat(contents).contains("\"tab_name\":\"Manual Tab\"");
+            assertThat(contents).contains("\"tab_group\":\"Manual Group\"");
+            assertThat(contents).contains("\"repeater\":");
             assertThat(contents).doesNotContain("OpenSearchTrafficHandler");
         } finally {
+            FileExportService.resetForTests();
             ExportReporterLifecycle.resetForTests();
         }
     }
@@ -179,4 +188,5 @@ class TrafficHttpHandlerFileOnlyRepeaterTest {
         when(bytes.getBytes()).thenReturn(value.getBytes(StandardCharsets.UTF_8));
         return bytes;
     }
+
 }

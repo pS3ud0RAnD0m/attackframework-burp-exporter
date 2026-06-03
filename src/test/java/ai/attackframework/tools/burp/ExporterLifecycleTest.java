@@ -43,6 +43,7 @@ import burp.api.montoya.logging.Logging;
 import burp.api.montoya.project.Project;
 import burp.api.montoya.ui.UserInterface;
 import burp.api.montoya.core.BurpSuiteEdition;
+import burp.api.montoya.websocket.WebSockets;
 
 class ExporterLifecycleTest {
 
@@ -76,6 +77,7 @@ class ExporterLifecycleTest {
             verify(fixture.extension).registerUnloadingHandler(any(ExtensionUnloadingHandler.class));
             verify(fixture.userInterface).registerSuiteTab(eq("Attack Framework"), any(Component.class));
             verify(fixture.http).registerHttpHandler(any());
+            verify(fixture.webSockets).registerWebSocketCreatedHandler(any());
         } finally {
             ExportReporterLifecycle.resetForTests();
             Logger.resetState();
@@ -93,9 +95,9 @@ class ExporterLifecycleTest {
             SettingsIndexReporter.start();
             FindingsIndexReporter.start();
             SitemapIndexReporter.start();
-            ProxyWebSocketIndexReporter.start();
+            ProxyWebSocketIndexReporter.startLivePoll();
 
-            ExecutorService startupExecutorBeforeUnload = getStatic(ConfigPanel.class, "startupExecutor");
+            ExecutorService startupExecutorBeforeUnload = ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor"));
             fixture.unloadHandler.get().extensionUnloaded();
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
@@ -103,7 +105,7 @@ class ExporterLifecycleTest {
             assertThat(BurpRuntimeMetadata.burpVersion()).isNull();
             assertThat(BurpRuntimeMetadata.projectId()).isNull();
             assertAllWorkersTerminated(startupExecutorBeforeUnload);
-            assertThat((List<?>) getStatic(Logger.class, "LISTENERS")).isEmpty();
+            assertThat(List.class.cast(getStatic(Logger.class, "LISTENERS"))).isEmpty();
 
             verify(fixture.httpRegistration).deregister();
             verify(fixture.suiteTabRegistration).deregister();
@@ -120,7 +122,7 @@ class ExporterLifecycleTest {
             ApiFixture fixture = new ApiFixture();
             new Exporter().initialize(fixture.api);
 
-            ExecutorService startupExecutorBeforeUnload = getStatic(ConfigPanel.class, "startupExecutor");
+            ExecutorService startupExecutorBeforeUnload = ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor"));
             assertThatCode(() -> {
                 fixture.unloadHandler.get().extensionUnloaded();
                 fixture.unloadHandler.get().extensionUnloaded();
@@ -153,10 +155,10 @@ class ExporterLifecycleTest {
         assertThat(peek(ProxyWebSocketIndexReporter.class, "SCHEDULER")).isNull();
         assertThat(peek(ProxyHistoryIndexReporter.class, "SCHEDULER")).isNull();
         assertThat(peek(TRAFFIC_HTTP_HANDLER_SUPPORT, "ORPHAN_SCHEDULER")).isNull();
-        assertThat((Thread) getStatic(TrafficExportQueue.class, "drainWorker")).isNull();
+        assertThat(Thread.class.cast(getStatic(TrafficExportQueue.class, "drainWorker"))).isNull();
         assertThat(IndexingRetryCoordinator.getInstance().isDrainThreadAlive()).isFalse();
         assertThat(startupExecutorBeforeUnload.isShutdown()).isTrue();
-        assertThat((ExecutorService) getStatic(ConfigPanel.class, "startupExecutor"))
+        assertThat(ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor")))
                 .isNotSameAs(startupExecutorBeforeUnload);
     }
 
@@ -172,12 +174,15 @@ class ExporterLifecycleTest {
         final Registration unloadRegistration = mock(Registration.class);
         final Registration suiteTabRegistration = mock(Registration.class);
         final Registration httpRegistration = mock(Registration.class);
+        final Registration webSocketRegistration = mock(Registration.class);
+        final WebSockets webSockets = mock(WebSockets.class);
         final AtomicReference<ExtensionUnloadingHandler> unloadHandler = new AtomicReference<>();
 
         ApiFixture() {
             when(api.extension()).thenReturn(extension);
             when(api.userInterface()).thenReturn(userInterface);
             when(api.http()).thenReturn(http);
+            when(api.websockets()).thenReturn(webSockets);
             when(api.logging()).thenReturn(logging);
             when(api.burpSuite()).thenReturn(burpSuite);
             when(api.project()).thenReturn(project);
@@ -191,6 +196,7 @@ class ExporterLifecycleTest {
             when(userInterface.registerSuiteTab(eq("Attack Framework"), any(Component.class)))
                     .thenReturn(suiteTabRegistration);
             when(http.registerHttpHandler(any())).thenReturn(httpRegistration);
+            when(webSockets.registerWebSocketCreatedHandler(any())).thenReturn(webSocketRegistration);
         }
     }
 }

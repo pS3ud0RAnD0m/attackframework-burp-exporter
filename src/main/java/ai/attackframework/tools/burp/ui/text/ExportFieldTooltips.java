@@ -1,13 +1,50 @@
 package ai.attackframework.tools.burp.ui.text;
 
+import java.util.Map;
+
 /**
  * Shared UI text for generated field checkboxes in the Config "Index Fields" section.
  */
 public final class ExportFieldTooltips {
 
+    private static final Map<String, String> SITEMAP_DISPLAY_NAMES = Map.of();
     private ExportFieldTooltips() {}
 
+    /**
+     * Checkbox/label text for a leaf under a top-level section (e.g. {@code comment} under Burp).
+     * Tooltips still use the full dotted {@code fieldKey}.
+     */
+    public static String checkboxLabelUnderSection(String sectionPath, String fieldKey) {
+        String rawLabel;
+        if (sectionPath == null || sectionPath.isBlank()) {
+            rawLabel = fieldKey;
+        } else {
+            String prefix = sectionPath + ".";
+            rawLabel = fieldKey != null && fieldKey.startsWith(prefix)
+                    ? fieldKey.substring(prefix.length())
+                    : fieldKey;
+        }
+        return displayLabel(rawLabel);
+    }
+
+    private static String displayLabel(String fieldKey) {
+        if (fieldKey == null || fieldKey.isBlank()) {
+            return "";
+        }
+        String label = fieldKey.replace('_', ' ');
+        return Character.toUpperCase(label.charAt(0)) + label.substring(1);
+    }
+
     public static String displayNameFor(String indexShortName, String fieldKey) {
+        if (isMetaField(fieldKey)) {
+            return fieldKey;
+        }
+        if (isBurpField(fieldKey) && "settings".equals(indexShortName)) {
+            return fieldKey;
+        }
+        if (isExporterEventField(fieldKey)) {
+            return fieldKey;
+        }
         return switch (indexShortName) {
             case "exporter" -> exporterDisplayName(fieldKey);
             case "settings" -> settingsDisplayName(fieldKey);
@@ -19,414 +56,246 @@ public final class ExportFieldTooltips {
     }
 
     public static String tooltipFor(String indexShortName, String fieldKey) {
+        return withFieldPathPrefix(fieldKey, tooltipBodyFor(indexShortName, fieldKey));
+    }
+
+    private static String tooltipBodyFor(String indexShortName, String fieldKey) {
+        if (isMetaField(fieldKey)) {
+            return metaTooltip(fieldKey);
+        }
+        if (isBurpField(fieldKey) && "settings".equals(indexShortName)) {
+            return burpTooltip(fieldKey);
+        }
+        if (isExporterEventField(fieldKey)) {
+            return exporterEventTooltip(fieldKey);
+        }
         return switch (indexShortName) {
             case "exporter" -> exporterTooltip(fieldKey);
             case "settings" -> settingsTooltip(fieldKey);
             case "sitemap" -> sitemapTooltip(fieldKey);
             case "findings" -> findingsTooltip(fieldKey);
             case "traffic" -> trafficTooltip(fieldKey);
-            default -> fieldKey;
+            default -> genericLeafTooltip(fieldKey);
+        };
+    }
+
+    private static String withFieldPathPrefix(String fieldKey, String tooltipHtml) {
+        if (fieldKey == null || fieldKey.isBlank()) {
+            return tooltipHtml;
+        }
+        String fieldLine = "<b>Field:</b> " + Tooltips.escapeHtml(fieldKey);
+        if (tooltipHtml == null || tooltipHtml.isBlank()) {
+            return Tooltips.htmlRaw(fieldLine);
+        }
+        if (tooltipHtml.startsWith("<html>") && tooltipHtml.endsWith("</html>")) {
+            String body = tooltipHtml.substring(6, tooltipHtml.length() - 7);
+            return Tooltips.htmlRaw(fieldLine, body);
+        }
+        return Tooltips.htmlRaw(fieldLine, tooltipHtml);
+    }
+
+    static String genericLeafTooltip(String fieldKey) {
+        return Tooltips.textWithSource(
+                "Exported field mapped in OpenSearch as " + fieldKey + ".",
+                "Included when this toggle is enabled in the Fields panel.");
+    }
+
+    private static boolean isMetaField(String fieldKey) {
+        return fieldKey != null && fieldKey.startsWith("meta.");
+    }
+
+    private static String metaTooltip(String fieldKey) {
+        return switch (fieldKey) {
+            case "meta.schema_version" -> Tooltips.textWithSource(
+                    "Export schema version for this document.",
+                    "Reporters write their cached schema constant into meta.schema_version before export.");
+            case "meta.extension_version" -> Tooltips.textWithSource(
+                    "Burp Exporter extension version that produced this document.",
+                    "Reporters write the cached loaded extension version into meta.extension_version before export.");
+            case "meta.indexed_at" -> Tooltips.textWithSource(
+                    "Exporter indexing timestamp used as the canonical cross-index time field.",
+                    "Each reporter writes Instant.now().toString() into meta.indexed_at before export.");
+            case "meta.export_id" -> Tooltips.textWithSource(
+                    "Stable content-derived export ID shared by files and OpenSearch.",
+                    "ExportDocumentIdentity writes meta.export_id after field filtering; OpenSearch also uses it as _id.");
+            default -> genericLeafTooltip(fieldKey);
+        };
+    }
+
+    private static boolean isBurpField(String fieldKey) {
+        return fieldKey != null && fieldKey.startsWith("burp.");
+    }
+
+    private static String burpTooltip(String fieldKey) {
+        return switch (fieldKey) {
+            case "burp.project_id" -> Tooltips.textWithSource(
+                    "Burp project identifier.",
+                    "SettingsIndexReporter uses MontoyaApi.project().id(), falling back to BurpRuntimeMetadata.projectIdOrUnknown().");
+            case "burp.version" -> Tooltips.textWithSource(
+                    "Burp Suite version string.",
+                    "SettingsIndexReporter uses MontoyaApi.burpSuite().version(), falling back to BurpRuntimeMetadata.burpVersion().");
+            default -> genericLeafTooltip(fieldKey);
+        };
+    }
+
+    private static boolean isExporterEventField(String fieldKey) {
+        return fieldKey != null && fieldKey.startsWith("event.");
+    }
+
+    private static String exporterEventTooltip(String fieldKey) {
+        return switch (fieldKey) {
+            case "event.data" -> Tooltips.textWithSource(
+                    "Structured event payload when present.",
+                    "ExporterIndexStatsReporter writes runtime metrics; ExporterIndexConfigReporter writes the normalized exporter configuration; log events do not populate this field.");
+            case "event.level" -> Tooltips.textWithSource(
+                    "Exporter event severity or verbosity level.",
+                    "ExporterIndexLogForwarder forwards Logger levels; ExporterIndexStatsReporter and ExporterIndexConfigReporter write INFO.");
+            case "event.source" -> Tooltips.textWithSource(
+                    "Exporter event source label.",
+                    "ExporterIndexLogForwarder, ExporterIndexStatsReporter, and ExporterIndexConfigReporter assign the component/source that produced the event.");
+            case "event.summary" -> Tooltips.textWithSource(
+                    "Concise human-readable event summary.",
+                    "ExporterIndexLogForwarder stores the original log text; ExporterIndexStatsReporter and ExporterIndexConfigReporter build summary strings.");
+            case "event.thread" -> Tooltips.textWithSource(
+                    "Java producer thread name for the exporter event. Examples include AWT-EventQueue-0, attackframework-exporter-stats, attackframework-exporter-log-forwarder, and attackframework-settings-reporter.",
+                    "Exporter reporters write Thread.currentThread().getName(); this is diagnostic runtime metadata, not the Burp tool, request thread, or OpenSearch thread.");
+            case "event.type" -> Tooltips.textWithSource(
+                    "Exporter event category.",
+                    "ExporterIndexLogForwarder writes log_event; ExporterIndexStatsReporter writes stats_snapshot; ExporterIndexConfigReporter writes config_snapshot.");
+            default -> genericLeafTooltip(fieldKey);
         };
     }
 
     private static String exporterDisplayName(String fieldKey) {
-        return switch (fieldKey) {
-            case "level" -> "event.level";
-            case "message_text" -> "message_text";
-            case "message" -> "message";
-            case "thread" -> "thread";
-            case "extension_version" -> "extension.version";
-            case "burp_version" -> "burp.version";
-            case "project_id" -> "project_id";
-            default -> fieldKey;
-        };
+        return fieldKey;
     }
 
     private static String exporterTooltip(String fieldKey) {
-        return switch (fieldKey) {
-            case "level" -> Tooltips.textWithSource(
-                    "Event severity or verbosity level.",
-                    "ExporterIndexLogForwarder forwards Logger levels; ExporterIndexStatsReporter and ExporterIndexConfigReporter write INFO.");
-            case "message_text" -> Tooltips.textWithSource(
-                    "Concise human-readable summary.",
-                    "ExporterIndexLogForwarder stores the original log text; ExporterIndexStatsReporter and ExporterIndexConfigReporter build summary strings.");
-            case "message" -> Tooltips.textWithSource(
-                    "Structured event payload when present.",
-                    "ExporterIndexStatsReporter writes runtime metrics; ExporterIndexConfigReporter writes the normalized exporter configuration; log events do not populate this field.");
-            case "thread" -> Tooltips.textWithSource(
-                    "Producer thread name.",
-                    "Exporter reporters use Thread.currentThread().getName().");
-            case "extension_version" -> Tooltips.textWithSource(
-                    "Burp Exporter extension version.",
-                    "All exporter reporters use Version.get().");
-            case "burp_version" -> Tooltips.textWithSource(
-                    "Burp Suite version string.",
-                    "All exporter reporters use BurpRuntimeMetadata.burpVersion().");
-            case "project_id" -> Tooltips.textWithSource(
-                    "Burp project identifier.",
-                    "All exporter reporters use BurpRuntimeMetadata.projectId().");
-            default -> fieldKey;
-        };
+        return fieldKey;
     }
 
     private static String settingsDisplayName(String fieldKey) {
-        return switch (fieldKey) {
-            case "settings_user" -> "settings.user";
-            case "settings_project" -> "settings.project";
-            default -> fieldKey;
-        };
+        return fieldKey;
     }
 
     private static String settingsTooltip(String fieldKey) {
         return switch (fieldKey) {
-            case "project_id" -> Tooltips.textWithSource(
-                    "Burp project identifier.",
-                    "SettingsIndexReporter uses MontoyaApi.project().id().");
-            case "settings_user" -> Tooltips.textWithSource(
+            case "user" -> Tooltips.textWithSource(
                     "Full user options JSON when User settings export is enabled.",
                     "SettingsIndexReporter uses MontoyaApi.burpSuite().exportUserOptionsAsJson().");
-            case "settings_project" -> Tooltips.textWithSource(
+            case "project" -> Tooltips.textWithSource(
                     "Full project options JSON when Project settings export is enabled.",
                     "SettingsIndexReporter uses MontoyaApi.burpSuite().exportProjectOptionsAsJson().");
-            default -> fieldKey;
+            default -> genericLeafTooltip(fieldKey);
         };
     }
 
     private static String sitemapDisplayName(String fieldKey) {
-        return switch (fieldKey) {
-            case "url" -> "request.url";
-            case "host" -> "request.host";
-            case "port" -> "request.port";
-            case "protocol_transport" -> "request.protocol_transport";
-            case "protocol_application" -> "request.protocol_application";
-            case "protocol_sub" -> "request.http_version";
-            case "method" -> "request.method";
-            case "status_code" -> "response.status";
-            case "status_reason" -> "response.reason_phrase";
-            case "content_type" -> "response.mime_type";
-            case "content_length" -> "response.body.length";
-            case "title" -> "response.body.page_title";
-            case "param_names" -> "request.parameters.name";
-            case "path" -> "request.path";
-            case "query_string" -> "request.query";
-            default -> fieldKey;
-        };
+        if (fieldKey == null) {
+            return null;
+        }
+        return SITEMAP_DISPLAY_NAMES.getOrDefault(fieldKey, fieldKey);
     }
 
     private static String sitemapTooltip(String fieldKey) {
         return switch (fieldKey) {
-            case "url" -> Tooltips.textWithSource(
-                    "Full URL for the sitemap item.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.request().url().");
-            case "host" -> Tooltips.textWithSource(
-                    "Target host.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.httpService().host().");
-            case "port" -> Tooltips.textWithSource(
+            case "request.url" -> Tooltips.textWithSource(
+                    "Full request URL for the sitemap item.",
+                    "SitemapIndexReporter.buildSitemapDoc() uses RequestResponseDocBuilder.buildBestEffortUrl() from HttpRequest and HttpService.");
+            case "request.port" -> Tooltips.textWithSource(
                     "Target port.",
                     "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.httpService().port().");
-            case "protocol_transport" -> Tooltips.textWithSource(
-                    "Transport protocol.",
-                    "SitemapIndexReporter.buildSitemapDoc() maps HttpRequestResponse.httpService().secure() to https/http.");
-            case "protocol_application" -> Tooltips.textWithSource(
-                    "Application protocol label.",
-                    "SitemapIndexReporter.buildSitemapDoc() assigns constant \"http\".");
-            case "protocol_sub" -> Tooltips.textWithSource(
-                    "HTTP protocol version.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.request().httpVersion().");
-            case "method" -> Tooltips.textWithSource(
+            case "request.protocol.scheme" -> Tooltips.textWithSource(
+                    "Request scheme: https or http.",
+                    "SitemapIndexReporter.buildSitemapDoc() maps HttpRequestResponse.httpService().secure() to https or http.");
+            case "request.protocol.http_version" -> Tooltips.textWithSource(
+                    "HTTP version on the request line.",
+                    "SitemapIndexReporter.buildSitemapDoc() uses RequestResponseDocBuilder.safeRequestHttpVersion().");
+            case "request.header" -> Tooltips.textWithSource(
+                    "Actual request headers as lower-case dynamic fields plus exporter-inferred header facets.",
+                    "RequestResponseDocBuilder.buildSitemapRequestDoc() copies HttpHeader values into request.header.<lower-case-name>; duplicate header names become arrays, and inferred request content type is written as request.header.content-type_inferred.");
+            case "request.method" -> Tooltips.textWithSource(
                     "HTTP method.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.request().method().");
-            case "status_code" -> Tooltips.textWithSource(
-                    "HTTP response status code when a response exists.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.response().statusCode().");
-            case "status_reason" -> Tooltips.textWithSource(
-                    "HTTP response reason phrase when a response exists.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.response().reasonPhrase().");
-            case "content_type" -> Tooltips.textWithSource(
-                    "Effective response MIME type summary.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.response().mimeType().");
-            case "content_length" -> Tooltips.textWithSource(
-                    "Response body length in bytes.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.response().body().getBytes().length.");
-            case "title" -> Tooltips.textWithSource(
-                    "Page title when Burp exposes it.",
-                    "SitemapIndexReporter.getPageTitle() uses HttpRequestResponse.response().attributes(AttributeType.PAGE_TITLE).");
-            case "param_names" -> Tooltips.textWithSource(
-                    "Request parameter names only.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.request().parameters().");
-            case "path" -> Tooltips.textWithSource(
+                    "RequestResponseDocBuilder.buildSitemapRequestDoc() uses HttpRequest.method().");
+            case "request.path.with_query" -> Tooltips.textWithSource(
                     "Request path and query portion.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.request().path().");
-            case "query_string" -> Tooltips.textWithSource(
-                    "Raw request query string.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.request().query().");
-            case "request_id" -> Tooltips.textWithSource(
-                    "Deduplication key for incremental sitemap export.",
-                    "Derived from Montoya request.url() and request.method(); SitemapIndexReporter.requestId() computes SHA-256(url + \"|\" + method).");
-            case "source" -> Tooltips.textWithSource(
-                    "Document source label.",
-                    "SitemapIndexReporter.buildSitemapDoc() assigns constant \"burp-exporter\".");
-            default -> fieldKey;
+                    "RequestResponseDocBuilder.buildSitemapRequestDoc() uses HttpRequest.path().");
+            case "request.path.without_query" -> Tooltips.textWithSource(
+                    "Request path without the query string.",
+                    "RequestResponseDocBuilder.buildSitemapRequestDoc() uses HttpRequest.pathWithoutQuery().");
+            case "request.path.query" -> Tooltips.textWithSource(
+                    "Raw query string from the request URL without the leading ?.",
+                    "RequestResponseDocBuilder.buildSitemapRequestDoc() uses HttpRequest.query().");
+            case "request.path.file_extension" -> Tooltips.textWithSource(
+                    "File extension inferred from the request URL path.",
+                    "RequestResponseDocBuilder.buildSitemapRequestDoc() uses HttpRequest.fileExtension().");
+            case "response.status.code" -> Tooltips.textWithSource(
+                    "HTTP response status code when a response exists.",
+                    "RequestResponseDocBuilder.buildTrafficResponseDoc() uses HttpResponse.statusCode() for sitemap responses.");
+            case "response.status.code_class" -> Tooltips.textWithSource(
+                    "HTTP status family derived from the status code.",
+                    "RequestResponseDocBuilder.statusCodeClassName() maps the sitemap response status code to Burp StatusCodeClass.");
+            case "response.status.description" -> Tooltips.textWithSource(
+                    "HTTP response reason phrase when a response exists.",
+                    "RequestResponseDocBuilder.buildTrafficResponseDoc() uses HttpResponse.reasonPhrase() for sitemap responses.");
+            case "response.protocol.http_version" -> Tooltips.textWithSource(
+                    "HTTP version reported for the response.",
+                    "RequestResponseDocBuilder.buildTrafficResponseDoc() uses only HttpResponse.httpVersion().");
+            case "response.header" -> Tooltips.textWithSource(
+                    "Actual response headers as lower-case dynamic fields plus Burp-inferred content-type facets.",
+                    "RequestResponseDocBuilder.buildTrafficResponseDoc() copies HttpHeader values into response.header.<lower-case-name>; duplicate header names become arrays, and Burp MIME verdicts are written as response.header.content-type_inferred_burp and response.header.content-type_inferred_burp_body.");
+            case "burp.notes" -> Tooltips.textWithSource(
+                    "User notes attached to the sitemap item in Burp.",
+                    "SitemapIndexReporter.buildBurpDoc() reads HttpRequestResponse.annotations().notes().");
+            case "burp.highlight" -> Tooltips.textWithSource(
+                    "Burp highlight color attached to the sitemap item.",
+                    "SitemapIndexReporter.buildBurpDoc() reads HttpRequestResponse.annotations().highlightColor().name().");
+            case "burp.is_in_scope" -> Tooltips.textWithSource(
+                    "Raw Burp Suite scope flag for the sitemap URL, not the extension's export-scope decision.",
+                    "SitemapIndexReporter.pushItems() uses MontoyaApi.scope().isInScope(url).");
+            case "burp.timing.end" -> Tooltips.textWithSource(
+                    "Absolute response-end timestamp for this sitemap HTTP exchange when Burp exposes timing data.",
+                    "SitemapIndexReporter.buildTiming() derives this from TimingData.timeRequestSent() plus timeBetweenRequestSentAndEndOfResponse().");
+            case "burp.timing.req_sent" -> Tooltips.textWithSource(
+                    "Request-sent timestamp for this sitemap HTTP exchange when Burp exposes timing data.",
+                    "SitemapIndexReporter.buildTiming() uses HttpRequestResponse.timingData().timeRequestSent().");
+            case "burp.timing.req_sent_to_res_start" -> Tooltips.textWithSource(
+                    "Time to first response byte in milliseconds: request sent to start of response.",
+                    "SitemapIndexReporter.buildTiming() uses HttpRequestResponse.timingData().timeBetweenRequestSentAndStartOfResponse().");
+            case "burp.timing.req_sent_to_res_end" -> Tooltips.textWithSource(
+                    "Total observed exchange duration in milliseconds: request sent to end of response.",
+                    "SitemapIndexReporter.buildTiming() uses HttpRequestResponse.timingData().timeBetweenRequestSentAndEndOfResponse().");
+            default -> sitemapTooltipByPattern(fieldKey);
         };
+    }
+
+    private static String sitemapTooltipByPattern(String fieldKey) {
+        if (fieldKey != null && (fieldKey.startsWith("request.") || fieldKey.startsWith("response."))) {
+            String tooltip = requestResponseNestedTooltip(fieldKey);
+            if (!tooltip.contains("Included when this toggle is enabled in the Fields panel.")) {
+                return tooltip;
+            }
+        }
+        return genericLeafTooltip(fieldKey);
     }
 
     private static String findingsDisplayName(String fieldKey) {
-        return switch (fieldKey) {
-            case "name" -> "issue.name";
-            case "severity" -> "issue.severity";
-            case "confidence" -> "issue.confidence";
-            case "host" -> "issue.host";
-            case "port" -> "issue.port";
-            case "protocol_transport" -> "issue.protocol_transport";
-            case "protocol_application" -> "issue.protocol_application";
-            case "protocol_sub" -> "issue.protocol_sub";
-            case "url" -> "issue.url";
-            case "param" -> "issue.param";
-            case "issue_type_id" -> "issue.definition.type_index";
-            case "typical_severity" -> "issue.definition.typical_severity";
-            case "description" -> "issue.detail";
-            case "background" -> "issue.definition.background";
-            case "remediation_background" -> "issue.definition.remediation";
-            case "remediation_detail" -> "issue.remediation";
-            case "references" -> "issue.references";
-            case "classifications" -> "issue.classifications";
-            default -> fieldKey;
-        };
+        return ExportFieldTooltipsFindings.findingsDisplayName(fieldKey);
     }
 
     private static String findingsTooltip(String fieldKey) {
-        return switch (fieldKey) {
-            case "name" -> Tooltips.textWithSource(
-                    "Issue name.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.name().");
-            case "severity" -> Tooltips.textWithSource(
-                    "Issue severity.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.severity().");
-            case "confidence" -> Tooltips.textWithSource(
-                    "Issue confidence.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.confidence().");
-            case "host" -> Tooltips.textWithSource(
-                    "Target host.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.httpService().host().");
-            case "port" -> Tooltips.textWithSource(
-                    "Target port.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.httpService().port().");
-            case "protocol_transport" -> Tooltips.textWithSource(
-                    "Transport protocol.",
-                    "FindingsIndexReporter.buildFindingDoc() maps AuditIssue.httpService().secure() to https/http.");
-            case "protocol_application" -> Tooltips.textWithSource(
-                    "Application protocol label.",
-                    "FindingsIndexReporter.buildFindingDoc() currently assigns an empty string; not yet populated from Montoya.");
-            case "protocol_sub" -> Tooltips.textWithSource(
-                    "Protocol version label.",
-                    "FindingsIndexReporter.buildFindingDoc() currently assigns an empty string; not yet populated from Montoya.");
-            case "url" -> Tooltips.textWithSource(
-                    "Base URL for the finding.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.baseUrl().");
-            case "param" -> Tooltips.textWithSource(
-                    "Affected parameter.",
-                    "FindingsIndexReporter.buildFindingDoc() currently assigns an empty string; parameter extraction is not yet implemented.");
-            case "issue_type_id" -> Tooltips.textWithSource(
-                    "Burp issue type identifier.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.definition().typeIndex().");
-            case "typical_severity" -> Tooltips.textWithSource(
-                    "Typical severity from the issue definition.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.definition().typicalSeverity().");
-            case "description" -> Tooltips.textWithSource(
-                    "Issue description.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.detail().");
-            case "background" -> Tooltips.textWithSource(
-                    "Issue background text.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.definition().background().");
-            case "remediation_background" -> Tooltips.textWithSource(
-                    "Remediation background text.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.definition().remediation().");
-            case "remediation_detail" -> Tooltips.textWithSource(
-                    "Remediation detail text.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.remediation().");
-            case "references" -> Tooltips.textWithSource(
-                    "Issue references.",
-                    "FindingsIndexReporter.buildFindingDoc() currently assigns an empty string; reference extraction is not yet implemented.");
-            case "classifications" -> Tooltips.textWithSource(
-                    "Issue classifications such as CWE/CAPEC.",
-                    "FindingsIndexReporter.buildFindingDoc() currently assigns an empty object; classification extraction is not yet implemented.");
-            default -> fieldKey;
-        };
+        return ExportFieldTooltipsFindings.findingsTooltip(fieldKey);
     }
 
     private static String trafficDisplayName(String fieldKey) {
-        return switch (fieldKey) {
-            case "url" -> "request.url";
-            case "host" -> "request.host";
-            case "port" -> "request.port";
-            case "scheme" -> "request.scheme";
-            case "protocol_transport" -> "request.protocol_transport";
-            case "protocol_application" -> "request.protocol_application";
-            case "protocol_sub" -> "request.http_version";
-            case "http_version" -> "request.http_version";
-            case "tool" -> "burp.tool";
-            case "tool_type" -> "burp.tool_type";
-            case "burp_in_scope" -> "burp_in_scope";
-            case "message_id" -> "burp.message_id";
-            case "time_start" -> "timing.start";
-            case "time_end" -> "timing.end";
-            case "duration_ms" -> "timing.duration_ms";
-            case "comment" -> "burp.annotations.comment";
-            case "highlight" -> "burp.annotations.highlight";
-            case "edited" -> "burp.message.edited";
-            case "path" -> "request.path";
-            case "method" -> "request.method";
-            case "mime_type" -> "response.mime_type";
-            case "repeater_tab_name" -> "repeater.tab_name";
-            case "repeater_group_name" -> "repeater.group_name";
-            case "websocket_id" -> "websocket.connection_id";
-            case "ws_message_id" -> "websocket.message_id";
-            case "ws_direction" -> "websocket.direction";
-            case "ws_message_type" -> "websocket.payload_type";
-            case "ws_payload" -> "websocket.payload.b64";
-            case "ws_payload_text" -> "websocket.payload.text";
-            case "ws_payload_length" -> "websocket.payload.length";
-            case "ws_edited" -> "websocket.payload.edited";
-            case "ws_edited_payload" -> "websocket.payload.edited_b64";
-            case "ws_upgrade_request" -> "websocket.upgrade_request";
-            case "ws_time" -> "websocket.time";
-            case "proxy_history_id" -> "proxy_history.id";
-            case "listener_port" -> "proxy.listener_port";
-            case "time_request_sent" -> "timing.request_sent";
-            case "response_start_latency_ms" -> "timing.response_start_latency_ms";
-            default -> fieldKey;
-        };
+        return ExportFieldTooltipsTraffic.trafficDisplayName(fieldKey);
     }
 
     private static String trafficTooltip(String fieldKey) {
-        return switch (fieldKey) {
-            case "url" -> Tooltips.textWithSource(
-                    "Full request URL.",
-                    "TrafficHttpHandler.buildDocument() uses request.url(); ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url(); ProxyWebSocketIndexReporter.buildDocument() uses ws.upgradeRequest().url().");
-            case "host" -> Tooltips.textWithSource(
-                    "Target host.",
-                    "Traffic producers use request/upgrade HttpService.host().");
-            case "port" -> Tooltips.textWithSource(
-                    "Target port.",
-                    "Traffic producers use request/upgrade HttpService.port().");
-            case "scheme" -> Tooltips.textWithSource(
-                    "Request scheme: https or http.",
-                    "Traffic producers map request/upgrade HttpService.secure() to https/http.");
-            case "protocol_transport" -> Tooltips.textWithSource(
-                    "Transport protocol.",
-                    "Traffic producers map request/upgrade HttpService.secure() to https/http.");
-            case "protocol_application" -> Tooltips.textWithSource(
-                    "Application protocol label.",
-                    "TrafficHttpHandler.buildDocument() assigns \"http\" for HTTP docs; ProxyHistoryIndexReporter.buildDocument() assigns \"http\"; ProxyWebSocketIndexReporter.buildDocument() assigns \"websocket\".");
-            case "protocol_sub" -> Tooltips.textWithSource(
-                    "HTTP protocol version.",
-                    "HTTP docs use request.httpVersion(); WebSocket docs use ws.upgradeRequest().httpVersion().");
-            case "http_version" -> Tooltips.textWithSource(
-                    "Top-level HTTP version summary.",
-                    "HTTP docs use request.httpVersion(); WebSocket docs use ws.upgradeRequest().httpVersion().");
-            case "tool" -> Tooltips.textWithSource(
-                    "Burp tool display name.",
-                    "TrafficHttpHandler uses ToolType.toolName() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"Proxy History\"; RepeaterTabsIndexReporter writes \"Repeater Tabs\"; ProxyWebSocketIndexReporter writes \"Proxy WebSocket\".");
-            case "tool_type" -> Tooltips.textWithSource(
-                    "Burp tool enum/source label.",
-                    "TrafficHttpHandler uses ToolType.name() from response.toolSource() with request fallback; ProxyHistoryIndexReporter writes \"PROXY_HISTORY\"; RepeaterTabsIndexReporter writes \"REPEATER_TABS\"; ProxyWebSocketIndexReporter writes \"PROXY_WEBSOCKET\".");
-            case "burp_in_scope" -> Tooltips.textWithSource(
-                    "Raw Burp Suite scope flag, not the extension's export-scope decision.",
-                    "TrafficHttpHandler uses request.isInScope(); ProxyHistoryIndexReporter uses MontoyaApi.scope().isInScope(url); ProxyWebSocketIndexReporter uses MontoyaApi.scope().isInScope(url) via safeBurpInScope().");
-            case "message_id" -> Tooltips.textWithSource(
-                    "Source-specific Burp message identifier used for correlation.",
-                    "TrafficHttpHandler uses response.messageId() or request.messageId() for orphan docs; ProxyHistoryIndexReporter uses ProxyHttpRequestResponse.id(); ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.id().");
-            case "time_start" -> Tooltips.textWithSource(
-                    "Start time for the exported traffic event.",
-                    "TrafficHttpHandler uses an exporter timestamp captured with System.currentTimeMillis() when the request is sent; ProxyHistoryIndexReporter uses TimingData.timeRequestSent() with item.time() fallback; ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.time().");
-            case "time_end" -> Tooltips.textWithSource(
-                    "End time for the exported traffic event.",
-                    "TrafficHttpHandler uses an exporter timestamp captured with System.currentTimeMillis() when the response is received; ProxyHistoryIndexReporter derives it from TimingData.timeRequestSent() plus timeBetweenRequestSentAndEndOfResponse(); ProxyWebSocketIndexReporter reuses ProxyWebSocketMessage.time().");
-            case "duration_ms" -> Tooltips.textWithSource(
-                    "Observed duration in milliseconds.",
-                    "TrafficHttpHandler subtracts exporter-captured request/response timestamps; ProxyHistoryIndexReporter uses TimingData.timeBetweenRequestSentAndEndOfResponse(); ProxyWebSocketIndexReporter writes 0.");
-            case "comment" -> Tooltips.textWithSource(
-                    "User comment attached in Burp.",
-                    "HTTP docs read annotations.notes(); WebSocket docs read ProxyWebSocketMessage.annotations().notes().");
-            case "highlight" -> Tooltips.textWithSource(
-                    "Burp highlight color.",
-                    "HTTP docs read annotations.highlightColor().name(); WebSocket docs read ProxyWebSocketMessage.annotations().highlightColor().name().");
-            case "edited" -> Tooltips.textWithSource(
-                    "Whether Burp shows the message as edited.",
-                    "ProxyHistoryIndexReporter uses ProxyHttpRequestResponse.edited(); ProxyWebSocketIndexReporter writes editedPayload() != null; live HTTP docs currently write null.");
-            case "path" -> Tooltips.textWithSource(
-                    "Request path and query portion.",
-                    "HTTP docs use request.path(); WebSocket docs use ws.upgradeRequest().path().");
-            case "method" -> Tooltips.textWithSource(
-                    "HTTP method.",
-                    "HTTP docs use request.method(); WebSocket docs use ws.upgradeRequest().method().");
-            case "mime_type" -> Tooltips.textWithSource(
-                    "Effective response MIME classification.",
-                    "TrafficHttpHandler and ProxyHistoryIndexReporter use response.mimeType().name(); WebSocket docs write null.");
-            case "repeater_tab_name" -> Tooltips.textWithSource(
-                    "Best-effort Repeater tab label for Repeater-origin traffic. "
-                            + "Live Repeater traffic can intentionally leave this empty when Burp cannot safely disambiguate identical concurrent tabs.",
-                    "RepeaterTabsIndexReporter infers this from the currently selected non-view "
-                            + "Repeater tab path during startup capture. TrafficHttpHandler "
-                            + "uses short-lived correlation from Repeater editor rebinds for live "
-                            + "Repeater traffic and writes null when correlation is ambiguous, "
-                            + "unavailable, or Burp does not preserve a stable live tab identity.");
-            case "repeater_group_name" -> Tooltips.textWithSource(
-                    "Best-effort Repeater tab-group name when the selected tab belongs to a "
-                            + "readable group. Live Repeater traffic can intentionally leave this "
-                            + "empty for identical concurrent tabs or when no readable group label exists.",
-                    "RepeaterTabsIndexReporter infers this from the selected Repeater tab-header "
-                            + "component during startup capture. TrafficHttpHandler uses "
-                            + "short-lived correlation from Repeater editor rebinds for live "
-                            + "Repeater traffic. Ungrouped tabs, non-Repeater traffic, ambiguous "
-                            + "live matches, or UI layouts that do not expose a readable group "
-                            + "label write null.");
-            case "websocket_id" -> Tooltips.textWithSource(
-                    "WebSocket conversation identifier.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.webSocketId().");
-            case "ws_message_id" -> Tooltips.textWithSource(
-                    "WebSocket message identifier.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.id().");
-            case "ws_direction" -> Tooltips.textWithSource(
-                    "WebSocket message direction.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.direction().name().");
-            case "ws_message_type" -> Tooltips.textWithSource(
-                    "Exporter payload classification for a WebSocket message.",
-                    "ProxyWebSocketIndexReporter.inferPayloadType() returns EMPTY for no bytes, TEXT for strict UTF-8 decodes, otherwise BINARY.");
-            case "ws_payload" -> Tooltips.textWithSource(
-                    "Raw WebSocket payload stored as base64.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.payload().getBytes() and Base64 encodes them.");
-            case "ws_payload_text" -> Tooltips.textWithSource(
-                    "UTF-8 text view of the WebSocket payload when valid.",
-                    "ProxyWebSocketIndexReporter.decodeUtf8OrNull() strictly decodes ProxyWebSocketMessage.payload().");
-            case "ws_payload_length" -> Tooltips.textWithSource(
-                    "WebSocket payload length in bytes.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.payload().getBytes().length.");
-            case "ws_edited" -> Tooltips.textWithSource(
-                    "Whether the WebSocket payload was edited.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.editedPayload() != null.");
-            case "ws_edited_payload" -> Tooltips.textWithSource(
-                    "Edited WebSocket payload stored as base64.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.editedPayload().getBytes() and Base64 encodes them.");
-            case "ws_upgrade_request" -> Tooltips.textWithSource(
-                    "HTTP upgrade request for the WebSocket handshake.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses RequestResponseDocBuilder.buildRequestDoc(ws.upgradeRequest()).");
-            case "ws_time" -> Tooltips.textWithSource(
-                    "WebSocket message timestamp.",
-                    "ProxyWebSocketIndexReporter.buildDocument() uses ProxyWebSocketMessage.time().");
-            case "proxy_history_id" -> Tooltips.textWithSource(
-                    "Proxy History row identifier.",
-                    "ProxyHistoryIndexReporter.buildDocument() uses ProxyHttpRequestResponse.id().");
-            case "listener_port" -> Tooltips.textWithSource(
-                    "Proxy listener port used for the message.",
-                    "ProxyHistoryIndexReporter uses ProxyHttpRequestResponse.listenerPort(); ProxyWebSocketIndexReporter uses ProxyWebSocketMessage.listenerPort().");
-            case "time_request_sent" -> Tooltips.textWithSource(
-                    "Request-sent timestamp.",
-                    "TrafficHttpHandler reuses the exporter timestamp captured when handleHttpRequestToBeSent runs; ProxyHistoryIndexReporter uses TimingData.timeRequestSent() with item.time() fallback; ProxyWebSocketIndexReporter reuses ProxyWebSocketMessage.time().");
-            case "response_start_latency_ms" -> Tooltips.textWithSource(
-                    "Latency from request sent to response start.",
-                    "ProxyHistoryIndexReporter uses TimingData.timeBetweenRequestSentAndStartOfResponse(); TrafficHttpHandler currently stores the full exporter-observed request-to-response delta; ProxyWebSocketIndexReporter writes null.");
-            default -> fieldKey;
-        };
+        return ExportFieldTooltipsTraffic.trafficTooltip(fieldKey);
+    }
+
+    private static String requestResponseNestedTooltip(String fieldKey) {
+        return ExportFieldTooltipsRequestResponse.requestResponseNestedTooltip(fieldKey);
     }
 }

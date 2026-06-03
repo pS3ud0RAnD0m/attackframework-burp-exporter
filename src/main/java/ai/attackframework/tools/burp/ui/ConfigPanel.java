@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import javax.swing.AbstractAction;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -35,6 +36,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
@@ -49,6 +51,7 @@ import ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter;
 import ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
+import ai.attackframework.tools.burp.sinks.TrafficExportQueue;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingPasswordField;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
@@ -59,7 +62,6 @@ import ai.attackframework.tools.burp.ui.primitives.TextFieldUndo;
 import ai.attackframework.tools.burp.ui.primitives.ThickSeparator;
 import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.ui.text.Doc;
-import ai.attackframework.tools.burp.ui.text.ExportFieldTooltips;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.ui.text.ValidationIndicator;
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
@@ -243,6 +245,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     /** Fields panel: index -> (fieldKey -> checkbox). Populated in constructor when building Fields section. */
     private java.util.Map<String, java.util.Map<String, JCheckBox>> fieldCheckboxesByIndex;
+    /**
+     * Required-field display labels per index, kept so {@link #refreshFieldsSectionsEnabled()}
+     * can re-disable them after the per-section recursive enable/disable pass; they are visual
+     * indicators of always-included fields and must remain non-interactive regardless of whether
+     * the parent section is currently enabled.
+     */
+    private java.util.Map<String, java.util.List<JLabel>> requiredFieldLabelsByIndex;
     /** Fields panel: index -> expand button; used for enable/disable when Data Source is toggled. */
     private java.util.Map<String, JButton> fieldsExpandButtons;
     /** Fields panel: index -> sub-panel of checkboxes; used for enable/disable when Data Source is toggled. */
@@ -285,14 +294,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         wireSourcesExpandCollapse(trafficExpandButton, trafficSubPanel);
         wireSourcesExpandCollapse(exporterExpandButton, exporterSubPanel);
 
-        wireTriStateParentChild(settingsCheckbox, java.util.List.of(settingsProjectCheckbox, settingsUserCheckbox));
-        wireTriStateParentChild(issuesCheckbox, java.util.List.of(
+        FieldSectionSelectionWiring.wireTriStateParentChild(settingsCheckbox, java.util.List.of(settingsProjectCheckbox, settingsUserCheckbox));
+        FieldSectionSelectionWiring.wireTriStateParentChild(issuesCheckbox, java.util.List.of(
                 issuesCriticalCheckbox, issuesHighCheckbox, issuesMediumCheckbox, issuesLowCheckbox, issuesInformationalCheckbox));
-        wireTriStateParentChild(trafficCheckbox, java.util.List.of(
+        FieldSectionSelectionWiring.wireTriStateParentChild(trafficCheckbox, java.util.List.of(
                 trafficBurpAiCheckbox, trafficExtensionsCheckbox, trafficIntruderCheckbox, trafficProxyCheckbox,
                 trafficProxyHistoryCheckbox, trafficRepeaterCheckbox, trafficRepeaterTabsCheckbox,
                 trafficScannerCheckbox, trafficSequencerCheckbox));
-        wireTriStateParentChild(exporterCheckbox, java.util.List.of(
+        FieldSectionSelectionWiring.wireTriStateParentChild(exporterCheckbox, java.util.List.of(
                 exporterTraceCheckbox, exporterDebugCheckbox, exporterInfoCheckbox, exporterWarnCheckbox,
                 exporterErrorCheckbox, exporterStatsCheckbox, exporterConfigCheckbox));
 
@@ -303,45 +312,18 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 "gaptop 5, gapbottom 5, wrap");
         add(panelSeparator(), MIG_FILL_WRAP);
 
-        fieldCheckboxesByIndex = new java.util.LinkedHashMap<>();
-        fieldsExpandButtons = new java.util.LinkedHashMap<>();
-        fieldsSubPanels = new java.util.LinkedHashMap<>();
-        fieldsSectionHeaderRows = new java.util.LinkedHashMap<>();
-        List<String> fieldsPanelIndexOrder = ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL;
-        for (String indexName : fieldsPanelIndexOrder) {
-            java.util.Map<String, JCheckBox> perIndex = new java.util.LinkedHashMap<>();
-            List<String> toggleable = new java.util.ArrayList<>(ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.getToggleableFields(indexName));
-            for (String fieldKey : toggleable) {
-                JCheckBox cb = new Tooltips.HtmlCheckBox(ExportFieldTooltips.displayNameFor(indexName, fieldKey), true);
-                cb.setName("fields." + indexName + "." + fieldKey);
-                Tooltips.apply(cb, ExportFieldTooltips.tooltipFor(indexName, fieldKey));
-                perIndex.put(fieldKey, cb);
-            }
-            fieldCheckboxesByIndex.put(indexName, perIndex);
-            JButton expBtn = new Tooltips.HtmlButton("+");
-            expBtn.setName("fields." + indexName + ".expand");
-            ConfigFieldsPanel.configureExpandButton(expBtn);
-            fieldsExpandButtons.put(indexName, expBtn);
-            JPanel sub = new JPanel(new MigLayout("insets 0, wrap 1, hidemode 3", "[grow,left]"));
-            sub.setOpaque(false);
-            JPanel fieldsGrid = new JPanel(new MigLayout("insets 0, wrap 3", "[left][left][left]"));
-            fieldsGrid.setOpaque(false);
-            for (JCheckBox cb : perIndex.values()) {
-                fieldsGrid.add(cb, "gapright 12");
-            }
-            sub.add(fieldsGrid, "growx, wrap");
-            sub.setVisible(false);
-            fieldsSubPanels.put(indexName, sub);
-        }
         ActionListener fieldsRuntimeUpdater = e -> updateRuntimeConfig();
-        for (String indexName : fieldsPanelIndexOrder) {
-            JButton expBtn = fieldsExpandButtons.get(indexName);
-            JPanel sub = fieldsSubPanels.get(indexName);
-            wireSourcesExpandCollapse(expBtn, sub);
-            for (JCheckBox cb : fieldCheckboxesByIndex.get(indexName).values()) {
-                cb.addActionListener(fieldsRuntimeUpdater);
-            }
-        }
+        ConfigFieldsSectionBuilder.FieldsSectionState fieldsSection =
+                ConfigFieldsSectionBuilder.build(
+                        INDENT,
+                        ConfigPanel::checkboxTextStartInset,
+                        this::wireSourcesExpandCollapse,
+                        fieldsRuntimeUpdater);
+        fieldCheckboxesByIndex = fieldsSection.fieldCheckboxesByIndex();
+        requiredFieldLabelsByIndex = fieldsSection.requiredFieldLabelsByIndex();
+        fieldsExpandButtons = fieldsSection.expandButtonsByIndex();
+        fieldsSubPanels = fieldsSection.subPanelsByIndex();
+        fieldsSectionHeaderRows = fieldsSection.sectionHeaderRows();
         JPanel fieldsPanel = new ConfigFieldsPanel(
                 fieldsExpandButtons,
                 fieldsSubPanels,
@@ -391,10 +373,14 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::exportConfig,
                 this::startExportAsync,
                 () -> {
-                    ExportReporterLifecycle.stopAndClearPendingExportWork();
-                    // Off-thread: close pooled OpenSearch clients without holding up the Stop button.
-                    ExportReporterLifecycle.releaseRunResourcesAsync();
-                    Logger.logInfoPanelOnly("[Export] Stopped.");
+                    RuntimeConfig.setExportRunning(false);
+                    ExportReporterLifecycle.stopBackgroundReporters();
+                    startupExecutor.execute(() -> {
+                        ExportReporterLifecycle.stopAndClearPendingExportWork();
+                        // Off-thread: close pooled OpenSearch clients without holding up the Stop button.
+                        ExportReporterLifecycle.releaseRunResourcesAsync();
+                        Logger.logInfoPanelOnly("[Export] Stopped.");
+                    });
                 }
         ).build(), MIG_FILL_WRAP);
 
@@ -696,15 +682,33 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        ProxyWebSocketIndexReporter.start();
-        if (!RuntimeConfig.isExportRunning()) {
-            return;
+        if (isTrafficToolSelected("proxy_history")) {
+            ProxyWebSocketIndexReporter.pushHistoricSnapshotNow();
+            if (!RuntimeConfig.isExportRunning()) {
+                return;
+            }
         }
-        ProxyWebSocketIndexReporter.pushSnapshotNow();
+        if (isTrafficToolSelected("proxy")) {
+            if (!isTrafficToolSelected("proxy_history")) {
+                ProxyWebSocketIndexReporter.startLivePollAfterCurrentHistorySeed(false);
+            } else {
+                ProxyWebSocketIndexReporter.startLivePoll();
+            }
+        }
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
         Logger.logInfoPanelOnly("[Export] Started. Destinations: " + RuntimeConfig.activeSinkSummary() + ".");
+    }
+
+    private boolean isTrafficToolSelected(String toolTypeKey) {
+        if (toolTypeKey == null || toolTypeKey.isBlank()) {
+            return false;
+        }
+        List<String> trafficTypes = RuntimeConfig.getState() == null
+                ? null
+                : RuntimeConfig.getState().trafficToolTypes();
+        return trafficTypes != null && trafficTypes.contains(toolTypeKey);
     }
 
     private void disableOpenSearchForCurrentRun(String reason) {
@@ -1154,8 +1158,41 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     private void updateRuntimeConfig() {
-        RuntimeConfig.updateState(buildCurrentState());
+        updateRuntimeConfig(null);
+    }
+
+    private void updateRuntimeConfig(ConfigState.UiPreferences uiPreferences) {
+        RuntimeConfig.TrafficExportGate previousTrafficGate = RuntimeConfig.trafficExportGate();
+        RuntimeConfig.updateState(uiPreferences == null ? buildCurrentState() : buildCurrentState(uiPreferences));
+        RuntimeConfig.TrafficExportGate currentTrafficGate = RuntimeConfig.trafficExportGate();
+        if (shouldPurgeQueuedTraffic(previousTrafficGate, currentTrafficGate)) {
+            startupExecutor.execute(() -> purgeQueuedTrafficForGate(currentTrafficGate));
+        }
         ExporterIndexStatsReporter.refreshScheduleForCurrentState();
+        ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
+    }
+
+    private static void purgeQueuedTrafficForGate(RuntimeConfig.TrafficExportGate currentTrafficGate) {
+        int purged = TrafficExportQueue.purgeDisabledTraffic(currentTrafficGate);
+        if (purged > 0) {
+            Logger.logInfoPanelOnly("[Traffic] Cleared " + purged
+                    + " queued traffic document(s) after traffic export deselection.");
+        }
+    }
+
+    private static boolean shouldPurgeQueuedTraffic(
+            RuntimeConfig.TrafficExportGate previous,
+            RuntimeConfig.TrafficExportGate current) {
+        if (previous == null || current == null || !RuntimeConfig.isExportRunning()) {
+            return false;
+        }
+        if (!previous.anyTrafficExportEnabled()) {
+            return false;
+        }
+        if (!current.anyTrafficExportEnabled()) {
+            return true;
+        }
+        return (current.enabledToolMask() & previous.enabledToolMask()) != previous.enabledToolMask();
     }
 
     private void syncSelectedAuthStateFromUi() {
@@ -1165,10 +1202,23 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void syncSelectedAuthStateFromUi(ConfigState.UiPreferences uiPreferences) {
         persistSelectedAuthSecrets();
-        RuntimeConfig.updateState(buildCurrentState(uiPreferences));
+        updateRuntimeConfig(uiPreferences);
     }
 
-    /** Grey-out and disable each Fields section when no related source option is selected; re-enable when at least one is selected. Does not change checkbox selected state. */
+    /**
+     * Builds the tooltip text for a required (always-enabled) field display label.
+     *
+     * <p>Appends a note to the field's existing tooltip so the always-on semantics live in
+     * the tooltip rather than the visible label text. When the
+     * field has no registered tooltip (default fall-through to the bare key), produces a
+     * compact tooltip that only conveys the always-enabled note.</p>
+     */
+    private static int checkboxTextStartInset() {
+        Icon icon = UIManager.getIcon("CheckBox.icon");
+        int iconWidth = icon == null ? 0 : icon.getIconWidth();
+        return iconWidth + new JCheckBox().getIconTextGap();
+    }
+
     private void refreshFieldsSectionsEnabled() {
         if (fieldsSectionHeaderRows == null || fieldsExpandButtons == null || fieldsSubPanels == null || fieldCheckboxesByIndex == null) return;
         for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL) {
@@ -1187,6 +1237,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             if (checkboxes != null) {
                 for (JCheckBox cb : checkboxes.values()) cb.setEnabled(enabled);
             }
+            // Required-field display labels are intentionally non-interactive regardless of the
+            // section's enabled state; re-disable them after setEnabledRecursively() restored the
+            // sub-panel's children to the section's enabled state.
+            java.util.List<JLabel> requiredLabels = requiredFieldLabelsByIndex == null
+                    ? null : requiredFieldLabelsByIndex.get(indexName);
+            if (requiredLabels != null) {
+                for (JLabel label : requiredLabels) {
+                    label.setEnabled(false);
+                }
+            }
         }
     }
 
@@ -1197,7 +1257,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             case "sitemap" -> sitemapCheckbox.isSelected();
             case "findings" -> issuesCheckbox.isSelected() || issuesCriticalCheckbox.isSelected() || issuesHighCheckbox.isSelected()
                     || issuesMediumCheckbox.isSelected() || issuesLowCheckbox.isSelected() || issuesInformationalCheckbox.isSelected();
-            case "traffic" -> trafficCheckbox.isSelected() || trafficBurpAiCheckbox.isSelected() || trafficExtensionsCheckbox.isSelected() || trafficIntruderCheckbox.isSelected()
+            case "traffic" -> trafficCheckbox.isSelected() || trafficBurpAiCheckbox.isSelected()
+                    || trafficExtensionsCheckbox.isSelected() || trafficIntruderCheckbox.isSelected()
                     || trafficProxyCheckbox.isSelected() || trafficProxyHistoryCheckbox.isSelected() || trafficRepeaterCheckbox.isSelected()
                     || trafficRepeaterTabsCheckbox.isSelected()
                     || trafficScannerCheckbox.isSelected() || trafficSequencerCheckbox.isSelected();
@@ -1393,179 +1454,30 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     /** Builds inline OpenSearch authentication controls (auth type + type-specific credential fields). */
     private JPanel buildAuthFormPanel() {
-        String[] authTypes = { "API Key", "Basic", "Certificate", "JWT", "None" };
-        JComboBox<String> authTypeCombo = new Tooltips.HtmlComboBox<>(authTypes);
-        openSearchAuthTypeCombo = authTypeCombo;
-        authTypeCombo.setName("os.authType");
-        authTypeCombo.setSelectedItem("Basic");
-        String longest = java.util.Arrays.stream(authTypes).max(java.util.Comparator.comparingInt(String::length)).orElse("Certificate");
-        authTypeCombo.setPrototypeDisplayValue(longest);
-
-        JPanel contentCards = new JPanel(new MigLayout("insets 0, hidemode 3", "[left]", "[]"));
-        contentCards.setName("os.authContent");
-
-        JPanel noneCard = new JPanel(new MigLayout("insets 0", "[left]", "[]"));
-        noneCard.setName("os.authCard.none");
-
-        JPanel basicCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref][pref][pref]", "[]"));
-        basicCard.setName("os.authCard.basic");
-        basicCard.add(new JLabel("Username:"));
-        basicCard.add(openSearchUserField, "gapright 15");
-        basicCard.add(new JLabel("Password:"));
-        basicCard.add(openSearchPasswordField, "gapright 15");
-
-        JPanel apiKeyCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref][pref][pref]", "[]"));
-        apiKeyCard.setName("os.authCard.apikey");
-        apiKeyCard.add(new JLabel("Key ID:"));
-        apiKeyCard.add(openSearchApiKeyIdField, "gapright 15");
-        apiKeyCard.add(new JLabel("Key Secret:"));
-        apiKeyCard.add(openSearchApiKeySecretField, "gapright 15");
-
-        JPanel jwtCard = new JPanel(new MigLayout("insets 0", "[pref][pref][pref]", "[]"));
-        jwtCard.setName("os.authCard.jwt");
-        jwtCard.add(new JLabel("JWT Token:"));
-        jwtCard.add(openSearchJwtTokenField, "w 360!");
-
-        JPanel clientCertCard = new JPanel(new MigLayout("insets 0, wrap 2", "[pref][pref]", "[][][]"));
-        clientCertCard.setName("os.authCard.certificate");
-        clientCertCard.add(new JLabel("Cert Path:"));
-        clientCertCard.add(openSearchCertPathField, "w 360!");
-        clientCertCard.add(new JLabel("Key Path:"));
-        clientCertCard.add(openSearchCertKeyPathField, "w 360!");
-        clientCertCard.add(new JLabel("Passphrase:"));
-        clientCertCard.add(openSearchCertPassphraseField, "w 360!");
-
-        contentCards.add(noneCard, "hidemode 3");
-        contentCards.add(basicCard, "hidemode 3");
-        contentCards.add(apiKeyCard, "hidemode 3");
-        contentCards.add(jwtCard, "hidemode 3");
-        contentCards.add(clientCertCard, "hidemode 3");
-
-        java.util.function.Consumer<String> applyAuthTypeCardVisibility = selectedType -> {
-            noneCard.setVisible("None".equals(selectedType));
-            basicCard.setVisible("Basic".equals(selectedType));
-            apiKeyCard.setVisible("API Key".equals(selectedType));
-            jwtCard.setVisible("JWT".equals(selectedType));
-            clientCertCard.setVisible("Certificate".equals(selectedType));
-        };
-
-        authTypeCombo.addActionListener(e -> {
-            String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
-            applyAuthTypeCardVisibility.accept(selectedType);
-            if (!suppressAuthSync) {
-                syncSelectedAuthStateFromUi();
-            }
-            contentCards.revalidate();
-            contentCards.repaint();
-        });
-        String selectedType = String.valueOf(authTypeCombo.getSelectedItem());
-        applyAuthTypeCardVisibility.accept(selectedType);
-        JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][grow]", "[]"));
-        form.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        String authTypeTip = Tooltips.html("Select how requests to OpenSearch authenticate.");
-        String basicUserTip = Tooltips.html("OpenSearch Basic auth username.", "Stored only within in-process memory.");
-        String basicPasswordTip = Tooltips.html("OpenSearch Basic auth password.", "Stored only within in-process memory.");
-        String apiKeyIdTip = Tooltips.html("OpenSearch API key ID.", "Stored only within in-process memory.");
-        String apiKeySecretTip = Tooltips.html("OpenSearch API key secret.", "Stored only within in-process memory.");
-        String jwtTip = Tooltips.html("OpenSearch JWT bearer token.", "Stored only within in-process memory.");
-        String certPathTip = Tooltips.html("Path to the client certificate file used for OpenSearch authentication.");
-        String keyPathTip = Tooltips.html("Path to the client private key file used for OpenSearch authentication.");
-        String passphraseTip = Tooltips.html("Client key passphrase.", "Stored only within in-process memory.");
-
-        Tooltips.apply(authTypeCombo, authTypeTip);
-        Tooltips.apply(openSearchUserField, basicUserTip);
-        Tooltips.apply(openSearchPasswordField, basicPasswordTip);
-        Tooltips.apply(openSearchApiKeyIdField, apiKeyIdTip);
-        Tooltips.apply(openSearchApiKeySecretField, apiKeySecretTip);
-        Tooltips.apply(openSearchJwtTokenField, jwtTip);
-        Tooltips.apply(openSearchCertPathField, certPathTip);
-        Tooltips.apply(openSearchCertKeyPathField, keyPathTip);
-        Tooltips.apply(openSearchCertPassphraseField, passphraseTip);
-
-        basicCard.removeAll();
-        basicCard.add(Tooltips.label("Username:", basicUserTip));
-        basicCard.add(openSearchUserField, "gapright 15");
-        basicCard.add(Tooltips.label("Password:", basicPasswordTip));
-        basicCard.add(openSearchPasswordField, "gapright 15");
-
-        apiKeyCard.removeAll();
-        apiKeyCard.add(Tooltips.label("Key ID:", apiKeyIdTip));
-        apiKeyCard.add(openSearchApiKeyIdField, "gapright 15");
-        apiKeyCard.add(Tooltips.label("Key Secret:", apiKeySecretTip));
-        apiKeyCard.add(openSearchApiKeySecretField, "gapright 15");
-
-        jwtCard.removeAll();
-        jwtCard.add(Tooltips.label("JWT Token:", jwtTip));
-        jwtCard.add(openSearchJwtTokenField, "w 360!");
-
-        clientCertCard.removeAll();
-        clientCertCard.add(Tooltips.label("Cert Path:", certPathTip));
-        clientCertCard.add(openSearchCertPathField, "w 360!");
-        clientCertCard.add(Tooltips.label("Key Path:", keyPathTip));
-        clientCertCard.add(openSearchCertKeyPathField, "w 360!");
-        clientCertCard.add(Tooltips.label("Passphrase:", passphraseTip));
-        clientCertCard.add(openSearchCertPassphraseField, "w 360!");
-
-        form.add(Tooltips.label("Auth type:", authTypeTip));
-        form.add(authTypeCombo);
-        form.add(contentCards, "gapleft 15");
-
-        return form;
+        ConfigOpenSearchInlinePanels.AuthFormResult result = ConfigOpenSearchInlinePanels.buildAuthFormPanel(
+                new ConfigOpenSearchInlinePanels.AuthFormFields(
+                        openSearchUserField,
+                        openSearchPasswordField,
+                        openSearchApiKeyIdField,
+                        openSearchApiKeySecretField,
+                        openSearchJwtTokenField,
+                        openSearchCertPathField,
+                        openSearchCertKeyPathField,
+                        openSearchCertPassphraseField),
+                this::syncSelectedAuthStateFromUi,
+                () -> suppressAuthSync);
+        openSearchAuthTypeCombo = result.authTypeCombo();
+        return result.panel();
     }
 
     /** Builds inline TLS controls (mode selection + optional pinned-certificate import). */
     private JPanel buildTlsPanel() {
-        openSearchTlsModeCombo.setName("os.tlsMode");
-        openSearchTlsModeCombo.setSelectedItem("Verify");
-        importPinnedCertificateButton.setName("os.tls.import");
-
-        JPanel pinnedPanel = new JPanel(new MigLayout("insets 0", "[pref]", "[]"));
-        pinnedPanel.setOpaque(false);
-        pinnedPanel.add(importPinnedCertificateButton);
-
-        JPanel controls = new JPanel(new MigLayout("insets 0, hidemode 3", "[pref]", "[]"));
-        controls.setOpaque(false);
-        controls.add(Box.createHorizontalStrut(0), "hidemode 3");
-        controls.add(pinnedPanel, "hidemode 3");
-
-        java.util.function.Consumer<String> applyPinnedVisibility = selectedMode -> {
-            boolean pinned = ConfigState.OPEN_SEARCH_TLS_PINNED.equals(normalizeTlsModeLabel(selectedMode));
-            pinnedPanel.setVisible(pinned);
-            importPinnedCertificateButton.setVisible(pinned);
-            importPinnedCertificateButton.setEnabled(openSearchSinkCheckbox.isSelected() && pinned);
-        };
-        applyPinnedVisibility.accept(String.valueOf(openSearchTlsModeCombo.getSelectedItem()));
-        openSearchTlsModeCombo.addActionListener(e -> {
-            String selectedMode = String.valueOf(openSearchTlsModeCombo.getSelectedItem());
-            String normalizedMode = normalizeTlsModeLabel(selectedMode);
-            applyPinnedVisibility.accept(selectedMode);
-            logTlsModeChangeIfNeeded(normalizedMode);
-            controls.revalidate();
-            controls.repaint();
-        });
-
-        String tlsModeTip = Tooltips.html(
-                "Select how OpenSearch TLS server certificates are trusted.",
-                "- Verify: uses the system trust store.",
-                "- Trust pinned certificate: requires an imported X.509 server certificate.",
-                "- Trust all certificates: disables verification. Use with caution."
-        );
-        String importTip = Tooltips.html(
-                "Import a pinned X.509 server certificate for OpenSearch TLS trust.",
-                "  Common file types: .cer, .crt, .der, .pem.",
-                "  The imported certificate bytes and source path are stored only within in-process memory."
-        );
-        Tooltips.apply(openSearchTlsModeCombo, tlsModeTip);
-        Tooltips.apply(importPinnedCertificateButton, importTip);
-
-        JPanel form = new JPanel(new MigLayout("insets 0", "[pref][pref][pref]", "[]"));
-        form.setOpaque(false);
-        form.setAlignmentX(Component.LEFT_ALIGNMENT);
-        form.add(Tooltips.label("TLS mode:", tlsModeTip));
-        form.add(openSearchTlsModeCombo);
-        form.add(controls, "gapleft 12");
-        return form;
+        return ConfigOpenSearchInlinePanels.buildTlsPanel(
+                new ConfigOpenSearchInlinePanels.TlsFormFields(
+                        openSearchTlsModeCombo,
+                        importPinnedCertificateButton,
+                        openSearchSinkCheckbox),
+                selectedMode -> logTlsModeChangeIfNeeded(normalizeTlsModeLabel(selectedMode)));
     }
 
     private void importPinnedCertificate() {
@@ -1636,14 +1548,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     private static String normalizeTlsModeLabel(String label) {
-        if (label == null || label.isBlank()) {
-            return ConfigState.OPEN_SEARCH_TLS_VERIFY;
-        }
-        return switch (label.trim().toLowerCase(java.util.Locale.ROOT)) {
-            case "trust pinned certificate" -> ConfigState.OPEN_SEARCH_TLS_PINNED;
-            case "trust all certificates" -> ConfigState.OPEN_SEARCH_TLS_INSECURE;
-            default -> ConfigState.OPEN_SEARCH_TLS_VERIFY;
-        };
+        return ConfigOpenSearchInlinePanels.normalizeTlsModeLabel(label);
     }
 
     private static String labelForTlsMode(String mode) {
@@ -1712,78 +1617,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             subPanel.revalidate();
             subPanel.repaint();
         });
-    }
-
-    private void wireTriStateParentChild(TriStateCheckBox parent, java.util.List<JCheckBox> children) {
-        List<JCheckBox> safeChildren = children == null ? List.of() : children;
-        java.util.concurrent.atomic.AtomicBoolean syncing = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        Runnable syncParentFromChildren = () -> {
-            if (safeChildren.isEmpty()) {
-                return;
-            }
-            int selected = 0;
-            int enabledChildren = 0;
-            for (JCheckBox c : safeChildren) {
-                if (!c.isEnabled()) {
-                    continue;
-                }
-                enabledChildren++;
-                if (c.isSelected()) {
-                    selected++;
-                }
-            }
-            if (enabledChildren == 0 || selected == 0) {
-                parent.setState(TriStateCheckBox.State.DESELECTED);
-            } else if (selected == enabledChildren) {
-                parent.setState(TriStateCheckBox.State.SELECTED);
-            } else {
-                parent.setState(TriStateCheckBox.State.INDETERMINATE);
-            }
-        };
-
-        // ItemListener fires on both user interaction and programmatic setSelected, so the parent
-        // stays in sync with child state during config imports and other non-UI state changes.
-        // ActionListener would only fire on user-driven toggles.
-        for (JCheckBox child : safeChildren) {
-            child.addItemListener(e -> {
-                if (syncing.get()) {
-                    return;
-                }
-                syncing.set(true);
-                try {
-                    syncParentFromChildren.run();
-                } finally {
-                    syncing.set(false);
-                }
-            });
-        }
-
-        parent.addActionListener(e -> {
-            if (syncing.get()) {
-                return;
-            }
-            syncing.set(true);
-            try {
-                boolean selectAll = parent.getState() != TriStateCheckBox.State.DESELECTED;
-                for (JCheckBox child : safeChildren) {
-                    if (!child.isEnabled()) {
-                        continue;
-                    }
-                    child.setSelected(selectAll);
-                }
-                syncParentFromChildren.run();
-            } finally {
-                syncing.set(false);
-            }
-        });
-
-        syncing.set(true);
-        try {
-            syncParentFromChildren.run();
-        } finally {
-            syncing.set(false);
-        }
     }
 
     /**
@@ -2304,9 +2137,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         Tooltips.apply(trafficBurpAiCheckbox, Tooltips.html("Traffic sent from Burp AI."));
         Tooltips.apply(trafficExtensionsCheckbox, Tooltips.html("Traffic sent from all other extensions."));
         Tooltips.apply(trafficIntruderCheckbox, Tooltips.html("Traffic sent from Intruder."));
-        Tooltips.apply(trafficProxyCheckbox, Tooltips.html("Traffic sent from Proxy."));
+        Tooltips.apply(trafficProxyCheckbox, Tooltips.html(
+                "Live traffic from Proxy (HTTP and WebSocket frames).",
+                "WebSocket frames are exported from Proxy WebSocket history on a short interval",
+                "so Burp conversation and message ids are included.",
+                "For historic proxy traffic already in the table when Start is clicked, select Proxy History."));
         Tooltips.apply(trafficProxyHistoryCheckbox, Tooltips.html(
-                "Historic traffic from Proxy History.",
+                "Historic traffic from Proxy History (HTTP pairs and WebSocket frames).",
                 "This exports a one-time snapshot when Start is clicked.",
                 "The export is performed in smart batches to minimize performance impact to Burp. ",
                 "For ongoing and future proxy traffic, select Proxy."

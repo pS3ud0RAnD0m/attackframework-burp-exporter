@@ -1,14 +1,11 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -103,28 +100,16 @@ public final class ExporterIndexConfigReporter {
                 + " exporter=" + (state.dataSources() != null && state.dataSources().contains(ConfigKeys.SRC_EXPORTER));
 
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("level", "INFO");
-        doc.put("event_type", EVENT_TYPE);
-        doc.put("source", SOURCE);
-        doc.put("message", message);
-        doc.put("message_text", messageText);
-        doc.put("thread", Thread.currentThread().getName());
-        doc.put("extension_version", Version.get());
-        doc.put("burp_version", burpVersion());
-        doc.put("project_id", projectId());
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("level", "INFO");
+        event.put("source", SOURCE);
+        event.put("thread", Thread.currentThread().getName());
+        event.put("type", EVENT_TYPE);
+        event.put("data", message);
+        event.put("summary", messageText);
+        doc.put("event", event);
+        doc.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
         return doc;
     }
 
-    private static String burpVersion() {
-        return BurpRuntimeMetadata.burpVersion();
-    }
-
-    private static String projectId() {
-        return BurpRuntimeMetadata.projectId();
-    }
 }

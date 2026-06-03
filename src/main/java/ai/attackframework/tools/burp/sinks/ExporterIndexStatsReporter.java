@@ -1,15 +1,12 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.SystemMetrics;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -150,7 +147,6 @@ public final class ExporterIndexStatsReporter {
         long nonHeapUsed = sys.nonHeapUsedBytes();
         long nonHeapMax = sys.nonHeapMaxBytes();
         int threadCount = sys.threadCount();
-        long uptimeMs = sys.uptimeMs();
         long gcCount = sys.gcCollectionCount();
         long gcTimeMs = sys.gcCollectionTimeMs();
 
@@ -177,12 +173,6 @@ public final class ExporterIndexStatsReporter {
         }
         if (sys.peakThreadCount() >= 0) {
             message.put("peak_thread_count", sys.peakThreadCount());
-        }
-        if (uptimeMs >= 0) {
-            message.put("uptime_ms", uptimeMs);
-        }
-        if (sys.availableProcessors() > 0) {
-            message.put("available_processors", sys.availableProcessors());
         }
         if (!Double.isNaN(sys.processCpuLoad())) {
             message.put("process_cpu_load", sys.processCpuLoad());
@@ -234,24 +224,19 @@ public final class ExporterIndexStatsReporter {
         }
 
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("level", "INFO");
-        doc.put("event_type", EVENT_TYPE);
-        doc.put("source", "burp-exporter");
-        doc.put("message", message);
-        doc.put("message_text", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used="
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("level", "INFO");
+        event.put("source", "burp-exporter");
+        event.put("thread", Thread.currentThread().getName());
+        event.put("type", EVENT_TYPE);
+        event.put("data", message);
+        event.put("summary", "stats_snapshot heap_used=" + (heapUsed / (1024 * 1024)) + "MB non_heap_used="
                 + (nonHeapUsed >= 0 ? (nonHeapUsed / (1024 * 1024)) + "MB" : "n/a")
                 + " threads=" + threadCount
                 + " traffic_indexed=" + ExportStats.getSuccessCount("traffic")
                 + " repeater_live_sources={" + ExportStats.describeRepeaterMetadataSourceCounts() + "}");
-        doc.put("thread", Thread.currentThread().getName());
-        doc.put("extension_version", Version.get());
-        doc.put("burp_version", burpVersion());
-        doc.put("project_id", projectId());
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
+        doc.put("event", event);
+        doc.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
         return doc;
     }
 
@@ -303,11 +288,4 @@ public final class ExporterIndexStatsReporter {
         message.put("traffic_file_source_failure", fileSourceFailure);
     }
 
-    private static String burpVersion() {
-        return BurpRuntimeMetadata.burpVersion();
-    }
-
-    private static String projectId() {
-        return BurpRuntimeMetadata.projectId();
-    }
 }

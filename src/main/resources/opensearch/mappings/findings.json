@@ -2,139 +2,367 @@
   "settings": {},
   "mappings": {
     "dynamic": true,
-    "properties": {
-      "name": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-      "severity": { "type": "keyword", "ignore_above": 8191 },
-      "confidence": { "type": "keyword", "ignore_above": 8191 },
-      "host": { "type": "keyword", "ignore_above": 8191 },
-      "port": { "type": "integer" },
-      "protocol_transport": { "type": "keyword", "ignore_above": 8191 },
-      "protocol_application": { "type": "keyword", "ignore_above": 8191 },
-      "protocol_sub": { "type": "keyword", "ignore_above": 8191 },
-      "url": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-      "param": { "type": "keyword", "ignore_above": 8191 },
-      "issue_type_id": { "type": "integer" },
-      "typical_severity": { "type": "keyword", "ignore_above": 8191 },
-      "description": { "type": "text" },
-      "background": { "type": "text" },
-      "remediation_background": { "type": "text" },
-      "remediation_detail": { "type": "text" },
-      "references": { "type": "text" },
-      "classifications": {
-        "properties": {
-          "cwe": { "type": "integer" },
-          "capec": { "type": "integer" }
+    "dynamic_templates": [
+      {
+        "request_header_values": {
+          "path_match": "requests_responses.request.header.*",
+          "match_mapping_type": "string",
+          "mapping": {
+            "type": "keyword",
+            "ignore_above": 8191
+          }
         }
       },
-      "request_responses": {
+      {
+        "response_header_values": {
+          "path_match": "requests_responses.response.header.*",
+          "match_mapping_type": "string",
+          "mapping": {
+            "type": "keyword",
+            "ignore_above": 8191
+          }
+        }
+      },
+      {
+        "collaborator_request_header_values": {
+          "path_match": "collaborator.http.request.header.*",
+          "match_mapping_type": "string",
+          "mapping": {
+            "type": "keyword",
+            "ignore_above": 8191
+          }
+        }
+      },
+      {
+        "collaborator_response_header_values": {
+          "path_match": "collaborator.http.response.header.*",
+          "match_mapping_type": "string",
+          "mapping": {
+            "type": "keyword",
+            "ignore_above": 8191
+          }
+        }
+      }
+    ],
+    "properties": {
+      "burp": {
+        "properties": {
+          "is_in_scope": { "type": "boolean" },
+          "reporting_tool": { "type": "keyword", "ignore_above": 8191 }
+        }
+      },
+      "collaborator": {
         "type": "nested",
         "properties": {
-          "request": {
+          "client_ip": { "type": "ip" },
+          "client_port": { "type": "integer" },
+          "custom_data": { "type": "text" },
+          "dns": {
             "properties": {
-              "method": { "type": "keyword", "ignore_above": 8191 },
-              "path": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-              "path_without_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-              "query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-              "file_extension": { "type": "keyword", "ignore_above": 8191 },
-              "content_type": { "type": "keyword", "ignore_above": 8191 },
-              "inferred_content_type": { "type": "keyword", "ignore_above": 8191 },
-              "http_version": { "type": "keyword", "ignore_above": 8191 },
-              "headers": {
+              "query_b64": { "type": "binary", "doc_values": false },
+              "query_type": { "type": "keyword", "ignore_above": 8191 }
+            }
+          },
+          "http": {
+            "properties": {
+              "protocol": { "type": "keyword", "ignore_above": 8191 },
+              "request": {
                 "properties": {
-                  "full": {
+                  "body": {
+                    "properties": {
+                      "b64": { "type": "binary", "doc_values": false },
+                      "length": { "type": "integer" },
+                      "markers": {
+                        "type": "nested",
+                        "properties": {
+                          "start_inclusive": { "type": "integer" },
+                          "end_exclusive": { "type": "integer" }
+                        }
+                      },
+                      "offset": { "type": "integer" },
+                      "text": { "type": "text", "index_options": "offsets" }
+                    }
+                  },
+                  "header": { "type": "object", "dynamic": true },
+                  "method": { "type": "keyword", "ignore_above": 8191 },
+                  "parameters": {
                     "type": "nested",
                     "properties": {
                       "name": { "type": "keyword", "ignore_above": 8191 },
+                      "type": { "type": "keyword", "ignore_above": 8191 },
                       "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
+                    }
+                  },
+                  "path": {
+                    "properties": {
+                      "with_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                      "without_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                      "query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                      "file_extension": { "type": "keyword", "ignore_above": 8191 }
+                    }
+                  },
+                  "protocol": {
+                    "properties": {
+                      "scheme": { "type": "keyword", "ignore_above": 8191 },
+                      "http_version": { "type": "keyword", "ignore_above": 8191 }
+                    }
+                  },
+                  "port": { "type": "integer" },
+                  "url": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
+                }
+              },
+              "request_b64": { "type": "binary", "doc_values": false },
+              "response": {
+                "properties": {
+                  "body": {
+                    "properties": {
+                      "b64": { "type": "binary", "doc_values": false },
+                      "html": {
+                        "properties": {
+                          "comments": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                          "dom": {
+                            "properties": {
+                              "css_classes": { "type": "keyword", "ignore_above": 8191 },
+                              "div_ids": { "type": "keyword", "ignore_above": 8191 },
+                              "tag_names": { "type": "keyword", "ignore_above": 8191 }
+                            }
+                          },
+                          "forms": {
+                            "properties": {
+                              "button_submit_labels": { "type": "keyword", "ignore_above": 8191 },
+                              "input_image_labels": { "type": "keyword", "ignore_above": 8191 },
+                              "input_submit_labels": { "type": "keyword", "ignore_above": 8191 },
+                              "non_hidden_form_input_types": { "type": "keyword", "ignore_above": 8191 }
+                            }
+                          },
+                          "links": {
+                            "properties": {
+                              "anchor_labels": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                              "canonical_link": { "type": "keyword", "ignore_above": 8191 },
+                              "outbound_edge_count": { "type": "integer" },
+                              "outbound_edge_tag_names": { "type": "keyword", "ignore_above": 8191 }
+                            }
+                          },
+                          "page_title": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                          "text": {
+                            "properties": {
+                              "visible_text": { "type": "text", "index_options": "offsets" },
+                              "visible_word_count": { "type": "integer" }
+                            }
+                          }
+                        }
+                      },
+                      "length": { "type": "integer" },
+                      "line_count": { "type": "integer" },
+                      "markers": {
+                        "type": "nested",
+                        "properties": {
+                          "start_inclusive": { "type": "integer" },
+                          "end_exclusive": { "type": "integer" }
+                        }
+                      },
+                      "offset": { "type": "integer" },
+                      "text": { "type": "text", "index_options": "offsets" },
+                      "word_count": { "type": "integer" }
+                    }
+                  },
+                  "header": { "type": "object", "dynamic": true },
+                  "protocol": {
+                    "properties": {
+                      "http_version": { "type": "keyword", "ignore_above": 8191 }
+                    }
+                  },
+                  "status": {
+                    "properties": {
+                      "code": { "type": "integer" },
+                      "code_class": { "type": "keyword", "ignore_above": 8191 },
+                      "description": { "type": "keyword", "ignore_above": 8191 }
                     }
                   }
                 }
               },
-              "parameters": {
-                "type": "nested",
+              "response_b64": { "type": "binary", "doc_values": false }
+            }
+          },
+          "id": { "type": "keyword", "ignore_above": 8191 },
+          "smtp": {
+            "properties": {
+              "conversation": { "type": "text" },
+              "protocol": { "type": "keyword", "ignore_above": 8191 }
+            }
+          },
+          "time": { "type": "date" },
+          "type": { "type": "keyword", "ignore_above": 8191 }
+        }
+      },
+      "issue": {
+        "properties": {
+          "background": { "type": "text" },
+          "confidence": { "type": "keyword", "ignore_above": 8191 },
+          "description": { "type": "text" },
+          "name": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+          "remediation": {
+            "properties": {
+              "background": { "type": "text" },
+              "detail": { "type": "text" }
+            }
+          },
+          "severity": { "type": "keyword", "ignore_above": 8191 },
+          "typical_severity": { "type": "keyword", "ignore_above": 8191 },
+          "type_id": { "type": "integer" }
+        }
+      },
+      "meta": {
+        "properties": {
+          "schema_version": { "type": "keyword", "ignore_above": 8191 },
+          "extension_version": { "type": "keyword", "ignore_above": 8191 },
+          "indexed_at": { "type": "date" },
+          "export_id": { "type": "keyword", "ignore_above": 8191 }
+        }
+      },
+      "requests_responses": {
+        "type": "nested",
+        "properties": {
+          "burp": {
+            "properties": {
+              "notes": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "highlight": { "type": "keyword", "ignore_above": 8191 },
+              "timing": {
                 "properties": {
-                  "name": { "type": "keyword", "ignore_above": 8191 },
-                  "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-                  "type": { "type": "keyword", "ignore_above": 8191 }
-                }
-              },
-              "content_type_enum": { "type": "keyword", "ignore_above": 8191 },
-              "markers": {
-                "type": "nested",
-                "properties": {
-                  "start_index_inclusive": { "type": "integer" },
-                  "end_index_exclusive": { "type": "integer" }
-                }
-              },
-              "body": {
-                "properties": {
-                  "length": { "type": "integer" },
-                  "offset": { "type": "integer" },
-                  "b64": { "type": "binary", "doc_values": false },
-                  "text": { "type": "text", "index_options": "offsets" }
+                  "req_sent_to_res_end": { "type": "integer" },
+                  "end": { "type": "date" },
+                  "req_sent": { "type": "date" },
+                  "req_sent_to_res_start": { "type": "integer" }
                 }
               }
             }
           },
-          "response": {
+          "request": {
             "properties": {
-              "status": { "type": "integer" },
-              "reason_phrase": { "type": "keyword", "ignore_above": 8191 },
-              "http_version": { "type": "keyword", "ignore_above": 8191 },
-              "headers": {
+              "body": {
                 "properties": {
-                  "full": {
+                  "b64": { "type": "binary", "doc_values": false },
+                  "length": { "type": "integer" },
+                  "markers": {
                     "type": "nested",
                     "properties": {
-                      "name": { "type": "keyword", "ignore_above": 8191 },
-                      "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
+                      "start_inclusive": { "type": "integer" },
+                      "end_exclusive": { "type": "integer" }
                     }
                   },
-                  "names": { "type": "keyword", "ignore_above": 8191 },
-                  "etag": { "type": "keyword", "ignore_above": 8191 },
-                  "last_modified": { "type": "keyword", "ignore_above": 8191 },
-                  "content_location": { "type": "keyword", "ignore_above": 8191 }
+                  "offset": { "type": "integer" },
+                  "text": { "type": "text", "index_options": "offsets" }
                 }
               },
-              "cookies": {
+              "header": { "type": "object", "dynamic": true },
+              "method": { "type": "keyword", "ignore_above": 8191 },
+              "parameters": {
                 "type": "nested",
                 "properties": {
                   "name": { "type": "keyword", "ignore_above": 8191 },
-                  "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
-                  "domain": { "type": "keyword", "ignore_above": 8191 },
-                  "path": { "type": "keyword", "ignore_above": 8191 },
-                  "expiration": { "type": "date" }
+                  "type": { "type": "keyword", "ignore_above": 8191 },
+                  "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
                 }
               },
-              "mime_type": { "type": "keyword", "ignore_above": 8191 },
-              "stated_mime_type": { "type": "keyword", "ignore_above": 8191 },
-              "inferred_mime_type": { "type": "keyword", "ignore_above": 8191 },
-              "status_code_class": { "type": "keyword", "ignore_above": 8191 },
-              "markers": {
-                "type": "nested",
+              "path": {
                 "properties": {
-                  "start_index_inclusive": { "type": "integer" },
-                  "end_index_exclusive": { "type": "integer" }
+                  "with_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                  "without_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                  "query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                  "file_extension": { "type": "keyword", "ignore_above": 8191 }
                 }
               },
+              "protocol": {
+                "properties": {
+                  "scheme": { "type": "keyword", "ignore_above": 8191 },
+                  "http_version": { "type": "keyword", "ignore_above": 8191 }
+                }
+              },
+              "port": { "type": "integer" },
+              "url": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
+            }
+          },
+          "response": {
+            "properties": {
               "body": {
                 "properties": {
-                  "length": { "type": "integer" },
-                  "offset": { "type": "integer" },
                   "b64": { "type": "binary", "doc_values": false },
-                  "text": { "type": "text", "index_options": "offsets" }
+                  "html": {
+                    "properties": {
+                      "comments": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                      "dom": {
+                        "properties": {
+                          "css_classes": { "type": "keyword", "ignore_above": 8191 },
+                          "div_ids": { "type": "keyword", "ignore_above": 8191 },
+                          "tag_names": { "type": "keyword", "ignore_above": 8191 }
+                        }
+                      },
+                      "forms": {
+                        "properties": {
+                          "button_submit_labels": { "type": "keyword", "ignore_above": 8191 },
+                          "input_image_labels": { "type": "keyword", "ignore_above": 8191 },
+                          "input_submit_labels": { "type": "keyword", "ignore_above": 8191 },
+                          "non_hidden_form_input_types": { "type": "keyword", "ignore_above": 8191 }
+                        }
+                      },
+                      "links": {
+                        "properties": {
+                          "anchor_labels": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                          "canonical_link": { "type": "keyword", "ignore_above": 8191 },
+                          "outbound_edge_count": { "type": "integer" },
+                          "outbound_edge_tag_names": { "type": "keyword", "ignore_above": 8191 }
+                        }
+                      },
+                      "page_title": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                      "text": {
+                        "properties": {
+                          "visible_text": { "type": "text", "index_options": "offsets" },
+                          "visible_word_count": { "type": "integer" }
+                        }
+                      }
+                    }
+                  },
+                  "length": { "type": "integer" },
+                  "line_count": { "type": "integer" },
+                  "markers": {
+                    "type": "nested",
+                    "properties": {
+                      "start_inclusive": { "type": "integer" },
+                      "end_exclusive": { "type": "integer" }
+                    }
+                  },
+                  "offset": { "type": "integer" },
+                  "text": { "type": "text", "index_options": "offsets" },
+                  "word_count": { "type": "integer" }
+                }
+              },
+              "header": { "type": "object", "dynamic": true },
+              "protocol": {
+                "properties": {
+                  "http_version": { "type": "keyword", "ignore_above": 8191 }
+                }
+              },
+              "status": {
+                "properties": {
+                  "code": { "type": "integer" },
+                  "code_class": { "type": "keyword", "ignore_above": 8191 },
+                  "description": { "type": "keyword", "ignore_above": 8191 }
                 }
               }
             }
           }
         }
       },
-      "request_responses_missing": { "type": "boolean" },
-      "document_meta": {
+      "target": {
         "properties": {
-          "schema_version": { "type": "keyword", "ignore_above": 8191 },
-          "extension_version": { "type": "keyword", "ignore_above": 8191 },
-          "indexed_at": { "type": "date" }
+          "host": { "type": "keyword", "ignore_above": 8191 },
+          "port": { "type": "integer" },
+          "protocol": {
+            "properties": {
+              "scheme": { "type": "keyword", "ignore_above": 8191 }
+            }
+          },
+          "url": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
         }
       }
     }

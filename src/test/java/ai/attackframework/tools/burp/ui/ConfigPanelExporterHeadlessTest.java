@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 
@@ -24,12 +25,12 @@ class ConfigPanelExporterHeadlessTest {
     void exporterSource_defaultsEnabled_withStatsIntervalAndExporterFieldsSection() throws Exception {
         ConfigPanel panel = createPanel();
 
-        JCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox");
-        JCheckBox exporterStatsCheckbox = Reflect.get(panel, "exporterStatsCheckbox");
-        JTextField exporterStatsIntervalField = Reflect.get(panel, "exporterStatsIntervalField");
-        JTextField indexNameBaseTemplateField = Reflect.get(panel, "indexNameBaseTemplateField");
-        JLabel indexNameValidationIndicator = Reflect.get(panel, "indexNameBaseValidationIndicator");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
+        JCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox", TriStateCheckBox.class);
+        JCheckBox exporterStatsCheckbox = Reflect.get(panel, "exporterStatsCheckbox", JCheckBox.class);
+        JTextField exporterStatsIntervalField = Reflect.get(panel, "exporterStatsIntervalField", JTextField.class);
+        JTextField indexNameBaseTemplateField = Reflect.get(panel, "indexNameBaseTemplateField", JTextField.class);
+        JLabel indexNameValidationIndicator = Reflect.get(panel, "indexNameBaseValidationIndicator", JLabel.class);
+        Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
 
         ConfigState.State state = (ConfigState.State) Reflect.call(panel, "buildCurrentState");
 
@@ -55,8 +56,8 @@ class ConfigPanelExporterHeadlessTest {
     void indexBaseName_liveValidation_updatesInlineFeedback() throws Exception {
         ConfigPanel panel = createPanel();
 
-        JTextField indexNameBaseTemplateField = Reflect.get(panel, "indexNameBaseTemplateField");
-        JLabel indexNameValidationIndicator = Reflect.get(panel, "indexNameBaseValidationIndicator");
+        JTextField indexNameBaseTemplateField = Reflect.get(panel, "indexNameBaseTemplateField", JTextField.class);
+        JLabel indexNameValidationIndicator = Reflect.get(panel, "indexNameBaseValidationIndicator", JLabel.class);
 
         SwingUtilities.invokeAndWait(() -> indexNameBaseTemplateField.setText("Attackframework Tool Burp"));
         assertThat(indexNameValidationIndicator.isVisible()).isTrue();
@@ -76,8 +77,8 @@ class ConfigPanelExporterHeadlessTest {
     void indexBaseName_fieldAutoSizesLikeDestinationFields() throws Exception {
         ConfigPanel panel = createPanel();
 
-        JTextField indexNameBaseTemplateField = Reflect.get(panel, "indexNameBaseTemplateField");
-        JTextField openSearchUrlField = Reflect.get(panel, "openSearchUrlField");
+        JTextField indexNameBaseTemplateField = Reflect.get(panel, "indexNameBaseTemplateField", JTextField.class);
+        JTextField openSearchUrlField = Reflect.get(panel, "openSearchUrlField", JTextField.class);
 
         Dimension initialIndexSize = indexNameBaseTemplateField.getPreferredSize();
         Dimension initialOpenSearchSize = openSearchUrlField.getPreferredSize();

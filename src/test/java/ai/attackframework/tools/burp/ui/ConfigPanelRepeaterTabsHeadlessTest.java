@@ -18,7 +18,7 @@ class ConfigPanelRepeaterTabsHeadlessTest {
     void repeaterTabsTrafficOption_defaultsEnabled_andPersistsIntoBuiltState() throws Exception {
         ConfigPanel panel = createPanel();
 
-        JCheckBox repeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
+        JCheckBox repeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox", JCheckBox.class);
 
         ConfigState.State state = (ConfigState.State) Reflect.call(panel, "buildCurrentState");
 
@@ -35,7 +35,7 @@ class ConfigPanelRepeaterTabsHeadlessTest {
     @Test
     void onImportResult_restoresRepeaterTabsTrafficOption() throws Exception {
         ConfigPanel panel = createPanel();
-        JCheckBox repeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
+        JCheckBox repeaterTabsCheckbox = Reflect.get(panel, "trafficRepeaterTabsCheckbox", JCheckBox.class);
 
         ConfigState.State imported = new ConfigState.State(
                 java.util.List.of("traffic"),

@@ -12,9 +12,11 @@ class ExportFieldTooltipsTest {
     void everyToggleableField_hasNonBlankTooltip() {
         for (String index : ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL) {
             for (String field : ExportFieldRegistry.getToggleableFields(index)) {
-                assertThat(ExportFieldTooltips.tooltipFor(index, field))
+                String tooltip = ExportFieldTooltips.tooltipFor(index, field);
+                assertThat(tooltip)
                         .as(index + "." + field)
-                        .isNotBlank();
+                        .isNotBlank()
+                        .contains("Field:</b> " + field);
             }
         }
     }

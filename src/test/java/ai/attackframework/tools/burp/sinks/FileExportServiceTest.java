@@ -293,14 +293,16 @@ class FileExportServiceTest {
         meta.put("indexed_at", "2026-03-27T00:00:00Z");
 
         Map<String, Object> request = new LinkedHashMap<>();
+        request.put("url", url);
         request.put("method", "GET");
 
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("reporting_tool", "Proxy");
+
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", url);
-        document.put("method", "GET");
-        document.put("tool_type", "PROXY");
+        document.put("burp", burp);
         document.put("request", request);
-        document.put("document_meta", meta);
+        document.put("meta", meta);
         return document;
     }
 }

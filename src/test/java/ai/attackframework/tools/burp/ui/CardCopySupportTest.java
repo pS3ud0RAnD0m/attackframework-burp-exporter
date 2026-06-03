@@ -115,7 +115,7 @@ class CardCopySupportTest {
         global.put("Traffic Queue Size", "0");
         sections.put("Global", global);
         LinkedHashMap<String, String> process = new LinkedHashMap<>();
-        process.put("Uptime", "10s");
+        process.put("Heap Used / Max", "128 MiB / 512 MiB (25%)");
         sections.put("Process", process);
 
         String text = CardCopySupport.sectionsToText("Misc Stats", sections);
@@ -124,7 +124,7 @@ class CardCopySupportTest {
         assertThat(text).contains("  Export Running: false\n");
         assertThat(text).contains("  Traffic Queue Size: 0\n");
         assertThat(text).contains("\nProcess\n");
-        assertThat(text).contains("  Uptime: 10s\n");
+        assertThat(text).contains("  Heap Used / Max: 128 MiB / 512 MiB (25%)\n");
     }
 
     private static <T> T onEdt(java.util.concurrent.Callable<T> supplier) throws Exception {

@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchPushCancellation;
 
 /**
  * Shared bulk-outcome accounting for OpenSearch bulk requests across reporters.
@@ -70,6 +71,9 @@ public final class BulkOutcomeRecorder {
         }
         int failure = clampedAttempted - clampedSent;
         if (failure > 0) {
+            if (OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
+                return clampedSent;
+            }
             ExportStats.recordFailure(indexKey, failure);
             String resolvedLabel = (label == null || label.isBlank()) ? "Bulk" : label.trim();
             String resolvedPrefix = (logPrefix == null || logPrefix.isBlank()) ? "Export" : logPrefix.trim();

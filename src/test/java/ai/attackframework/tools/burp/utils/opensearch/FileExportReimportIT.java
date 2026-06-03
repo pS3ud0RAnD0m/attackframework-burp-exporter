@@ -1,7 +1,6 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -34,7 +33,6 @@ import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
-
 /**
  * Verifies that exported NDJSON files can be re-imported idempotently into OpenSearch.
  *
@@ -115,9 +113,9 @@ class FileExportReimportIT {
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("url", "https://acme.com/reimport");
         document.put("method", "GET");
-        document.put("tool_type", "PROXY");
+        document.put("tool", "Proxy");
         document.put("request", request);
-        document.put("document_meta", meta);
+        document.put("meta", meta);
         return document;
     }
 

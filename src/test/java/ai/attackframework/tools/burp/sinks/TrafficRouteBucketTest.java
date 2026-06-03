@@ -7,11 +7,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Unit tests for the centralized {@link TrafficRouteBucket} mapping and stats helpers.
@@ -22,10 +22,11 @@ import ai.attackframework.tools.burp.utils.FileExportStats;
  */
 class TrafficRouteBucketTest {
 
-    @AfterEach
     void resetStats() {
         ExportStats.resetForTests();
         FileExportStats.resetForTests();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.setExportStarting(false);
     }
 
     @Test
@@ -57,18 +58,25 @@ class TrafficRouteBucketTest {
     }
 
     @Test
-    void fromDocument_derivesRouteFromToolTypeField() {
+    void fromDocument_derivesRouteFromBurpReportingToolField() {
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("tool_type", "PROXY_WEBSOCKET");
+        doc.put("burp", Map.of("reporting_tool", "Proxy WebSocket"));
         assertThat(TrafficRouteBucket.fromDocument(doc).key())
                 .isEqualTo(TrafficRouteBucket.SOURCE_PROXY_WEBSOCKET);
 
-        Map<String, Object> docWithoutToolType = new HashMap<>();
-        assertThat(TrafficRouteBucket.fromDocument(docWithoutToolType).key())
+        Map<String, Object> docWithoutReporter = new HashMap<>();
+        assertThat(TrafficRouteBucket.fromDocument(docWithoutReporter).key())
                 .isEqualTo(TrafficRouteBucket.TOOL_TYPE_UNKNOWN);
 
         assertThat(TrafficRouteBucket.fromDocument(null).key())
                 .isEqualTo(TrafficRouteBucket.TOOL_TYPE_UNKNOWN);
+    }
+
+    @Test
+    void fromToolLabel_mapsDisplayLabelsToExistingBuckets() {
+        assertThat(TrafficRouteBucket.fromToolLabel("Repeater Tabs").key()).isEqualTo("REPEATER_TABS");
+        assertThat(TrafficRouteBucket.fromToolLabel("Proxy").key()).isEqualTo("PROXY");
+        assertThat(TrafficRouteBucket.fromToolLabel("Burp AI").key()).isEqualTo("BURP_AI");
     }
 
     @Test
@@ -81,6 +89,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordOpenSearchSuccess_routesSourceAndToolTypeSeparately() {
+        resetStats();
         TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.proxyHistorySnapshot(), 3);
         TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.fromToolType("REPEATER_TABS"), 2);
 
@@ -91,6 +100,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordOpenSearchFailure_routesSourceAndToolTypeSeparately() {
+        resetStats();
         TrafficRouteBucket.recordOpenSearchFailure(TrafficRouteBucket.proxyWebSocket(), 4);
         TrafficRouteBucket.recordOpenSearchFailure(TrafficRouteBucket.fromToolType("INTRUDER"), 1);
 
@@ -101,6 +111,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordFileSuccessAndFailure_updateFileExportStats() {
+        resetStats();
         TrafficRouteBucket.recordFileSuccess(TrafficRouteBucket.proxyHistorySnapshot(), 5);
         TrafficRouteBucket.recordFileFailure(TrafficRouteBucket.fromToolType("REPEATER"), 7);
 
@@ -111,6 +122,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void resolveOpenSearchSourceSuccess_foldsSnapshotAndWebSocketUnderProxyHistoryRow() {
+        resetStats();
         TrafficRouteBucket.recordOpenSearchSuccess(
                 TrafficRouteBucket.fromToolType("PROXY_HISTORY"), 2); // proxy_history_snapshot
         TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.proxyWebSocket(), 3);
@@ -123,6 +135,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void resolveFileSourceSuccess_foldsSnapshotAndWebSocketUnderProxyHistoryRow() {
+        resetStats();
         TrafficRouteBucket.recordFileSuccess(TrafficRouteBucket.proxyHistorySnapshot(), 4);
         TrafficRouteBucket.recordFileSuccess(TrafficRouteBucket.proxyWebSocket(), 1);
         assertThat(TrafficRouteBucket.resolveFileSourceSuccess("PROXY_HISTORY")).isEqualTo(5);
@@ -130,6 +143,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordBulkOutcome_fullSuccess_updatesTrafficAndRouteSuccessCounters() {
+        resetStats();
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyWebSocket();
         TrafficRouteBucket.recordBulkOutcome(route, 4, 4, true, "Proxy WebSocket bulk push");
 
@@ -143,6 +157,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordBulkOutcome_partialFailure_splitsSuccessAndFailure() {
+        resetStats();
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
         TrafficRouteBucket.recordBulkOutcome(route, 5, 3, true, "Proxy history chunk");
 
@@ -156,6 +171,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordBulkOutcome_openSearchInactive_isNoop() {
+        resetStats();
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyWebSocket();
         TrafficRouteBucket.recordBulkOutcome(route, 4, 2, false, "label");
 
@@ -169,12 +185,14 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordBulkOutcome_nullRoute_isNoop() {
+        resetStats();
         TrafficRouteBucket.recordBulkOutcome(null, 3, 3, true, "label");
         assertThat(ExportStats.getSuccessCount("traffic")).isZero();
     }
 
     @Test
     void recordBulkOutcome_clampsSentAboveAttempted() {
+        resetStats();
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
         TrafficRouteBucket.recordBulkOutcome(route, 5, 7, true, "Proxy history chunk");
 
@@ -186,6 +204,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void recordBulkOutcome_clampsNegativeAttemptedToZero() {
+        resetStats();
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyWebSocket();
         TrafficRouteBucket.recordBulkOutcome(route, -3, 5, true, "label");
 
@@ -204,6 +223,7 @@ class TrafficRouteBucketTest {
 
     @Test
     void zeroOrNegativeCount_recordsNothing() {
+        resetStats();
         TrafficRouteBucket.recordOpenSearchSuccess(TrafficRouteBucket.fromToolType("REPEATER"), 0);
         TrafficRouteBucket.recordOpenSearchFailure(TrafficRouteBucket.fromToolType("REPEATER"), -2);
         TrafficRouteBucket.recordFileSuccess(TrafficRouteBucket.fromToolType("REPEATER"), 0);

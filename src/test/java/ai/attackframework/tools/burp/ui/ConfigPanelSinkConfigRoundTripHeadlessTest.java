@@ -26,20 +26,20 @@ class ConfigPanelSinkConfigRoundTripHeadlessTest {
         withCleanSession(() -> {
             ConfigPanel original = newPanelOnEdt();
 
-            JCheckBox fileSinkCheckbox = get(original, "fileSinkCheckbox");
-            JTextField filePathField = get(original, "filePathField");
-            JRadioButton fileJsonlCheckbox = get(original, "fileJsonlCheckbox");
-            JCheckBox fileTotalCapCheckbox = get(original, "fileTotalCapCheckbox");
-            JTextField fileTotalCapField = get(original, "fileTotalCapField");
-            JCheckBox fileDiskUsagePercentCheckbox = get(original, "fileDiskUsagePercentCheckbox");
-            JTextField fileDiskUsagePercentField = get(original, "fileDiskUsagePercentField");
-            JCheckBox openSearchSinkCheckbox = get(original, "openSearchSinkCheckbox");
-            JTextField openSearchUrlField = get(original, "openSearchUrlField");
-            JComboBox<String> openSearchAuthTypeCombo = get(original, "openSearchAuthTypeCombo");
-            JTextField openSearchUserField = get(original, "openSearchUserField");
-            JTextField openSearchCertPathField = get(original, "openSearchCertPathField");
-            JTextField openSearchCertKeyPathField = get(original, "openSearchCertKeyPathField");
-            JComboBox<String> openSearchTlsModeCombo = get(original, "openSearchTlsModeCombo");
+            JCheckBox fileSinkCheckbox = JCheckBox.class.cast(get(original, "fileSinkCheckbox"));
+            JTextField filePathField = JTextField.class.cast(get(original, "filePathField"));
+            JRadioButton fileJsonlCheckbox = JRadioButton.class.cast(get(original, "fileJsonlCheckbox"));
+            JCheckBox fileTotalCapCheckbox = JCheckBox.class.cast(get(original, "fileTotalCapCheckbox"));
+            JTextField fileTotalCapField = JTextField.class.cast(get(original, "fileTotalCapField"));
+            JCheckBox fileDiskUsagePercentCheckbox = JCheckBox.class.cast(get(original, "fileDiskUsagePercentCheckbox"));
+            JTextField fileDiskUsagePercentField = JTextField.class.cast(get(original, "fileDiskUsagePercentField"));
+            JCheckBox openSearchSinkCheckbox = JCheckBox.class.cast(get(original, "openSearchSinkCheckbox"));
+            JTextField openSearchUrlField = JTextField.class.cast(get(original, "openSearchUrlField"));
+            JComboBox<String> openSearchAuthTypeCombo = JComboBox.class.cast(get(original, "openSearchAuthTypeCombo"));
+            JTextField openSearchUserField = JTextField.class.cast(get(original, "openSearchUserField"));
+            JTextField openSearchCertPathField = JTextField.class.cast(get(original, "openSearchCertPathField"));
+            JTextField openSearchCertKeyPathField = JTextField.class.cast(get(original, "openSearchCertKeyPathField"));
+            JComboBox<String> openSearchTlsModeCombo = JComboBox.class.cast(get(original, "openSearchTlsModeCombo"));
 
             runEdt(() -> {
                 if (!fileSinkCheckbox.isSelected()) {
@@ -92,12 +92,12 @@ class ConfigPanelSinkConfigRoundTripHeadlessTest {
             ConfigPanel restored = newPanelOnEdt();
             runEdt(() -> restored.onImportResult(imported));
 
-            JTextField restoredFilePathField = get(restored, "filePathField");
-            JComboBox<String> restoredAuthTypeCombo = get(restored, "openSearchAuthTypeCombo");
-            JTextField restoredOpenSearchUserField = get(restored, "openSearchUserField");
-            JTextField restoredCertPathField = get(restored, "openSearchCertPathField");
-            JTextField restoredCertKeyPathField = get(restored, "openSearchCertKeyPathField");
-            JComboBox<String> restoredTlsModeCombo = get(restored, "openSearchTlsModeCombo");
+            JTextField restoredFilePathField = JTextField.class.cast(get(restored, "filePathField"));
+            JComboBox<String> restoredAuthTypeCombo = JComboBox.class.cast(get(restored, "openSearchAuthTypeCombo"));
+            JTextField restoredOpenSearchUserField = JTextField.class.cast(get(restored, "openSearchUserField"));
+            JTextField restoredCertPathField = JTextField.class.cast(get(restored, "openSearchCertPathField"));
+            JTextField restoredCertKeyPathField = JTextField.class.cast(get(restored, "openSearchCertKeyPathField"));
+            JComboBox<String> restoredTlsModeCombo = JComboBox.class.cast(get(restored, "openSearchTlsModeCombo"));
 
             runEdt(() -> {
                 assertThat(restoredFilePathField.getText()).isEqualTo("C:/Burp/ui-roundtrip");

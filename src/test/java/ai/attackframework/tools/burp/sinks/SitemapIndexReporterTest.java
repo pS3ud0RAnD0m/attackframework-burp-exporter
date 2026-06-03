@@ -1,8 +1,9 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -15,6 +16,8 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import burp.api.montoya.core.Marker;
+import burp.api.montoya.core.Range;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.params.HttpParameterType;
@@ -101,21 +104,29 @@ class SitemapIndexReporterTest {
         when(item.httpService()).thenReturn(service);
         when(item.hasResponse()).thenReturn(false);
 
-        Map<?, ?> doc = (Map<?, ?>) callStatic(SitemapIndexReporter.class, "buildSitemapDoc", item);
+        Map<String, Object> doc = SitemapIndexReporter.buildSitemapDoc(item);
 
         assertThat(doc).isNotNull();
-        assertThat(doc.get("url")).isEqualTo("https://auth.example.com/login");
-        assertThat(doc.get("method")).isEqualTo("GET");
-        assertThat(doc.get("path")).isEqualTo("/login");
-        assertThat(doc.get("host")).isEqualTo("auth.example.com");
+        assertThat(doc.keySet()).contains("burp", "request", "response", "meta");
+        assertThat(doc.keySet())
+                .doesNotContain("request_id", "source", "url", "method", "path", "host", "status", "param_names");
+        Map<?, ?> requestDoc = nestedMap(doc, "request");
+        assertThat(requestDoc.get("url")).isEqualTo("https://auth.example.com/login");
+        assertThat(requestDoc.get("method")).isEqualTo("GET");
+        assertThat(requestDoc.get("port")).isEqualTo(443);
+        Map<?, ?> pathDoc = nestedMap(requestDoc, "path");
+        assertThat(pathDoc.get("with_query")).isEqualTo("/login");
+        Map<?, ?> protocol = nestedMap(requestDoc, "protocol");
+        assertThat(protocol.get("scheme")).isEqualTo("https");
+        assertThat(protocol.get("http_version")).isEqualTo("HTTP/1.1");
     }
 
     @Test
-    void buildSitemapDoc_paramNames_onlyContainsUrlParams_notBodyEnumeration() {
+    void buildSitemapDoc_parametersOnlyContainUrlParams_notBodyEnumeration() {
         // Production code uses request.parameters(HttpParameterType.URL) so binary bodies
-        // mislabeled as form-urlencoded cannot inflate param_names with synthetic BODY entries.
+        // mislabeled as form-urlencoded cannot inflate request.parameters with synthetic BODY entries.
         // We prove that here by stubbing two distinct lists for parameters() and parameters(URL):
-        // the doc's param_names must reflect only the typed URL list.
+        // the doc's request.parameters must reflect only the typed URL list.
         ParsedHttpParameter urlParam = mock(ParsedHttpParameter.class);
         when(urlParam.name()).thenReturn("user");
         ParsedHttpParameter bodyParam = mock(ParsedHttpParameter.class);
@@ -148,12 +159,65 @@ class SitemapIndexReporterTest {
         when(item.httpService()).thenReturn(service);
         when(item.hasResponse()).thenReturn(false);
 
-        Map<?, ?> doc = (Map<?, ?>) callStatic(SitemapIndexReporter.class, "buildSitemapDoc", item);
+        Map<String, Object> doc = SitemapIndexReporter.buildSitemapDoc(item);
 
         assertThat(doc).isNotNull();
-        assertThat(doc.get("param_names"))
-                .as("param_names must be drawn from the URL accessor, not the all-types accessor")
-                .isEqualTo(List.of("user"));
+        Map<?, ?> requestDoc = nestedMap(doc, "request");
+        Object parametersObject = requestDoc.get("parameters");
+        assertThat(parametersObject)
+                .as("sitemap request.parameters must be drawn from the URL accessor, not the all-types accessor")
+                .isInstanceOf(List.class);
+        List<?> parameters = (List<?>) parametersObject;
+        assertThat(parameters).hasSize(1);
+        Map<?, ?> parameter = (Map<?, ?>) parameters.get(0);
+        assertThat(parameter.get("name")).isEqualTo("user");
+        assertThat(doc.containsKey("param_names")).isFalse();
+        verify(request, never()).parameters();
+    }
+
+    @Test
+    void buildSitemapDoc_overlaysPairLevelRequestMarkersIntoRequestBody() {
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenReturn("https://api.example.com/login");
+        when(request.method()).thenReturn("POST");
+        when(request.path()).thenReturn("/login");
+        when(request.pathWithoutQuery()).thenReturn("/login");
+        when(request.query()).thenReturn("");
+        when(request.fileExtension()).thenReturn("");
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.headers()).thenReturn(List.of());
+        when(request.parameters(HttpParameterType.URL)).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.contentType()).thenReturn(null);
+
+        Range range = mock(Range.class);
+        when(range.startIndexInclusive()).thenReturn(10);
+        when(range.endIndexExclusive()).thenReturn(20);
+        Marker marker = mock(Marker.class);
+        when(marker.range()).thenReturn(range);
+
+        HttpService service = mock(HttpService.class);
+        when(service.host()).thenReturn("api.example.com");
+        when(service.port()).thenReturn(443);
+        when(service.secure()).thenReturn(true);
+
+        HttpRequestResponse item = mock(HttpRequestResponse.class);
+        when(item.request()).thenReturn(request);
+        when(item.httpService()).thenReturn(service);
+        when(item.hasResponse()).thenReturn(false);
+        when(item.requestMarkers()).thenReturn(List.of(marker));
+        when(item.responseMarkers()).thenReturn(List.of());
+
+        Map<String, Object> doc = SitemapIndexReporter.buildSitemapDoc(item);
+        Map<?, ?> requestDoc = nestedMap(doc, "request");
+        Map<?, ?> body = nestedMap(requestDoc, "body");
+        List<?> markers = (List<?>) body.get("markers");
+
+        assertThat(markers).hasSize(1);
+        Map<?, ?> firstMarker = (Map<?, ?>) markers.get(0);
+        assertThat(firstMarker.get("start_inclusive")).isEqualTo(10);
+        assertThat(firstMarker.get("end_exclusive")).isEqualTo(20);
     }
 
     @Test
@@ -169,5 +233,11 @@ class SitemapIndexReporterTest {
         RuntimeConfig.updateState(state);
         RuntimeConfig.setExportRunning(true);
         SitemapIndexReporter.pushNewItemsOnly();
+    }
+
+    private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {
+        Object value = parent.get(key);
+        assertThat(value).isInstanceOf(Map.class);
+        return (Map<?, ?>) value;
     }
 }

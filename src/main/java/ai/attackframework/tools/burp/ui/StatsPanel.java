@@ -358,7 +358,6 @@ public class StatsPanel extends JPanel {
     private final JLabel fileTotalExportedValue;
     private final JLabel fileTotalDocsPushedValue;
     private final JLabel fileTotalFailuresValue;
-    private final JLabel uptimeValue;
     private final JLabel heapUsedMaxValue;
     private final JLabel heapCommittedValue;
     private final JLabel nonHeapUsedValue;
@@ -367,7 +366,6 @@ public class StatsPanel extends JPanel {
     private final JLabel threadsLivePeakValue;
     private final JLabel gcCountTimeValue;
     private final JLabel processCpuLoadValue;
-    private final JLabel availableProcessorsValue;
     private final JLabel permanentDropsTotalValue;
     private final JLabel synthesizedBodyParamsDroppedValue;
     private final JLabel docsOverParamsThresholdValue;
@@ -493,10 +491,10 @@ public class StatsPanel extends JPanel {
                         "Queue Drops", "Pending Orphans", "Repeater Metadata Sources"
                 }),
                 new MetricSection("Process", new String[] {
-                        "Uptime", "Heap Used / Max", "Heap Committed",
+                        "Heap Used / Max", "Heap Committed",
                         "Non-Heap Used", "Direct Buffer Used", "Mapped Buffer Used",
                         "Threads (Live / Peak)",
-                        "GC (Count / Time)", "Process CPU Load", "Available Processors"
+                        "GC (Count / Time)", "Process CPU Load"
                 }),
                 new MetricSection("OpenSearch", new String[] {
                         "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
@@ -537,7 +535,6 @@ public class StatsPanel extends JPanel {
         fileTotalExportedValue = miscValues.get("File Total Size Exported");
         fileTotalDocsPushedValue = miscValues.get("File Total Docs Exported");
         fileTotalFailuresValue = miscValues.get("File Total Failures");
-        uptimeValue = miscValues.get("Uptime");
         heapUsedMaxValue = miscValues.get("Heap Used / Max");
         heapCommittedValue = miscValues.get("Heap Committed");
         nonHeapUsedValue = miscValues.get("Non-Heap Used");
@@ -546,7 +543,6 @@ public class StatsPanel extends JPanel {
         threadsLivePeakValue = miscValues.get("Threads (Live / Peak)");
         gcCountTimeValue = miscValues.get("GC (Count / Time)");
         processCpuLoadValue = miscValues.get("Process CPU Load");
-        availableProcessorsValue = miscValues.get("Available Processors");
         permanentDropsTotalValue = miscValues.get("Permanent Drops (Total)");
         synthesizedBodyParamsDroppedValue = miscValues.get("Synthesized Body Params Dropped");
         docsOverParamsThresholdValue = miscValues.get("Docs Over Param Threshold");
@@ -1441,13 +1437,11 @@ public class StatsPanel extends JPanel {
     /**
      * Applies the latest {@link SystemMetrics.Snapshot} to the Misc Stats "Process" rows.
      *
-     * <p>Unavailable fields fall back to {@code "n/a"}. Uptime is formatted as a human-readable
-     * {@code Dd Hh Mm Ss} string so long-running sessions stay scannable in the compact card.
-     * Heap rows include a percent of {@code heapMax} so operators can spot saturation at a
+     * <p>Unavailable fields fall back to {@code "n/a"}. Heap rows include a percent of
+     * {@code heapMax} so operators can spot saturation at a
      * glance without doing the division themselves.</p>
      */
     private void applySystemMetrics(SystemMetrics.Snapshot snapshot) {
-        uptimeValue.setText(snapshot.uptimeMs() >= 0 ? formatUptime(snapshot.uptimeMs()) : "n/a");
         heapUsedMaxValue.setText(formatBytesPairWithPercent(
                 snapshot.heapUsedBytes(), snapshot.heapMaxBytes()));
         heapCommittedValue.setText(formatBytesWithPercentOf(
@@ -1469,9 +1463,6 @@ public class StatsPanel extends JPanel {
         processCpuLoadValue.setText(Double.isNaN(snapshot.processCpuLoad())
                 ? "n/a"
                 : DECIMAL_ONE.format(snapshot.processCpuLoad() * 100.0) + "%");
-        availableProcessorsValue.setText(snapshot.availableProcessors() > 0
-                ? formatWhole(snapshot.availableProcessors())
-                : "n/a");
     }
 
     private static String formatBytesPair(long used, long max) {
@@ -1521,30 +1512,6 @@ public class StatsPanel extends JPanel {
         String liveText = live >= 0 ? formatWhole(live) : "n/a";
         String peakText = peak >= 0 ? formatWhole(peak) : "n/a";
         return liveText + " / " + peakText;
-    }
-
-    /**
-     * Formats a millisecond uptime value as {@code Dd Hh Mm Ss}, trimming leading zero units so
-     * short sessions render as {@code 12s} while multi-day sessions render as {@code 2d 05h 30m}.
-     */
-    private static String formatUptime(long uptimeMs) {
-        long totalSeconds = Math.max(0L, uptimeMs / 1000L);
-        long days = totalSeconds / 86_400L;
-        long hours = (totalSeconds % 86_400L) / 3_600L;
-        long minutes = (totalSeconds % 3_600L) / 60L;
-        long seconds = totalSeconds % 60L;
-        StringBuilder sb = new StringBuilder();
-        if (days > 0) {
-            sb.append(days).append("d ");
-        }
-        if (days > 0 || hours > 0) {
-            sb.append(String.format(Locale.ROOT, "%02dh ", hours));
-        }
-        if (days > 0 || hours > 0 || minutes > 0) {
-            sb.append(String.format(Locale.ROOT, "%02dm ", minutes));
-        }
-        sb.append(String.format(Locale.ROOT, "%02ds", seconds));
-        return sb.toString();
     }
 
     /**
@@ -2449,7 +2416,6 @@ public class StatsPanel extends JPanel {
         // Process metrics (JVM + OS)
         SystemMetrics.Snapshot sys = SystemMetrics.snapshot();
         sb.append("Process\n");
-        sb.append("  uptime ms: ").append(sys.uptimeMs() >= 0 ? sys.uptimeMs() : -1).append("\n");
         sb.append("  heap used / max bytes: ")
                 .append(sys.heapUsedBytes() >= 0 ? sys.heapUsedBytes() : -1).append(" / ")
                 .append(sys.heapMaxBytes() > 0 ? sys.heapMaxBytes() : -1).append("\n");
@@ -2471,8 +2437,7 @@ public class StatsPanel extends JPanel {
                 .append(Double.isNaN(sys.processCpuLoad())
                         ? "n/a"
                         : String.format(Locale.ROOT, "%.3f", sys.processCpuLoad()))
-                .append("\n");
-        sb.append("  available processors: ").append(sys.availableProcessors()).append("\n\n");
+                .append("\n\n");
 
         // Traffic by source
         sb.append("Traffic by source\n");

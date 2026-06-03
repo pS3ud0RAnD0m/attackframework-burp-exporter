@@ -10,9 +10,11 @@ import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -276,6 +278,37 @@ final class TrafficSpillFileQueue {
         }
     }
 
+    /**
+     * Removes spilled documents that match {@code predicate}.
+     *
+     * <p>This is used only for live config deselection, not the hot export path. Malformed or
+     * unreadable spill files are removed because they cannot be routed safely.</p>
+     */
+    int removeIf(Predicate<Map<String, Object>> predicate) {
+        if (predicate == null) {
+            return 0;
+        }
+        lock.lock();
+        try {
+            int removed = 0;
+            Iterator<Path> iterator = files.iterator();
+            while (iterator.hasNext()) {
+                Path file = iterator.next();
+                long fileBytes = sizeOf(file);
+                Map<String, Object> document = readDocumentForPurge(file);
+                if (document == null || predicate.test(document)) {
+                    deleteSpillFile(file);
+                    iterator.remove();
+                    totalBytes = Math.max(0, totalBytes - fileBytes);
+                    removed++;
+                }
+            }
+            return removed;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private void initializeFromDisk() {
         lock.lock();
         try {
@@ -324,6 +357,23 @@ final class TrafficSpillFileQueue {
 
     private void ensureDirectoryExists() throws IOException {
         Files.createDirectories(directory);
+    }
+
+    private Map<String, Object> readDocumentForPurge(Path file) {
+        try {
+            return extractDocument(Files.readAllBytes(file));
+        } catch (IOException e) {
+            Logger.logError("Traffic spill purge read failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static long sizeOf(Path file) {
+        try {
+            return Files.size(file);
+        } catch (IOException ignored) {
+            return 0L;
+        }
     }
 
     private static long parseSequence(Path path) {

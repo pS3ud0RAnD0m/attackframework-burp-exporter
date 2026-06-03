@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Unit tests for {@link BulkOutcomeRecorder}, which centralizes success/failure bookkeeping
@@ -21,6 +22,7 @@ class BulkOutcomeRecorderTest {
 
     @Test
     void record_fullSuccess_recordsOnlySuccess() {
+        RuntimeConfig.setExportRunning(true);
         int clamped = BulkOutcomeRecorder.record("sitemap", "Sitemap", "Bulk push", 4, 4, true);
 
         assertThat(clamped).isEqualTo(4);
@@ -29,7 +31,20 @@ class BulkOutcomeRecorderTest {
     }
 
     @Test
+    void record_partialFailureSkippedWhenExportStopped() {
+        RuntimeConfig.setExportRunning(false);
+
+        int clamped = BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", 5, 3, true);
+
+        assertThat(clamped).isEqualTo(3);
+        assertThat(ExportStats.getSuccessCount("findings")).isEqualTo(3);
+        assertThat(ExportStats.getFailureCount("findings")).isZero();
+        assertThat(ExportStats.getLastError("findings")).isNull();
+    }
+
+    @Test
     void record_partialFailure_recordsBothAndLastError() {
+        RuntimeConfig.setExportRunning(true);
         BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", 5, 3, true);
 
         assertThat(ExportStats.getSuccessCount("findings")).isEqualTo(3);
@@ -66,6 +81,7 @@ class BulkOutcomeRecorderTest {
 
     @Test
     void record_usesFallbackPrefixAndLabelWhenBlank() {
+        RuntimeConfig.setExportRunning(true);
         BulkOutcomeRecorder.record("findings", " ", null, 2, 0, true);
         assertThat(ExportStats.getLastError("findings")).contains("Bulk had");
     }

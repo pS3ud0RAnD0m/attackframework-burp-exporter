@@ -83,7 +83,7 @@ public class OpenSearchClientWrapper {
                     version = ver.path("number").asText("");
                     distribution = ver.path("distribution").asText("");
                 } catch (IOException | RuntimeException ignored) {
-                    // keep empty version/distribution
+                    // Version JSON is optional; connection still succeeds with blank version fields.
                 }
             }
             OpenSearchStatus status = new OpenSearchStatus(
@@ -269,7 +269,7 @@ public class OpenSearchClientWrapper {
             String result = response.result().jsonValue();
             return result != null && (result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated"));
         } catch (IOException | RuntimeException e) {
-            Logger.logDebug("doPushDocument failed for " + indexName + ": " + e.getMessage());
+            logPushOutcome(indexName, "doPushDocument", e);
             return false;
         }
     }
@@ -298,10 +298,10 @@ public class OpenSearchClientWrapper {
             int i = 0;
             int logged = 0;
             for (var item : response.items()) {
-                if (item.error() == null) {
+                var err = item.error();
+                if (err == null) {
                     successCount++;
                 } else {
-                    var err = item.error();
                     String type = err.type() != null ? err.type() : "unknown";
                     String reason = err.reason() != null ? err.reason() : "unknown";
                     failedItems.add(new FailedItem(i, type, reason));
@@ -320,8 +320,8 @@ public class OpenSearchClientWrapper {
             return new BulkResult(successCount, failedItems);
         } catch (IOException | RuntimeException e) {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            Logger.logDebug("doPushBulk failed for " + indexName + ": " + msg);
-            if (msg.contains("request body is required")) {
+            logPushOutcome(indexName, "doPushBulk", e);
+            if (!OpenSearchPushCancellation.shouldSuppressPushFailure(e) && msg.contains("request body is required")) {
                 Logger.logWarnPanelOnly("[OpenSearch] Bulk request failed for "
                         + indexName + ": OpenSearch reported an empty bulk request body.");
             }
@@ -335,6 +335,19 @@ public class OpenSearchClientWrapper {
      * <p>Format is line-stable so log greps and tests can rely on it. Reason is clamped to
      * avoid a single pathological doc flooding the log panel.</p>
      */
+    /**
+     * Logs a cancelled push at TRACE or a real failure at DEBUG with a stable {@code [OpenSearch]} prefix.
+     */
+    private static void logPushOutcome(String indexName, String operation, Exception e) {
+        if (OpenSearchPushCancellation.shouldSuppressPushFailure(e)) {
+            Logger.logTrace("[OpenSearch] " + operation + " cancelled for " + indexName + " ("
+                    + OpenSearchPushCancellation.cancelledPushLogSuffix(e) + ")");
+            return;
+        }
+        String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        Logger.logDebug("[OpenSearch] " + operation + " failed for " + indexName + ": " + msg);
+    }
+
     static String formatBulkItemFailure(String indexName, int opIndex, String type, String reason) {
         String clampedReason = reason == null ? "unknown" : reason;
         if (clampedReason.length() > 500) {

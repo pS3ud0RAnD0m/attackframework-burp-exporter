@@ -64,6 +64,55 @@ class RuntimeConfigDestinationGatingTest {
     }
 
     @Test
+    void trafficExportGate_tracksRunningStateAndToolSelection() {
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    List.of("repeater"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null
+            ));
+
+            RuntimeConfig.TrafficExportGate stoppedGate = RuntimeConfig.trafficExportGate();
+            assertThat(stoppedGate.anyTrafficExportEnabled()).isTrue();
+            assertThat(stoppedGate.allowsToolType("repeater")).isFalse();
+
+            RuntimeConfig.setExportRunning(true);
+            RuntimeConfig.TrafficExportGate runningGate = RuntimeConfig.trafficExportGate();
+            assertThat(runningGate.allowsToolType("repeater")).isTrue();
+            assertThat(runningGate.allowsToolType("proxy")).isFalse();
+
+            RuntimeConfig.setExportStarting(true);
+            RuntimeConfig.TrafficExportGate startingGate = RuntimeConfig.trafficExportGate();
+            assertThat(startingGate.includesToolType("repeater")).isTrue();
+            assertThat(startingGate.allowsToolType("repeater")).isFalse();
+            RuntimeConfig.setExportStarting(false);
+
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, "/path/to/directory", false, true,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    List.of("intruder"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    null
+            ));
+            RuntimeConfig.TrafficExportGate updatedGate = RuntimeConfig.trafficExportGate();
+            assertThat(updatedGate.allowsToolType("repeater")).isFalse();
+            assertThat(updatedGate.allowsToolType("intruder")).isTrue();
+        } finally {
+            restoreRuntimeState();
+        }
+    }
+
+    @Test
     void isOpenSearchExportEnabled_isTrue_whenDestinationAndUrlAreConfigured() {
         try {
             RuntimeConfig.updateState(new ConfigState.State(

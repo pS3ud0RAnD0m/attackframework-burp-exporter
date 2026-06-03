@@ -1,0 +1,34 @@
+package ai.attackframework.tools.burp.sinks;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import ai.attackframework.tools.burp.utils.Version;
+
+/**
+ * Shared exporter metadata values written under {@code meta}.
+ *
+ * <p>The extension version is static for the loaded extension, so cache it once for document
+ * builders. {@code indexed_at} remains per document because it records emission time.</p>
+ */
+final class ExportMetaFields {
+
+    private static final String EXTENSION_VERSION = Version.get();
+
+    private ExportMetaFields() {}
+
+    /**
+     * Builds the {@code meta} sub-document for an export row.
+     *
+     * @param schemaVersion document schema version string for the index family
+     * @return mutable {@code meta} map (includes a fresh {@code indexed_at} timestamp)
+     */
+    static Map<String, Object> meta(String schemaVersion) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("schema_version", schemaVersion);
+        meta.put("extension_version", EXTENSION_VERSION);
+        meta.put("indexed_at", Instant.now().toString());
+        return meta;
+    }
+}

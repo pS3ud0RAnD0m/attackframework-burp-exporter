@@ -51,13 +51,13 @@ class ConfigPanelDelegationHeadlessTest {
             p.doLayout();
 
             // Enable OpenSearch and Files destinations so OS and Files buttons are actionable
-            JCheckBox osEnable = get(p, "openSearchSinkCheckbox");
+            JCheckBox osEnable = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
             if (!osEnable.isSelected()) osEnable.doClick();
-            JCheckBox filesEnable = get(p, "fileSinkCheckbox");
+            JCheckBox filesEnable = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
             if (!filesEnable.isSelected()) filesEnable.doClick();
-            JRadioButton bulkNdjsonEnable = get(p, "fileBulkNdjsonCheckbox");
+            JRadioButton bulkNdjsonEnable = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
             if (!bulkNdjsonEnable.isSelected()) bulkNdjsonEnable.doClick();
-            JTextField filePathField = get(p, "filePathField");
+            JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
             filePathField.setText(defaultFileRoot.toString());
 
             ref.set(p);
@@ -73,7 +73,7 @@ class ConfigPanelDelegationHeadlessTest {
     void clicking_testConnection_invokes_controller_and_posts_status() throws Exception {
         setup();
         try {
-            javax.swing.JButton testConn = get(panel, "testConnectionButton");
+            javax.swing.JButton testConn = javax.swing.JButton.class.cast(get(panel, "testConnectionButton"));
 
             onEdtAndWait(testConn::doClick);
 

@@ -54,7 +54,7 @@ import static org.mockito.Mockito.when;
 /**
  * Integration test: when Start is clicked in ConfigPanel, indexes are created explicitly
  * (via createSelectedIndexes) before any documents are pushed. Uses real OpenSearch.
- * Verifies the findings index exists with explicit mapping (e.g. request_responses nested)
+ * Verifies the findings index exists with explicit mapping (e.g. requests_responses nested)
  * and has at least one document after Start.
  */
 @Tag("integration")
@@ -96,18 +96,18 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
                 p.setSize(1000, 700);
             }
             p.doLayout();
-            JTextField urlField = get(p, "openSearchUrlField");
+            JTextField urlField = JTextField.class.cast(get(p, "openSearchUrlField"));
             urlField.setText(BASE_URL);
-            JCheckBox osCheckbox = get(p, "openSearchSinkCheckbox");
+            JCheckBox osCheckbox = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
             if (!osCheckbox.isSelected()) osCheckbox.doClick();
-            JCheckBox issuesCheckbox = get(p, "issuesCheckbox");
+            JCheckBox issuesCheckbox = JCheckBox.class.cast(get(p, "issuesCheckbox"));
             issuesCheckbox.setEnabled(true);
             if (!issuesCheckbox.isSelected()) issuesCheckbox.doClick();
-            javax.swing.JComboBox<?> authCombo = get(p, "openSearchAuthTypeCombo");
+            javax.swing.JComboBox<?> authCombo = javax.swing.JComboBox.class.cast(get(p, "openSearchAuthTypeCombo"));
             if (authCombo != null && config.username() != null && !config.username().isBlank()) {
                 authCombo.setSelectedIndex(1);
-                JTextField userField = get(p, "openSearchUserField");
-                JTextField passField = get(p, "openSearchPasswordField");
+                JTextField userField = JTextField.class.cast(get(p, "openSearchUserField"));
+                JTextField passField = JTextField.class.cast(get(p, "openSearchPasswordField"));
                 if (userField != null) userField.setText(config.username());
                 if (passField != null) passField.setText(config.password() != null ? config.password() : "");
             }
@@ -145,8 +145,8 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
             assertThat(indexMapping).isNotNull();
             assertThat(indexMapping.mappings()).isNotNull();
             var properties = indexMapping.mappings().properties();
-            assertThat(properties).as("explicit mapping").containsKey("request_responses");
-            Property reqRespProp = properties.get("request_responses");
+            assertThat(properties).as("explicit mapping").containsKey("requests_responses");
+            Property reqRespProp = properties.get("requests_responses");
             assertThat(reqRespProp).isNotNull();
         } finally {
             tearDown();

@@ -26,6 +26,26 @@ import org.slf4j.LoggerFactory;
  *
  * <p>A bounded replay buffer lets newly registered listeners reconstruct recent history after UI
  * removal or recreation. Listener callbacks are always delivered on the EDT.</p>
+ *
+ * <h2>Choosing a log method</h2>
+ * <p>Use a stable {@code [Component]} prefix on every message so support can grep the Log tab and
+ * log files. Prefer {@code *PanelOnly} for routine operator messages so Burp's Extensions
+ * Output/Error consoles stay quiet.</p>
+ * <table border="1" summary="Logger API levels and destinations">
+ *   <tr><th>Method</th><th>SLF4J</th><th>Log tab</th><th>Burp console</th><th>Typical use</th></tr>
+ *   <tr><td>{@link #logInfoPanelOnly}</td><td>INFO</td><td>yes</td><td>no</td><td>Start/Stop, snapshot complete, connection recovered</td></tr>
+ *   <tr><td>{@link #logWarnPanelOnly}</td><td>WARN</td><td>yes</td><td>no</td><td>Recoverable sink degradation (push failed, retry pressure)</td></tr>
+ *   <tr><td>{@link #logErrorPanelOnly}</td><td>ERROR</td><td>yes</td><td>no</td><td>Start aborted, index init failed, retry queue full</td></tr>
+ *   <tr><td>{@link #logInfo} / {@link #logWarn} / {@link #logError}</td><td>matching</td><td>yes</td><td>yes</td><td>Extension load, severe file I/O loss, must appear in Burp console</td></tr>
+ *   <tr><td>{@link #logDebug}</td><td>DEBUG</td><td>yes</td><td>no</td><td>Diagnostic detail (malformed doc fallback, OpenSearch push detail)</td></tr>
+ *   <tr><td>{@link #logTrace}</td><td>TRACE</td><td>yes</td><td>no</td><td>High-volume diagnostics (Repeater tab capture, cancelled OpenSearch push)</td></tr>
+ *   <tr><td>{@link #internalDebug} / {@link #internalTrace}</td><td>DEBUG/TRACE</td><td>no</td><td>no</td><td>LogPanel internals; avoid feedback loops</td></tr>
+ * </table>
+ * <p>Do not use {@link #logError} for recoverable per-document OpenSearch failures; record stats and
+ * emit {@link #logWarnPanelOnly} at the reporter plus {@link #logDebug} in
+ * {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper}. User-initiated
+ * Stop treats in-flight push failures as cancellation ({@link #logTrace}, not WARN/ERROR) via
+ * {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchPushCancellation}.</p>
  */
 public final class Logger {
 

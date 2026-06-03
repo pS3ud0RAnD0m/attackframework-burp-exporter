@@ -3,7 +3,6 @@ package ai.attackframework.tools.burp.sinks;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,26 +11,23 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.Annotations;
+import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
-import burp.api.montoya.http.message.params.HttpParameterType;
-import burp.api.montoya.http.message.params.ParsedHttpParameter;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
-import burp.api.montoya.http.message.responses.analysis.AttributeType;
 
 /**
  * Pushes Burp sitemap items to the sitemap index when export is running and
@@ -45,7 +41,6 @@ public final class SitemapIndexReporter {
     /** Flush when batch exceeds this approximate payload size (bytes) so large bodies don't produce huge bulk requests. */
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String SCHEMA_VERSION = "1";
-    private static final String SOURCE_VALUE = "burp-exporter";
 
     /**
      * Single-owner scheduler for sitemap snapshot and recurring pushes.
@@ -56,7 +51,7 @@ public final class SitemapIndexReporter {
      */
     private static final LazyScheduler SCHEDULER =
             new LazyScheduler("attackframework-sitemap-reporter");
-    /** Keys (request_id) of items already pushed this session; only push new on 30s run. */
+    /** Internal URL+method keys of items already pushed this session; only push new on 30s run. */
     private static final Set<String> pushedItemKeys = ConcurrentHashMap.newKeySet();
     private static volatile boolean runInProgress;
 
@@ -199,7 +194,7 @@ public final class SitemapIndexReporter {
                 if (!pushAll && pushedItemKeys.contains(key)) {
                     continue;
                 }
-                Map<String, Object> doc = buildSitemapDoc(item);
+                Map<String, Object> doc = buildSitemapDoc(item, burpInScope);
                 if (doc == null) {
                     continue;
                 }
@@ -282,105 +277,63 @@ public final class SitemapIndexReporter {
         }
     }
 
-    private static Map<String, Object> buildSitemapDoc(HttpRequestResponse item) {
+    static Map<String, Object> buildSitemapDoc(HttpRequestResponse item) {
+        return buildSitemapDoc(item, false);
+    }
+
+    private static Map<String, Object> buildSitemapDoc(HttpRequestResponse item, boolean burpInScope) {
         Map<String, Object> doc = new LinkedHashMap<>();
         HttpRequest request = item.request();
         HttpService service = item.httpService();
         HttpResponse response = item.hasResponse() ? item.response() : null;
 
-        Map<String, Object> requestDoc = request == null ? null : RequestResponseDocBuilder.buildRequestDoc(request);
+        Map<String, Object> requestDoc = request == null ? null : RequestResponseDocBuilder.buildSitemapRequestDoc(request);
         String url = request == null
                 ? ""
                 : nullToEmpty(RequestResponseDocBuilder.buildBestEffortUrl(request, service, requestDoc, "Sitemap"));
-        String method = valueAsString(requestDoc, "method");
-        String httpVersion = valueAsString(requestDoc, "http_version");
-        String path = valueAsString(requestDoc, "path");
-        String query = valueAsString(requestDoc, "query");
-        doc.put("url", url);
-        doc.put("host", service != null ? service.host() : "");
-        doc.put("port", service != null ? service.port() : 0);
-        doc.put("protocol_transport", service != null ? (service.secure() ? "https" : "http") : "");
-        doc.put("protocol_application", "http");
-        doc.put("protocol_sub", httpVersion);
-        doc.put("method", method);
+        doc.put("burp", buildBurpDoc(item, burpInScope));
 
-        if (response != null) {
-            doc.put("status_code", (int) response.statusCode());
-            doc.put("status_reason", nullToEmpty(response.reasonPhrase()));
-            var mime = response.mimeType();
-            doc.put("content_type", mime != null ? mime.name() : null);
-            byte[] bodyBytes = response.body() != null ? response.body().getBytes() : null;
-            doc.put("content_length", bodyBytes != null ? bodyBytes.length : null);
-            doc.put("title", getPageTitle(response));
-        } else {
-            doc.put("status_code", null);
-            doc.put("status_reason", null);
-            doc.put("content_type", null);
-            doc.put("content_length", null);
-            doc.put("title", null);
+        if (requestDoc != null) {
+            requestDoc.put("url", url);
+            requestDoc.put("port", service == null ? null : service.port());
+            requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
+                    service == null ? null : (service.secure() ? "https" : "http"),
+                    RequestResponseDocBuilder.safeRequestHttpVersion(request)));
         }
-
-        // Sitemap structure cares about query/URL parameter names only. Calling the unfiltered
-        // request.parameters() here would also enumerate Burp's synthetic BODY entries from
-        // Content-Type-spoofed binary bodies, which can balloon to millions of fake names per
-        // request and is the dominant heap-pressure source on heavy traffic. Using the typed
-        // URL accessor sidesteps that completely.
-        if (request != null) {
-            List<ParsedHttpParameter> urlParams = request.parameters(HttpParameterType.URL);
-            if (urlParams != null && !urlParams.isEmpty()) {
-                List<String> paramNames = urlParams.stream()
-                        .map(p -> p.name() != null ? p.name() : "")
-                        .collect(Collectors.toList());
-                doc.put("param_names", paramNames);
-            } else {
-                doc.put("param_names", List.of());
-            }
-        } else {
-            doc.put("param_names", List.of());
-        }
-
-        doc.put("path", path);
-        doc.put("query_string", query);
-        doc.put("request_id", requestId(url, method));
-        doc.put("source", SOURCE_VALUE);
-
         doc.put("request", requestDoc);
         if (response != null) {
-            doc.put("response", RequestResponseDocBuilder.buildResponseDoc(response));
+            Map<String, Object> responseDoc = RequestResponseDocBuilder.buildTrafficResponseDoc(response);
+            TrafficPairMarkers.overlayPairMarkers(requestDoc, responseDoc, item);
+            doc.put("response", responseDoc);
         } else {
+            TrafficPairMarkers.overlayPairMarkers(requestDoc, null, item);
             doc.put("response", null);
         }
 
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
+        doc.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
 
         return doc;
     }
 
-    private static String getPageTitle(HttpResponse response) {
-        if (response == null) {
-            return null;
-        }
-        try {
-            var attrs = response.attributes(AttributeType.PAGE_TITLE);
-            if (attrs != null && !attrs.isEmpty()) {
-                return String.valueOf(attrs.get(0).value());
-            }
-        } catch (Exception e) {
-            Logger.logDebug("[Sitemap] response.attributes(PAGE_TITLE) failed: " + e.getMessage());
-        }
-        return null;
+    private static Map<String, Object> buildBurpDoc(HttpRequestResponse item, boolean burpInScope) {
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("is_in_scope", burpInScope);
+        burp.put("timing", BurpTimingFields.from(item));
+        putAnnotations(burp, item.annotations());
+        return burp;
     }
 
-    private static String valueAsString(Map<String, Object> requestDoc, String key) {
-        if (requestDoc == null) {
-            return "";
+    private static void putAnnotations(Map<String, Object> burp, Annotations annotations) {
+        if (annotations == null) {
+            return;
         }
-        Object value = requestDoc.get(key);
-        return value == null ? "" : value.toString();
+        if (annotations.hasNotes()) {
+            burp.put("notes", annotations.notes());
+        }
+        if (annotations.hasHighlightColor()) {
+            HighlightColor color = annotations.highlightColor();
+            burp.put("highlight", color == null ? null : color.name());
+        }
     }
 
     private static String nullToEmpty(String s) {

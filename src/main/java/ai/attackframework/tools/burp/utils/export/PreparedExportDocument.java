@@ -11,7 +11,7 @@ import java.util.Map;
  * @param indexName full target index name
  * @param indexKey short index key (for example {@code traffic})
  * @param exportId stable sink-shared document ID
- * @param document filtered document body with {@code document_meta.export_id} populated
+ * @param document filtered document body with {@code meta.export_id} populated
  */
 public record PreparedExportDocument(String indexName, String indexKey, String exportId, Map<String, Object> document) {
 }

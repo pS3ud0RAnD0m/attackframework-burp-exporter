@@ -87,7 +87,7 @@ class ConfigPanelSerializationHeadlessTest {
 
     /** Extracts the controller restored in readObject(...) on the panel. */
     private static ConfigController controllerOf(ConfigPanel p) throws Exception {
-        return Reflect.get(p, "controller");
+        return Reflect.get(p, "controller", ConfigController.class);
     }
 
     private static Component findByName(Container root, String name) {

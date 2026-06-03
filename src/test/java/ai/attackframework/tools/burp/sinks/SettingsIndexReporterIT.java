@@ -1,7 +1,10 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
@@ -29,6 +32,7 @@ import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.burpsuite.BurpSuite;
+import burp.api.montoya.core.Version;
 import burp.api.montoya.project.Project;
 
 /**
@@ -60,7 +64,7 @@ class SettingsIndexReporterIT {
         OpenSearchClient client = OpenSearchReachable.getClient();
         try {
             client.indices().delete(new DeleteIndexRequest.Builder().index(settingsIndexName()).build());
-        } catch (Exception e) {
+        } catch (IOException e) {
             Logger.logError("[SettingsIndexReporterIT] Failed to delete index during cleanup: " + settingsIndexName(), e);
         }
     }
@@ -77,21 +81,23 @@ class SettingsIndexReporterIT {
 
             Map<String, Object> doc = awaitFirstDocument();
             assertThat(doc).isNotNull();
-            assertThat(doc).containsKey("project_id");
-            assertThat(doc).containsKey("settings_project");
-            assertThat(doc).containsKey("settings_user");
-            assertThat(doc).containsKey("document_meta");
+            assertThat(doc).containsKey("burp");
+            assertThat(doc).containsKey("project");
+            assertThat(doc).containsKey("user");
+            assertThat(doc).containsKey("meta");
 
-            assertThat(doc.get("project_id")).isEqualTo(PROJECT_ID);
+            Map<?, ?> burp = nestedMap(doc, "burp");
+            assertThat(burp.get("project_id")).isEqualTo(PROJECT_ID);
+            assertThat(burp.containsKey("version")).isTrue();
 
-            Map<?, ?> settingsProject = nestedMap(doc, "settings_project");
+            Map<?, ?> settingsProject = nestedMap(doc, "project");
             assertThat(settingsProject.get("project_options")).isEqualTo(Map.of("test_key", "project_value"));
 
-            Map<?, ?> settingsUser = nestedMap(doc, "settings_user");
+            Map<?, ?> settingsUser = nestedMap(doc, "user");
             assertThat(settingsUser.get("user_options")).isEqualTo(Map.of("test_key", "user_value"));
 
-            Map<?, ?> documentMeta = nestedMap(doc, "document_meta");
-            assertContainsKeys(documentMeta, "schema_version", "extension_version", "indexed_at");
+            Map<?, ?> meta = nestedMap(doc, "meta");
+            assertContainsKeys(meta, "schema_version", "extension_version", "indexed_at");
         } finally {
             cleanup();
         }
@@ -122,9 +128,12 @@ class SettingsIndexReporterIT {
     private void setMockMontoyaApi() {
         MontoyaApi api = mock(MontoyaApi.class);
         BurpSuite burpSuite = mock(BurpSuite.class);
+        Version version = mock(Version.class);
         Project project = mock(Project.class);
         when(api.burpSuite()).thenReturn(burpSuite);
         when(api.project()).thenReturn(project);
+        when(burpSuite.version()).thenReturn(version);
+        when(version.toString()).thenReturn("2026.4");
         when(burpSuite.exportProjectOptionsAsJson()).thenReturn(PROJECT_JSON);
         when(burpSuite.exportUserOptionsAsJson()).thenReturn(USER_JSON);
         when(project.id()).thenReturn(PROJECT_ID);
@@ -146,7 +155,7 @@ class SettingsIndexReporterIT {
         for (int i = 0; i < maxAttempts; i++) {
             try {
                 client.indices().refresh(new RefreshRequest.Builder().index(settingsIndexName()).build());
-            } catch (Exception ignored) {
+            } catch (IOException ignored) {
                 // best-effort refresh
             }
             try {
@@ -158,16 +167,11 @@ class SettingsIndexReporterIT {
                         return JSON.convertValue(source, new TypeReference<Map<String, Object>>() { });
                     }
                 }
-            } catch (Exception e) {
+            } catch (IOException e) {
                 throw new AssertionError("Search failed: " + e.getMessage(), e);
             }
             if (i < maxAttempts - 1) {
-                try {
-                    Thread.sleep(300);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new AssertionError("Interrupted while awaiting document", e);
-                }
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(300));
             }
         }
         throw new AssertionError("at least one document indexed (after " + maxAttempts + " attempts)");

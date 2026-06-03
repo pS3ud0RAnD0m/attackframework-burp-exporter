@@ -32,6 +32,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.params.HttpParameterType;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.scope.Scope;
@@ -87,30 +88,48 @@ class SitemapIndexReporterIT {
 
             Map<String, Object> doc = awaitFirstDocument();
             assertThat(doc).isNotNull();
-            assertThat(doc).containsKey("url");
-            assertThat(doc).containsKey("host");
-            assertThat(doc).containsKey("port");
-            assertThat(doc).containsKey("protocol_transport");
-            assertThat(doc).containsKey("method");
-            assertThat(doc).containsKey("status_code");
-            assertThat(doc).containsKey("request_id");
-            assertThat(doc).containsKey("document_meta");
-            assertThat(doc).containsKey("source");
-            assertThat(doc).containsKey("path");
-            assertThat(doc).containsKey("status_reason");
+            assertThat(doc).containsKeys("meta", "burp", "request", "response");
+            assertThat(doc).doesNotContainKeys(
+                    "request_id",
+                    "source",
+                    "url",
+                    "host",
+                    "port",
+                    "protocol_transport",
+                    "protocol_application",
+                    "protocol_sub",
+                    "method",
+                    "status",
+                    "reason_phrase",
+                    "mime_type",
+                    "content_length",
+                    "path",
+                    "query_string",
+                    "title",
+                    "param_names");
 
-            assertThat(doc.get("url")).isEqualTo(ITEM_URL);
-            assertThat(doc.get("host")).isEqualTo(ITEM_HOST);
-            assertThat(doc.get("port")).isEqualTo(ITEM_PORT);
-            assertThat(doc.get("protocol_transport")).isEqualTo("https");
-            assertThat(doc.get("method")).isEqualTo(ITEM_METHOD);
-            assertThat(doc.get("status_code")).isEqualTo((int) ITEM_STATUS);
-            assertThat(doc.get("status_reason")).isEqualTo(ITEM_REASON);
-            assertThat(doc.get("path")).isEqualTo(ITEM_PATH);
-            assertThat(doc.get("source")).isEqualTo("burp-exporter");
+            Map<?, ?> burp = nestedMap(doc, "burp");
+            assertThat(burp.containsKey("is_in_scope")).isTrue();
+            assertThat(burp.containsKey("timing")).isTrue();
+            assertThat(burp.containsKey("reporting_tool")).isFalse();
 
-            Map<?, ?> documentMeta = nestedMap(doc, "document_meta");
-            assertContainsKeys(documentMeta, "schema_version", "extension_version", "indexed_at");
+            Map<?, ?> request = nestedMap(doc, "request");
+            assertThat(request.get("url")).isEqualTo(ITEM_URL);
+            assertThat(request.get("port")).isEqualTo(ITEM_PORT);
+            assertThat(request.get("method")).isEqualTo(ITEM_METHOD);
+            Map<?, ?> requestProtocol = nestedMap(request, "protocol");
+            assertThat(requestProtocol.get("scheme")).isEqualTo("https");
+            Map<?, ?> requestPath = nestedMap(request, "path");
+            assertThat(requestPath.get("with_query")).isEqualTo(ITEM_PATH);
+            assertThat(requestPath.get("query")).isEqualTo(ITEM_QUERY);
+
+            Map<?, ?> response = nestedMap(doc, "response");
+            Map<?, ?> responseStatus = nestedMap(response, "status");
+            assertThat(responseStatus.get("code")).isEqualTo((int) ITEM_STATUS);
+            assertThat(responseStatus.get("description")).isEqualTo(ITEM_REASON);
+
+            Map<?, ?> meta = nestedMap(doc, "meta");
+            assertContainsKeys(meta, "schema_version", "extension_version", "indexed_at");
         } finally {
             cleanup();
         }
@@ -161,13 +180,26 @@ class SitemapIndexReporterIT {
         when(request.url()).thenReturn(ITEM_URL);
         when(request.method()).thenReturn(ITEM_METHOD);
         when(request.path()).thenReturn(ITEM_PATH);
+        when(request.pathWithoutQuery()).thenReturn("/path");
         when(request.query()).thenReturn(ITEM_QUERY);
+        when(request.fileExtension()).thenReturn("");
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.headers()).thenReturn(List.of());
         when(request.parameters()).thenReturn(List.of());
+        when(request.parameters(HttpParameterType.URL)).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.contentType()).thenReturn(null);
 
         when(response.statusCode()).thenReturn(ITEM_STATUS);
         when(response.reasonPhrase()).thenReturn(ITEM_REASON);
         when(response.mimeType()).thenReturn(burp.api.montoya.http.message.MimeType.HTML);
+        when(response.statedMimeType()).thenReturn(burp.api.montoya.http.message.MimeType.HTML);
+        when(response.inferredMimeType()).thenReturn(burp.api.montoya.http.message.MimeType.HTML);
+        when(response.httpVersion()).thenReturn("HTTP/1.1");
+        when(response.headers()).thenReturn(List.of());
         when(response.body()).thenReturn(null);
+        when(response.markers()).thenReturn(List.of());
 
         when(httpService.host()).thenReturn(ITEM_HOST);
         when(httpService.port()).thenReturn(ITEM_PORT);

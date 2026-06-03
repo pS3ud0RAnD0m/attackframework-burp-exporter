@@ -117,7 +117,8 @@ public final class ConfigSourcesPanel {
         header.setFont(header.getFont().deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
-        int subIndent = indentPx * 2;
+        int childIndent = indentPx * 2;
+        int subIndent = indentPx + childIndent;
 
         // Settings: main checkbox + inline +/-; then sub-panel (collapsed)
         panel.add(parentRow(settingsCheckbox, settingsExpandButton, null, indentPx), "wrap");

@@ -18,10 +18,10 @@ class LogPanelFilterRegexHeadlessTest {
     void filter_regex_respects_case_toggle_and_matches_substrings() throws Exception {
         LogPanel panel = new LogPanel();
 
-        JTextField filterField = get(panel, "filterField", JTextField.class);
-        JCheckBox filterCaseToggle = get(panel, "filterCaseToggle", JCheckBox.class);
-        JCheckBox filterRegexToggle = get(panel, "filterRegexToggle", JCheckBox.class);
-        JTextArea logTextPane = get(panel, "logTextPane", JTextArea.class);
+        JTextField filterField = JTextField.class.cast(get(panel, "filterField", JTextField.class));
+        JCheckBox filterCaseToggle = JCheckBox.class.cast(get(panel, "filterCaseToggle", JCheckBox.class));
+        JCheckBox filterRegexToggle = JCheckBox.class.cast(get(panel, "filterRegexToggle", JCheckBox.class));
+        JTextArea logTextPane = JTextArea.class.cast(get(panel, "logTextPane", JTextArea.class));
         Document doc = logTextPane.getDocument();
 
         // Ingest two messages with different casing

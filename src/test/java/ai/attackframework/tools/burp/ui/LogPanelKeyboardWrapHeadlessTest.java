@@ -19,15 +19,15 @@ class LogPanelKeyboardWrapHeadlessTest {
         LogPanel panel = new LogPanel();
 
         // Controls used in this test
-        JTextField searchField      = get(panel, "searchField", JTextField.class);
-        JCheckBox  searchCaseToggle = get(panel, "searchCaseToggle", JCheckBox.class);
-        JCheckBox  searchRegexToggle= get(panel, "searchRegexToggle", JCheckBox.class);
-        JLabel     count            = get(panel, "searchCountLabel", JLabel.class);
+        JTextField searchField = JTextField.class.cast(get(panel, "searchField", JTextField.class));
+        JCheckBox searchCaseToggle = JCheckBox.class.cast(get(panel, "searchCaseToggle", JCheckBox.class));
+        JCheckBox searchRegexToggle = JCheckBox.class.cast(get(panel, "searchRegexToggle", JCheckBox.class));
+        JLabel count = JLabel.class.cast(get(panel, "searchCountLabel", JLabel.class));
 
         // IMPORTANT: clear any persisted *filter* so the doc actually contains the ingested lines
-        JTextField filterField        = get(panel, "filterField", JTextField.class);
-        JCheckBox  filterCaseToggle   = get(panel, "filterCaseToggle", JCheckBox.class);
-        JCheckBox  filterRegexToggle  = get(panel, "filterRegexToggle", JCheckBox.class);
+        JTextField filterField = JTextField.class.cast(get(panel, "filterField", JTextField.class));
+        JCheckBox filterCaseToggle = JCheckBox.class.cast(get(panel, "filterCaseToggle", JCheckBox.class));
+        JCheckBox filterRegexToggle = JCheckBox.class.cast(get(panel, "filterRegexToggle", JCheckBox.class));
         SwingUtilities.invokeAndWait(() -> {
             if (filterRegexToggle.isSelected()) filterRegexToggle.doClick();
             if (filterCaseToggle.isSelected())  filterCaseToggle.doClick();

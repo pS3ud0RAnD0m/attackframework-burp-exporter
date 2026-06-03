@@ -7,6 +7,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
 
 /**
@@ -22,6 +23,8 @@ class TrafficExportQueueBulkOutcomeTest {
 
     public TrafficExportQueueBulkOutcomeTest() {
         ExportStats.resetForTests();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.setExportStarting(false);
     }
 
     @Test

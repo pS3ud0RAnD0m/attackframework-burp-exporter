@@ -3,7 +3,6 @@ package ai.attackframework.tools.burp.sinks;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,7 +16,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -52,6 +50,7 @@ public final class SettingsIndexReporter {
     private static final AtomicBoolean projectOptionsFailureLogged = new AtomicBoolean();
     private static final AtomicBoolean userOptionsFailureLogged = new AtomicBoolean();
     private static final AtomicBoolean projectIdFallbackLogged = new AtomicBoolean();
+    private static final AtomicBoolean burpVersionFallbackLogged = new AtomicBoolean();
 
     private SettingsIndexReporter() {}
 
@@ -128,6 +127,7 @@ public final class SettingsIndexReporter {
         projectOptionsFailureLogged.set(false);
         userOptionsFailureLogged.set(false);
         projectIdFallbackLogged.set(false);
+        burpVersionFallbackLogged.set(false);
     }
 
     /**
@@ -204,14 +204,13 @@ public final class SettingsIndexReporter {
         Map<String, Object> settingsUser = sub.contains(ConfigKeys.SRC_SETTINGS_USER) ? parseJsonToMap(userOptionsJson) : Map.of();
 
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("project_id", projectId != null ? projectId : "");
-        doc.put("settings_project", settingsProject != null ? settingsProject : Map.of());
-        doc.put("settings_user", settingsUser != null ? settingsUser : Map.of());
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("project_id", projectId != null ? projectId : "");
+        burp.put("version", safeBurpVersion(api));
+        doc.put("burp", burp);
+        doc.put("project", settingsProject != null ? settingsProject : Map.of());
+        doc.put("user", settingsUser != null ? settingsUser : Map.of());
+        doc.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
         return doc;
     }
 
@@ -254,6 +253,17 @@ public final class SettingsIndexReporter {
             Logger.logDebug("[Settings] Project id unavailable; using fallback label for settings export.");
         }
         return BurpRuntimeMetadata.projectIdOrUnknown();
+    }
+
+    private static String safeBurpVersion(MontoyaApi api) {
+        try {
+            if (api != null && api.burpSuite() != null && api.burpSuite().version() != null) {
+                return String.valueOf(api.burpSuite().version());
+            }
+        } catch (RuntimeException e) {
+            logSettingsCapabilityFailureOnce(burpVersionFallbackLogged, "Burp version lookup", e);
+        }
+        return BurpRuntimeMetadata.burpVersion();
     }
 
     private static void logSettingsCapabilityFailureOnce(AtomicBoolean logged, String capability, RuntimeException e) {

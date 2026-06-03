@@ -1,13 +1,15 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -17,13 +19,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.collaborator.DnsDetails;
+import burp.api.montoya.collaborator.HttpDetails;
+import burp.api.montoya.collaborator.Interaction;
+import burp.api.montoya.collaborator.SmtpDetails;
+import burp.api.montoya.core.Annotations;
+import burp.api.montoya.core.ByteArray;
+import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
@@ -44,6 +52,7 @@ public final class FindingsIndexReporter {
     /** Flush when batch exceeds this approximate payload size (bytes) so large request/response bodies don't produce huge bulk requests. */
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024; // 5 MB
     private static final String SCHEMA_VERSION = "1";
+    private static final String REPORTING_TOOL = "Scanner";
 
     /**
      * Single-owner scheduler for findings push work.
@@ -180,7 +189,7 @@ public final class FindingsIndexReporter {
                 if (!pushAll && pushedIssueKeys.contains(key)) {
                     continue;
                 }
-                Map<String, Object> doc = buildFindingDoc(issue);
+                Map<String, Object> doc = buildFindingDoc(issue, burpInScope);
                 if (doc == null) {
                     continue;
                 }
@@ -273,104 +282,264 @@ public final class FindingsIndexReporter {
         }
     }
 
-    private static Map<String, Object> buildFindingDoc(AuditIssue issue) {
+    static Map<String, Object> buildFindingDoc(AuditIssue issue) {
+        return buildFindingDoc(issue, false);
+    }
+
+    private static Map<String, Object> buildFindingDoc(AuditIssue issue, boolean burpInScope) {
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("name", nullToEmpty(issue.name()));
-        AuditIssueSeverity severity = issue.severity();
-        doc.put("severity", severity != null ? severity.name() : "");
-        AuditIssueConfidence confidence = issue.confidence();
-        doc.put("confidence", confidence != null ? confidence.name() : "");
-
         HttpService svc = issue.httpService();
-        doc.put("host", svc != null ? svc.host() : "");
-        doc.put("port", svc != null ? svc.port() : 0);
-        doc.put("protocol_transport", svc != null ? (svc.secure() ? "https" : "http") : "");
-        doc.put("protocol_application", "");
-        doc.put("protocol_sub", "");
-        doc.put("url", nullToEmpty(issue.baseUrl()));
-        doc.put("param", "");
-
-        try {
-            var def = issue.definition();
-            if (def != null) {
-                doc.put("issue_type_id", def.typeIndex());
-                AuditIssueSeverity typical = def.typicalSeverity();
-                doc.put("typical_severity", typical != null ? typical.name() : "");
-                doc.put("background", nullToEmpty(def.background()));
-                doc.put("remediation_background", nullToEmpty(def.remediation()));
-            } else {
-                doc.put("issue_type_id", 0);
-                doc.put("typical_severity", "");
-                doc.put("background", "");
-                doc.put("remediation_background", "");
-            }
-        } catch (Exception e) {
-            doc.put("issue_type_id", 0);
-            doc.put("typical_severity", "");
-            doc.put("background", "");
-            doc.put("remediation_background", "");
-        }
-
-        doc.put("description", nullToEmpty(issue.detail()));
-        doc.put("remediation_detail", nullToEmpty(issue.remediation()));
-        doc.put("references", "");
-        Map<String, Object> classifications = new LinkedHashMap<>();
-        doc.put("classifications", classifications);
+        doc.put("burp", buildRootBurpDoc(burpInScope));
+        doc.put("issue", buildIssueDoc(issue));
+        doc.put("target", buildTargetDoc(issue, svc));
 
         List<HttpRequestResponse> reqResList = issue.requestResponses();
         boolean missingReqRes = reqResList == null || reqResList.isEmpty();
-        doc.put("request_responses_missing", missingReqRes);
         List<Map<String, Object>> requestResponsesList = new ArrayList<>();
         if (!missingReqRes && reqResList != null) {
             for (HttpRequestResponse rr : reqResList) {
+                if (rr == null) {
+                    continue;
+                }
                 HttpRequest req = rr.request();
                 if (req == null) {
                     continue;
                 }
                 HttpResponse resp = rr.hasResponse() ? rr.response() : null;
-                Map<String, Object> reqDoc = RequestResponseDocBuilder.buildRequestDoc(req);
-                Map<String, Object> respDoc = resp != null ? RequestResponseDocBuilder.buildResponseDoc(resp) : emptyResponseDoc();
+                HttpService pairService = pairHttpService(rr, svc);
+                Map<String, Object> reqDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(req);
+                putPairRequestServiceFields(reqDoc, req, pairService);
+                Map<String, Object> respDoc = resp != null
+                        ? RequestResponseDocBuilder.buildTrafficResponseDoc(resp)
+                        : emptyTrafficResponseDoc();
+                // Scanner-attached pair-level markers (issue evidence) take precedence over the
+                // per-message marker slots filled by RequestResponseDocBuilder, since for
+                // scanner-produced findings the per-message markers are essentially always empty
+                // and the evidence highlights live on the HttpRequestResponse pair itself.
+                TrafficPairMarkers.overlayPairMarkers(reqDoc, respDoc, rr);
                 Map<String, Object> pair = new LinkedHashMap<>();
+                pair.put("burp", buildPairBurpDoc(rr));
                 pair.put("request", reqDoc);
                 pair.put("response", respDoc);
                 requestResponsesList.add(pair);
             }
         }
-        doc.put("request_responses", requestResponsesList);
+        doc.put("requests_responses", requestResponsesList);
+        doc.put("collaborator", buildCollaboratorInteractionsList(issue));
 
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
+        doc.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
         return doc;
     }
 
-    private static Map<String, Object> emptyResponseDoc() {
+    private static Map<String, Object> buildRootBurpDoc(boolean burpInScope) {
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("is_in_scope", burpInScope);
+        burp.put("reporting_tool", REPORTING_TOOL);
+        return burp;
+    }
+
+    private static Map<String, Object> buildIssueDoc(AuditIssue issue) {
+        Map<String, Object> issueDoc = new LinkedHashMap<>();
+        issueDoc.put("name", nullToEmpty(issue.name()));
+        AuditIssueSeverity severity = issue.severity();
+        issueDoc.put("severity", severity != null ? severity.name() : "");
+        AuditIssueConfidence confidence = issue.confidence();
+        issueDoc.put("confidence", confidence != null ? confidence.name() : "");
+
+        Map<String, Object> remediation = new LinkedHashMap<>();
+        try {
+            var def = issue.definition();
+            if (def != null) {
+                issueDoc.put("type_id", def.typeIndex());
+                AuditIssueSeverity typical = def.typicalSeverity();
+                issueDoc.put("typical_severity", typical != null ? typical.name() : "");
+                issueDoc.put("background", nullToEmpty(def.background()));
+                remediation.put("background", nullToEmpty(def.remediation()));
+            } else {
+                issueDoc.put("type_id", 0);
+                issueDoc.put("typical_severity", "");
+                issueDoc.put("background", "");
+                remediation.put("background", "");
+            }
+        } catch (RuntimeException e) {
+            issueDoc.put("type_id", 0);
+            issueDoc.put("typical_severity", "");
+            issueDoc.put("background", "");
+            remediation.put("background", "");
+        }
+
+        issueDoc.put("description", nullToEmpty(issue.detail()));
+        remediation.put("detail", nullToEmpty(issue.remediation()));
+        issueDoc.put("remediation", remediation);
+        return issueDoc;
+    }
+
+    private static Map<String, Object> buildTargetDoc(AuditIssue issue, HttpService svc) {
+        Map<String, Object> target = new LinkedHashMap<>();
+        target.put("url", nullToEmpty(issue.baseUrl()));
+        target.put("host", svc != null ? svc.host() : "");
+        target.put("port", svc != null ? svc.port() : 0);
+
+        Map<String, Object> protocol = new LinkedHashMap<>();
+        protocol.put("scheme", svc != null ? (svc.secure() ? "https" : "http") : "");
+        target.put("protocol", protocol);
+        return target;
+    }
+
+    private static void putPairRequestServiceFields(
+            Map<String, Object> reqDoc, HttpRequest request, HttpService service) {
+        if (reqDoc == null) {
+            return;
+        }
+        String url = RequestResponseDocBuilder.buildBestEffortUrl(request, service, reqDoc, "Findings");
+        reqDoc.put("url", nullToEmpty(url));
+        reqDoc.put("port", service == null ? null : service.port());
+        reqDoc.put("protocol", TrafficProtocolFields.requestProtocol(
+                service == null ? null : (service.secure() ? "https" : "http"),
+                RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+    }
+
+    private static HttpService pairHttpService(HttpRequestResponse rr, HttpService fallback) {
+        try {
+            HttpService service = rr.httpService();
+            return service != null ? service : fallback;
+        } catch (RuntimeException ignored) {
+            return fallback;
+        }
+    }
+
+    /** Builds the pair-level Burp metadata sub-document for one {@link HttpRequestResponse}. */
+    private static Map<String, Object> buildPairBurpDoc(HttpRequestResponse rr) {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("status", 0);
-        m.put("status_code_class", null);
-        m.put("reason_phrase", null);
-        m.put("http_version", null);
-        Map<String, Object> headers = new LinkedHashMap<>();
-        headers.put("full", List.of());
-        headers.put("names", List.of());
-        headers.put("etag", null);
-        headers.put("last_modified", null);
-        headers.put("content_location", null);
-        m.put("headers", headers);
-        m.put("cookies", List.of());
-        m.put("mime_type", null);
-        m.put("stated_mime_type", null);
-        m.put("inferred_mime_type", null);
+        m.put("timing", BurpTimingFields.from(rr));
+        Annotations ann = rr == null ? null : rr.annotations();
+        if (ann == null) {
+            m.put("notes", null);
+            m.put("highlight", null);
+            return m;
+        }
+        m.put("notes", ann.hasNotes() ? ann.notes() : null);
+        HighlightColor hl = ann.hasHighlightColor() ? ann.highlightColor() : null;
+        m.put("highlight", hl != null ? hl.name() : null);
+        return m;
+    }
+
+    /**
+     * Captures Burp Collaborator interactions associated with the issue, including the
+     * forensic-preserving raw HTTP request/response bytes for HTTP pingbacks.
+     *
+     * <p>HTTP request/response bodies for collaborator pingbacks are typically small (the
+     * payload Burp Suite's mock listener returns) and base64-encoding them preserves the
+     * original bytes verbatim for downstream forensic analysis without requiring the
+     * findings mapping to enumerate the full HTTP document shape twice. Larger or richer
+     * parsed representations can be added later if specific queries require them.</p>
+     */
+    private static List<Map<String, Object>> buildCollaboratorInteractionsList(AuditIssue issue) {
+        List<Interaction> interactions;
+        try {
+            interactions = issue.collaboratorInteractions();
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+        if (interactions == null || interactions.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(interactions.size());
+        for (Interaction i : interactions) {
+            if (i == null) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", i.id() != null ? i.id().toString() : null);
+            entry.put("type", i.type() != null ? i.type().name() : null);
+            entry.put("time", i.timeStamp() != null ? i.timeStamp().toInstant().toString() : null);
+            InetAddress ip = i.clientIp();
+            entry.put("client_ip", ip != null ? ip.getHostAddress() : null);
+            entry.put("client_port", i.clientPort());
+
+            Map<String, Object> dns = new LinkedHashMap<>();
+            Optional<DnsDetails> dnsOpt = i.dnsDetails();
+            if (dnsOpt.isPresent()) {
+                DnsDetails d = dnsOpt.get();
+                dns.put("query_type", d.queryType() != null ? d.queryType().name() : null);
+                ByteArray q = d.query();
+                dns.put("query_b64", q != null ? Base64.getEncoder().encodeToString(q.getBytes()) : null);
+            }
+            entry.put("dns", dns);
+
+            Map<String, Object> http = new LinkedHashMap<>();
+            Optional<HttpDetails> httpOpt = i.httpDetails();
+            if (httpOpt.isPresent()) {
+                HttpDetails h = httpOpt.get();
+                http.put("protocol", h.protocol() != null ? h.protocol().name() : null);
+                HttpRequestResponse hrr = h.requestResponse();
+                if (hrr != null) {
+                    Map<String, Object> requestDoc = null;
+                    Map<String, Object> responseDoc;
+                    HttpRequest hreq = hrr.request();
+                    if (hreq != null) {
+                        ByteArray bytes = hreq.toByteArray();
+                        http.put("request_b64", bytes != null ? Base64.getEncoder().encodeToString(bytes.getBytes()) : null);
+                        requestDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(hreq);
+                        putPairRequestServiceFields(requestDoc, hreq, pairHttpService(hrr, null));
+                    }
+                    HttpResponse hresp = hrr.hasResponse() ? hrr.response() : null;
+                    if (hresp != null) {
+                        ByteArray bytes = hresp.toByteArray();
+                        http.put("response_b64", bytes != null ? Base64.getEncoder().encodeToString(bytes.getBytes()) : null);
+                        responseDoc = RequestResponseDocBuilder.buildTrafficResponseDoc(hresp);
+                    } else {
+                        responseDoc = emptyTrafficResponseDoc();
+                    }
+                    TrafficPairMarkers.overlayPairMarkers(requestDoc, responseDoc, hrr);
+                    if (requestDoc != null) {
+                        http.put("request", requestDoc);
+                    }
+                    http.put("response", responseDoc);
+                }
+            }
+            entry.put("http", http);
+
+            Map<String, Object> smtp = new LinkedHashMap<>();
+            Optional<SmtpDetails> smtpOpt = i.smtpDetails();
+            if (smtpOpt.isPresent()) {
+                SmtpDetails s = smtpOpt.get();
+                smtp.put("protocol", s.protocol() != null ? s.protocol().name() : null);
+                smtp.put("conversation", s.conversation());
+            }
+            entry.put("smtp", smtp);
+
+            Optional<String> custom = i.customData();
+            entry.put("custom_data", custom.orElse(null));
+            out.add(entry);
+        }
+        return out;
+    }
+
+    private static Map<String, Object> emptyTrafficResponseDoc() {
+        Map<String, Object> response = new LinkedHashMap<>();
+
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("code", null);
+        status.put("code_class", null);
+        status.put("description", null);
+        response.put("status", status);
+
+        Map<String, Object> protocol = new LinkedHashMap<>();
+        protocol.put("http_version", null);
+        response.put("protocol", protocol);
+
+        response.put("header", new LinkedHashMap<String, Object>());
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("length", 0);
         body.put("offset", 0);
         body.put("b64", null);
         body.put("text", null);
-        m.put("body", body);
-        m.put("markers", List.of());
-        return m;
+        body.put("markers", List.of());
+        response.put("body", body);
+
+        return response;
     }
 
     private static String nullToEmpty(String s) {

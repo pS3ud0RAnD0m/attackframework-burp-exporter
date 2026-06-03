@@ -4,6 +4,7 @@ import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch.core.GetRequest;
 import org.opensearch.client.opensearch.core.GetResponse;
@@ -80,21 +81,15 @@ class OpenSearchClientWrapperIT {
         String result = indexResp.result().jsonValue();
         assertThat(result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated")).isTrue();
 
-        // OpenSearch's get() requires Class<TDocument>; Map.class is raw by erasure, so we re-assert the generic
-        // parameters. Safe here because the test controls both the serialized document shape and its deserialization.
-        @SuppressWarnings("unchecked") // Raw Map.class cast; see comment above.
-        Class<Map<String, Object>> mapClass = (Class<Map<String, Object>>) (Class<?>) Map.class;
-
-        GetResponse<Map<String, Object>> getResp = client.get(
+        GetResponse<JsonNode> getResp = client.get(
                 new GetRequest.Builder().index(indexName).id("1").build(),
-                mapClass
+                JsonNode.class
         );
         assertThat(getResp.found()).isTrue();
 
-        Map<String, Object> source = getResp.source();
-        assertThat(source)
-                .isNotNull()
-                .containsEntry("field", "value");
+        JsonNode source = getResp.source();
+        assertThat(source).isNotNull();
+        assertThat(source.get("field").asText()).isEqualTo("value");
 
         client.indices().delete(new DeleteIndexRequest.Builder().index(indexName).build());
     }

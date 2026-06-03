@@ -27,20 +27,71 @@ class ExportFieldRegistryTest {
     }
 
     @Test
-    void get_allowed_keys_with_null_enabled_returns_required_plus_all_toggleable() {
+    void exporter_event_fields_are_toggleable_as_nested_leaf_fields() {
+        assertThat(ExportFieldRegistry.getToggleableFields("exporter"))
+                .contains("event.data", "event.level", "event.source", "event.summary", "event.thread", "event.type")
+                .doesNotContain("event", "message", "message.data", "message.summary", "message_text");
+    }
+
+    @Test
+    void settings_burp_fields_are_toggleable_as_nested_leaf_fields() {
+        assertThat(ExportFieldRegistry.getToggleableFields("settings"))
+                .contains("burp.project_id", "burp.version")
+                .doesNotContain("project_id", "burp");
+    }
+
+    @Test
+    void traffic_shows_burp_leaf_fields_not_burp_directory() {
+        assertThat(ExportFieldRegistry.getToggleableFields("traffic"))
+                .contains("burp.reporting_tool", "burp.is_in_scope")
+                .doesNotContain("burp", "request", "response", "protocol", "websocket", "meta");
+    }
+
+    @Test
+    void get_allowed_keys_does_not_include_nested_parent_when_descendant_enabled() {
+        Set<String> allowed = ExportFieldRegistry.getAllowedKeys(
+                "findings", Set.of("requests_responses.request.method"));
+        assertThat(allowed).contains("requests_responses.request.method")
+                .doesNotContain("requests_responses");
+    }
+
+    @Test
+    void exporter_does_not_include_burp_context_fields() {
+        assertThat(ExportFieldRegistry.getToggleableFields("exporter"))
+                .doesNotContain("burp.project_id", "burp.version", "project_id", "burp_version");
+    }
+
+    @Test
+    void meta_leaf_paths_are_required_display_fields_for_every_index() {
+        for (String index : ExportFieldRegistry.INDEX_ORDER_FOR_FIELDS_PANEL) {
+            assertThat(ExportFieldRegistry.getRequiredDisplayFields(index))
+                    .containsExactlyElementsOf(ExportFieldRegistry.META_LEAF_PATHS);
+        }
+    }
+
+    @Test
+    void is_meta_leaf_path_matches_meta_prefix_only() {
+        assertThat(ExportFieldRegistry.isMetaLeafPath("meta.export_id")).isTrue();
+        assertThat(ExportFieldRegistry.isMetaLeafPath("meta.schema_version")).isTrue();
+        assertThat(ExportFieldRegistry.isMetaLeafPath("meta")).isFalse();
+        assertThat(ExportFieldRegistry.isMetaLeafPath("burp.reporting_tool")).isFalse();
+    }
+
+    @Test
+    void get_allowed_keys_with_null_enabled_returns_system_meta_plus_all_toggleable() {
         String index = "traffic";
         Set<String> allowed = ExportFieldRegistry.getAllowedKeys(index, null);
-        assertThat(allowed).containsAll(ExportFieldRegistry.getRequiredFields(index));
+        assertThat(allowed).contains("meta");
         assertThat(allowed).containsAll(ExportFieldRegistry.getToggleableFields(index));
     }
 
     @Test
-    void get_allowed_keys_with_partial_enabled_returns_required_plus_only_those_toggleable() {
+    void get_allowed_keys_with_partial_enabled_returns_system_meta_plus_only_those_toggleable() {
         String index = "settings";
-        Set<String> enabledToggleable = Set.of("project_id");
+        Set<String> enabledToggleable = Set.of("burp.project_id");
         Set<String> allowed = ExportFieldRegistry.getAllowedKeys(index, enabledToggleable);
-        assertThat(allowed).containsAll(ExportFieldRegistry.getRequiredFields(index));
-        assertThat(allowed).contains("project_id");
-        assertThat(allowed).doesNotContain("settings_user").doesNotContain("settings_project");
+        assertThat(allowed).contains("meta");
+        assertThat(allowed).contains("burp.project_id");
+        assertThat(allowed).doesNotContain("project").doesNotContain("user");
     }
 }

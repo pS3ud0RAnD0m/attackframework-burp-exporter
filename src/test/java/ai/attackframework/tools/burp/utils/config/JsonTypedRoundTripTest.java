@@ -244,6 +244,25 @@ class JsonTypedRoundTripTest {
     }
 
     @Test
+    void parse_json_dropsRemovedCollaboratorTrafficToolType() throws IOException {
+        String json = """
+            {
+              "version": "1.0",
+              "dataSources": ["traffic"],
+              "scope": ["all"],
+              "sinks": {},
+              "dataSourceOptions": {
+                "traffic": ["proxy", "collaborator", "repeater"]
+              }
+            }
+            """;
+
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(parsed.trafficToolTypes()).containsExactly("proxy", "repeater");
+    }
+
+    @Test
     void parse_json_with_explicit_empty_exporter_options_preserves_disabled_exporter_sub_options() throws IOException {
         String json = """
             {
@@ -271,8 +290,8 @@ class JsonTypedRoundTripTest {
     @Test
     void build_and_parse_preserves_exportFields_when_present() throws IOException {
         Map<String, Set<String>> enabledByIndex = Map.of(
-                "traffic", Set.of("url", "host", "method"),
-                "settings", Set.of("project_id")
+                "traffic", Set.of("request.url", "request.port", "request.method"),
+                "settings", Set.of("burp.project_id")
         );
         var state = new ConfigState.State(
                 List.of("settings", "traffic"), "all", List.of(),
@@ -285,8 +304,77 @@ class JsonTypedRoundTripTest {
         assertThat(json).contains("exportFields");
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
         assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
-        assertThat(parsed.enabledExportFieldsByIndex().get("traffic")).containsExactlyInAnyOrder("url", "host", "method");
-        assertThat(parsed.enabledExportFieldsByIndex().get("settings")).containsExactly("project_id");
+        assertThat(parsed.enabledExportFieldsByIndex().get("traffic"))
+                .containsExactlyInAnyOrder("request.url", "request.port", "request.method");
+        assertThat(parsed.enabledExportFieldsByIndex().get("settings")).containsExactly("burp.project_id");
+    }
+
+    @Test
+    void build_and_parse_preserves_empty_exportFields_selection() throws IOException {
+        Map<String, Set<String>> enabledByIndex = Map.of("traffic", Set.of());
+        var state = new ConfigState.State(
+                List.of("traffic"), "all", List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES, ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS, ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                enabledByIndex
+        );
+
+        String json = ConfigJsonMapper.build(state);
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(json).contains("\"traffic\" : [ ]");
+        assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
+        assertThat(parsed.enabledExportFieldsByIndex().get("traffic")).isEmpty();
+    }
+
+    @Test
+    void parse_exportFields_acceptsOnlyCurrentFieldKeys() throws IOException {
+        String json = """
+            {
+              "version":"1.0",
+              "dataSources":["settings","traffic","sitemap"],
+              "scope":["all"],
+              "sinks":{},
+              "exportFields":{
+                "traffic":["tool","burp.reporting_tool","response.header",
+                  "response.headers.mime_type.inferred_burp"],
+                "settings":["settings_project","project"],
+                "sitemap":["status","response.status.code","request.url"]
+              }
+            }
+            """;
+
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
+        assertThat(parsed.enabledExportFieldsByIndex().get("traffic"))
+                .containsExactlyInAnyOrder(
+                        "burp.reporting_tool",
+                        "response.header");
+        assertThat(parsed.enabledExportFieldsByIndex().get("settings"))
+                .containsExactly("project");
+        assertThat(parsed.enabledExportFieldsByIndex().get("sitemap"))
+                .containsExactlyInAnyOrder("response.status.code", "request.url");
+    }
+
+    @Test
+    void parse_exportFields_withOnlyUnknownNonEmptySelection_usesDefaults() throws IOException {
+        String json = """
+            {
+              "version":"1.0",
+              "dataSources":["traffic"],
+              "scope":["all"],
+              "sinks":{},
+              "exportFields":{
+                "traffic":["unknown_field"]
+              }
+            }
+            """;
+
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(parsed.enabledExportFieldsByIndex()).isNull();
     }
 
     @Test

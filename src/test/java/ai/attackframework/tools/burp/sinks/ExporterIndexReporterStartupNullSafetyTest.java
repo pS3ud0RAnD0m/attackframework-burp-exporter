@@ -9,6 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import burp.api.montoya.MontoyaApi;
 
@@ -20,17 +21,13 @@ class ExporterIndexReporterStartupNullSafetyTest {
     }
 
     @Test
-    void exporterIndexHelpers_returnNull_whenBurpSubApisThrowDuringStartup() {
-        MontoyaApiProvider.set(throwingMontoyaApi());
+    void settingsBurpContextHelpers_fallBackSafely_whenBurpSubApisThrowDuringStartup() {
+        MontoyaApi api = throwingMontoyaApi();
+        MontoyaApiProvider.set(api);
 
-        assertThat(callStatic(ExporterIndexLogForwarder.class, "burpVersion")).isNull();
-        assertThat(callStatic(ExporterIndexLogForwarder.class, "projectId")).isNull();
-
-        assertThat(callStatic(ExporterIndexStatsReporter.class, "burpVersion")).isNull();
-        assertThat(callStatic(ExporterIndexStatsReporter.class, "projectId")).isNull();
-
-        assertThat(callStatic(ExporterIndexConfigReporter.class, "burpVersion")).isNull();
-        assertThat(callStatic(ExporterIndexConfigReporter.class, "projectId")).isNull();
+        assertThat(callStatic(SettingsIndexReporter.class, "safeBurpVersion", api)).isNull();
+        assertThat(callStatic(SettingsIndexReporter.class, "safeProjectId", api))
+                .isEqualTo(BurpRuntimeMetadata.UNKNOWN_PROJECT_ID);
         clearApiProvider();
     }
 
@@ -45,7 +42,7 @@ class ExporterIndexReporterStartupNullSafetyTest {
         List<?> wsHistory = (List<?>) wsHistoryObj;
         assertThat(wsHistory).isEmpty();
 
-        boolean inScope = (boolean) callStatic(ProxyWebSocketIndexReporter.class, "safeBurpInScope", api, "https://example.com");
+        boolean inScope = WebSocketTrafficDocumentBuilder.safeBurpInScope(api, "https://example.com");
         assertThat(inScope).isFalse();
         clearApiProvider();
     }

@@ -55,13 +55,12 @@ public final class ExportReporterLifecycle {
      * runtime matches what the Start/Stop controls show.</p>
      */
     public static void stopAndClearPendingExportWork() {
-        TrafficExportQueue.flushPendingWorkToFilesOnStop();
         RuntimeConfig.setExportRunning(false);
         stopBackgroundReporters();
         RepeaterTabsIndexReporter.clearRunState();
         RepeaterLiveMetadataTracker.clear();
-        TrafficExportQueue.clearPendingWork();
         TrafficExportQueue.stopWorker();
+        TrafficExportQueue.clearPendingWork();
         IndexingRetryCoordinator.getInstance().clearPendingWork();
         IndexingRetryCoordinator.getInstance().stopDrainThread();
         FileExportService.resetForRuntime();

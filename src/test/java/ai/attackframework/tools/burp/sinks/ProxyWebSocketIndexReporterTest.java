@@ -6,16 +6,24 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
 
+import ai.attackframework.tools.burp.testutils.Reflect;
+import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.HttpService;
@@ -25,8 +33,12 @@ import burp.api.montoya.websocket.Direction;
 
 class ProxyWebSocketIndexReporterTest {
 
+    @TempDir
+    Path tempDir;
+
     @AfterEach
     void resetRuntimeConfig() {
+        ProxyWebSocketIndexReporter.stop();
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"),
                 "all",
@@ -37,10 +49,12 @@ class ProxyWebSocketIndexReporterTest {
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null));
         RuntimeConfig.setExportRunning(false);
+        MontoyaApiProvider.set(null);
     }
 
     @Test
     void buildDocument_includesExpectedWebSocketFields() {
+        resetRuntimeConfig();
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"),
                 "all",
@@ -94,20 +108,30 @@ class ProxyWebSocketIndexReporterTest {
         Map<String, Object> doc = ProxyWebSocketIndexReporter.buildDocument(api, ws);
 
         assertThat(doc).isNotNull();
-        assertThat(doc.get("tool_type")).isEqualTo("PROXY_WEBSOCKET");
-        assertThat(doc.get("websocket_id")).isEqualTo(7);
-        assertThat(doc.get("ws_message_id")).isEqualTo(12);
-        assertThat(doc.get("ws_direction")).isEqualTo("CLIENT_TO_SERVER");
-        assertThat(doc.get("listener_port")).isEqualTo(8080);
-        assertThat(doc.get("ws_payload")).isNotNull();
-        assertThat(doc.get("ws_payload_text")).isEqualTo("hello");
-        assertThat(doc.get("ws_edited")).isEqualTo(true);
-        assertThat(doc.get("ws_edited_payload")).isNotNull();
-        assertThat(doc.get("ws_upgrade_request")).isInstanceOf(Map.class);
+        Map<?, ?> burp = nestedMap(doc, "burp");
+        assertThat(burp.get("reporting_tool")).isEqualTo("Proxy WebSocket");
+        assertThat(doc).doesNotContainKey("tool_type");
+        Map<?, ?> websocket = nestedMap(doc, "websocket");
+        Map<?, ?> payloadDoc = nestedMap(websocket, "payload");
+        assertThat(websocket.get("is_websocket")).isEqualTo(true);
+        assertThat(websocket.get("is_edited")).isEqualTo(true);
+        assertThat(websocket.get("id")).isEqualTo(7);
+        assertThat(websocket.get("message_id")).isEqualTo(12);
+        assertThat(websocket.get("direction")).isEqualTo("CLIENT_TO_SERVER");
+        Map<?, ?> proxy = nestedMap(burp, "proxy");
+        assertThat(proxy.get("listener_port")).isEqualTo(8080);
+        assertThat(payloadDoc.get("b64")).isNotNull();
+        assertThat(payloadDoc.get("text")).isEqualTo("HELLO");
+        assertThat(websocket.containsKey("original")).isFalse();
+        assertThat(websocket.containsKey("edited_payload")).isFalse();
+        assertThat(websocket.containsKey("original_payload")).isFalse();
+        assertThat(doc).doesNotContainKey("ws_upgrade_request");
+        assertThat(doc.get("request")).isInstanceOf(Map.class);
     }
 
     @Test
     void buildDocument_survivesMalformedUpgradeRequest_andReconstructsUrl() {
+        resetRuntimeConfig();
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"),
                 "all",
@@ -162,9 +186,519 @@ class ProxyWebSocketIndexReporterTest {
         Map<String, Object> doc = ProxyWebSocketIndexReporter.buildDocument(api, ws);
 
         assertThat(doc).isNotNull();
-        assertThat(doc.get("url")).isEqualTo("https://example.com/ws");
-        assertThat(doc.get("tool_type")).isEqualTo("PROXY_WEBSOCKET");
-        assertThat(doc.get("path")).isEqualTo("/ws");
-        assertThat(doc.get("method")).isEqualTo("GET");
+        Map<?, ?> request = nestedMap(doc, "request");
+        assertThat(request.get("url")).isEqualTo("https://example.com/ws");
+        assertThat(nestedMap(doc, "burp").get("reporting_tool")).isEqualTo("Proxy WebSocket");
+        assertThat(doc).doesNotContainKey("tool_type");
+        Map<?, ?> path = nestedMap(request, "path");
+        assertThat(path.get("with_query")).isEqualTo("/ws");
+        assertThat(request.get("method")).isEqualTo("GET");
+    }
+
+    @Test
+    void trafficGates_splitProxyHistoryAndProxyLive() {
+        resetRuntimeConfig();
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy_history"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        assertThat(ProxyWebSocketIndexReporter.trafficSelectionAllowsHistoricWebSockets()).isTrue();
+        assertThat(ProxyWebSocketIndexReporter.trafficSelectionAllowsLiveProxyWebSocketPoll()).isFalse();
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        assertThat(ProxyWebSocketIndexReporter.trafficSelectionAllowsHistoricWebSockets()).isFalse();
+        assertThat(ProxyWebSocketIndexReporter.trafficSelectionAllowsLiveProxyWebSocketPoll()).isTrue();
+    }
+
+    @Test
+    void refreshLivePollSchedule_stopsSchedulerWhenProxyDeselected() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+
+        ProxyWebSocketIndexReporter.startLivePoll();
+        assertThat(schedulerField().isStarted()).isTrue();
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("repeater"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
+
+        assertThat(schedulerField().isStarted()).isFalse();
+        assertThat(ProxyWebSocketIndexReporter.shouldRunLivePoll()).isFalse();
+    }
+
+    @Test
+    void refreshLivePollSchedule_startsSchedulerWhenProxySelectedWhileExportRunning() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("repeater"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        assertThat(schedulerField().isStarted()).isFalse();
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
+
+        assertEventuallySchedulerStarted();
+    }
+
+    @Test
+    void refreshLivePollSchedule_seedsExistingHistoryWhenProxyReselected() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("repeater"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        ProxyWebSocketMessage existing = mock(ProxyWebSocketMessage.class);
+        when(existing.webSocketId()).thenReturn(17);
+        when(existing.id()).thenReturn(42);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of(existing));
+        MontoyaApiProvider.set(api);
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy_history", "proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
+
+        assertEventuallySchedulerStarted();
+        assertEventuallyPushedKey("17:42");
+    }
+
+    @Test
+    void startLivePoll_doesNotStartWhileExportIsStarting() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.setExportStarting(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+
+        ProxyWebSocketIndexReporter.startLivePoll();
+
+        assertThat(schedulerField().isStarted()).isFalse();
+        assertThat(ProxyWebSocketIndexReporter.shouldRunLivePoll()).isFalse();
+    }
+
+    @Test
+    void seedPushedKeysFromCurrentHistory_recordsExistingMessageKeys() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        ProxyWebSocketMessage existing = mock(ProxyWebSocketMessage.class);
+        when(existing.webSocketId()).thenReturn(7);
+        when(existing.id()).thenReturn(12);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of(existing));
+        MontoyaApiProvider.set(api);
+
+        ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
+
+        assertThat(pushedKeys().contains("7:12")).isTrue();
+    }
+
+    @Test
+    void refreshLivePollSchedule_seedsHistoryOffCallerThreadBeforeStartingPoll() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        CountDownLatch historyCallStarted = new CountDownLatch(1);
+        CountDownLatch releaseHistoryCall = new CountDownLatch(1);
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        ProxyWebSocketMessage existing = mock(ProxyWebSocketMessage.class);
+        when(existing.webSocketId()).thenReturn(21);
+        when(existing.id()).thenReturn(84);
+        when(api.proxy().webSocketHistory()).thenAnswer(invocation -> {
+            historyCallStarted.countDown();
+            releaseHistoryCall.await(2, TimeUnit.SECONDS);
+            return List.of(existing);
+        });
+        MontoyaApiProvider.set(api);
+
+        ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
+
+        assertThat(historyCallStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(schedulerField().isStarted()).isFalse();
+        releaseHistoryCall.countDown();
+        assertEventuallySchedulerStarted();
+        assertEventuallyPushedKey("21:84");
+    }
+
+    @Test
+    void pushNewItemsOnly_scansSameSizeHistoryWhenTailChanges() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(true, tempDir.toString(), true, false,
+                        false, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.scope().isInScope(anyString())).thenReturn(true);
+        ProxyWebSocketMessage existing = webSocketMessage(7, 1);
+        ProxyWebSocketMessage rotated = webSocketMessage(7, 2);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of(existing)).thenReturn(List.of(rotated));
+        MontoyaApiProvider.set(api);
+
+        ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
+        ProxyWebSocketIndexReporter.pushNewItemsOnly();
+
+        assertThat(pushedKeys().contains("7:1")).isTrue();
+        assertThat(pushedKeys().contains("7:2")).isTrue();
+    }
+
+    @Test
+    void pushNewItemsOnly_retriesAfterRouteRejectionWhenProxyBecomesSelected() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("repeater"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.scope().isInScope(anyString())).thenReturn(true);
+        ProxyWebSocketMessage pending = webSocketMessage(5, 9);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of(pending));
+        MontoyaApiProvider.set(api);
+        TrafficExportQueue.clearPendingWork();
+
+        ProxyWebSocketIndexReporter.pushNewItemsOnly();
+
+        assertThat(pushedKeys()).doesNotContain("5:9");
+        assertThat(liveHistoryCursor()).isZero();
+        assertThat(TrafficExportQueue.getCurrentSize()).isZero();
+
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        ProxyWebSocketIndexReporter.pushNewItemsOnly();
+
+        assertThat(pushedKeys()).contains("5:9");
+        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+    }
+
+    @Test
+    void pushNewItemsOnly_rescansFromStartWhenHistoryShrinks() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.scope().isInScope(anyString())).thenReturn(true);
+        MontoyaApiProvider.set(api);
+        setLiveHistoryCursor(10);
+        setLiveHistoryTailKey("1:10");
+        rememberPushedKeyForTest("1:10");
+        List<ProxyWebSocketMessage> shrunk = List.of(webSocketMessage(2, 1), webSocketMessage(2, 2));
+        when(api.proxy().webSocketHistory()).thenReturn(shrunk);
+        TrafficExportQueue.clearPendingWork();
+
+        ProxyWebSocketIndexReporter.pushNewItemsOnly();
+
+        assertThat(pushedKeys()).contains("2:1", "2:2");
+        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(2);
+    }
+
+    @Test
+    void pushNewItemsOnly_withLargeSeededHistory_exportsOnlyTailAfterCursor() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        java.util.ArrayList<ProxyWebSocketMessage> history = new java.util.ArrayList<>();
+        for (int i = 1; i <= 100; i++) {
+            history.add(webSocketMessage(1, i));
+        }
+        ProxyWebSocketMessage newest = webSocketMessage(1, 101);
+        java.util.ArrayList<ProxyWebSocketMessage> extended = new java.util.ArrayList<>(history);
+        extended.add(newest);
+
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.scope().isInScope(anyString())).thenReturn(true);
+        when(api.proxy().webSocketHistory()).thenReturn(history).thenReturn(extended);
+        MontoyaApiProvider.set(api);
+        TrafficExportQueue.clearPendingWork();
+
+        ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
+        assertThat(liveHistoryCursor()).isEqualTo(100);
+        assertThat(pushedKeys()).contains("1:100");
+
+        ProxyWebSocketIndexReporter.pushNewItemsOnly();
+
+        assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+        assertThat(pushedKeys()).contains("1:101");
+        assertThat(liveHistoryCursor()).isEqualTo(101);
+    }
+
+    @Test
+    void trimPushedKeysIfNeeded_skipsKeysStillPresentInProxyWebSocketHistory() throws Exception {
+        ProxyWebSocketIndexReporter.stop();
+        rememberPushedKeyForTest("1:1");
+        rememberPushedKeyForTest("1:2");
+        rememberPushedKeyForTest("1:3");
+
+        ProxyWebSocketMessage retained = webSocketMessage(1, 1);
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of(retained));
+        MontoyaApiProvider.set(api);
+
+        ProxyWebSocketIndexReporter.trimPushedKeysIfNeeded(2);
+
+        assertThat(pushedKeys()).contains("1:1", "1:3").doesNotContain("1:2");
+    }
+
+    @Test
+    void trimPushedKeysIfNeeded_retainsAllKeysWhenEveryCandidateStillInHistory() throws Exception {
+        ProxyWebSocketIndexReporter.stop();
+        rememberPushedKeyForTest("1:1");
+        rememberPushedKeyForTest("1:2");
+        rememberPushedKeyForTest("1:3");
+
+        ProxyWebSocketMessage first = webSocketMessage(1, 1);
+        ProxyWebSocketMessage second = webSocketMessage(1, 2);
+        ProxyWebSocketMessage third = webSocketMessage(1, 3);
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of(first, second, third));
+        MontoyaApiProvider.set(api);
+
+        ProxyWebSocketIndexReporter.trimPushedKeysIfNeeded(2);
+
+        assertThat(pushedKeys()).contains("1:1", "1:2", "1:3");
+    }
+
+    @Test
+    void startLivePoll_registersAfterHistoricSnapshotWhenBothProxySourcesSelected() throws Exception {
+        resetRuntimeConfig();
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy_history", "proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+        when(api.proxy().webSocketHistory()).thenReturn(List.of());
+        MontoyaApiProvider.set(api);
+
+        ProxyWebSocketIndexReporter.pushHistoricSnapshotNow();
+        assertThat(schedulerField().isStarted()).isFalse();
+
+        ProxyWebSocketIndexReporter.startLivePoll();
+
+        assertThat(schedulerField().isStarted()).isTrue();
+    }
+
+    private static LazyScheduler schedulerField() throws Exception {
+        var field = ProxyWebSocketIndexReporter.class.getDeclaredField("SCHEDULER");
+        field.setAccessible(true);
+        return (LazyScheduler) field.get(null);
+    }
+
+    private static Set<String> pushedKeys() throws Exception {
+        Set<?> raw = Reflect.getStatic(ProxyWebSocketIndexReporter.class, "pushedKeys", Set.class);
+        if (!(raw instanceof Set<?> set)) {
+            return Set.of();
+        }
+        Set<String> keys = new java.util.LinkedHashSet<>();
+        for (Object element : set) {
+            if (element instanceof String key) {
+                keys.add(key);
+            }
+        }
+        return keys;
+    }
+
+    private static int liveHistoryCursor() throws Exception {
+        var field = ProxyWebSocketIndexReporter.class.getDeclaredField("liveHistoryCursor");
+        field.setAccessible(true);
+        return field.getInt(null);
+    }
+
+    private static void setLiveHistoryCursor(int value) throws Exception {
+        var field = ProxyWebSocketIndexReporter.class.getDeclaredField("liveHistoryCursor");
+        field.setAccessible(true);
+        field.setInt(null, value);
+    }
+
+    private static void setLiveHistoryTailKey(String value) throws Exception {
+        var field = ProxyWebSocketIndexReporter.class.getDeclaredField("liveHistoryTailKey");
+        field.setAccessible(true);
+        field.set(null, value);
+    }
+
+    private static void rememberPushedKeyForTest(String key) throws Exception {
+        var method = ProxyWebSocketIndexReporter.class.getDeclaredMethod("rememberPushedKey", String.class);
+        method.setAccessible(true);
+        method.invoke(null, key);
+    }
+
+    private static void assertEventuallySchedulerStarted() throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (schedulerField().isStarted()) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(schedulerField().isStarted()).isTrue();
+    }
+
+    private static void assertEventuallyPushedKey(String key) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            if (pushedKeys().contains(key)) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(pushedKeys().contains(key)).isTrue();
+    }
+
+    private static ProxyWebSocketMessage webSocketMessage(int webSocketId, int messageId) {
+        ProxyWebSocketMessage ws = mock(ProxyWebSocketMessage.class);
+        HttpRequest upgrade = mock(HttpRequest.class);
+        HttpService service = mock(HttpService.class);
+        ByteArray payload = mock(ByteArray.class);
+        when(service.host()).thenReturn("example.com");
+        when(service.port()).thenReturn(443);
+        when(service.secure()).thenReturn(true);
+        when(upgrade.httpService()).thenReturn(service);
+        when(upgrade.url()).thenReturn("https://example.com/ws");
+        when(upgrade.httpVersion()).thenReturn("HTTP/1.1");
+        when(upgrade.path()).thenReturn("/ws");
+        when(upgrade.method()).thenReturn("GET");
+        when(upgrade.pathWithoutQuery()).thenReturn("/ws");
+        when(upgrade.query()).thenReturn("");
+        when(upgrade.fileExtension()).thenReturn("");
+        when(upgrade.headers()).thenReturn(List.of());
+        when(upgrade.parameters()).thenReturn(List.of());
+        when(upgrade.body()).thenReturn(null);
+        when(upgrade.markers()).thenReturn(List.of());
+        when(upgrade.contentType()).thenReturn(null);
+        when(payload.getBytes()).thenReturn(("message-" + messageId).getBytes(StandardCharsets.UTF_8));
+        when(ws.upgradeRequest()).thenReturn(upgrade);
+        when(ws.id()).thenReturn(messageId);
+        when(ws.webSocketId()).thenReturn(webSocketId);
+        when(ws.listenerPort()).thenReturn(443);
+        when(ws.payload()).thenReturn(payload);
+        when(ws.editedPayload()).thenReturn(null);
+        when(ws.direction()).thenReturn(Direction.SERVER_TO_CLIENT);
+        when(ws.time()).thenReturn(ZonedDateTime.now());
+        when(ws.annotations()).thenReturn(null);
+        return ws;
+    }
+
+    private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {
+        assertThat(parent.get(key)).isInstanceOf(Map.class);
+        return (Map<?, ?>) parent.get(key);
     }
 }

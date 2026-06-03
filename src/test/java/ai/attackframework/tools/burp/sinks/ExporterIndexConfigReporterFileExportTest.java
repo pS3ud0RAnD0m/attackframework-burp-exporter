@@ -108,10 +108,25 @@ class ExporterIndexConfigReporterFileExportTest {
                 null);
 
         Map<?, ?> doc = (Map<?, ?>) callStatic(ExporterIndexConfigReporter.class, "buildConfigDoc", state);
-        Map<?, ?> message = nestedMap(doc, "message");
-        Map<?, ?> options = nestedMap(message, "data_source_options");
+        Map<?, ?> event = nestedMap(doc, "event");
+        Map<?, ?> data = nestedMap(event, "data");
+        Map<?, ?> options = nestedMap(data, "data_source_options");
 
-        assertThat(doc.get("event_type")).isEqualTo("config_snapshot");
+        assertThat(event.get("type")).isEqualTo("config_snapshot");
+        assertThat(event.get("level")).isEqualTo("INFO");
+        assertThat(event.get("source")).isEqualTo("burp-exporter");
+        assertThat(event.get("thread")).isInstanceOf(String.class);
+        assertThat(doc.containsKey("event_type")).isFalse();
+        assertThat(doc.containsKey("level")).isFalse();
+        assertThat(doc.containsKey("source")).isFalse();
+        assertThat(doc.containsKey("thread")).isFalse();
+        assertThat(doc.containsKey("extension_version")).isFalse();
+        assertThat(doc.containsKey("message")).isFalse();
+        assertThat(doc.containsKey("message_text")).isFalse();
+        assertThat(doc.containsKey("burp")).isFalse();
+        assertThat(doc.containsKey("burp_version")).isFalse();
+        assertThat(doc.containsKey("project_id")).isFalse();
+        assertThat(event.get("summary")).isEqualTo("config_snapshot scope=all sources=2 exporter=true");
         assertThat(options.get("exporter")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class))
                 .containsExactly(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS);
         assertThat(options.get("exporter_stats_interval_seconds")).isEqualTo(45);

@@ -45,7 +45,7 @@ class ConfigPanelEnterBindingsHeadlessTest {
             }
             p.doLayout();
 
-            JCheckBox osEnable = get(p, "openSearchSinkCheckbox");
+            JCheckBox osEnable = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
             if (!osEnable.isSelected()) osEnable.doClick();
 
             ref.set(p);
@@ -55,7 +55,7 @@ class ConfigPanelEnterBindingsHeadlessTest {
 
     @Test
     void pressEnterOnOpenSearchUrlField_triggersTestConnection_andUpdatesStatus() throws Exception {
-        JTextField field = get(panel, "openSearchUrlField");
+        JTextField field = JTextField.class.cast(get(panel, "openSearchUrlField"));
 
         onEdtAndWait(() -> {
             field.setText("http://127.0.0.1:1");

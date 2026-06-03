@@ -32,7 +32,7 @@ class ConfigPanelUndoRedoHeadlessTest {
     @Test
     void filePathField_undoRedo_bindings_and_actions() throws Exception {
         ConfigPanel panel = new ConfigPanel();
-        JTextField field = get(panel, "filePathField");
+        JTextField field = JTextField.class.cast(get(panel, "filePathField"));
 
         // 1) Verify key bindings exist (Ctrl and Meta variants, plus Shift+Z redo)
         InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
@@ -64,7 +64,7 @@ class ConfigPanelUndoRedoHeadlessTest {
     @Test
     void openSearchUrlField_undoRedo_bindings_and_actions() throws Exception {
         ConfigPanel panel = new ConfigPanel();
-        JTextField field = get(panel, "openSearchUrlField");
+        JTextField field = JTextField.class.cast(get(panel, "openSearchUrlField"));
 
         // 1) Verify key bindings exist (Ctrl and Meta variants, plus Shift+Z redo)
         InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);

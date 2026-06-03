@@ -4,10 +4,11 @@ import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
@@ -18,10 +19,12 @@ import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
  * Bounded queue for traffic documents so the HTTP thread can enqueue and return immediately.
  *
  * <p>A dedicated worker thread drains the queue and pushes via the OpenSearch Bulk API using
- * chunked request body (NDJSON written incrementally; no full batch list in memory). When full,
- * the oldest document is dropped (backpressure). Batches are limited by count
- * ({@link BatchSizeController}), payload size ({@link BulkPayloadEstimator}, 5 MB cap), and time
- * (flush after 100 ms). Used only by the traffic export path.</p>
+ * chunked request body (NDJSON written incrementally; no full batch list in memory). When the
+ * in-memory queue is full, documents are spilled to a temp-dir file queue; only when spill
+ * rejects a document does this path drop the oldest queued item (for example low disk or spill
+ * full). Batches are limited by count ({@link BatchSizeController}), payload size
+ * ({@link BulkPayloadEstimator}, 5 MB cap), and time (flush after 100 ms). Used by live HTTP
+ * and live non-proxy WebSocket export paths.</p>
  */
 public final class TrafficExportQueue {
 
@@ -37,6 +40,8 @@ public final class TrafficExportQueue {
     private static final LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>(CAPACITY);
     private static final TrafficSpillFileQueue spillQueue = new TrafficSpillFileQueue();
     private static final AtomicBoolean workerStarted = new AtomicBoolean(false);
+    private static final AtomicLong workerGeneration = new AtomicLong();
+    private static final AtomicLong stopThroughGeneration = new AtomicLong();
 
     /**
      * Reference to the drain worker so shutdown can interrupt and join it deterministically.
@@ -45,7 +50,8 @@ public final class TrafficExportQueue {
      * recreated by {@link #startWorkerIfNeeded()} on the next {@link #offer(Map)}.</p>
      */
     private static volatile Thread drainWorker;
-    private static final long WORKER_SHUTDOWN_TIMEOUT_MS = 1_000;
+    private static final long WORKER_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 30_000;
+    private static final long WORKER_INTERRUPT_SHUTDOWN_TIMEOUT_MS = 1_000;
 
     private TrafficExportQueue() {}
 
@@ -122,34 +128,54 @@ public final class TrafficExportQueue {
      * @param document the document to enqueue; {@code null} is ignored
      */
     public static void offer(Map<String, Object> document) {
-        if (document == null) return;
+        offerAccepted(document);
+    }
+
+    /**
+     * Offers a traffic document when export sinks are active.
+     *
+     * @param document document to enqueue; {@code null} is ignored
+     * @return {@code true} when the document was queued or spilled; {@code false} when it was dropped
+     */
+    public static boolean offerAccepted(Map<String, Object> document) {
+        if (document == null) {
+            return false;
+        }
+        if (!isDocumentCurrentlyEnabled(document)) {
+            return false;
+        }
+        if (queue.offer(document)) {
+            startWorkerIfNeeded();
+            return true;
+        }
+        TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(document);
+        if (spillResult == TrafficSpillFileQueue.OfferResult.QUEUED) {
+            ExportStats.recordTrafficSpillEnqueued(1);
+            startWorkerIfNeeded();
+            return true;
+        }
+        queue.poll();
+        ExportStats.recordTrafficQueueDrop(1);
+        ExportStats.recordTrafficSpillDrop(1);
+        ExportStats.recordTrafficDropReason(
+                spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
+                        ? "spill_low_disk_drop_oldest"
+                        : "spill_rejected_drop_oldest",
+                1);
         if (!queue.offer(document)) {
-            TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(document);
-            if (spillResult == TrafficSpillFileQueue.OfferResult.QUEUED) {
-                ExportStats.recordTrafficSpillEnqueued(1);
-            } else {
-                queue.poll();
-                ExportStats.recordTrafficQueueDrop(1);
-                ExportStats.recordTrafficSpillDrop(1);
-                ExportStats.recordTrafficDropReason(
-                        spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
-                                ? "spill_low_disk_drop_oldest"
-                                : "spill_rejected_drop_oldest",
-                        1);
-                if (!queue.offer(document)) {
-                    // Queue remained full under contention; count as dropped.
-                    ExportStats.recordTrafficQueueDrop(1);
-                    ExportStats.recordTrafficSpillDrop(1);
-                    ExportStats.recordTrafficDropReason("queue_contention_drop", 1);
-                    Logger.logError("[TrafficExportQueue] Queue and spill unavailable; dropping traffic document.");
-                } else if (spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK) {
-                    Logger.logError("[TrafficExportQueue] Spill disabled by low disk space; used drop-oldest fallback.");
-                } else {
-                    Logger.logError("[TrafficExportQueue] Spill full; used drop-oldest fallback.");
-                }
-            }
+            ExportStats.recordTrafficQueueDrop(1);
+            ExportStats.recordTrafficSpillDrop(1);
+            ExportStats.recordTrafficDropReason("queue_contention_drop", 1);
+            Logger.logError("[TrafficExportQueue] Queue and spill unavailable; dropping traffic document.");
+            return false;
+        }
+        if (spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK) {
+            Logger.logError("[TrafficExportQueue] Spill disabled by low disk space; used drop-oldest fallback.");
+        } else {
+            Logger.logError("[TrafficExportQueue] Spill full; used drop-oldest fallback.");
         }
         startWorkerIfNeeded();
+        return true;
     }
 
     /**
@@ -164,42 +190,37 @@ public final class TrafficExportQueue {
     }
 
     /**
-     * Best-effort synchronous flush of queued traffic documents to file sinks.
+     * Removes queued traffic whose route is no longer enabled by the current traffic gate.
      *
-     * <p>Used during intentional Stop for file-only runs so already-captured traffic is not lost
-     * when lifecycle cleanup clears the in-memory and spill backlogs. OpenSearch/network delivery
-     * is intentionally not attempted here; this path is only about draining local file backlog.</p>
+     * <p>Used for live config deselection. Stop still calls {@link #clearPendingWork()} because
+     * all queued traffic is stale after the run ends.</p>
      *
-     * @return number of traffic documents handed to file export
+     * @param gate current runtime traffic gate
+     * @return number of queued or spilled documents removed
      */
-    static int flushPendingWorkToFilesOnStop() {
-        if (!RuntimeConfig.isAnyFileExportEnabled()) {
-            return 0;
+    public static int purgeDisabledTraffic(RuntimeConfig.TrafficExportGate gate) {
+        if (gate == null || !gate.anyTrafficExportEnabled()) {
+            int purged = queue.size() + spillQueue.size();
+            clearPendingWork();
+            return purged;
         }
-        int flushed = 0;
-        while (true) {
-            Map<String, Object> doc = queue.poll();
-            if (doc == null) {
-                doc = spillQueue.poll();
+        AtomicInteger purged = new AtomicInteger();
+        queue.removeIf(doc -> {
+            boolean remove = !TrafficRouteBucket.isRouteEnabled(TrafficRouteBucket.fromDocument(doc), gate);
+            if (remove) {
+                purged.incrementAndGet();
             }
-            if (doc == null) {
-                break;
-            }
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
-                    TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, doc);
-            FileExportService.emit(prepared);
-            flushed++;
-        }
-        if (flushed > 0) {
-            Logger.logInfoPanelOnly("[TrafficExportQueue] Flushed " + flushed
-                    + " queued traffic document(s) to files before Stop.");
-        }
-        return flushed;
+            return remove;
+        });
+        purged.addAndGet(spillQueue.removeIf(
+                doc -> !TrafficRouteBucket.isRouteEnabled(TrafficRouteBucket.fromDocument(doc), gate)));
+        return purged.get();
     }
 
     private static void startWorkerIfNeeded() {
         if (workerStarted.compareAndSet(false, true)) {
-            Thread t = new Thread(TrafficExportQueue::drainLoop, "attackframework-traffic-export");
+            long generation = workerGeneration.incrementAndGet();
+            Thread t = new Thread(() -> TrafficExportQueue.drainLoop(generation), "attackframework-traffic-export");
             t.setDaemon(true);
             synchronized (TrafficExportQueue.class) {
                 drainWorker = t;
@@ -209,82 +230,135 @@ public final class TrafficExportQueue {
     }
 
     /**
-     * Interrupts and joins the drain worker so the extension unloads cleanly.
+     * Asks the drain worker to stop after the current batch, then joins it.
      *
      * <p>Safe to call from any thread and safe to call more than once. Resets the start flag so
-     * the next {@link #offer(Map)} lazily starts a fresh worker. Delegates termination to
-     * {@link Workers} so shutdown semantics match every other extension-owned worker; if the
-     * worker does not exit within {@link #WORKER_SHUTDOWN_TIMEOUT_MS} milliseconds, the current
-     * thread's interrupt flag is restored and the method returns.</p>
+     * the next {@link #offer(Map)} lazily starts a fresh worker. The normal path does not
+     * interrupt the worker: if a bulk request is already in flight, it is allowed to complete.
+     * If the worker does not stop within the graceful window, interrupt is used as a bounded
+     * fallback so extension unload cannot hang indefinitely.</p>
      */
     public static void stopWorker() {
+        long generationToStop = workerGeneration.get();
+        stopThroughGeneration.updateAndGet(current -> Math.max(current, generationToStop));
         Thread worker;
         synchronized (TrafficExportQueue.class) {
             worker = drainWorker;
-            drainWorker = null;
         }
-        Workers.awaitThreadJoin(worker, WORKER_SHUTDOWN_TIMEOUT_MS);
-        workerStarted.set(false);
-    }
-
-    private static void drainLoop() {
-        if (!awaitInitialWarmup()) {
+        if (worker != null && worker != Thread.currentThread()) {
+            awaitWorker(worker, WORKER_GRACEFUL_SHUTDOWN_TIMEOUT_MS, false);
+            if (worker.isAlive()) {
+                Logger.logWarnPanelOnly("[TrafficExportQueue] Stop timed out waiting for current batch; interrupting worker.");
+                awaitWorker(worker, WORKER_INTERRUPT_SHUTDOWN_TIMEOUT_MS, true);
+            }
+        }
+        if (worker != null && worker.isAlive()) {
             return;
         }
-        BatchSizeController batchController = BatchSizeController.getInstance();
-        while (true) {
-            boolean openSearchEnabled = RuntimeConfig.isOpenSearchTrafficEnabled();
-            String baseUrl = openSearchEnabled ? RuntimeConfig.openSearchUrl() : "";
-            if (!RuntimeConfig.isExportRunning()) {
-                clearPendingWork();
-                try {
-                    TimeUnit.MILLISECONDS.sleep(POLL_TIMEOUT_MS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+        boolean currentOwner = false;
+        synchronized (TrafficExportQueue.class) {
+            if (drainWorker == worker) {
+                drainWorker = null;
+                currentOwner = true;
+            }
+        }
+        if (currentOwner) {
+            workerStarted.set(false);
+        }
+    }
+
+    private static void drainLoop(long generation) {
+        try {
+            if (!awaitInitialWarmup(generation)) {
+                return;
+            }
+            BatchSizeController batchController = BatchSizeController.getInstance();
+            while (true) {
+                if (isStopRequested(generation)) {
                     break;
                 }
-                continue;
-            }
-            if (baseUrl == null || baseUrl.isBlank()) {
-                if (!RuntimeConfig.isAnyFileExportEnabled()) {
+                RuntimeConfig.TrafficExportGate trafficGate = RuntimeConfig.trafficExportGate();
+                boolean openSearchEnabled = RuntimeConfig.isOpenSearchTrafficEnabled();
+                String baseUrl = openSearchEnabled ? RuntimeConfig.openSearchUrl() : "";
+                if (!RuntimeConfig.isExportReady() || !trafficGate.anyTrafficExportEnabled()) {
                     try {
-                        Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                        if (doc != null && RuntimeConfig.isExportRunning()) {
-                            queue.offer(doc);
-                        }
+                        TimeUnit.MILLISECONDS.sleep(POLL_TIMEOUT_MS);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
                     }
                     continue;
                 }
+                if (baseUrl == null || baseUrl.isBlank()) {
+                    if (!RuntimeConfig.isAnyFileExportEnabled()) {
+                        try {
+                            Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                            if (doc != null && RuntimeConfig.isExportReady()) {
+                                queue.offer(doc);
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                        continue;
+                    }
+                    int maxBatch = batchController.getCurrentBatchSize();
+                    refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
+                    FileOnlyDrainResult result = drainToFileOnly(maxBatch, BULK_MAX_BYTES);
+                    if (result.attemptedCount == 0) {
+                        continue;
+                    }
+                    batchController.recordSuccess(result.attemptedCount);
+                    continue;
+                }
+
                 int maxBatch = batchController.getCurrentBatchSize();
                 refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
-                FileOnlyDrainResult result = drainToFileOnly(maxBatch, BULK_MAX_BYTES);
+                long startNs = System.nanoTime();
+                ChunkedBulkSender.Result result = ChunkedBulkSender.push(
+                        baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY,
+                        queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
+                long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+
                 if (result.attemptedCount == 0) {
                     continue;
                 }
-                batchController.recordSuccess(result.attemptedCount);
-                continue;
+                applyBulkOutcome(result, durationMs);
+                if (result.isFullSuccess()) {
+                    batchController.recordSuccess(result.attemptedCount);
+                } else {
+                    batchController.recordFailure(result.attemptedCount);
+                }
             }
+        } finally {
+            boolean currentOwner = false;
+            synchronized (TrafficExportQueue.class) {
+                if (drainWorker == Thread.currentThread()) {
+                    drainWorker = null;
+                    currentOwner = true;
+                }
+            }
+            if (currentOwner) {
+                workerStarted.set(false);
+                if (!queue.isEmpty() && RuntimeConfig.isExportReady()) {
+                    startWorkerIfNeeded();
+                }
+            }
+        }
+    }
 
-            int maxBatch = batchController.getCurrentBatchSize();
-            refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
-            long startNs = System.nanoTime();
-            ChunkedBulkSender.Result result = ChunkedBulkSender.push(
-                    baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY,
-                    queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
-            long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+    private static boolean isStopRequested(long generation) {
+        return generation <= stopThroughGeneration.get();
+    }
 
-            if (result.attemptedCount == 0) {
-                continue;
-            }
-            applyBulkOutcome(result, durationMs);
-            if (result.isFullSuccess()) {
-                batchController.recordSuccess(result.attemptedCount);
-            } else {
-                batchController.recordFailure(result.attemptedCount);
-            }
+    private static void awaitWorker(Thread worker, long timeoutMs, boolean interrupt) {
+        if (interrupt) {
+            worker.interrupt();
+        }
+        try {
+            worker.join(timeoutMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -332,6 +406,9 @@ public final class TrafficExportQueue {
             if (spilled == null) {
                 return;
             }
+            if (!isDocumentCurrentlyEnabled(spilled)) {
+                continue;
+            }
             if (!queue.offer(spilled)) {
                 TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(spilled);
                 if (spillResult != TrafficSpillFileQueue.OfferResult.QUEUED) {
@@ -366,6 +443,9 @@ public final class TrafficExportQueue {
             if (doc == null) {
                 break;
             }
+            if (!isDocumentCurrentlyEnabled(doc)) {
+                continue;
+            }
             PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
                     TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, doc);
             long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
@@ -380,6 +460,13 @@ public final class TrafficExportQueue {
         return new FileOnlyDrainResult(attempted, exportedBytes);
     }
 
+    static boolean isDocumentCurrentlyEnabled(Map<String, Object> document) {
+        RuntimeConfig.TrafficExportGate gate = RuntimeConfig.trafficExportGate();
+        return RuntimeConfig.isExportRunning()
+                && gate.anyTrafficExportEnabled()
+                && TrafficRouteBucket.isRouteEnabled(TrafficRouteBucket.fromDocument(document), gate);
+    }
+
     /**
      * Applies startup grace before first drain while allowing immediate drain under backlog.
      *
@@ -389,11 +476,13 @@ public final class TrafficExportQueue {
      *
      * @return {@code true} when the worker should continue, {@code false} if interrupted
      */
-    private static boolean awaitInitialWarmup() {
+    private static boolean awaitInitialWarmup(long generation) {
         long deadline = System.currentTimeMillis() + STARTUP_GRACE_MAX_MS;
         while (System.currentTimeMillis() < deadline) {
-            if (!RuntimeConfig.isExportRunning()) {
-                clearPendingWork();
+            if (isStopRequested(generation)) {
+                return false;
+            }
+            if (!RuntimeConfig.isExportReady()) {
                 return true;
             }
             if (queue.size() >= START_DRAIN_BACKLOG_DOCS) {
@@ -402,7 +491,7 @@ public final class TrafficExportQueue {
             try {
                 long remaining = Math.max(1, deadline - System.currentTimeMillis());
                 Map<String, Object> observed = queue.poll(Math.min(STARTUP_POLL_MS, remaining), TimeUnit.MILLISECONDS);
-                if (observed != null && RuntimeConfig.isExportRunning()) {
+                if (observed != null && RuntimeConfig.isExportReady()) {
                     queue.offer(observed);
                 }
             } catch (InterruptedException e) {

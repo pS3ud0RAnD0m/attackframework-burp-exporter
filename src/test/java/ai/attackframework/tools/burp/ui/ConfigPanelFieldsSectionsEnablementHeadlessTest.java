@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
+import ai.attackframework.tools.burp.ui.primitives.TriStateCheckBox;
 
 /**
  * Verifies that unselecting a Data Source greys out and disables the corresponding Fields section;
@@ -45,11 +46,11 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
     @Test
     void unselecting_traffic_data_source_disables_traffic_fields_section() throws Exception {
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
-        JCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
-        JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox");
+        Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
+        Map<String, JPanel> subPanels = Reflect.stringKeyedMap(panel, "fieldsSubPanels", JPanel.class);
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.stringKeyedNestedMap(panel, "fieldCheckboxesByIndex", JCheckBox.class);
+        JCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
+        JCheckBox trafficProxyCheckbox = Reflect.get(panel, "trafficProxyCheckbox", JCheckBox.class);
         String[] trafficChildNames = { "trafficBurpAiCheckbox", "trafficExtensionsCheckbox", "trafficIntruderCheckbox",
                 "trafficProxyCheckbox", "trafficProxyHistoryCheckbox", "trafficRepeaterCheckbox",
                 "trafficRepeaterTabsCheckbox", "trafficScannerCheckbox", "trafficSequencerCheckbox" };
@@ -64,7 +65,7 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         // Deselect all Traffic options and refresh; section disabled
         SwingUtilities.invokeAndWait(() -> {
             trafficCheckbox.setSelected(false);
-            for (String name : trafficChildNames) ((JCheckBox) Reflect.get(panel, name)).setSelected(false);
+            for (String name : trafficChildNames) Reflect.get(panel, name, JCheckBox.class).setSelected(false);
             runRefresh(panel);
         });
         assertThat(sectionEnabled("traffic", headerRows, subPanels, fieldCheckboxesByIndex)).isFalse();
@@ -79,10 +80,10 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
     @Test
     void unselecting_settings_data_source_disables_settings_fields_section() throws Exception {
-        JCheckBox settingsProjectCheckbox = Reflect.get(panel, "settingsProjectCheckbox");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        JCheckBox settingsProjectCheckbox = Reflect.get(panel, "settingsProjectCheckbox", JCheckBox.class);
+        Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
+        Map<String, JPanel> subPanels = Reflect.stringKeyedMap(panel, "fieldsSubPanels", JPanel.class);
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.stringKeyedNestedMap(panel, "fieldCheckboxesByIndex", JCheckBox.class);
 
         // Start with at least one Settings option selected; section should be enabled
         SwingUtilities.invokeAndWait(() -> {
@@ -92,8 +93,8 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         assertThat(sectionEnabled("settings", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
 
         // Deselect all Settings options (parent and children) and refresh; section disabled
-        JCheckBox settingsUserCheckbox = Reflect.get(panel, "settingsUserCheckbox");
-        JCheckBox settingsCheckbox = Reflect.get(panel, "settingsCheckbox");
+        JCheckBox settingsUserCheckbox = Reflect.get(panel, "settingsUserCheckbox", JCheckBox.class);
+        JCheckBox settingsCheckbox = Reflect.get(panel, "settingsCheckbox", JCheckBox.class);
         SwingUtilities.invokeAndWait(() -> {
             settingsCheckbox.setSelected(false);
             settingsProjectCheckbox.setSelected(false);
@@ -112,10 +113,10 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
     @Test
     void unselecting_sitemap_data_source_disables_sitemap_fields_section() throws Exception {
-        JCheckBox sitemapCheckbox = Reflect.get(panel, "sitemapCheckbox");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        JCheckBox sitemapCheckbox = Reflect.get(panel, "sitemapCheckbox", JCheckBox.class);
+        Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
+        Map<String, JPanel> subPanels = Reflect.stringKeyedMap(panel, "fieldsSubPanels", JPanel.class);
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.stringKeyedNestedMap(panel, "fieldCheckboxesByIndex", JCheckBox.class);
 
         SwingUtilities.invokeAndWait(() -> {
             sitemapCheckbox.setSelected(true);
@@ -138,11 +139,11 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
     @Test
     void unselecting_findings_data_source_disables_findings_fields_section() throws Exception {
-        JCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox");
-        JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        JCheckBox issuesCheckbox = Reflect.get(panel, "issuesCheckbox", TriStateCheckBox.class);
+        JCheckBox issuesCriticalCheckbox = Reflect.get(panel, "issuesCriticalCheckbox", JCheckBox.class);
+        Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
+        Map<String, JPanel> subPanels = Reflect.stringKeyedMap(panel, "fieldsSubPanels", JPanel.class);
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.stringKeyedNestedMap(panel, "fieldCheckboxesByIndex", JCheckBox.class);
 
         SwingUtilities.invokeAndWait(() -> {
             issuesCriticalCheckbox.setSelected(true);
@@ -150,10 +151,10 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         });
         assertThat(sectionEnabled("findings", headerRows, subPanels, fieldCheckboxesByIndex)).isTrue();
 
-        JCheckBox issuesHighCheckbox = Reflect.get(panel, "issuesHighCheckbox");
-        JCheckBox issuesMediumCheckbox = Reflect.get(panel, "issuesMediumCheckbox");
-        JCheckBox issuesLowCheckbox = Reflect.get(panel, "issuesLowCheckbox");
-        JCheckBox issuesInformationalCheckbox = Reflect.get(panel, "issuesInformationalCheckbox");
+        JCheckBox issuesHighCheckbox = Reflect.get(panel, "issuesHighCheckbox", JCheckBox.class);
+        JCheckBox issuesMediumCheckbox = Reflect.get(panel, "issuesMediumCheckbox", JCheckBox.class);
+        JCheckBox issuesLowCheckbox = Reflect.get(panel, "issuesLowCheckbox", JCheckBox.class);
+        JCheckBox issuesInformationalCheckbox = Reflect.get(panel, "issuesInformationalCheckbox", JCheckBox.class);
         SwingUtilities.invokeAndWait(() -> {
             issuesCheckbox.setSelected(false);
             issuesCriticalCheckbox.setSelected(false);
@@ -179,11 +180,11 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
 
     @Test
     void unselecting_exporter_source_disables_tool_fields_section() throws Exception {
-        JCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox");
-        JCheckBox exporterInfoCheckbox = Reflect.get(panel, "exporterInfoCheckbox");
-        Map<String, JPanel> headerRows = Reflect.get(panel, "fieldsSectionHeaderRows");
-        Map<String, JPanel> subPanels = Reflect.get(panel, "fieldsSubPanels");
-        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.get(panel, "fieldCheckboxesByIndex");
+        JCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox", TriStateCheckBox.class);
+        JCheckBox exporterInfoCheckbox = Reflect.get(panel, "exporterInfoCheckbox", JCheckBox.class);
+        Map<String, JPanel> headerRows = Reflect.stringKeyedMap(panel, "fieldsSectionHeaderRows", JPanel.class);
+        Map<String, JPanel> subPanels = Reflect.stringKeyedMap(panel, "fieldsSubPanels", JPanel.class);
+        Map<String, Map<String, JCheckBox>> fieldCheckboxesByIndex = Reflect.stringKeyedNestedMap(panel, "fieldCheckboxesByIndex", JCheckBox.class);
         String[] exporterChildNames = {
                 "exporterTraceCheckbox", "exporterDebugCheckbox", "exporterInfoCheckbox",
                 "exporterWarnCheckbox", "exporterErrorCheckbox", "exporterStatsCheckbox", "exporterConfigCheckbox"
@@ -198,7 +199,7 @@ class ConfigPanelFieldsSectionsEnablementHeadlessTest {
         SwingUtilities.invokeAndWait(() -> {
             exporterCheckbox.setSelected(false);
             for (String name : exporterChildNames) {
-                ((JCheckBox) Reflect.get(panel, name)).setSelected(false);
+                Reflect.get(panel, name, JCheckBox.class).setSelected(false);
             }
             runRefresh(panel);
         });

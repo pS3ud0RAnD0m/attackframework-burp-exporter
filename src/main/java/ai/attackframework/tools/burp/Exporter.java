@@ -6,16 +6,17 @@ import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ExporterIndexLogForwarder;
-import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
 import ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter;
+import ai.attackframework.tools.burp.sinks.ToolWebSocketLiveHandler;
+import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.ui.ConfigPanel;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Version;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.Registration;
@@ -34,6 +35,7 @@ public class Exporter implements BurpExtension {
     private volatile Registration requestEditorRegistration;
     private volatile Registration responseEditorRegistration;
     private volatile Registration contextMenuRegistration;
+    private volatile Registration webSocketCreatedRegistration;
     private volatile ExporterIndexLogForwarder logForwarder;
 
     /**
@@ -87,6 +89,8 @@ public class Exporter implements BurpExtension {
             }
 
             httpHandlerRegistration = api.http().registerHttpHandler(new TrafficHttpHandler());
+            webSocketCreatedRegistration =
+                    api.websockets().registerWebSocketCreatedHandler(ToolWebSocketLiveHandler.instance());
 
             Logger.logInfo("Burp Exporter v" + version + " initialized successfully.");
         } catch (RuntimeException e) {
@@ -103,6 +107,8 @@ public class Exporter implements BurpExtension {
             logForwarder = null;
         }
 
+        safeDeregister(webSocketCreatedRegistration);
+        webSocketCreatedRegistration = null;
         safeDeregister(httpHandlerRegistration);
         httpHandlerRegistration = null;
         safeDeregister(requestEditorRegistration);

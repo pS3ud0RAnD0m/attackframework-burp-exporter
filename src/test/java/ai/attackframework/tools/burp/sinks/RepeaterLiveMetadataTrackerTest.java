@@ -1,6 +1,8 @@
 package ai.attackframework.tools.burp.sinks;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
+
+import ai.attackframework.tools.burp.testutils.Reflect;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -202,7 +204,7 @@ class RepeaterLiveMetadataTrackerTest {
     void observe_capsPerKeyHistory_forLargerSameRequestSets() {
         RepeaterLiveMetadataTracker.clear();
         try {
-            int maxEntriesPerKey = (int) getStatic(RepeaterLiveMetadataTracker.class, "MAX_ENTRIES_PER_KEY");
+            int maxEntriesPerKey = Reflect.getStaticInt(RepeaterLiveMetadataTracker.class, "MAX_ENTRIES_PER_KEY");
             HttpRequestResponse[] exchanges = new HttpRequestResponse[maxEntriesPerKey + 4];
             for (int i = 0; i < exchanges.length; i++) {
                 exchanges[i] = requestResponse(
@@ -258,11 +260,11 @@ class RepeaterLiveMetadataTrackerTest {
     }
 
     private static ConcurrentHashMap<String, ConcurrentLinkedDeque<?>> requestIndex() {
-        return getStatic(RepeaterLiveMetadataTracker.class, "BY_REQUEST_HASH");
+        return ConcurrentHashMap.class.cast(getStatic(RepeaterLiveMetadataTracker.class, "BY_REQUEST_HASH"));
     }
 
     private static ConcurrentHashMap<String, ConcurrentLinkedDeque<?>> exchangeIndex() {
-        return getStatic(RepeaterLiveMetadataTracker.class, "BY_EXCHANGE_HASH");
+        return ConcurrentHashMap.class.cast(getStatic(RepeaterLiveMetadataTracker.class, "BY_EXCHANGE_HASH"));
     }
 
     private static ConcurrentLinkedDeque<?> requestDequeFor(HttpRequest request) {

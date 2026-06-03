@@ -26,7 +26,7 @@ public final class LazySchedulers {
      * @return the current {@link ScheduledExecutorService} inside the holder, or {@code null}
      */
     public static ScheduledExecutorService peek(Class<?> owner, String fieldName) {
-        LazyScheduler holder = Reflect.getStatic(owner, fieldName);
+        LazyScheduler holder = Reflect.getStatic(owner, fieldName, LazyScheduler.class);
         return holder == null ? null : holder.peek();
     }
 }

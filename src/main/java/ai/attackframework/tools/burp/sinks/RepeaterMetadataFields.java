@@ -1,18 +1,17 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+
+import ai.attackframework.tools.burp.utils.StringKeyedMaps;
 
 /**
  * Writes shared Repeater tab/group metadata fields into traffic documents.
  *
- * <p>Both historic Repeater snapshots and live HTTP traffic use the same field names in the
- * traffic index. Centralizing the writes here keeps document shape consistent across history
- * capture and live Repeater correlation without duplicating field-name literals.</p>
+ * <p>Both historic Repeater snapshots and live HTTP traffic store metadata under
+ * {@code burp.repeater.tab_name} and {@code burp.repeater.tab_group} per {@code traffic.json}.</p>
  */
 final class RepeaterMetadataFields {
-
-    static final String TAB_NAME_FIELD = "repeater_tab_name";
-    static final String GROUP_NAME_FIELD = "repeater_group_name";
 
     record Metadata(String tabName, String groupName) {
         Metadata {
@@ -29,8 +28,15 @@ final class RepeaterMetadataFields {
         }
     }
 
-    private RepeaterMetadataFields() {}
+    private RepeaterMetadataFields() { }
 
+    /**
+     * Adds {@code burp.repeater.tab_name} and {@code burp.repeater.tab_group} when either value is set.
+     *
+     * @param document traffic document under construction
+     * @param tabName repeater tab label, or blank to omit
+     * @param groupName repeater group label, or blank to omit
+     */
     static void put(Map<String, Object> document, String tabName, String groupName) {
         put(document, new Metadata(tabName, groupName));
     }
@@ -40,8 +46,10 @@ final class RepeaterMetadataFields {
             return;
         }
         Metadata value = metadata == null ? Metadata.empty() : metadata;
-        document.put(TAB_NAME_FIELD, value.tabName());
-        document.put(GROUP_NAME_FIELD, value.groupName());
+        Map<String, Object> burp = StringKeyedMaps.nested(document, "burp", LinkedHashMap::new);
+        Map<String, Object> repeater = StringKeyedMaps.nested(burp, "repeater", LinkedHashMap::new);
+        repeater.put("tab_name", value.tabName());
+        repeater.put("tab_group", value.groupName());
     }
 
     private static String normalizeBlank(String value) {

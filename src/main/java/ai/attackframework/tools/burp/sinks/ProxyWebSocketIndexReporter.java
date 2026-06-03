@@ -1,113 +1,227 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.ScopeFilter;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ByteArray;
-import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.proxy.ProxyWebSocketMessage;
 
 /**
- * Pushes Proxy WebSocket history items to the traffic index.
- * Initial snapshot on Start, then every 30s only new messages (by websocket/message id).
+ * Exports Burp Proxy WebSocket history frames ({@link ProxyWebSocketMessage}) to the traffic index.
+ *
+ * <ul>
+ *   <li><b>Proxy History</b> ({@code proxy_history}): one-shot full {@code webSocketHistory()} export
+ *       on Start, then stop.</li>
+ *   <li><b>Proxy</b> ({@code proxy}): recurring diff poll (default 10s) of {@code webSocketHistory()}
+ *       for new {@code webSocketId:messageId} keys only; new frames are offered to
+ *       {@link TrafficExportQueue}. The poll stops when export stops or {@code proxy} is deselected
+ *       ({@link #refreshLivePollScheduleForCurrentState()}). When only Proxy is selected, keys
+ *       present at Start are seeded without export so pre-Start frames are not treated as live.</li>
+ * </ul>
+ *
+ * <p>Non-proxy live WebSocket traffic uses {@link ToolWebSocketLiveHandler}.</p>
  */
 public final class ProxyWebSocketIndexReporter {
 
-    private static final String SCHEMA_VERSION = "1";
-    private static final int INTERVAL_SECONDS = 30;
+    private static final int LIVE_POLL_INTERVAL_SECONDS = 10;
+    private static final long BULK_MAX_BYTES = 5L * 1024 * 1024;
+    private static final int RECENT_PUSHED_KEY_LIMIT = 100_000;
 
-    /**
-     * Single-owner scheduler for proxy-WebSocket snapshot and recurring pushes.
-     *
-     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
-     * by {@link #stop()} during UI stop or extension unload. A subsequent {@link #start()} or
-     * {@link #pushSnapshotNow()} lazily recreates the executor.</p>
-     */
+    private static final LazyScheduler HISTORIC_SCHEDULER =
+            new LazyScheduler("attackframework-proxy-websocket-historic");
     private static final LazyScheduler SCHEDULER =
             new LazyScheduler("attackframework-proxy-websocket-reporter");
+    private static final LazyScheduler SEED_SCHEDULER =
+            new LazyScheduler("attackframework-proxy-websocket-seeder");
     private static final Set<String> pushedKeys = ConcurrentHashMap.newKeySet();
-    private static volatile boolean runInProgress;
+    private static final Queue<String> pushedKeyOrder = new ConcurrentLinkedQueue<>();
+    private static final AtomicBoolean runInProgress = new AtomicBoolean();
+    private static final AtomicBoolean seedInProgress = new AtomicBoolean();
+    private static volatile int liveHistoryCursor;
+    private static volatile String liveHistoryTailKey;
 
     private ProxyWebSocketIndexReporter() {}
 
-    public static void start() {
+    /**
+     * Starts the recurring diff poll for live proxy WebSocket frames.
+     *
+     * <p>No-op unless export is ready, traffic export is enabled, and {@code proxy} is selected.
+     * Does not run when only {@code proxy_history} is selected.</p>
+     */
+    public static void startLivePoll() {
+        if (!shouldRunLivePoll()) {
+            return;
+        }
         SCHEDULER.startRecurring(
                 ProxyWebSocketIndexReporter::pushNewItemsOnly,
-                INTERVAL_SECONDS,
-                INTERVAL_SECONDS,
+                LIVE_POLL_INTERVAL_SECONDS,
+                LIVE_POLL_INTERVAL_SECONDS,
                 TimeUnit.SECONDS);
     }
 
     /**
-     * Stops the periodic scheduler and clears per-session reporter state.
+     * Reconciles the live diff poll with the current runtime traffic selection.
      *
-     * <p>Safe to call from any thread. The next {@link #start()} call creates a fresh scheduler.</p>
+     * <p>Safe to call from any thread. Stops the scheduler when export is stopped, traffic export is
+     * disabled, or {@code proxy} is deselected; starts it when newly enabled while export runs.</p>
      */
-    public static void stop() {
-        SCHEDULER.stop();
-        pushedKeys.clear();
-        runInProgress = false;
+    public static void refreshLivePollScheduleForCurrentState() {
+        if (!shouldRunLivePoll()) {
+            stopLivePollScheduler();
+            return;
+        }
+        if (!SCHEDULER.isStarted()) {
+            startLivePollAfterCurrentHistorySeed(true);
+        }
     }
 
-    public static void pushSnapshotNow() {
-        try {
-            if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isAnyTrafficExportEnabled()) {
-                return;
+    /**
+     * Seeds current Proxy WebSocket history on a daemon worker, then starts live polling.
+     *
+     * <p>This keeps potentially large {@code webSocketHistory()} scans off Swing callers while
+     * still preserving the ordering guarantee that the first live poll runs only after existing
+     * history keys have been recorded.</p>
+     */
+    public static void startLivePollAfterCurrentHistorySeed(boolean includeWhenHistoricSelected) {
+        if (!shouldRunLivePoll()) {
+            stopLivePollScheduler();
+            return;
+        }
+        if (SCHEDULER.isStarted() || !seedInProgress.compareAndSet(false, true)) {
+            return;
+        }
+        SEED_SCHEDULER.getOrStart().execute(() -> {
+            try {
+                if (shouldRunLivePoll()) {
+                    seedPushedKeysFromCurrentHistory(includeWhenHistoricSelected);
+                }
+                if (shouldRunLivePoll()) {
+                    startLivePoll();
+                }
+            } finally {
+                seedInProgress.set(false);
             }
-            if (!trafficSelectionAllowsWebSockets()) {
+        });
+    }
+
+    /**
+     * Stops only the recurring poll scheduler; preserves {@code pushedKeys} for the current run.
+     */
+    public static void stopLivePollScheduler() {
+        SCHEDULER.stop();
+    }
+
+    /**
+     * Stops the scheduler and clears per-run {@code pushedKeys} state.
+     */
+    public static void stop() {
+        HISTORIC_SCHEDULER.stop();
+        SEED_SCHEDULER.stop();
+        stopLivePollScheduler();
+        clearPushedKeyState();
+        liveHistoryCursor = 0;
+        liveHistoryTailKey = null;
+        runInProgress.set(false);
+        seedInProgress.set(false);
+    }
+
+    static boolean shouldRunLivePoll() {
+        return RuntimeConfig.isExportReady()
+                && RuntimeConfig.isAnyTrafficExportEnabled()
+                && trafficSelectionAllowsLiveProxyWebSocketPoll();
+    }
+
+    private static boolean shouldRunHistoricSnapshot() {
+        return RuntimeConfig.isExportReady()
+                && RuntimeConfig.isAnyTrafficExportEnabled()
+                && trafficSelectionAllowsHistoricWebSockets();
+    }
+
+    /**
+     * One-shot export of all proxy WebSocket history when {@code proxy_history} is selected.
+     */
+    public static void pushHistoricSnapshotNow() {
+        try {
+            if (!shouldRunHistoricSnapshot()) {
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();
             if (api == null) {
                 return;
             }
-            ScheduledExecutorService exec = SCHEDULER.peek();
-            if (exec != null) {
-                exec.submit(() -> {
-                    try {
-                        pushItems(api, true);
-                    } catch (Throwable ignored) {
-                        // Startup/lifecycle races in Burp can transiently null sub-APIs.
+            MontoyaApi apiRef = api;
+            HISTORIC_SCHEDULER.getOrStart().execute(() -> {
+                try {
+                    if (!shouldRunHistoricSnapshot()) {
+                        return;
                     }
-                });
-            }
+                    pushItems(apiRef, true);
+                } catch (Throwable ignored) {
+                    // Startup/lifecycle races in Burp can transiently null sub-APIs.
+                }
+            });
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket snapshot push failed: " + msg);
+            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket historic snapshot failed: " + msg);
+        }
+    }
+
+    /**
+     * Records current {@code webSocketHistory()} keys in {@code pushedKeys} without exporting.
+     *
+     * <p>Used when {@code proxy} is selected without {@code proxy_history} so the first live poll
+     * only exports frames that arrive after Start.</p>
+     */
+    public static void seedPushedKeysFromCurrentHistory() {
+        seedPushedKeysFromCurrentHistory(false);
+    }
+
+    private static void seedPushedKeysFromCurrentHistory(boolean includeWhenHistoricSelected) {
+        if (!trafficSelectionAllowsLiveProxyWebSocketPoll()) {
+            return;
+        }
+        if (!includeWhenHistoricSelected && trafficSelectionAllowsHistoricWebSockets()) {
+            return;
+        }
+        MontoyaApi api = MontoyaApiProvider.get();
+        if (api == null) {
+            return;
+        }
+        List<ProxyWebSocketMessage> history = safeWebSocketHistory(api);
+        liveHistoryCursor = history.size();
+        liveHistoryTailKey = lastHistoryKey(history);
+        for (ProxyWebSocketMessage msg : history) {
+            rememberPushedKey(messageKey(msg));
+        }
+        if (!history.isEmpty()) {
+            Logger.logInfoPanelOnly("[Traffic] Proxy WebSocket live poll seeded " + history.size()
+                    + " existing history key(s); only new frames will export.");
         }
     }
 
     static void pushNewItemsOnly() {
         try {
-            if (!RuntimeConfig.isExportRunning() || !RuntimeConfig.isAnyTrafficExportEnabled()) {
-                return;
-            }
-            if (!trafficSelectionAllowsWebSockets()) {
+            if (!shouldRunLivePoll()) {
+                stopLivePollScheduler();
                 return;
             }
             MontoyaApi api = MontoyaApiProvider.get();
@@ -117,59 +231,114 @@ public final class ProxyWebSocketIndexReporter {
             pushItems(api, false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket periodic push failed: " + msg);
+            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket live poll failed: " + msg);
         }
     }
 
     private static void pushItems(MontoyaApi api, boolean pushAll) {
-        if (runInProgress) {
+        if (!runInProgress.compareAndSet(false, true)) {
             return;
         }
-        runInProgress = true;
         try {
             List<ProxyWebSocketMessage> history = safeWebSocketHistory(api);
             if (history == null || history.isEmpty()) {
                 return;
             }
-            int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
-            List<String> batchKeys = new ArrayList<>(batchSize);
-            List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
-            int processed = 0;
-            for (ProxyWebSocketMessage msg : history) {
-                if (!RuntimeConfig.isExportRunning()) {
-                    break;
-                }
-                // Cooperative pacing: brief yield + GC duty-cycle gate every Nth iteration so a
-                // very large websocket history does not starve the EDT or saturate G1's
-                // concurrent threads.
-                SnapshotPacing.paceItem(processed);
-                processed++;
-                String key = messageKey(msg);
-                if (!pushAll && pushedKeys.contains(key)) {
-                    continue;
-                }
-                Map<String, Object> doc = buildDocument(api, msg);
-                if (doc == null) {
-                    continue;
-                }
-                batchKeys.add(key);
-                batchDocs.add(doc);
-                if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize()) {
-                    flushBatch(batchKeys, batchDocs);
-                    batchKeys.clear();
-                    batchDocs.clear();
-                }
-            }
-            if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
-                flushBatch(batchKeys, batchDocs);
+            if (pushAll) {
+                pushHistoricSnapshotItems(api, history);
+            } else {
+                pushLivePollItems(api, history);
             }
         } finally {
-            runInProgress = false;
+            runInProgress.set(false);
         }
     }
 
-    /** Returns websocket history, tolerating transient Burp lifecycle nulls. */
-    private static List<ProxyWebSocketMessage> safeWebSocketHistory(MontoyaApi api) {
+    private static void pushHistoricSnapshotItems(MontoyaApi api, List<ProxyWebSocketMessage> history) {
+        SnapshotPacing.resetCountersForSnapshot();
+        int chunkTarget = BatchSizeController.getInstance().getCurrentBatchSize();
+        long estBytes = 0;
+        List<String> chunkKeys = new ArrayList<>(chunkTarget);
+        List<Map<String, Object>> chunkDocs = new ArrayList<>(chunkTarget);
+        int processed = 0;
+        for (ProxyWebSocketMessage msg : history) {
+            if (!shouldRunHistoricSnapshot()) {
+                break;
+            }
+            SnapshotPacing.paceItem(processed);
+            processed++;
+            Map<String, Object> doc = buildDocument(api, msg);
+            if (doc == null) {
+                continue;
+            }
+            long docBytes = BulkPayloadEstimator.estimateBytes(doc);
+            boolean sizeCapReached = !chunkDocs.isEmpty() && (estBytes + docBytes) > BULK_MAX_BYTES;
+            boolean countCapReached = !chunkDocs.isEmpty() && chunkDocs.size() >= chunkTarget;
+            if (sizeCapReached || countCapReached) {
+                flushBatch(chunkKeys, chunkDocs);
+                chunkKeys.clear();
+                chunkDocs.clear();
+                estBytes = 0;
+            }
+            chunkKeys.add(messageKey(msg));
+            chunkDocs.add(doc);
+            estBytes += docBytes;
+        }
+        if (shouldRunHistoricSnapshot() && !chunkDocs.isEmpty()) {
+            flushBatch(chunkKeys, chunkDocs);
+        }
+        liveHistoryCursor = Math.max(liveHistoryCursor, history.size());
+        liveHistoryTailKey = lastHistoryKey(history);
+        Logger.logInfoPanelOnly(SnapshotPacing.summaryLine("ProxyWebSocket")
+                + " processed=" + processed);
+    }
+
+    private static void pushLivePollItems(MontoyaApi api, List<ProxyWebSocketMessage> history) {
+        String currentTailKey = lastHistoryKey(history);
+        int startIndex;
+        if (history.size() == liveHistoryCursor && Objects.equals(currentTailKey, liveHistoryTailKey)) {
+            return;
+        }
+        if (liveHistoryCursor < 0 || liveHistoryCursor > history.size() || history.size() == liveHistoryCursor) {
+            startIndex = 0;
+        } else {
+            startIndex = liveHistoryCursor;
+        }
+        int nextCursor = startIndex;
+        for (int i = startIndex; i < history.size(); i++) {
+            if (!shouldRunLivePoll()) {
+                break;
+            }
+            ProxyWebSocketMessage msg = history.get(i);
+            String key = messageKey(msg);
+            if (pushedKeys.contains(key)) {
+                nextCursor = i + 1;
+                continue;
+            }
+            Map<String, Object> doc = buildDocument(api, msg);
+            if (doc == null) {
+                nextCursor = i + 1;
+                continue;
+            }
+            if (TrafficExportQueue.offerAccepted(doc)) {
+                rememberPushedKey(key);
+                nextCursor = i + 1;
+            } else {
+                break;
+            }
+        }
+        liveHistoryCursor = nextCursor;
+        liveHistoryTailKey = currentTailKey;
+    }
+
+    private static String lastHistoryKey(List<ProxyWebSocketMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return null;
+        }
+        return messageKey(history.get(history.size() - 1));
+    }
+
+    static List<ProxyWebSocketMessage> safeWebSocketHistory(MontoyaApi api) {
         try {
             if (api == null) {
                 return List.of();
@@ -198,132 +367,121 @@ public final class ProxyWebSocketIndexReporter {
                 openSearchActive,
                 "Proxy WebSocket bulk push");
         if (success == attempted) {
-            pushedKeys.addAll(keys);
+            keys.forEach(ProxyWebSocketIndexReporter::rememberPushedKey);
         }
+    }
+
+    private static void rememberPushedKey(String key) {
+        if (key == null || !pushedKeys.add(key)) {
+            return;
+        }
+        pushedKeyOrder.offer(key);
+        trimPushedKeysIfNeeded(RECENT_PUSHED_KEY_LIMIT);
+    }
+
+    /**
+     * Drops oldest dedupe keys when over {@code limit}, but never evicts keys that are still present
+     * in the current {@code webSocketHistory()} snapshot (avoids re-exporting frames Burp still holds
+     * during long proxy WebSocket sessions).
+     */
+    static void trimPushedKeysIfNeeded(int limit) {
+        if (pushedKeys.size() <= limit) {
+            return;
+        }
+        Set<String> historyKeys = snapshotCurrentHistoryKeys();
+        int queueSize = pushedKeyOrder.size();
+        int rotations = 0;
+        while (pushedKeys.size() > limit && rotations < queueSize) {
+            String oldest = pushedKeyOrder.poll();
+            if (oldest == null) {
+                return;
+            }
+            rotations++;
+            if (historyKeys.contains(oldest)) {
+                pushedKeyOrder.offer(oldest);
+                continue;
+            }
+            pushedKeys.remove(oldest);
+            rotations = 0;
+            queueSize = pushedKeyOrder.size();
+        }
+        if (pushedKeys.size() > limit) {
+            Logger.logWarnPanelOnly("[Traffic] Proxy WebSocket dedupe cache is at " + pushedKeys.size()
+                    + " keys (limit " + limit
+                    + "); could not evict keys still present in proxy WebSocket history.");
+        }
+    }
+
+    private static Set<String> snapshotCurrentHistoryKeys() {
+        MontoyaApi api = MontoyaApiProvider.get();
+        if (api == null) {
+            return Set.of();
+        }
+        Set<String> keys = new HashSet<>();
+        for (ProxyWebSocketMessage msg : safeWebSocketHistory(api)) {
+            String key = messageKey(msg);
+            if (key != null) {
+                keys.add(key);
+            }
+        }
+        return keys;
+    }
+
+    private static void clearPushedKeyState() {
+        pushedKeys.clear();
+        pushedKeyOrder.clear();
     }
 
     static Map<String, Object> buildDocument(MontoyaApi api, ProxyWebSocketMessage ws) {
-        HttpRequest upgrade = ws.upgradeRequest();
-        HttpService service = upgrade == null ? null : upgrade.httpService();
-
-        Map<String, Object> upgradeRequestDoc = upgrade == null
-                ? null
-                : RequestResponseDocBuilder.buildRequestDoc(upgrade);
-        String url = upgrade == null
-                ? null
-                : RequestResponseDocBuilder.buildBestEffortUrl(upgrade, service, upgradeRequestDoc, "ProxyWebSocket");
-        boolean burpInScope = safeBurpInScope(api, url);
-        boolean inScope = ScopeFilter.shouldExport(RuntimeConfig.getState(), url, burpInScope);
-        if (!inScope) {
+        if (ws == null) {
             return null;
         }
-        Object upgradeHttpVersion = upgradeRequestDoc == null ? null : upgradeRequestDoc.get("http_version");
-
+        HttpRequest upgrade = ws.upgradeRequest();
         ZonedDateTime t = ws.time();
         String wsTime = t == null ? null : t.toInstant().toString();
         ByteArray payload = ws.payload();
-        byte[] payloadBytes = payload == null ? null : payload.getBytes();
         ByteArray edited = ws.editedPayload();
         byte[] editedBytes = edited == null ? null : edited.getBytes();
-
-        Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("url", url);
-        doc.put("host", service == null ? null : service.host());
-        doc.put("port", service == null ? null : service.port());
-        doc.put("scheme", service == null ? null : (service.secure() ? "https" : "http"));
-        doc.put("protocol_transport", service == null ? null : (service.secure() ? "https" : "http"));
-        doc.put("protocol_application", "websocket");
-        doc.put("protocol_sub", upgradeHttpVersion);
-        doc.put("http_version", upgradeHttpVersion);
-        doc.put("tool", "Proxy WebSocket");
-        doc.put("tool_type", "PROXY_WEBSOCKET");
-        doc.put("burp_in_scope", burpInScope);
-        doc.put("message_id", ws.id());
-        doc.put("path", upgradeRequestDoc == null ? null : upgradeRequestDoc.get("path"));
-        doc.put("method", upgradeRequestDoc == null ? null : upgradeRequestDoc.get("method"));
-        doc.put("status", null);
-        doc.put("mime_type", null);
-        doc.put("comment", ws.annotations() != null && ws.annotations().hasNotes() ? ws.annotations().notes() : null);
-        doc.put("highlight", ws.annotations() != null && ws.annotations().hasHighlightColor()
-                ? (ws.annotations().highlightColor() == null ? null : ws.annotations().highlightColor().name())
-                : null);
-        doc.put("edited", editedBytes != null);
-        doc.put("time_start", wsTime);
-        doc.put("time_end", wsTime);
-        doc.put("duration_ms", 0);
-        doc.put("time_request_sent", wsTime);
-        doc.put("response_start_latency_ms", null);
-        doc.put("proxy_history_id", null);
-        doc.put("listener_port", ws.listenerPort());
-
-        doc.put("request", upgradeRequestDoc);
-        doc.put("response", null);
-
-        doc.put("websocket_id", ws.webSocketId());
-        doc.put("ws_direction", ws.direction() == null ? null : ws.direction().name());
-        doc.put("ws_payload", payloadBytes == null ? null : Base64.getEncoder().encodeToString(payloadBytes));
-        doc.put("ws_message_type", inferPayloadType(payloadBytes));
-        doc.put("ws_payload_text", decodeUtf8OrNull(payloadBytes));
-        doc.put("ws_payload_length", payloadBytes == null ? 0 : payloadBytes.length);
-        doc.put("ws_edited", editedBytes != null);
-        doc.put("ws_edited_payload", editedBytes == null ? null : Base64.getEncoder().encodeToString(editedBytes));
-        doc.put("ws_upgrade_request", upgrade == null ? null : RequestResponseDocBuilder.buildRequestDoc(upgrade));
-        doc.put("ws_time", wsTime);
-        doc.put("ws_message_id", ws.id());
-
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
-        return doc;
+        boolean isEdited = editedBytes != null;
+        byte[] payloadBytes = isEdited
+                ? editedBytes
+                : (payload == null ? null : payload.getBytes());
+        return WebSocketTrafficDocumentBuilder.build(new WebSocketTrafficDocumentBuilder.Input(
+                api,
+                upgrade,
+                "ProxyWebSocket",
+                "Proxy WebSocket",
+                ws.id(),
+                ws.listenerPort(),
+                ws.webSocketId(),
+                ws.id(),
+                ws.direction() == null ? null : ws.direction().name(),
+                payloadBytes,
+                isEdited,
+                wsTime,
+                ws.annotations() != null && ws.annotations().hasNotes() ? ws.annotations().notes() : null,
+                ws.annotations() != null && ws.annotations().hasHighlightColor()
+                        ? (ws.annotations().highlightColor() == null ? null : ws.annotations().highlightColor().name())
+                        : null));
     }
 
-    private static boolean safeBurpInScope(MontoyaApi api, String url) {
-        if (url == null) {
-            return false;
-        }
-        try {
-            if (api == null) {
-                return false;
-            }
-            var scope = api.scope();
-            return scope != null && scope.isInScope(url);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static String messageKey(ProxyWebSocketMessage ws) {
+    static String messageKey(ProxyWebSocketMessage ws) {
         return ws.webSocketId() + ":" + ws.id();
     }
 
-    private static boolean trafficSelectionAllowsWebSockets() {
-        List<String> trafficTypes = RuntimeConfig.getState().trafficToolTypes();
-        if (trafficTypes == null) {
-            return false;
-        }
-        return trafficTypes.contains("proxy") || trafficTypes.contains("proxy_history");
+    static boolean trafficSelectionAllowsHistoricWebSockets() {
+        List<String> trafficTypes = trafficToolTypes();
+        return trafficTypes != null && trafficTypes.contains("proxy_history");
     }
 
-    private static String inferPayloadType(byte[] bytes) {
-        if (bytes == null || bytes.length == 0) {
-            return "EMPTY";
-        }
-        return decodeUtf8OrNull(bytes) != null ? "TEXT" : "BINARY";
+    static boolean trafficSelectionAllowsLiveProxyWebSocketPoll() {
+        List<String> trafficTypes = trafficToolTypes();
+        return trafficTypes != null && trafficTypes.contains("proxy");
     }
 
-    private static String decodeUtf8OrNull(byte[] body) {
-        if (body == null || body.length == 0) {
-            return null;
-        }
-        try {
-            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT);
-            return decoder.decode(ByteBuffer.wrap(body)).toString();
-        } catch (CharacterCodingException e) {
-            return null;
-        }
+    private static List<String> trafficToolTypes() {
+        return RuntimeConfig.getState() == null ? null : RuntimeConfig.getState().trafficToolTypes();
     }
+
 }
+

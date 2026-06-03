@@ -6,6 +6,7 @@
  *   <li><b>Traffic reporters</b> — {@link ai.attackframework.tools.burp.sinks.TrafficHttpHandler},
  *       {@link ai.attackframework.tools.burp.sinks.ProxyHistoryIndexReporter},
  *       {@link ai.attackframework.tools.burp.sinks.ProxyWebSocketIndexReporter},
+ *       {@link ai.attackframework.tools.burp.sinks.ToolWebSocketLiveHandler},
  *       {@link ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter} — that feed
  *       the shared {@code traffic} index.</li>
  *   <li><b>Non-traffic reporters</b> —

@@ -95,10 +95,12 @@ public final class IndexingRetryCoordinator {
                 }
                 return true;
             }
-            ExportStats.recordOpenSearchFailure();
-            int fails = consecutiveFailures.incrementAndGet();
-            if (maybeEnterOutageMode(activeBaseUrl, fails)) {
-                return false;
+            if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
+                ExportStats.recordOpenSearchFailure();
+                int fails = consecutiveFailures.incrementAndGet();
+                if (maybeEnterOutageMode(activeBaseUrl, fails)) {
+                    return false;
+                }
             }
         }
 
@@ -166,8 +168,10 @@ public final class IndexingRetryCoordinator {
                 break;
             }
             if (attempt == maxAttempts) {
-                BatchSizeController.getInstance().recordFailure(documents.size());
-                ExportStats.recordOpenSearchFailure();
+                if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
+                    BatchSizeController.getInstance().recordFailure(documents.size());
+                    ExportStats.recordOpenSearchFailure();
+                }
                 toQueue = filterTransientFailures(documents, result.failedItems, indexName, indexKey);
                 successCount = 0;
                 break;
@@ -179,9 +183,11 @@ public final class IndexingRetryCoordinator {
             }
         }
 
-        int fails = consecutiveFailures.incrementAndGet();
-        if (maybeEnterOutageMode(activeBaseUrl, fails)) {
-            return successCount;
+        if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
+            int fails = consecutiveFailures.incrementAndGet();
+            if (maybeEnterOutageMode(activeBaseUrl, fails)) {
+                return successCount;
+            }
         }
 
         if (!RuntimeConfig.isExportReady()) {
@@ -382,8 +388,10 @@ public final class IndexingRetryCoordinator {
                     List<Map<String, Object>> reQueue = filterTransientFailures(batch, result.failedItems, indexName, indexKey);
                     queue.offerAll(indexName, reQueue);
                 } else {
-                    BatchSizeController.getInstance().recordFailure(batch.size());
-                    ExportStats.recordOpenSearchFailure();
+                    if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
+                        BatchSizeController.getInstance().recordFailure(batch.size());
+                        ExportStats.recordOpenSearchFailure();
+                    }
                     List<Map<String, Object>> reQueue = filterTransientFailures(batch, result.failedItems, indexName, indexKey);
                     queue.offerAll(indexName, reQueue);
                 }

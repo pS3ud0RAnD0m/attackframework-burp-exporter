@@ -45,6 +45,8 @@ import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
+
+import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
@@ -116,7 +118,7 @@ class StatsPanelTest {
     @Test
     void docsChart_usesReadableTimeAxis_andPositiveWholeNumberDefaults() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JFreeChart docsChart = get(panel, "docsChart");
+        JFreeChart docsChart = JFreeChart.class.cast(get(panel, "docsChart"));
         XYPlot plot = docsChart.getXYPlot();
 
         NumberAxis range = (NumberAxis) plot.getRangeAxis();
@@ -131,7 +133,7 @@ class StatsPanelTest {
         assertThat(((SimpleDateFormat) domain.getDateFormatOverride()).toPattern()).isEqualTo("HH:mm:ss");
         assertThat(domain.getTickUnit().getUnitType()).isEqualTo(DateTickUnitType.SECOND);
 
-        JFreeChart kibChart = get(panel, "kibChart");
+        JFreeChart kibChart = JFreeChart.class.cast(get(panel, "kibChart"));
         NumberAxis kibRange = (NumberAxis) kibChart.getXYPlot().getRangeAxis();
         assertThat(kibRange.getRangeType()).isEqualTo(RangeType.POSITIVE);
         assertThat(kibRange.getLowerBound()).isEqualTo(0.0);
@@ -143,7 +145,7 @@ class StatsPanelTest {
         StatsPanel panel = onEdt(StatsPanel::new);
         assertThat(onEdt(panel::isShowing)).isFalse();
 
-        Map<String, TimeSeries> seriesByIndex = get(panel, "docsSeriesByIndex");
+        Map<String, TimeSeries> seriesByIndex = Map.class.cast(get(panel, "docsSeriesByIndex"));
         int before = onEdt(() -> {
             TimeSeries traffic = seriesByIndex.get("traffic");
             return traffic == null ? 0 : traffic.getItemCount();
@@ -163,9 +165,9 @@ class StatsPanelTest {
     @Test
     void mergedSinkTables_haveExpectedColumnSchema_andMiscStatsCardSpansFullWidth() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
-        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
-        JPanel cardsRow = get(panel, "cardsRow");
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
+        DefaultTableModel fileIndexModel = DefaultTableModel.class.cast(get(panel, "fileByIndexModel"));
+        JPanel cardsRow = JPanel.class.cast(get(panel, "cardsRow"));
 
         // OpenSearch carries 8 columns including "Permanent Drops". File carries 5 columns
         // total: Index, Docs Exported, Failures, Last Push (ms), Last Error. The file sink
@@ -187,9 +189,9 @@ class StatsPanelTest {
     @Test
     void mergedSinkTables_packFirstColumnToFitIndentedRepeaterTabsSubRowLabel() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JTable openSearchTable = get(panel, "byIndexTable");
-        JTable fileTable = get(panel, "fileByIndexTable");
-        String subRowLabel = ((String) getStatic(StatsPanel.class, "SUBROW_INDENT")) + "Repeater Tabs";
+        JTable openSearchTable = JTable.class.cast(get(panel, "byIndexTable"));
+        JTable fileTable = JTable.class.cast(get(panel, "fileByIndexTable"));
+        String subRowLabel = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT")) + "Repeater Tabs";
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
@@ -202,7 +204,7 @@ class StatsPanelTest {
     @Test
     void byIndexTable_hasNoDefaultActiveSortKey() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JTable byIndexTable = get(panel, "byIndexTable");
+        JTable byIndexTable = JTable.class.cast(get(panel, "byIndexTable"));
         RowSorter<? extends javax.swing.table.TableModel> sorter = byIndexTable.getRowSorter();
         assertThat(sorter).isNotNull();
         assertThat(sorter.getSortKeys()).isEmpty();
@@ -211,8 +213,8 @@ class StatsPanelTest {
     @Test
     void byIndexTable_remainsAlphabeticallySortedAfterRefresh() throws Exception {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JTable byIndexTable = get(panel, "byIndexTable");
-        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+        JTable byIndexTable = JTable.class.cast(get(panel, "byIndexTable"));
+        String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         ExportStats.recordSuccess("traffic", 11);
         onEdt(() -> call(panel, "refreshVisibleStats"));
@@ -286,13 +288,13 @@ class StatsPanelTest {
                     previous.enabledExportFieldsByIndex(),
                     new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JPanel legendPanel = get(panel, "sharedLegendPanel");
+            JPanel legendPanel = JPanel.class.cast(get(panel, "sharedLegendPanel"));
             assertThat(legendPanel.getLayout()).isInstanceOf(FlowLayout.class);
             FlowLayout layout = (FlowLayout) legendPanel.getLayout();
             assertThat(layout.getAlignment()).isEqualTo(FlowLayout.LEFT);
-            Font expectedLegendFont = getStatic(StatsPanel.class, "CHART_LEGEND_FONT");
-            Color expectedTextColor = getStatic(StatsPanel.class, "TEXT_FG");
-            JButton styleButton = get(panel, "chartStyleButton");
+            Font expectedLegendFont = Font.class.cast(getStatic(StatsPanel.class, "CHART_LEGEND_FONT"));
+            Color expectedTextColor = Color.class.cast(getStatic(StatsPanel.class, "TEXT_FG"));
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
 
             List<String> labels = new ArrayList<>();
             for (Component component : legendPanel.getComponents()) {
@@ -326,9 +328,9 @@ class StatsPanelTest {
     @Test
     void sinkCards_nestTrafficSourceSubRowsDirectlyUnderTrafficIndexRow() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
-        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
-        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
+        DefaultTableModel fileIndexModel = DefaultTableModel.class.cast(get(panel, "fileByIndexModel"));
+        String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         ExportStats.recordSuccess("traffic", 1);
         FileExportStats.recordSuccess("traffic", 1);
@@ -363,10 +365,10 @@ class StatsPanelTest {
         try {
             RuntimeConfig.updateState(runtimeState(true, false));
             StatsPanel fileOnlyPanel = onEdt(StatsPanel::new);
-            JPanel fileChartsSection = get(fileOnlyPanel, "fileChartsSectionPanel");
-            JPanel openSearchChartsSection = get(fileOnlyPanel, "openSearchChartsSectionPanel");
-            JPanel fileSinkRow = get(fileOnlyPanel, "fileSinkRow");
-            JPanel openSearchSinkRow = get(fileOnlyPanel, "openSearchSinkRow");
+            JPanel fileChartsSection = JPanel.class.cast(get(fileOnlyPanel, "fileChartsSectionPanel"));
+            JPanel openSearchChartsSection = JPanel.class.cast(get(fileOnlyPanel, "openSearchChartsSectionPanel"));
+            JPanel fileSinkRow = JPanel.class.cast(get(fileOnlyPanel, "fileSinkRow"));
+            JPanel openSearchSinkRow = JPanel.class.cast(get(fileOnlyPanel, "openSearchSinkRow"));
             onEdt(() -> call(fileOnlyPanel, "refreshDashboard"));
             assertThat(onEdt(fileChartsSection::isVisible)).isTrue();
             assertThat(onEdt(openSearchChartsSection::isVisible)).isFalse();
@@ -375,10 +377,10 @@ class StatsPanelTest {
 
             RuntimeConfig.updateState(runtimeState(false, true));
             StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
-            JPanel osFileChartsSection = get(openSearchOnlyPanel, "fileChartsSectionPanel");
-            JPanel osOpenSearchChartsSection = get(openSearchOnlyPanel, "openSearchChartsSectionPanel");
-            JPanel osFileSinkRow = get(openSearchOnlyPanel, "fileSinkRow");
-            JPanel osOpenSearchSinkRow = get(openSearchOnlyPanel, "openSearchSinkRow");
+            JPanel osFileChartsSection = JPanel.class.cast(get(openSearchOnlyPanel, "fileChartsSectionPanel"));
+            JPanel osOpenSearchChartsSection = JPanel.class.cast(get(openSearchOnlyPanel, "openSearchChartsSectionPanel"));
+            JPanel osFileSinkRow = JPanel.class.cast(get(openSearchOnlyPanel, "fileSinkRow"));
+            JPanel osOpenSearchSinkRow = JPanel.class.cast(get(openSearchOnlyPanel, "openSearchSinkRow"));
             onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
             assertThat(onEdt(osFileChartsSection::isVisible)).isFalse();
             assertThat(onEdt(osOpenSearchChartsSection::isVisible)).isTrue();
@@ -392,13 +394,13 @@ class StatsPanelTest {
     @Test
     void fileSections_areOrderedBeforeOpenSearchSections() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel chartSectionsPanel = get(panel, "chartSectionsPanel");
-        JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
-        JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
-        JPanel memoryChartsSection = get(panel, "memoryChartSectionPanel");
-        JPanel lowerPanel = get(panel, "lowerPanel");
-        JPanel fileSinkRow = get(panel, "fileSinkRow");
-        JPanel openSearchSinkRow = get(panel, "openSearchSinkRow");
+        JPanel chartSectionsPanel = JPanel.class.cast(get(panel, "chartSectionsPanel"));
+        JPanel fileChartsSection = JPanel.class.cast(get(panel, "fileChartsSectionPanel"));
+        JPanel openSearchChartsSection = JPanel.class.cast(get(panel, "openSearchChartsSectionPanel"));
+        JPanel memoryChartsSection = JPanel.class.cast(get(panel, "memoryChartSectionPanel"));
+        JPanel lowerPanel = JPanel.class.cast(get(panel, "lowerPanel"));
+        JPanel fileSinkRow = JPanel.class.cast(get(panel, "fileSinkRow"));
+        JPanel openSearchSinkRow = JPanel.class.cast(get(panel, "openSearchSinkRow"));
 
         // Chart ordering: file pair on top, OpenSearch pair in the middle, memory chart at
         // the bottom (heap usage is JVM-wide so it is shared regardless of which sink runs).
@@ -413,9 +415,9 @@ class StatsPanelTest {
     @Test
     void byIndexTables_appendTotalRowAfterRefresh() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
-        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
-        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
+        DefaultTableModel fileIndexModel = DefaultTableModel.class.cast(get(panel, "fileByIndexModel"));
+        String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         ExportStats.recordSuccess("traffic", 4);
         ExportStats.recordSuccess("findings", 2);
@@ -448,8 +450,8 @@ class StatsPanelTest {
     @Test
     void mergedSinkCards_eachExposeOneCopyButtonForTheWholeTable() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel openSearchSinkCard = get(panel, "openSearchSinkCard");
-        JPanel fileSinkCard = get(panel, "fileSinkCard");
+        JPanel openSearchSinkCard = JPanel.class.cast(get(panel, "openSearchSinkCard"));
+        JPanel fileSinkCard = JPanel.class.cast(get(panel, "fileSinkCard"));
 
         // One Copy button per merged card; the user already has full-table TSV from a single
         // click, no need for a separate per-section button now that traffic + index counts
@@ -465,7 +467,7 @@ class StatsPanelTest {
     @Test
     void byIndexTable_storesUntruncatedLastErrorTextAfterRefresh() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
 
         // 200-char error string is the longest message ExportStats stores verbatim (anything
         // longer is truncated at the storage layer with an ellipsis); blowing past the legacy
@@ -508,16 +510,16 @@ class StatsPanelTest {
         try {
             RuntimeConfig.updateState(runtimeState(true, true));
             StatsPanel dualPanel = onEdt(StatsPanel::new);
-            JPanel dualLegend = get(dualPanel, "sharedLegendPanel");
-            JPanel dualFileSection = get(dualPanel, "fileChartsSectionPanel");
+            JPanel dualLegend = JPanel.class.cast(get(dualPanel, "sharedLegendPanel"));
+            JPanel dualFileSection = JPanel.class.cast(get(dualPanel, "fileChartsSectionPanel"));
             onEdt(() -> call(dualPanel, "refreshDashboard"));
             assertThat(dualLegend.getParent()).isSameAs(dualFileSection);
             assertThat(dualFileSection.getComponent(0)).isSameAs(dualLegend);
 
             RuntimeConfig.updateState(runtimeState(false, true));
             StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
-            JPanel osLegend = get(openSearchOnlyPanel, "sharedLegendPanel");
-            JPanel osSection = get(openSearchOnlyPanel, "openSearchChartsSectionPanel");
+            JPanel osLegend = JPanel.class.cast(get(openSearchOnlyPanel, "sharedLegendPanel"));
+            JPanel osSection = JPanel.class.cast(get(openSearchOnlyPanel, "openSearchChartsSectionPanel"));
             onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
             assertThat(osLegend.getParent()).isSameAs(osSection);
             assertThat(osSection.getComponent(0)).isSameAs(osLegend);
@@ -532,7 +534,7 @@ class StatsPanelTest {
         try {
             RuntimeConfig.updateState(runtimeState(true, true));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JPanel cardsRow = get(panel, "cardsRow");
+            JPanel cardsRow = JPanel.class.cast(get(panel, "cardsRow"));
             assertThat(cardsRow.getComponentCount()).isEqualTo(1);
             JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
 
@@ -575,7 +577,7 @@ class StatsPanelTest {
         try {
             RuntimeConfig.updateState(runtimeState(true, false));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JPanel miscCard = findByName(get(panel, "cardsRow"), "miscStatsCard", JPanel.class);
+            JPanel miscCard = findByName(JPanel.class.cast(get(panel, "cardsRow")), "miscStatsCard", JPanel.class);
 
             assertThat(miscCard).isNotNull();
             assertThat(findByName(miscCard, "miscStats.section.Global", JLabel.class).isVisible()).isTrue();
@@ -593,7 +595,7 @@ class StatsPanelTest {
         try {
             RuntimeConfig.updateState(runtimeState(false, true));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JPanel miscCard = findByName(get(panel, "cardsRow"), "miscStatsCard", JPanel.class);
+            JPanel miscCard = findByName(JPanel.class.cast(get(panel, "cardsRow")), "miscStatsCard", JPanel.class);
 
             assertThat(miscCard).isNotNull();
             assertThat(findByName(miscCard, "miscStats.section.Global", JLabel.class).isVisible()).isTrue();
@@ -611,21 +613,21 @@ class StatsPanelTest {
         try {
             RuntimeConfig.updateState(runtimeState(true, true));
             StatsPanel dualPanel = onEdt(StatsPanel::new);
-            JFreeChart dualFileKibChart = get(dualPanel, "fileKibChart");
-            JFreeChart dualOpenSearchKibChart = get(dualPanel, "kibChart");
+            JFreeChart dualFileKibChart = JFreeChart.class.cast(get(dualPanel, "fileKibChart"));
+            JFreeChart dualOpenSearchKibChart = JFreeChart.class.cast(get(dualPanel, "kibChart"));
             onEdt(() -> call(dualPanel, "refreshDashboard"));
             assertThat(((DateAxis) dualFileKibChart.getXYPlot().getDomainAxis()).getLabel()).isNull();
             assertThat(((DateAxis) dualOpenSearchKibChart.getXYPlot().getDomainAxis()).getLabel()).isEqualTo("Time");
 
             RuntimeConfig.updateState(runtimeState(true, false));
             StatsPanel fileOnlyPanel = onEdt(StatsPanel::new);
-            JFreeChart fileOnlyKibChart = get(fileOnlyPanel, "fileKibChart");
+            JFreeChart fileOnlyKibChart = JFreeChart.class.cast(get(fileOnlyPanel, "fileKibChart"));
             onEdt(() -> call(fileOnlyPanel, "refreshDashboard"));
             assertThat(((DateAxis) fileOnlyKibChart.getXYPlot().getDomainAxis()).getLabel()).isEqualTo("Time");
 
             RuntimeConfig.updateState(runtimeState(false, true));
             StatsPanel openSearchOnlyPanel = onEdt(StatsPanel::new);
-            JFreeChart openSearchOnlyKibChart = get(openSearchOnlyPanel, "kibChart");
+            JFreeChart openSearchOnlyKibChart = JFreeChart.class.cast(get(openSearchOnlyPanel, "kibChart"));
             onEdt(() -> call(openSearchOnlyPanel, "refreshDashboard"));
             assertThat(((DateAxis) openSearchOnlyKibChart.getXYPlot().getDomainAxis()).getLabel()).isEqualTo("Time");
         } finally {
@@ -674,10 +676,10 @@ class StatsPanelTest {
     @Test
     void miscStatsCard_exposesHeapCommittedAndBufferPoolRows() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JLabel heapUsedMaxValue = get(panel, "heapUsedMaxValue");
-        JLabel heapCommittedValue = get(panel, "heapCommittedValue");
-        JLabel directBufferUsedValue = get(panel, "directBufferUsedValue");
-        JLabel mappedBufferUsedValue = get(panel, "mappedBufferUsedValue");
+        JLabel heapUsedMaxValue = JLabel.class.cast(get(panel, "heapUsedMaxValue"));
+        JLabel heapCommittedValue = JLabel.class.cast(get(panel, "heapCommittedValue"));
+        JLabel directBufferUsedValue = JLabel.class.cast(get(panel, "directBufferUsedValue"));
+        JLabel mappedBufferUsedValue = JLabel.class.cast(get(panel, "mappedBufferUsedValue"));
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
@@ -692,11 +694,11 @@ class StatsPanelTest {
     @Test
     void memoryChart_isAppendedAfterPerSinkChartSections_andSamplesHeapUsedAndCommitted() throws Exception {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JFreeChart memoryChart = get(panel, "memoryChart");
-        JPanel chartSectionsPanel = get(panel, "chartSectionsPanel");
-        JPanel memoryChartSectionPanel = get(panel, "memoryChartSectionPanel");
-        TimeSeries heapUsedSeries = get(panel, "heapUsedSeries");
-        TimeSeries heapCommittedSeries = get(panel, "heapCommittedSeries");
+        JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
+        JPanel chartSectionsPanel = JPanel.class.cast(get(panel, "chartSectionsPanel"));
+        JPanel memoryChartSectionPanel = JPanel.class.cast(get(panel, "memoryChartSectionPanel"));
+        TimeSeries heapUsedSeries = TimeSeries.class.cast(get(panel, "heapUsedSeries"));
+        TimeSeries heapCommittedSeries = TimeSeries.class.cast(get(panel, "heapCommittedSeries"));
 
         // Section ordering: file pair, OpenSearch pair, memory pair last (heap usage is JVM-
         // wide and unrelated to which sink is active).
@@ -718,8 +720,8 @@ class StatsPanelTest {
     @Test
     void memoryLegendPanel_sitsAtTopOfMemorySection_andHasHeapUsedAndCommittedItems() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel memoryLegendPanel = get(panel, "memoryLegendPanel");
-        JPanel memoryChartSectionPanel = get(panel, "memoryChartSectionPanel");
+        JPanel memoryLegendPanel = JPanel.class.cast(get(panel, "memoryLegendPanel"));
+        JPanel memoryChartSectionPanel = JPanel.class.cast(get(panel, "memoryChartSectionPanel"));
 
         assertThat(memoryChartSectionPanel.getComponent(0)).isSameAs(memoryLegendPanel);
         assertThat(memoryLegendPanel.getLayout()).isInstanceOf(FlowLayout.class);
@@ -736,7 +738,7 @@ class StatsPanelTest {
     @Test
     void memoryChart_seriesPaintsTrackThroughputPaletteForGreenAndYellow() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JFreeChart memoryChart = get(panel, "memoryChart");
+        JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
         XYLineAndShapeRenderer renderer =
                 (XYLineAndShapeRenderer) memoryChart.getXYPlot().getRenderer();
 
@@ -767,8 +769,8 @@ class StatsPanelTest {
                     previous.enabledExportFieldsByIndex(),
                     new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JFreeChart memoryChart = get(panel, "memoryChart");
-            JButton styleButton = get(panel, "chartStyleButton");
+            JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
 
             assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
 
@@ -802,8 +804,8 @@ class StatsPanelTest {
         ConfigState.State previous = RuntimeConfig.getState();
         try {
             StatsPanel panel = onEdt(StatsPanel::new);
-            JPanel memoryLegendPanel = get(panel, "memoryLegendPanel");
-            JButton styleButton = get(panel, "chartStyleButton");
+            JPanel memoryLegendPanel = JPanel.class.cast(get(panel, "memoryLegendPanel"));
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
 
             // Cover Simple, Smooth, and Accessible. The Accessible pass is the regression
             // guard: the icon must paint a shape marker plus dashed stroke without throwing
@@ -830,7 +832,7 @@ class StatsPanelTest {
     @Test
     void miscStatsCard_processSection_includesNewMemoryRows() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel cardsRow = get(panel, "cardsRow");
+        JPanel cardsRow = JPanel.class.cast(get(panel, "cardsRow"));
         JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
         assertThat(miscCard).isNotNull();
 
@@ -842,7 +844,7 @@ class StatsPanelTest {
     @Test
     void refreshDashboard_updatesTotalExportedValueWithHumanReadableSize() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JLabel totalExportedValue = get(panel, "totalExportedValue");
+        JLabel totalExportedValue = JLabel.class.cast(get(panel, "totalExportedValue"));
         long beforeTotal = ExportStats.getTotalExportedBytes();
 
         onEdt(() -> call(panel, "refreshDashboard"));
@@ -859,7 +861,7 @@ class StatsPanelTest {
     @Test
     void refreshDashboard_updatesFileTotalExportedValueWithHumanReadableSize() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JLabel fileTotalExportedValue = get(panel, "fileTotalExportedValue");
+        JLabel fileTotalExportedValue = JLabel.class.cast(get(panel, "fileTotalExportedValue"));
         long beforeTotal = FileExportStats.getTotalExportedBytes();
 
         onEdt(() -> call(panel, "refreshDashboard"));
@@ -876,7 +878,7 @@ class StatsPanelTest {
     @Test
     void totalExportedValue_transitionsAcrossUnits_fromRecordedIndexBytes() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JLabel totalExportedValue = get(panel, "totalExportedValue");
+        JLabel totalExportedValue = JLabel.class.cast(get(panel, "totalExportedValue"));
 
         long beforeTotal = ExportStats.getTotalExportedBytes();
 
@@ -906,8 +908,8 @@ class StatsPanelTest {
     @Test
     void mergedTable_countsProxyWebSocketsUnderProxyHistorySubRowAndTrafficIndex() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
-        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
+        String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
@@ -935,8 +937,8 @@ class StatsPanelTest {
     @Test
     void mergedTable_subRowSumMatchesTrafficIndexAfterMixedTrafficSources() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
-        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
+        String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         onEdt(() -> call(panel, "refreshDashboard"));
 
@@ -989,8 +991,8 @@ class StatsPanelTest {
         boolean original = RuntimeConfig.isExportRunning();
         try {
             StatsPanel panel = onEdt(StatsPanel::new);
-            JLabel exportRunningValue = get(panel, "exportRunningValue");
-            JLabel currentBatchSizeValue = get(panel, "currentBatchSizeValue");
+            JLabel exportRunningValue = JLabel.class.cast(get(panel, "exportRunningValue"));
+            JLabel currentBatchSizeValue = JLabel.class.cast(get(panel, "currentBatchSizeValue"));
 
             onEdt(() -> {
                 RuntimeConfig.setExportRunning(true);
@@ -1017,9 +1019,9 @@ class StatsPanelTest {
     @Test
     void chartRenderer_usesAccessibleSeriesPaintsStrokesAndMarkers() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JFreeChart chart = get(panel, "docsChart");
+        JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
 
-        JButton styleButton = get(panel, "chartStyleButton");
+        JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
         onEdt((Runnable) styleButton::doClick);
         onEdt((Runnable) styleButton::doClick);
         XYLineAndShapeRenderer renderer = currentRenderer(chart);
@@ -1046,8 +1048,8 @@ class StatsPanelTest {
                     previous.enabledExportFieldsByIndex(),
                     new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JButton styleButton = get(panel, "chartStyleButton");
-            JFreeChart chart = get(panel, "docsChart");
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
+            JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
 
             assertThat(styleButton.getText()).isEqualTo("Simple");
             assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
@@ -1085,11 +1087,11 @@ class StatsPanelTest {
                     previous.enabledExportFieldsByIndex(),
                     new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JFreeChart chart = get(panel, "docsChart");
+            JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
 
             XYPlot plot = chart.getXYPlot();
             assertThat(plot.getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
-            JButton styleButton = get(panel, "chartStyleButton");
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
             assertThat(styleButton.getText()).isEqualTo("Simple");
             onEdt((Runnable) styleButton::doClick);
             assertThat(plot.getRenderer()).isInstanceOf(XYSplineRenderer.class);
@@ -1118,7 +1120,7 @@ class StatsPanelTest {
                     previous.enabledExportFieldsByIndex(),
                     new ConfigState.UiPreferences(3, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
-            JButton styleButton = get(panel, "chartStyleButton");
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
             assertThat(styleButton.getText()).isEqualTo("Accessible");
         } finally {
             RuntimeConfig.updateState(previous);
@@ -1128,20 +1130,20 @@ class StatsPanelTest {
     @Test
     void preferredSize_growsToFitCardsAndTablesSoBottomDoesNotClip() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel chartsPanel = get(panel, "chartsPanel");
-        JPanel sharedLegendPanel = get(panel, "sharedLegendPanel");
-        JPanel memoryLegendPanel = get(panel, "memoryLegendPanel");
-        JPanel fileChartsSection = get(panel, "fileChartsSectionPanel");
-        JPanel openSearchChartsSection = get(panel, "openSearchChartsSectionPanel");
-        JPanel memoryChartSectionPanel = get(panel, "memoryChartSectionPanel");
-        javax.swing.JLabel fileChartsSectionHeader = get(panel, "fileChartsSectionHeader");
-        javax.swing.JLabel openSearchChartsSectionHeader = get(panel, "openSearchChartsSectionHeader");
-        JPanel lowerPanel = get(panel, "lowerPanel");
-        JPanel cardsRow = get(panel, "cardsRow");
+        JPanel chartsPanel = JPanel.class.cast(get(panel, "chartsPanel"));
+        JPanel sharedLegendPanel = JPanel.class.cast(get(panel, "sharedLegendPanel"));
+        JPanel memoryLegendPanel = JPanel.class.cast(get(panel, "memoryLegendPanel"));
+        JPanel fileChartsSection = JPanel.class.cast(get(panel, "fileChartsSectionPanel"));
+        JPanel openSearchChartsSection = JPanel.class.cast(get(panel, "openSearchChartsSectionPanel"));
+        JPanel memoryChartSectionPanel = JPanel.class.cast(get(panel, "memoryChartSectionPanel"));
+        javax.swing.JLabel fileChartsSectionHeader = javax.swing.JLabel.class.cast(get(panel, "fileChartsSectionHeader"));
+        javax.swing.JLabel openSearchChartsSectionHeader = javax.swing.JLabel.class.cast(get(panel, "openSearchChartsSectionHeader"));
+        JPanel lowerPanel = JPanel.class.cast(get(panel, "lowerPanel"));
+        JPanel cardsRow = JPanel.class.cast(get(panel, "cardsRow"));
         JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);
-        int chartHeight = ((Integer) getStatic(StatsPanel.class, "CHART_PANEL_HEIGHT")) / 2;
-        int memoryHeight = getStatic(StatsPanel.class, "MEMORY_CHART_PANEL_HEIGHT");
-        int padding = getStatic(StatsPanel.class, "CONTENT_VERTICAL_PADDING");
+        int chartHeight = Reflect.getStaticInt(StatsPanel.class, "CHART_PANEL_HEIGHT") / 2;
+        int memoryHeight = Reflect.getStaticInt(StatsPanel.class, "MEMORY_CHART_PANEL_HEIGHT");
+        int padding = Reflect.getStaticInt(StatsPanel.class, "CONTENT_VERTICAL_PADDING");
 
         java.awt.Dimension preferred = onEdt(panel::getPreferredSize);
         int memoryLegendBudget = onEdt(memoryLegendPanel::isVisible)
@@ -1168,9 +1170,9 @@ class StatsPanelTest {
     @Test
     void fileTablesAndCharts_updateFromFileExportStats() throws Exception {
         StatsPanel panel = onEdt(StatsPanel::new);
-        DefaultTableModel fileIndexModel = get(panel, "fileByIndexModel");
-        Map<String, TimeSeries> fileDocsSeriesByIndex = get(panel, "fileDocsSeriesByIndex");
-        String indent = getStatic(StatsPanel.class, "SUBROW_INDENT");
+        DefaultTableModel fileIndexModel = DefaultTableModel.class.cast(get(panel, "fileByIndexModel"));
+        Map<String, TimeSeries> fileDocsSeriesByIndex = Map.class.cast(get(panel, "fileDocsSeriesByIndex"));
+        String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         onEdt(() -> call(panel, "refreshDashboard"));
         long proxyBefore = sourceTableLong(fileIndexModel, indent + "Proxy", 1);
@@ -1192,9 +1194,9 @@ class StatsPanelTest {
 
     @Test
     void chartMaxPoints_coversConfiguredRollingWindowAtRefreshCadence() {
-        int chartMaxPoints = getStatic(StatsPanel.class, "CHART_MAX_POINTS");
-        long chartWindowMs = getStatic(StatsPanel.class, "CHART_WINDOW_MAX_MS");
-        int refreshIntervalMs = getStatic(StatsPanel.class, "REFRESH_INTERVAL_MS");
+        int chartMaxPoints = Reflect.getStaticInt(StatsPanel.class, "CHART_MAX_POINTS");
+        long chartWindowMs = ((Number) getStatic(StatsPanel.class, "CHART_WINDOW_MAX_MS")).longValue();
+        int refreshIntervalMs = Reflect.getStaticInt(StatsPanel.class, "REFRESH_INTERVAL_MS");
         int requiredPoints = (int) (chartWindowMs / refreshIntervalMs);
         assertThat(chartMaxPoints).isGreaterThanOrEqualTo(requiredPoints);
     }
@@ -1202,8 +1204,8 @@ class StatsPanelTest {
     @Test
     void mergedIndexTable_sortsNumericColumnsNumerically() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JTable indexTable = get(panel, "byIndexTable");
-        DefaultTableModel indexModel = get(panel, "byIndexModel");
+        JTable indexTable = JTable.class.cast(get(panel, "byIndexTable"));
+        DefaultTableModel indexModel = DefaultTableModel.class.cast(get(panel, "byIndexModel"));
 
         onEdt(() -> {
             indexModel.setRowCount(0);
@@ -1238,7 +1240,7 @@ class StatsPanelTest {
             long before = onEdt(() -> ExportStats.getTotalSuccessCount());
             onEdt(() -> call(panel, "timerTick"));
 
-            JLabel totalDocsValue = get(panel, "totalDocsPushedValue");
+            JLabel totalDocsValue = JLabel.class.cast(get(panel, "totalDocsPushedValue"));
             assertThat(totalDocsValue.getText()).isEqualTo(String.format(java.util.Locale.ROOT, "%,d", before));
 
             ExportStats.recordSuccess("traffic", 2);
@@ -1259,7 +1261,7 @@ class StatsPanelTest {
             ExportStats.resetForTests();
             RuntimeConfig.setExportRunning(false);
             StatsPanel panel = onEdt(StatsPanel::new);
-            JLabel totalDocsValue = get(panel, "totalDocsPushedValue");
+            JLabel totalDocsValue = JLabel.class.cast(get(panel, "totalDocsPushedValue"));
 
             // Constructor's initial refresh paints 0; bump counter and confirm idle ticks skip.
             ExportStats.recordSuccess("traffic", 7);

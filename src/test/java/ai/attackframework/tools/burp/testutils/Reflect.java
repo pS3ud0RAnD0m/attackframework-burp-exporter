@@ -7,7 +7,9 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -24,22 +26,14 @@ public final class Reflect {
     /**
      * Returns the value of a (possibly private) field by name.
      *
+     * <p>Prefer {@link #get(Object, String, Class)} at call sites that know the field type.</p>
+     *
      * @param target    instance declaring (or inheriting) the field
      * @param fieldName declared field name
-     * @param <T>       expected type
-     * @return field value cast to T
+     * @return field value
      */
-    @SuppressWarnings("unchecked") // Caller is responsible for requesting the correct field type.
-    public static <T> T get(Object target, String fieldName) {
-        Objects.requireNonNull(target, "target");
-        Objects.requireNonNull(fieldName, "fieldName");
-        try {
-            Field f = findField(target.getClass(), fieldName);
-            makeAccessible(f, target);
-            return (T) f.get(target);
-        } catch (ReflectiveOperationException | SecurityException e) {
-            throw new RuntimeException("get(field=" + fieldName + ")", e);
-        }
+    public static Object get(Object target, String fieldName) {
+        return readInstanceField(target, fieldName);
     }
 
     /**
@@ -52,8 +46,23 @@ public final class Reflect {
      * @return field value cast to {@code type}
      */
     public static <T> T get(Object target, String fieldName, Class<T> type) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(fieldName, "fieldName");
         Objects.requireNonNull(type, "type");
-        return type.cast(get(target, fieldName));
+        return type.cast(readInstanceField(target, fieldName));
+    }
+
+    /**
+     * Returns the value of a static (possibly private) field by name.
+     *
+     * <p>Prefer {@link #getStatic(Class, String, Class)} at call sites that know the field type.</p>
+     *
+     * @param owner     class declaring (or inheriting) the field
+     * @param fieldName declared field name
+     * @return field value
+     */
+    public static Object getStatic(Class<?> owner, String fieldName) {
+        return readStaticField(owner, fieldName);
     }
 
     /**
@@ -61,20 +70,58 @@ public final class Reflect {
      *
      * @param owner     class declaring (or inheriting) the field
      * @param fieldName declared field name
+     * @param type      expected field type
      * @param <T>       expected type
-     * @return field value cast to T
+     * @return field value cast to {@code type}
      */
-    @SuppressWarnings("unchecked") // Caller is responsible for requesting the correct field type.
-    public static <T> T getStatic(Class<?> owner, String fieldName) {
+    public static <T> T getStatic(Class<?> owner, String fieldName, Class<T> type) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(fieldName, "fieldName");
+        Objects.requireNonNull(type, "type");
+        return type.cast(readStaticField(owner, fieldName));
+    }
+
+    /**
+     * Returns the value of a static {@code int} field by name.
+     */
+    public static int getStaticInt(Class<?> owner, String fieldName) {
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(fieldName, "fieldName");
         try {
             Field f = findField(owner, fieldName);
             makeAccessible(f, null);
-            return (T) f.get(null);
+            return f.getInt(null);
         } catch (ReflectiveOperationException | SecurityException e) {
-            throw new RuntimeException("getStatic(field=" + owner.getName() + "#" + fieldName + ")", e);
+            throw new RuntimeException("getStaticInt(field=" + owner.getName() + "#" + fieldName + ")", e);
         }
+    }
+
+    /**
+     * Copies a {@link Map} field whose keys are strings and whose values match {@code valueType}.
+     */
+    public static <V> Map<String, V> stringKeyedMap(Object target, String fieldName, Class<V> valueType) {
+        return copyStringKeyedEntries(readInstanceField(target, fieldName), valueType);
+    }
+
+    /**
+     * Copies a nested {@link Map} field {@code Map<String, Map<String, V>>} without unchecked casts.
+     */
+    public static <V> Map<String, Map<String, V>> stringKeyedNestedMap(
+            Object target, String fieldName, Class<V> valueType) {
+        Object raw = readInstanceField(target, fieldName);
+        if (!(raw instanceof Map<?, ?> outer)) {
+            return Map.of();
+        }
+        Map<String, Map<String, V>> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : outer.entrySet()) {
+            if (entry.getKey() instanceof String outerKey) {
+                Map<String, V> inner = copyStringKeyedEntries(entry.getValue(), valueType);
+                if (!inner.isEmpty()) {
+                    out.put(outerKey, inner);
+                }
+            }
+        }
+        return out;
     }
 
     /**
@@ -177,6 +224,47 @@ public final class Reflect {
     }
 
     // ---------- internals ----------
+
+    private static Object readInstanceField(Object target, String fieldName) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(fieldName, "fieldName");
+        try {
+            Field f = findField(target.getClass(), fieldName);
+            makeAccessible(f, target);
+            return f.get(target);
+        } catch (ReflectiveOperationException | SecurityException e) {
+            throw new RuntimeException("get(field=" + fieldName + ")", e);
+        }
+    }
+
+    private static Object readStaticField(Class<?> owner, String fieldName) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(fieldName, "fieldName");
+        try {
+            Field f = findField(owner, fieldName);
+            makeAccessible(f, null);
+            return f.get(null);
+        } catch (ReflectiveOperationException | SecurityException e) {
+            throw new RuntimeException("getStatic(field=" + owner.getName() + "#" + fieldName + ")", e);
+        }
+    }
+
+    private static <V> Map<String, V> copyStringKeyedEntries(Object raw, Class<V> valueType) {
+        Objects.requireNonNull(valueType, "valueType");
+        if (!(raw instanceof Map<?, ?> source)) {
+            return Map.of();
+        }
+        Map<String, V> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                Object value = entry.getValue();
+                if (valueType.isInstance(value)) {
+                    out.put(key, valueType.cast(value));
+                }
+            }
+        }
+        return out;
+    }
 
     /**
      * Ensures the given reflective object is accessible for the provided receiver.

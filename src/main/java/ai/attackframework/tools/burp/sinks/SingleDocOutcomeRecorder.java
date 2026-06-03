@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.sinks;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchPushCancellation;
 
 /**
  * Shared single-document outcome accounting for reporters that push one document at a time.
@@ -45,6 +46,9 @@ public final class SingleDocOutcomeRecorder {
         }
         if (ok) {
             ExportStats.recordSuccess(indexKey, 1);
+            return;
+        }
+        if (OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
             return;
         }
         ExportStats.recordFailure(indexKey, 1);

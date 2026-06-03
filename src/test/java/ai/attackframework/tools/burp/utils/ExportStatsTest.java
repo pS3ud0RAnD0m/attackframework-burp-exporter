@@ -51,6 +51,13 @@ class ExportStatsTest {
     }
 
     @Test
+    void getTrafficToolTypeKeys_excludesRemovedCollaboratorBucket() {
+        assertThat(ExportStats.getTrafficToolTypeKeys())
+                .contains("BURP_AI", "EXTENSIONS", "PROXY", "REPEATER", "UNKNOWN")
+                .doesNotContain("COLLABORATOR");
+    }
+
+    @Test
     void recordSuccess_incrementsCountAndTotal() {
         long before = ExportStats.getSuccessCount("traffic");
         ExportStats.recordSuccess("traffic", 3);

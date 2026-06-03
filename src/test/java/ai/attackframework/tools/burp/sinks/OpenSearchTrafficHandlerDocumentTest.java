@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,8 +24,12 @@ import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.http.message.responses.analysis.Attribute;
 import burp.api.montoya.http.message.responses.analysis.AttributeType;
+import burp.api.montoya.core.Annotations;
 import burp.api.montoya.core.ByteArray;
+import burp.api.montoya.core.Marker;
+import burp.api.montoya.core.Range;
 import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
 
@@ -86,17 +91,131 @@ class TrafficHttpHandlerDocumentTest {
     void buildDocument_hasRequiredTopLevelKeys() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        assertThat(doc).containsKeys("url", "host", "port", "scheme", "http_version", "tool", "burp_in_scope",
-                "message_id", "path", "method", "status", "mime_type", "repeater_tab_name",
-                "repeater_group_name", "request", "response", "document_meta");
+        assertThat(doc).containsKeys("burp", "request", "response", "websocket", "meta");
+        assertThat(requestProtocol(doc))
+                .containsEntry("scheme", "https")
+                .containsEntry("http_version", "HTTP/1.1");
+        assertThat(requestProtocol(doc)).doesNotContainKey("transport");
+        assertThat(requestProtocol(doc)).doesNotContainKey("sub");
+        assertThat(requestProtocol(doc)).doesNotContainKey("application");
+        assertThat(websocket(doc)).containsEntry("is_websocket", false);
+        assertThat(burpRepeater(doc)).containsKeys("tab_name", "tab_group");
+        assertThat(doc.containsKey("scheme")).isFalse();
+        assertThat(doc.containsKey("protocol")).isFalse();
+        assertThat(doc.containsKey("status")).isFalse();
+        assertThat(doc.containsKey("status_code")).isFalse();
+        assertThat(doc.containsKey("url")).isFalse();
+        assertThat(doc.containsKey("host")).isFalse();
+        assertThat(doc.containsKey("port")).isFalse();
+        assertThat(doc.containsKey("http_version")).isFalse();
+        assertThat(doc.containsKey("tool")).isFalse();
+        assertThat(doc.containsKey("burp_in_scope")).isFalse();
+        assertThat(doc.containsKey("message_id")).isFalse();
+        assertThat(doc.containsKey("path")).isFalse();
+        assertThat(doc.containsKey("method")).isFalse();
+        assertThat(doc.containsKey("mime_type")).isFalse();
     }
 
     @Test
     void buildDocument_reservesRepeaterMetadataFields_forFutureLiveEnrichment() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        assertThat(doc.get("repeater_tab_name")).isNull();
-        assertThat(doc.get("repeater_group_name")).isNull();
+        assertThat(burpRepeater(doc)).containsEntry("tab_name", null);
+        assertThat(burpRepeater(doc)).containsEntry("tab_group", null);
+    }
+
+    @Test
+    void buildDocument_exportsHttpResponseNotesAsBurpNotes() {
+        Annotations responseAnnotations = mock(Annotations.class);
+        when(responseAnnotations.hasNotes()).thenReturn(true);
+        when(responseAnnotations.notes()).thenReturn("analyst note");
+        when(responseAnnotations.hasHighlightColor()).thenReturn(false);
+        when(response.annotations()).thenReturn(responseAnnotations);
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        Map<?, ?> burp = nestedMap(doc, "burp");
+        assertThat(burp.get("notes")).isEqualTo("analyst note");
+    }
+
+    @Test
+    void buildDocument_liveHttpTimingDoesNotInventTimeToFirstByte() {
+        Map<String, Object> doc = handler.buildDocument(
+                response,
+                request,
+                true,
+                100L,
+                175L,
+                ToolType.PROXY,
+                RepeaterMetadataFields.Metadata.empty());
+
+        Map<?, ?> timing = nestedMap(nestedMap(doc, "burp"), "timing");
+        assertThat(timing.get("req_sent_to_res_end")).isEqualTo(75L);
+        assertThat(timing.containsKey("req_sent_to_res_start")).isTrue();
+        assertThat(timing.get("req_sent_to_res_start")).isNull();
+        assertThat(timing.containsKey("duration_ms")).isFalse();
+        assertThat(timing.containsKey("time_to_first_byte_ms")).isFalse();
+        assertThat(timing.containsKey("response_start_latency_ms")).isFalse();
+    }
+
+    @Test
+    void buildDocument_placesOnlyHtmlSpecificResponseAttributesUnderBodyHtml() {
+        Attribute wordCount = mock(Attribute.class);
+        when(wordCount.type()).thenReturn(AttributeType.WORD_COUNT);
+        when(wordCount.value()).thenReturn(7);
+        Attribute visibleWordCount = mock(Attribute.class);
+        when(visibleWordCount.type()).thenReturn(AttributeType.VISIBLE_WORD_COUNT);
+        when(visibleWordCount.value()).thenReturn(2);
+        Attribute inputSubmitLabels = mock(Attribute.class);
+        when(inputSubmitLabels.type()).thenReturn(AttributeType.INPUT_SUBMIT_LABELS);
+        when(inputSubmitLabels.value()).thenReturn(1);
+        when(response.attributes(any(AttributeType[].class)))
+                .thenReturn(List.of(wordCount, visibleWordCount, inputSubmitLabels));
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        Map<?, ?> body = nestedMap(nestedMap(doc, "response"), "body");
+        Map<?, ?> html = nestedMap(body, "html");
+        Map<?, ?> htmlText = nestedMap(html, "text");
+        Map<?, ?> htmlForms = nestedMap(html, "forms");
+        assertThat(body.get("word_count")).isEqualTo(7);
+        assertThat(htmlText.get("visible_word_count")).isEqualTo(2);
+        assertThat(htmlForms.get("input_submit_labels")).isEqualTo(1);
+        assertThat(html.containsKey("word_count")).isFalse();
+        assertThat(body.containsKey("visible_word_count")).isFalse();
+        assertThat(body.containsKey("input_submit_labels")).isFalse();
+    }
+
+    @Test
+    void buildDocument_doesNotEmitRemovedResponseConvenienceAttributes() {
+        Attribute location = mock(Attribute.class);
+        when(location.type()).thenReturn(AttributeType.LOCATION);
+        when(location.value()).thenReturn(1);
+        Attribute contentLength = mock(Attribute.class);
+        when(contentLength.type()).thenReturn(AttributeType.CONTENT_LENGTH);
+        when(contentLength.value()).thenReturn(42);
+        Attribute cookieNames = mock(Attribute.class);
+        when(cookieNames.type()).thenReturn(AttributeType.COOKIE_NAMES);
+        when(cookieNames.value()).thenReturn(1);
+        Attribute etag = mock(Attribute.class);
+        when(etag.type()).thenReturn(AttributeType.ETAG_HEADER);
+        when(etag.value()).thenReturn(3);
+        Attribute lastModified = mock(Attribute.class);
+        when(lastModified.type()).thenReturn(AttributeType.LAST_MODIFIED_HEADER);
+        when(lastModified.value()).thenReturn(4);
+        Attribute contentLocation = mock(Attribute.class);
+        when(contentLocation.type()).thenReturn(AttributeType.CONTENT_LOCATION);
+        when(contentLocation.value()).thenReturn(5);
+        when(response.attributes(any(AttributeType[].class)))
+                .thenReturn(List.of(location, contentLength, cookieNames, etag, lastModified, contentLocation));
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        Map<?, ?> responseDoc = nestedMap(doc, "response");
+        assertMissingKeys(responseDoc, "location", "content_length", "cookie_names", "etag_header",
+                "last_modified_header", "content_location");
+        assertThat(responseDoc.containsKey("headers")).isFalse();
+        assertThat(responseDoc.containsKey("cookies")).isFalse();
     }
 
     @Test
@@ -110,8 +229,8 @@ class TrafficHttpHandlerDocumentTest {
                 ToolType.REPEATER,
                 new RepeaterMetadataFields.Metadata("Tab 7", "Group X"));
 
-        assertThat(doc.get("repeater_tab_name")).isEqualTo("Tab 7");
-        assertThat(doc.get("repeater_group_name")).isEqualTo("Group X");
+        assertThat(burpRepeater(doc)).containsEntry("tab_name", "Tab 7");
+        assertThat(burpRepeater(doc)).containsEntry("tab_group", "Group X");
     }
 
     @Test
@@ -120,15 +239,54 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<?, ?> req = nestedMap(doc, "request");
         assertThat(req).isNotNull();
-        assertContainsKeys(req, "method", "path", "path_without_query", "query", "headers", "parameters",
-                "body", "markers");
+        assertContainsKeys(req, "url", "port", "method", "path", "protocol", "header", "parameters",
+                "body");
+        assertThat(req.containsKey("host")).isFalse();
+        assertThat(req.containsKey("headers")).isFalse();
+        assertThat(req.containsKey("markers")).isFalse();
+        assertContainsKeys(nestedMap(req, "body"), "markers");
+        Map<?, ?> burp = nestedMap(doc, "burp");
+        Map<?, ?> proxy = nestedMap(burp, "proxy");
+        assertThat(proxy.containsKey("is_edited")).isFalse();
         Map<?, ?> reqBody = nestedMap(req, "body");
         assertContainsKeys(reqBody, "length", "offset", "b64", "text");
-        Map<?, ?> reqHeaders = nestedMap(req, "headers");
-        assertContainsKeys(reqHeaders, "full");
-        assertThat(reqHeaders.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
+        assertContainsKeys(nestedMap(req, "header"), "content-type_inferred");
         assertThat(req.get("method")).isEqualTo("GET");
-        assertThat(req.get("path")).isEqualTo("/path?q=1");
+        Map<?, ?> path = nestedMap(req, "path");
+        assertThat(path.get("with_query")).isEqualTo("/path?q=1");
+        assertThat(path.get("without_query")).isEqualTo("/path");
+        assertThat(path.get("query")).isEqualTo("q=1");
+    }
+
+    @Test
+    void buildDocument_bodyMarkersUseTrafficFieldNames() {
+        Range requestRange = mock(Range.class);
+        when(requestRange.startIndexInclusive()).thenReturn(1);
+        when(requestRange.endIndexExclusive()).thenReturn(3);
+        Marker requestMarker = mock(Marker.class);
+        when(requestMarker.range()).thenReturn(requestRange);
+        Range responseRange = mock(Range.class);
+        when(responseRange.startIndexInclusive()).thenReturn(5);
+        when(responseRange.endIndexExclusive()).thenReturn(8);
+        Marker responseMarker = mock(Marker.class);
+        when(responseMarker.range()).thenReturn(responseRange);
+        when(request.markers()).thenReturn(List.of(requestMarker));
+        when(response.markers()).thenReturn(List.of(responseMarker));
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        List<?> requestMarkers = (List<?>) nestedMap(nestedMap(doc, "request"), "body").get("markers");
+        Map<?, ?> firstRequestMarker = (Map<?, ?>) requestMarkers.get(0);
+        assertThat(firstRequestMarker.get("start_inclusive")).isEqualTo(1);
+        assertThat(firstRequestMarker.get("end_exclusive")).isEqualTo(3);
+        assertThat(firstRequestMarker.containsKey("start_index_inclusive")).isFalse();
+        assertThat(firstRequestMarker.containsKey("end_index_exclusive")).isFalse();
+        List<?> responseMarkers = (List<?>) nestedMap(nestedMap(doc, "response"), "body").get("markers");
+        Map<?, ?> firstResponseMarker = (Map<?, ?>) responseMarkers.get(0);
+        assertThat(firstResponseMarker.get("start_inclusive")).isEqualTo(5);
+        assertThat(firstResponseMarker.get("end_exclusive")).isEqualTo(8);
+        assertThat(firstResponseMarker.containsKey("start_index_inclusive")).isFalse();
+        assertThat(firstResponseMarker.containsKey("end_index_exclusive")).isFalse();
     }
 
     @Test
@@ -145,17 +303,15 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        assertThat(doc.get("url")).isEqualTo("https://example.com/fallback/path?q=1");
-        assertThat(doc.get("method")).isEqualTo("POST");
-        assertThat(doc.get("path")).isEqualTo("/fallback/path?q=1");
-        assertThat(doc.get("http_version")).isEqualTo("HTTP/2");
-
         Map<?, ?> req = nestedMap(doc, "request");
+        assertThat(req.get("url")).isEqualTo("https://example.com/fallback/path?q=1");
         assertThat(req.get("method")).isEqualTo("POST");
-        assertThat(req.get("path")).isEqualTo("/fallback/path?q=1");
-        assertThat(req.get("path_without_query")).isEqualTo("/fallback/path");
-        assertThat(req.get("query")).isEqualTo("q=1");
-        assertThat(req.get("http_version")).isEqualTo("HTTP/2");
+        Map<?, ?> path = nestedMap(req, "path");
+        assertThat(path.get("with_query")).isEqualTo("/fallback/path?q=1");
+        assertThat(path.get("without_query")).isEqualTo("/fallback/path");
+        assertThat(path.get("query")).isEqualTo("q=1");
+        Map<?, ?> protocol = nestedMap(req, "protocol");
+        assertThat(protocol.get("http_version")).isEqualTo("HTTP/2");
     }
 
     @Test
@@ -164,16 +320,67 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<?, ?> resp = nestedMap(doc, "response");
         assertThat(resp).isNotNull();
-        assertContainsKeys(resp, "status", "status_code_class", "reason_phrase", "http_version", "headers",
-                "cookies", "mime_type", "body", "markers");
+        assertContainsKeys(resp, "status", "protocol", "header", "body");
+        assertThat(resp.containsKey("headers")).isFalse();
+        assertThat(resp.containsKey("cookies")).isFalse();
+        assertThat(resp.containsKey("markers")).isFalse();
+        Map<?, ?> respStatus = nestedMap(resp, "status");
+        assertContainsKeys(respStatus, "code", "code_class", "description");
+        Map<?, ?> respProtocol = nestedMap(resp, "protocol");
+        assertContainsKeys(respProtocol, "http_version");
         Map<?, ?> respBody = nestedMap(resp, "body");
-        assertContainsKeys(respBody, "length", "offset", "b64", "text");
-        Map<?, ?> respHeaders = nestedMap(resp, "headers");
-        assertContainsKeys(respHeaders, "full");
-        assertThat(respHeaders.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
-        assertThat(resp.get("status")).isEqualTo(200);
-        assertThat(resp.get("status_code_class")).isEqualTo("CLASS_2XX_SUCCESS");
-        assertThat(resp.get("reason_phrase")).isEqualTo("OK");
+        assertContainsKeys(respBody, "length", "offset", "b64", "text", "markers");
+        assertContainsKeys(nestedMap(resp, "header"), "content-type_inferred_burp",
+                "content-type_inferred_burp_body");
+        assertThat(respStatus.get("code")).isEqualTo(200);
+        assertThat(respStatus.get("code_class")).isEqualTo("CLASS_2XX_SUCCESS");
+        assertThat(respStatus.get("description")).isEqualTo("OK");
+    }
+
+    @Test
+    void buildDocument_exportsTrafficHeadersAsLowerCaseDynamicFields() {
+        HttpHeader host = mock(HttpHeader.class);
+        when(host.name()).thenReturn("Host");
+        when(host.value()).thenReturn("ip.me");
+        HttpHeader forwardedFor = mock(HttpHeader.class);
+        when(forwardedFor.name()).thenReturn("X-Forwarded-For");
+        when(forwardedFor.value()).thenReturn("203.0.113.10");
+        HttpHeader forwardedForTwo = mock(HttpHeader.class);
+        when(forwardedForTwo.name()).thenReturn("x-forwarded-for");
+        when(forwardedForTwo.value()).thenReturn("203.0.113.11");
+        when(request.headers()).thenReturn(List.of(host, forwardedFor, forwardedForTwo));
+
+        HttpHeader server = mock(HttpHeader.class);
+        when(server.name()).thenReturn("Server");
+        when(server.value()).thenReturn("nginx/1.18.0");
+        HttpHeader setCookieOne = mock(HttpHeader.class);
+        when(setCookieOne.name()).thenReturn("Set-Cookie");
+        when(setCookieOne.value()).thenReturn("a=1");
+        HttpHeader setCookieTwo = mock(HttpHeader.class);
+        when(setCookieTwo.name()).thenReturn("set-cookie");
+        when(setCookieTwo.value()).thenReturn("b=2");
+        when(response.headers()).thenReturn(List.of(server, setCookieOne, setCookieTwo));
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+
+        Map<?, ?> requestDoc = nestedMap(doc, "request");
+        Map<?, ?> requestHeader = nestedMap(requestDoc, "header");
+        assertThat(requestHeader.get("host")).isEqualTo("ip.me");
+        assertThat(requestHeader.get("x-forwarded-for"))
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class))
+                .containsExactly("203.0.113.10", "203.0.113.11");
+        assertThat(requestHeader.containsKey("content-type_inferred")).isTrue();
+        assertThat(requestDoc.containsKey("headers")).isFalse();
+
+        Map<?, ?> responseDoc = nestedMap(doc, "response");
+        Map<?, ?> responseHeader = nestedMap(responseDoc, "header");
+        assertThat(responseHeader.get("server")).isEqualTo("nginx/1.18.0");
+        assertThat(responseHeader.get("set-cookie"))
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class))
+                .containsExactly("a=1", "b=2");
+        assertThat(responseHeader.containsKey("content-type_inferred_burp")).isTrue();
+        assertThat(responseHeader.containsKey("content-type_inferred_burp_body")).isTrue();
+        assertThat(responseDoc.containsKey("headers")).isFalse();
     }
 
     @Test
@@ -300,10 +507,10 @@ class TrafficHttpHandlerDocumentTest {
     }
 
     @Test
-    void buildDocument_documentMetaHasSchemaAndVersion() {
+    void buildDocument_metaHasSchemaAndVersion() {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
-        Map<?, ?> meta = nestedMap(doc, "document_meta");
+        Map<?, ?> meta = nestedMap(doc, "meta");
         assertThat(meta).isNotNull();
         assertContainsKeys(meta, "schema_version", "extension_version", "indexed_at");
         assertThat(meta.get("schema_version")).isEqualTo("1");
@@ -314,16 +521,24 @@ class TrafficHttpHandlerDocumentTest {
         Map<?, ?> responseDoc = map(callStatic(TrafficHttpHandler.class, "buildOrphanResponse"));
 
         assertContainsKeys(responseDoc,
-                "status", "status_code_class", "reason_phrase", "http_version", "headers", "cookies",
-                "mime_type", "stated_mime_type", "inferred_mime_type", "body", "markers");
+                "status", "protocol", "header", "body");
+        assertThat(responseDoc.containsKey("headers")).isFalse();
+        assertThat(responseDoc.containsKey("cookies")).isFalse();
+        assertThat(responseDoc.containsKey("markers")).isFalse();
+        Map<?, ?> status = nestedMap(responseDoc, "status");
+        assertContainsKeys(status, "code", "code_class", "description");
+        Map<?, ?> protocol = nestedMap(responseDoc, "protocol");
+        assertContainsKeys(protocol, "http_version");
+        assertThat(responseDoc.containsKey("mime_type")).isFalse();
         assertMissingKeys(responseDoc, "header_names", "body_length", "body_offset");
-
-        Map<?, ?> headers = nestedMap(responseDoc, "headers");
-        assertContainsKeys(headers, "full", "names", "etag", "last_modified", "content_location");
-        assertThat(headers.get("full")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
-        assertThat(headers.get("names")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class)).isEmpty();
+        Map<?, ?> header = nestedMap(responseDoc, "header");
+        assertContainsKeys(header, "content-type_inferred_burp", "content-type_inferred_burp_body");
+        assertThat(header.get("content-type_inferred_burp")).isNull();
+        assertThat(header.get("content-type_inferred_burp_body")).isNull();
 
         Map<?, ?> body = nestedMap(responseDoc, "body");
+        assertContainsKeys(body, "markers");
+
         assertThat(body.get("length")).isEqualTo(0);
         assertThat(body.get("offset")).isEqualTo(0);
         assertThat(body.get("b64")).isNull();
@@ -804,9 +1019,7 @@ class TrafficHttpHandlerDocumentTest {
 
     @Test
     void buildOrphanDocumentSkeleton_writesRepeaterRequestStageMetadata_forRequestOnlyExports() {
-        // buildOrphanDocumentSkeleton returns LinkedHashMap<String, Object>; cast narrows the erased signature.
-        @SuppressWarnings("unchecked")
-        Map<String, Object> skeleton = (Map<String, Object>) call(
+        Map<String, Object> skeleton = objectMap(call(
                 handler,
                 "buildOrphanDocumentSkeleton",
                 requestToBeSent(
@@ -814,10 +1027,10 @@ class TrafficHttpHandlerDocumentTest {
                         77,
                         ToolType.REPEATER),
                 1L,
-                new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha"));
+                new RepeaterMetadataFields.Metadata("Repeater Tab", "Group Alpha")));
 
-        assertThat(skeleton.get("repeater_tab_name")).isEqualTo("Repeater Tab");
-        assertThat(skeleton.get("repeater_group_name")).isEqualTo("Group Alpha");
+        assertThat(burpRepeater(skeleton)).containsEntry("tab_name", "Repeater Tab");
+        assertThat(burpRepeater(skeleton)).containsEntry("tab_group", "Group Alpha");
     }
 
     @Test
@@ -831,9 +1044,7 @@ class TrafficHttpHandlerDocumentTest {
                     new RepeaterMetadataFields.Metadata("Tracked Tab", "Tracked Group"),
                     System.currentTimeMillis());
 
-            // buildOrphanDocumentSkeleton returns LinkedHashMap<String, Object>; cast narrows the erased signature.
-            @SuppressWarnings("unchecked")
-            Map<String, Object> skeleton = (Map<String, Object>) call(
+            Map<String, Object> skeleton = objectMap(call(
                     handler,
                     "buildOrphanDocumentSkeleton",
                     requestToBeSent(
@@ -841,13 +1052,38 @@ class TrafficHttpHandlerDocumentTest {
                             78,
                             ToolType.PROXY),
                     1L,
-                    TrafficHttpHandler.resolveRequestStageRepeaterMetadata(request, ToolType.PROXY));
+                    TrafficHttpHandler.resolveRequestStageRepeaterMetadata(request, ToolType.PROXY)));
 
-            assertThat(skeleton.get("repeater_tab_name")).isNull();
-            assertThat(skeleton.get("repeater_group_name")).isNull();
+            assertThat(burpRepeater(skeleton)).containsEntry("tab_name", null);
+            assertThat(burpRepeater(skeleton)).containsEntry("tab_group", null);
         } finally {
             RepeaterLiveMetadataTracker.clear();
         }
+    }
+
+    private static Map<String, Object> requestProtocol(Map<String, Object> doc) {
+        return objectMap(objectMap(doc.get("request")).get("protocol"));
+    }
+
+    private static Map<String, Object> websocket(Map<String, Object> doc) {
+        return objectMap(doc.get("websocket"));
+    }
+
+    private static Map<String, Object> burpRepeater(Map<String, Object> doc) {
+        return objectMap(objectMap(doc.get("burp")).get("repeater"));
+    }
+
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            return Map.of();
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                out.put(key, entry.getValue());
+            }
+        }
+        return out;
     }
 
     private static HttpRequestResponse requestResponse(String rawRequest, String rawResponse) {

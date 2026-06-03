@@ -50,19 +50,19 @@ class ConfigPanelStartFailureAuthIT {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (!openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JTextField openSearchUrlField = get(p, "openSearchUrlField");
+                JTextField openSearchUrlField = JTextField.class.cast(get(p, "openSearchUrlField"));
                 openSearchUrlField.setText(OpenSearchReachable.BASE_URL);
 
-                JComboBox<String> authCombo = get(p, "openSearchAuthTypeCombo");
+                JComboBox<String> authCombo = JComboBox.class.cast(get(p, "openSearchAuthTypeCombo"));
                 authCombo.setSelectedItem("Basic");
 
-                JTextField userField = get(p, "openSearchUserField");
-                JPasswordField passwordField = get(p, "openSearchPasswordField");
+                JTextField userField = JTextField.class.cast(get(p, "openSearchUserField"));
+                JPasswordField passwordField = JPasswordField.class.cast(get(p, "openSearchPasswordField"));
                 userField.setText("definitely-wrong");
                 passwordField.setText("definitely-wrong");
 
@@ -71,7 +71,7 @@ class ConfigPanelStartFailureAuthIT {
             panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);
@@ -115,27 +115,27 @@ class ConfigPanelStartFailureAuthIT {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(invalidFileRoot.toAbsolutePath().normalize().toString());
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (!openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
-                JTextField openSearchUrlField = get(p, "openSearchUrlField");
+                JTextField openSearchUrlField = JTextField.class.cast(get(p, "openSearchUrlField"));
                 openSearchUrlField.setText(config.baseUrl());
 
-                JComboBox<String> authCombo = get(p, "openSearchAuthTypeCombo");
-                JTextField userField = get(p, "openSearchUserField");
-                JPasswordField passwordField = get(p, "openSearchPasswordField");
+                JComboBox<String> authCombo = JComboBox.class.cast(get(p, "openSearchAuthTypeCombo"));
+                JTextField userField = JTextField.class.cast(get(p, "openSearchUserField"));
+                JPasswordField passwordField = JPasswordField.class.cast(get(p, "openSearchPasswordField"));
                 if (config.hasCredentials()) {
                     authCombo.setSelectedItem("Basic");
                     userField.setText(config.username());
@@ -151,7 +151,7 @@ class ConfigPanelStartFailureAuthIT {
             panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStartedUi(startStop);

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.ui.ConfigPanel;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 
@@ -35,11 +36,13 @@ class WorkerShutdownTest {
     @BeforeEach
     void resetExportRunningFlag() {
         RuntimeConfig.setExportRunning(false);
+        RuntimeConfig.setExportStarting(false);
     }
 
     @AfterEach
     void stopAllWorkers() {
         RuntimeConfig.setExportRunning(false);
+        RuntimeConfig.setExportStarting(false);
         TrafficExportQueue.stopWorker();
         TrafficExportQueue.clearPendingWork();
         TrafficHttpHandlerSupport.stop();
@@ -63,11 +66,22 @@ class WorkerShutdownTest {
 
     @Test
     void trafficExportQueue_stopWorker_terminatesDrainWorker() throws Exception {
+        RuntimeConfig.updateState(new ConfigState.State(
+                java.util.List.of("traffic"),
+                "all",
+                java.util.List.of(),
+                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                java.util.List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        RuntimeConfig.setExportRunning(true);
+        RuntimeConfig.setExportStarting(true);
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("url", "http://localhost/worker-shutdown-test");
+        doc.put("burp", Map.of("reporting_tool", "Proxy"));
         TrafficExportQueue.offer(doc);
 
-        Thread started = getStatic(TrafficExportQueue.class, "drainWorker");
+        Thread started = Thread.class.cast(getStatic(TrafficExportQueue.class, "drainWorker"));
         assertThat(started).isNotNull();
         assertThat(started.isAlive()).isTrue();
 
@@ -75,13 +89,13 @@ class WorkerShutdownTest {
 
         started.join(2_000);
         assertThat(started.isAlive()).isFalse();
-        assertThat((Thread) getStatic(TrafficExportQueue.class, "drainWorker")).isNull();
+        assertThat(Thread.class.cast(getStatic(TrafficExportQueue.class, "drainWorker"))).isNull();
         TrafficExportQueue.clearPendingWork();
     }
 
     @Test
     void proxyHistoryIndexReporter_stop_terminatesScheduler() throws Exception {
-        LazyScheduler holder = getStatic(ProxyHistoryIndexReporter.class, "SCHEDULER");
+        LazyScheduler holder = LazyScheduler.class.cast(getStatic(ProxyHistoryIndexReporter.class, "SCHEDULER"));
         ScheduledExecutorService started = holder.getOrStart();
         assertThat(started).isNotNull();
 
@@ -97,7 +111,7 @@ class WorkerShutdownTest {
         IndexingRetryCoordinator coordinator = new IndexingRetryCoordinator();
         Reflect.call(coordinator, "ensureDrainThreadStarted");
 
-        Thread started = Reflect.get(coordinator, "drainThread");
+        Thread started = Reflect.get(coordinator, "drainThread", Thread.class);
         assertThat(started).isNotNull();
         assertThat(started.isAlive()).isTrue();
 
@@ -110,7 +124,7 @@ class WorkerShutdownTest {
 
     @Test
     void configPanel_shutdownStartupExecutor_terminatesAndReplacesExecutor() throws Exception {
-        ExecutorService before = getStatic(ConfigPanel.class, "startupExecutor");
+        ExecutorService before = ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor"));
         assertThat(before.isShutdown()).isFalse();
 
         ConfigPanel.shutdownStartupExecutor();
@@ -118,7 +132,7 @@ class WorkerShutdownTest {
         assertThat(before.isShutdown()).isTrue();
         assertThat(before.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
 
-        ExecutorService after = getStatic(ConfigPanel.class, "startupExecutor");
+        ExecutorService after = ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor"));
         assertThat(after).isNotSameAs(before);
         assertThat(after.isShutdown()).isFalse();
     }
@@ -141,6 +155,6 @@ class WorkerShutdownTest {
     void trafficExportQueue_stopWorker_whenNotStarted_isNoOp() {
         setStatic(TrafficExportQueue.class, "drainWorker", null);
         TrafficExportQueue.stopWorker();
-        assertThat((Thread) getStatic(TrafficExportQueue.class, "drainWorker")).isNull();
+        assertThat(Thread.class.cast(getStatic(TrafficExportQueue.class, "drainWorker"))).isNull();
     }
 }

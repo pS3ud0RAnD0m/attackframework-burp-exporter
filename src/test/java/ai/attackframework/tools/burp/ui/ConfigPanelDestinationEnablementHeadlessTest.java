@@ -56,24 +56,24 @@ class ConfigPanelDestinationEnablementHeadlessTest {
     @Test
     void deselecting_destinations_disables_textfields_and_action_buttons() {
         // Files row (access private fields directly via shared Reflect helper).
-        JCheckBox filesEnable = get(panel, "fileSinkCheckbox");
-        JRadioButton jsonlEnable = get(panel, "fileJsonlCheckbox");
-        JRadioButton bulkNdjsonEnable = get(panel, "fileBulkNdjsonCheckbox");
-        JTextField filesPath  = get(panel, "filePathField");
-        JCheckBox totalEnable = get(panel, "fileTotalCapCheckbox");
-        JTextField totalField = get(panel, "fileTotalCapField");
-        JCheckBox diskPercentEnable = get(panel, "fileDiskUsagePercentCheckbox");
-        JTextField diskPercentField = get(panel, "fileDiskUsagePercentField");
+        JCheckBox filesEnable = JCheckBox.class.cast(get(panel, "fileSinkCheckbox"));
+        JRadioButton jsonlEnable = JRadioButton.class.cast(get(panel, "fileJsonlCheckbox"));
+        JRadioButton bulkNdjsonEnable = JRadioButton.class.cast(get(panel, "fileBulkNdjsonCheckbox"));
+        JTextField filesPath = JTextField.class.cast(get(panel, "filePathField"));
+        JCheckBox totalEnable = JCheckBox.class.cast(get(panel, "fileTotalCapCheckbox"));
+        JTextField totalField = JTextField.class.cast(get(panel, "fileTotalCapField"));
+        JCheckBox diskPercentEnable = JCheckBox.class.cast(get(panel, "fileDiskUsagePercentCheckbox"));
+        JTextField diskPercentField = JTextField.class.cast(get(panel, "fileDiskUsagePercentField"));
         JComponent formatsLabel = findByName(panel, "files.format.label");
         JComponent limitsLabel = findByName(panel, "files.limits.label");
         JComponent formatsSeparator = findByName(panel, "files.format.separator");
 
         // OpenSearch row
-        JCheckBox osEnable  = get(panel, "openSearchSinkCheckbox");
-        JTextField osUrl    = get(panel, "openSearchUrlField");
-        JComboBox<?> osAuthType = get(panel, "openSearchAuthTypeCombo");
-        JComboBox<?> osTlsMode = get(panel, "openSearchTlsModeCombo");
-        JButton osTest      = get(panel, "testConnectionButton");
+        JCheckBox osEnable = JCheckBox.class.cast(get(panel, "openSearchSinkCheckbox"));
+        JTextField osUrl = JTextField.class.cast(get(panel, "openSearchUrlField"));
+        JComboBox<?> osAuthType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+        JComboBox<?> osTlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+        JButton osTest = JButton.class.cast(get(panel, "testConnectionButton"));
 
         // Ensure both destinations are enabled
         if (!filesEnable.isSelected()) filesEnable.doClick();
@@ -119,8 +119,8 @@ class ConfigPanelDestinationEnablementHeadlessTest {
 
     @Test
     void file_format_tooltips_expand_jsonl_and_ndjson_terms() {
-        JRadioButton jsonlEnable = get(panel, "fileJsonlCheckbox");
-        JRadioButton bulkNdjsonEnable = get(panel, "fileBulkNdjsonCheckbox");
+        JRadioButton jsonlEnable = JRadioButton.class.cast(get(panel, "fileJsonlCheckbox"));
+        JRadioButton bulkNdjsonEnable = JRadioButton.class.cast(get(panel, "fileBulkNdjsonCheckbox"));
 
         assertThat(jsonlEnable.getText()).isEqualTo("JSONL");
         assertThat(bulkNdjsonEnable.getText()).isEqualTo("NDJSON");
@@ -133,9 +133,9 @@ class ConfigPanelDestinationEnablementHeadlessTest {
 
     @Test
     void file_format_radios_default_to_bulk_ndjson_and_allow_only_one_selection() {
-        JCheckBox filesEnable = get(panel, "fileSinkCheckbox");
-        JRadioButton jsonlEnable = get(panel, "fileJsonlCheckbox");
-        JRadioButton bulkNdjsonEnable = get(panel, "fileBulkNdjsonCheckbox");
+        JCheckBox filesEnable = JCheckBox.class.cast(get(panel, "fileSinkCheckbox"));
+        JRadioButton jsonlEnable = JRadioButton.class.cast(get(panel, "fileJsonlCheckbox"));
+        JRadioButton bulkNdjsonEnable = JRadioButton.class.cast(get(panel, "fileBulkNdjsonCheckbox"));
 
         if (!filesEnable.isSelected()) {
             filesEnable.doClick();
@@ -155,7 +155,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
 
     @Test
     void file_total_cap_field_accepts_decimal_gib_and_round_trips_cleanly() throws Exception {
-        JTextField totalField = get(panel, "fileTotalCapField");
+        JTextField totalField = JTextField.class.cast(get(panel, "fileTotalCapField"));
 
         SwingUtilities.invokeAndWait(() -> {
             totalField.setText("1.25");
@@ -191,9 +191,9 @@ class ConfigPanelDestinationEnablementHeadlessTest {
 
     @Test
     void tls_mode_combo_binds_enter_to_test_connection_action() throws Exception {
-        String actionKey = getStatic(ConfigPanel.class, "TLS_MODE_ENTER_TEST_CONNECTION");
+        String actionKey = String.class.cast(getStatic(ConfigPanel.class, "TLS_MODE_ENTER_TEST_CONNECTION"));
         SwingUtilities.invokeAndWait(() -> {
-            JComboBox<?> tlsMode = get(panel, "openSearchTlsModeCombo");
+            JComboBox<?> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
             Object mapped = tlsMode.getInputMap(JComponent.WHEN_FOCUSED)
                     .get(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
             assertThat(mapped).isEqualTo(actionKey);
@@ -203,8 +203,8 @@ class ConfigPanelDestinationEnablementHeadlessTest {
 
     @Test
     void pinned_tls_mode_shows_import_button_only_when_selected() {
-        JComboBox<String> tlsMode = get(panel, "openSearchTlsModeCombo");
-        JButton importButton = get(panel, "importPinnedCertificateButton");
+        JComboBox<String> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+        JButton importButton = JButton.class.cast(get(panel, "importPinnedCertificateButton"));
 
         assertThat(importButton.isVisible()).isFalse();
 

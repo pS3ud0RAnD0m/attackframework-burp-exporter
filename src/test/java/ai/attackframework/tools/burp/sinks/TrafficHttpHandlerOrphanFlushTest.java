@@ -2,14 +2,11 @@ package ai.attackframework.tools.burp.sinks;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.junit.jupiter.api.Test;
 
@@ -24,12 +21,10 @@ import burp.api.montoya.core.ToolType;
  *
  * <p>Verifies that requests whose pending timestamp has aged past the orphan timeout are drained
  * into {@link TrafficExportQueue} and then removed from the pending-orphan map. The test
- * populates the pending map directly via reflection so it stays independent of Burp's
- * {@code ObjectFactoryLocator} which is not wired in unit tests.</p>
+ * registers pending orphans via package-private test hooks so it stays independent of Burp's
+ * {@code ObjectFactoryLocator}, which is not wired in unit tests.</p>
  */
 class TrafficHttpHandlerOrphanFlushTest {
-
-    private static final String SUPPORT_CLASS = "ai.attackframework.tools.burp.sinks.TrafficHttpHandlerSupport";
 
     @Test
     void flushOrphanedRequests_drainsAgedEntryToExportQueue() throws Exception {
@@ -38,79 +33,95 @@ class TrafficHttpHandlerOrphanFlushTest {
         RuntimeConfig.setExportRunning(true);
         try {
             TrafficExportQueue.clearPendingWork();
-            clearPendingOrphans();
+            TrafficHttpHandlerSupport.clearPendingOrphansForTest();
 
             int messageId = 4242;
             seedAgedPendingOrphan(messageId, ToolType.REPEATER);
 
             int sizeBefore = TrafficExportQueue.getCurrentSize();
-            invokeFlushOrphanedRequests();
+            TrafficHttpHandlerSupport.flushOrphanedRequestsForTest();
             int sizeAfter = TrafficExportQueue.getCurrentSize();
 
-            assertThat(sizeAfter - sizeBefore).isGreaterThanOrEqualTo(1);
+            assertThat(sizeAfter - sizeBefore >= 1 || waitForFileExport(root)).isTrue();
             assertPendingOrphanRemoved(messageId);
         } finally {
             RuntimeConfig.setExportRunning(false);
             TrafficExportQueue.clearPendingWork();
-            clearPendingOrphans();
+            TrafficHttpHandlerSupport.clearPendingOrphansForTest();
         }
     }
 
-    private static void seedAgedPendingOrphan(int messageId, ToolType toolType) throws Exception {
-        Class<?> pendingOrphanCls = Class.forName(SUPPORT_CLASS + "$PendingOrphan");
-        Class<?> resolutionCls = Class.forName(SUPPORT_CLASS + "$RequestStageResolution");
+    @Test
+    void flushOrphanedRequests_dropsAgedEntryWhenToolTypeDeselected() throws Exception {
+        Path root = TestPathSupport.createDirectory("traffic-handler-orphan-deselected");
+        RuntimeConfig.updateState(fileOnlyTrafficState(root, List.of("proxy")));
+        RuntimeConfig.setExportRunning(true);
+        try {
+            TrafficExportQueue.clearPendingWork();
+            TrafficHttpHandlerSupport.clearPendingOrphansForTest();
 
-        Method resolutionNone = resolutionCls.getDeclaredMethod("none");
-        resolutionNone.setAccessible(true);
-        Object resolution = resolutionNone.invoke(null);
+            int messageId = 4343;
+            seedAgedPendingOrphan(messageId, ToolType.REPEATER);
 
+            int sizeBefore = TrafficExportQueue.getCurrentSize();
+            TrafficHttpHandlerSupport.flushOrphanedRequestsForTest();
+            int sizeAfter = TrafficExportQueue.getCurrentSize();
+
+            assertThat(sizeAfter).isEqualTo(sizeBefore);
+            assertPendingOrphanRemoved(messageId);
+        } finally {
+            RuntimeConfig.setExportRunning(false);
+            TrafficExportQueue.clearPendingWork();
+            TrafficHttpHandlerSupport.clearPendingOrphansForTest();
+        }
+    }
+
+    private static void seedAgedPendingOrphan(int messageId, ToolType toolType) {
         Map<String, Object> skeleton = new LinkedHashMap<>();
         skeleton.put("url", "https://example.test/orphan");
         skeleton.put("host", "example.test");
         skeleton.put("port", 443);
-        skeleton.put("tool_type", toolType.name());
-        skeleton.put("message_id", messageId);
+        skeleton.put("burp", Map.of("reporting_tool", toolType.toolName(), "message_id", messageId));
 
-        Constructor<?> ctor = pendingOrphanCls.getDeclaredConstructors()[0];
-        ctor.setAccessible(true);
-        Object aged = ctor.newInstance(skeleton, 0L, toolType, resolution);
-
-        readPendingOrphans().put(messageId, aged);
+        TrafficHttpHandlerSupport.registerPendingOrphanForTest(
+                messageId,
+                skeleton,
+                toolType,
+                TrafficHttpHandlerSupport.RequestStageResolution.none());
     }
 
-    private static void invokeFlushOrphanedRequests() throws Exception {
-        Method m = Class.forName(SUPPORT_CLASS).getDeclaredMethod("flushOrphanedRequests");
-        m.setAccessible(true);
-        m.invoke(null);
+    private static boolean waitForFileExport(Path root) throws Exception {
+        long deadline = System.currentTimeMillis() + 2_000;
+        while (System.currentTimeMillis() < deadline) {
+            try (var files = Files.walk(root)) {
+                if (files.filter(Files::isRegularFile).anyMatch(TrafficHttpHandlerOrphanFlushTest::hasContent)) {
+                    return true;
+                }
+            }
+            Thread.sleep(50);
+        }
+        return false;
     }
 
-    private static void assertPendingOrphanRemoved(int messageId) throws Exception {
-        assertThat(readPendingOrphans().get(messageId))
+    private static boolean hasContent(Path path) {
+        try {
+            return Files.size(path) > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void assertPendingOrphanRemoved(int messageId) {
+        assertThat(TrafficHttpHandlerSupport.containsPendingOrphanForTest(messageId))
                 .as("flushOrphanedRequests must remove drained entries")
-                .isNull();
-    }
-
-    private static void clearPendingOrphans() throws Exception {
-        readPendingOrphans().clear();
-    }
-
-    /**
-     * Returns the private static {@code pendingOrphans} map from {@code TrafficHttpHandlerSupport}
-     * via reflection, exposing it to the test as a typed {@code ConcurrentHashMap<Integer, Object>}.
-     *
-     * <p>Single centralized suppression for this test: the field is declared in production code as
-     * {@code ConcurrentHashMap<Integer, PendingOrphan>}; we narrow to {@code Object} values because
-     * {@code PendingOrphan} is package-private and only referenced via reflection here. The cast
-     * merely re-asserts the generic parameters that type erasure strips at runtime.</p>
-     */
-    @SuppressWarnings("unchecked") // Field is ConcurrentHashMap<Integer, PendingOrphan>; test uses Object values via reflection.
-    private static ConcurrentHashMap<Integer, Object> readPendingOrphans() throws Exception {
-        Field pendingField = Class.forName(SUPPORT_CLASS).getDeclaredField("pendingOrphans");
-        pendingField.setAccessible(true);
-        return (ConcurrentHashMap<Integer, Object>) pendingField.get(null);
+                .isFalse();
     }
 
     private static ConfigState.State fileOnlyTrafficState(Path root) {
+        return fileOnlyTrafficState(root, List.of("repeater"));
+    }
+
+    private static ConfigState.State fileOnlyTrafficState(Path root, List<String> trafficToolTypes) {
         return new ConfigState.State(
                 List.of(ConfigKeys.SRC_TRAFFIC),
                 ConfigKeys.SCOPE_ALL,
@@ -130,7 +141,7 @@ class TrafficHttpHandlerOrphanFlushTest {
                         "",
                         ConfigState.OPEN_SEARCH_TLS_VERIFY),
                 ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("repeater"),
+                trafficToolTypes,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null);
     }

@@ -29,7 +29,7 @@ class ConfigPanelTriStateImportHeadlessTest {
     void import_withPartialTrafficChildren_setsTrafficParentToIndeterminate() throws Exception {
         ConfigPanel panel = createPanel();
 
-        TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
+        TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
 
         // Imported state selects "traffic" at top-level but only "repeater_tabs" among children.
         ConfigState.State imported = new ConfigState.State(
@@ -50,8 +50,8 @@ class ConfigPanelTriStateImportHeadlessTest {
                 .as("Traffic parent must reflect partial sub-selection after import")
                 .isEqualTo(TriStateCheckBox.State.INDETERMINATE);
 
-        JCheckBox repeaterTabs = Reflect.get(panel, "trafficRepeaterTabsCheckbox");
-        JCheckBox proxy = Reflect.get(panel, "trafficProxyCheckbox");
+        JCheckBox repeaterTabs = Reflect.get(panel, "trafficRepeaterTabsCheckbox", JCheckBox.class);
+        JCheckBox proxy = Reflect.get(panel, "trafficProxyCheckbox", JCheckBox.class);
         assertThat(repeaterTabs.isSelected()).isTrue();
         assertThat(proxy.isSelected()).isFalse();
     }
@@ -60,7 +60,7 @@ class ConfigPanelTriStateImportHeadlessTest {
     void import_withAllTrafficChildren_setsTrafficParentToSelected() throws Exception {
         ConfigPanel panel = createPanel();
 
-        TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
+        TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
 
         ConfigState.State imported = new ConfigState.State(
                 List.of("traffic"),
@@ -84,7 +84,7 @@ class ConfigPanelTriStateImportHeadlessTest {
     void import_withNoTrafficChildren_setsTrafficParentToDeselected() throws Exception {
         ConfigPanel panel = createPanel();
 
-        TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox");
+        TriStateCheckBox trafficCheckbox = Reflect.get(panel, "trafficCheckbox", TriStateCheckBox.class);
 
         ConfigState.State imported = new ConfigState.State(
                 List.of("traffic"),
@@ -107,7 +107,7 @@ class ConfigPanelTriStateImportHeadlessTest {
     void import_withPartialExporterChildren_setsExporterParentToIndeterminate() throws Exception {
         ConfigPanel panel = createPanel();
 
-        TriStateCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox");
+        TriStateCheckBox exporterCheckbox = Reflect.get(panel, "exporterCheckbox", TriStateCheckBox.class);
 
         // Two of the seven exporter sub-options selected.
         ConfigState.State imported = new ConfigState.State(

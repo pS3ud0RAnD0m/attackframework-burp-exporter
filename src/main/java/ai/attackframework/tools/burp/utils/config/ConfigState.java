@@ -458,7 +458,10 @@ public final class ConfigState {
 
     /** Normalizes traffic tool ids to lowercase. */
     public static List<String> normalizeTrafficToolTypes(List<String> values) {
-        return normalizeLowercaseList(values);
+        Set<String> knownToolTypes = Set.copyOf(DEFAULT_TRAFFIC_TOOL_TYPES);
+        return normalizeLowercaseList(values).stream()
+                .filter(knownToolTypes::contains)
+                .toList();
     }
 
     /** Normalizes finding severity ids to lowercase. */

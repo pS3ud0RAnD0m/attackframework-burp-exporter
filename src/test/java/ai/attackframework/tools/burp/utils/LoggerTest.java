@@ -181,9 +181,10 @@ class LoggerTest {
 
             Logger.resetState();
 
-            assertThat(Reflect.<List<?>>getStatic(Logger.class, "LISTENERS")).isEmpty();
-            assertThat(Reflect.<List<?>>getStatic(Logger.class, "REPLAY_BUFFER")).isEmpty();
-            assertThat(Reflect.<java.util.concurrent.atomic.AtomicLong>getStatic(Logger.class, "REPLAY_SEQ").get()).isZero();
+            assertThat(List.class.cast(Reflect.getStatic(Logger.class, "LISTENERS"))).isEmpty();
+            assertThat(List.class.cast(Reflect.getStatic(Logger.class, "REPLAY_BUFFER"))).isEmpty();
+            assertThat(((java.util.concurrent.atomic.AtomicLong) Reflect.getStatic(Logger.class, "REPLAY_SEQ")).get())
+                    .isZero();
 
             List<String> replaySeen = new ArrayList<>();
             Logger.ReplayableLogListener replayable = (level, msg) -> replaySeen.add(level + ":" + msg);
@@ -202,7 +203,7 @@ class LoggerTest {
 
     private static int replayBufferSize() {
         try {
-            return Reflect.getStatic(Logger.class, "REPLAY_BUFFER_SIZE");
+            return Reflect.getStaticInt(Logger.class, "REPLAY_BUFFER_SIZE");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

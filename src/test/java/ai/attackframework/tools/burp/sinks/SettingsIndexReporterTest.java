@@ -140,10 +140,12 @@ class SettingsIndexReporterTest {
 
             assertThat(projectJson).isNull();
             assertThat(userJson).isNull();
-            assertThat(doc.get("project_id")).isEqualTo(BurpRuntimeMetadata.UNKNOWN_PROJECT_ID);
-            assertThat(doc.get("settings_project")).isEqualTo(Map.of());
-            assertThat(doc.get("settings_user")).isEqualTo(Map.of());
-            assertThat(doc.keySet().stream().anyMatch("document_meta"::equals)).isTrue();
+            Map<?, ?> burp = (Map<?, ?>) doc.get("burp");
+            assertThat(burp.get("project_id")).isEqualTo(BurpRuntimeMetadata.UNKNOWN_PROJECT_ID);
+            assertThat(burp.containsKey("version")).isTrue();
+            assertThat(doc.get("project")).isEqualTo(Map.of());
+            assertThat(doc.get("user")).isEqualTo(Map.of());
+            assertThat(doc.keySet().stream().anyMatch("meta"::equals)).isTrue();
         } finally {
             BurpRuntimeMetadata.clear();
             resetState();

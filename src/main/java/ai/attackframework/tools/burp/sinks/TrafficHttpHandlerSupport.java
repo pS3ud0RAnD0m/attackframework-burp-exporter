@@ -1,7 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.net.URI;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -12,13 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.StringKeyedMaps;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import burp.api.montoya.core.Annotations;
-import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
@@ -27,7 +24,6 @@ import burp.api.montoya.http.handler.HttpRequestToBeSent;
 import burp.api.montoya.http.handler.HttpResponseReceived;
 import burp.api.montoya.http.handler.RequestToBeSentAction;
 import burp.api.montoya.http.handler.ResponseReceivedAction;
-import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.requests.HttpRequest;
 
 /**
@@ -99,10 +95,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
 
     /** Whether traffic from this tool source should be exported (user-selected tool types only). */
     private static boolean shouldExportTrafficByToolSource(ToolType toolType) {
-        if (toolType == null) {
-            return false;
-        }
-        return RuntimeConfig.isTrafficToolTypeEnabled(toolType.name());
+        return RuntimeConfig.trafficExportGate().includesToolType(RuntimeConfig.normalizedToolTypeKey(toolType));
     }
 
     /**
@@ -112,7 +105,17 @@ class TrafficHttpHandlerSupport implements HttpHandler {
      * events when Proxy export is enabled so normal browser-driven Proxy traffic is not dropped.</p>
      */
     private static boolean shouldExportNullToolSourceTraffic() {
-        return RuntimeConfig.isTrafficToolTypeEnabled("proxy");
+        return RuntimeConfig.trafficExportGate().includesToolType("proxy");
+    }
+
+    private static boolean shouldStillExportPendingOrphan(PendingOrphan pending) {
+        if (pending == null) {
+            return false;
+        }
+        if (shouldExportTrafficByToolSource(pending.toolType)) {
+            return true;
+        }
+        return pending.toolType == null && shouldExportNullToolSourceTraffic();
     }
 
     /**
@@ -142,14 +145,15 @@ class TrafficHttpHandlerSupport implements HttpHandler {
 
     @Override
     public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent request) {
+        RuntimeConfig.TrafficExportGate trafficGate = RuntimeConfig.trafficExportGate();
         if (!RuntimeConfig.isExportReady()
-                || !RuntimeConfig.isAnyTrafficExportEnabled()) {
+                || !trafficGate.anyTrafficExportEnabled()) {
             return RequestToBeSentAction.continueWith(request);
         }
         String scopeUrl = RequestResponseDocBuilder.buildBestEffortUrl(
                 request,
                 request.httpService(),
-                RequestResponseDocBuilder.buildRequestDoc(request),
+                RequestResponseDocBuilder.buildTrafficRequestDoc(request),
                 "TrafficHttpHandler");
         if (!ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), scopeUrl, request.isInScope())) {
@@ -195,7 +199,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         if (!RuntimeConfig.isExportReady()) {
             return ResponseReceivedAction.continueWith(response);
         }
-        if (!RuntimeConfig.isAnyTrafficExportEnabled()) {
+        if (!RuntimeConfig.trafficExportGate().anyTrafficExportEnabled()) {
             return ResponseReceivedAction.continueWith(response);
         }
 
@@ -208,7 +212,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         String scopeUrl = RequestResponseDocBuilder.buildBestEffortUrl(
                 request,
                 request.httpService(),
-                RequestResponseDocBuilder.buildRequestDoc(request),
+                RequestResponseDocBuilder.buildTrafficRequestDoc(request),
                 "TrafficHttpHandler");
         boolean inScope = ScopeFilter.shouldExport(
                 RuntimeConfig.getState(), scopeUrl, burpInScope);
@@ -259,6 +263,7 @@ class TrafficHttpHandlerSupport implements HttpHandler {
 
         Map<String, Object> document =
                 buildDocument(response, request, burpInScope, requestSentMs, responseReceivedMs, toolType, repeaterMetadata);
+        copyMissingAnnotationFieldsFromPendingRequest(document, pending);
         TrafficExportQueue.offer(document);
 
         pendingOrphans.remove(response.messageId());
@@ -311,76 +316,67 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         if (toolType == null) {
             toolType = toolSource == null ? null : toolSource.toolType();
         }
-        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
-        Object requestHttpVersion = requestDoc.get("http_version");
-
-        Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", RequestResponseDocBuilder.buildBestEffortUrl(
+        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+        String url = RequestResponseDocBuilder.buildBestEffortUrl(
                 request,
                 service,
                 requestDoc,
-                "TrafficHttpHandler"));
-        document.put("host", service == null ? null : service.host());
-        document.put("port", service == null ? null : service.port());
-        document.put("scheme", scheme);
-        document.put("protocol_transport", scheme);
-        document.put("protocol_application", "http");
-        document.put("protocol_sub", requestHttpVersion);
-        document.put("http_version", requestHttpVersion);
-        document.put("tool", toolType == null ? null : toolType.toolName());
-        document.put("tool_type", toolType == null ? null : toolType.name());
-        document.put("burp_in_scope", burpInScope);
-        document.put("message_id", response.messageId());
-        document.put("time_start", toIsoInstant(requestSentMs));
-        document.put("time_end", toIsoInstant(responseReceivedMs));
-        document.put("duration_ms", durationMs(requestSentMs, responseReceivedMs));
-        putAnnotations(document, response.annotations());
-        document.put("edited", null);
-        document.put("path", requestDoc.get("path"));
-        document.put("method", requestDoc.get("method"));
-        document.put("status", (int) response.statusCode());
-        MimeType responseMime = response.mimeType();
-        document.put("mime_type", responseMime == null ? null : responseMime.name());
+                "TrafficHttpHandler");
+        requestDoc.put("url", url);
+        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
+                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+
+        Map<String, Object> document = new LinkedHashMap<>();
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("reporting_tool", toolType == null ? null : toolType.toolName());
+        burp.put("is_in_scope", burpInScope);
+        burp.put("message_id", response.messageId());
+        BurpAnnotationFields.put(burp, response.annotations());
+        burp.put("timing", BurpTimingFields.fromHandlerEpochMillis(requestSentMs, responseReceivedMs));
+        burp.put("proxy", BurpProxyFields.withoutProxyHistoryEditMetadata(null));
+        document.put("burp", burp);
         RepeaterMetadataFields.put(document, repeaterMetadata);
 
         document.put("request", requestDoc);
-        document.put("response", RequestResponseDocBuilder.buildResponseDoc(response));
+        document.put("response", RequestResponseDocBuilder.buildTrafficResponseDoc(response));
+        document.put("websocket", WebSocketTrafficDocumentBuilder.notWebSocket());
 
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        document.put("document_meta", meta);
-        document.put("proxy_history_id", null);
-        document.put("listener_port", null);
-        document.put("time_request_sent", toIsoInstant(requestSentMs));
-        document.put("response_start_latency_ms", durationMs(requestSentMs, responseReceivedMs));
-        document.put("websocket_id", null);
-        document.put("ws_direction", null);
-        document.put("ws_message_type", null);
-        document.put("ws_payload", null);
-        document.put("ws_payload_text", null);
-        document.put("ws_payload_length", null);
-        document.put("ws_edited", null);
-        document.put("ws_edited_payload", null);
-        document.put("ws_upgrade_request", null);
-        document.put("ws_time", null);
-        document.put("ws_message_id", null);
-
+        document.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
         return document;
     }
 
-    private static void putAnnotations(Map<String, Object> document, Annotations annotations) {
-        if (annotations == null) {
+    private static void copyMissingAnnotationFieldsFromPendingRequest(
+            Map<String, Object> document,
+            PendingOrphan pending) {
+        if (document == null || pending == null || pending.documentSkeleton == null) {
             return;
         }
-        if (annotations.hasNotes()) {
-            document.put("comment", annotations.notes());
+        copyMissingBurpField(document, pending.documentSkeleton, "notes");
+        copyMissingBurpField(document, pending.documentSkeleton, "highlight");
+    }
+
+    private static void copyMissingBurpField(
+            Map<String, Object> targetDocument,
+            Map<String, Object> sourceDocument,
+            String field) {
+        Object targetBurpObject = targetDocument.get("burp");
+        Object sourceBurpObject = sourceDocument.get("burp");
+        if (!(targetBurpObject instanceof Map<?, ?> targetBurp)
+                || !(sourceBurpObject instanceof Map<?, ?> sourceBurp)
+                || targetBurp.containsKey(field)) {
+            return;
         }
-        if (annotations.hasHighlightColor()) {
-            HighlightColor color = annotations.highlightColor();
-            document.put("highlight", color == null ? null : color.name());
+        Object sourceValue = sourceBurp.get(field);
+        if (sourceValue != null) {
+            targetDocument.put("burp", copyWithBurpField(targetBurp, field, sourceValue));
         }
+    }
+
+    private static Map<String, Object> copyWithBurpField(Map<?, ?> source, String field, Object value) {
+        Map<String, Object> copy = StringKeyedMaps.copy(source);
+        copy.put(field, value);
+        return copy;
     }
 
     /**
@@ -397,60 +393,32 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         ToolSource toolSource = request.toolSource();
         ToolType toolType = toolSource == null ? null : toolSource.toolType();
         boolean burpInScope = request.isInScope();
-        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
-        Object requestHttpVersion = requestDoc.get("http_version");
-
-        Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", RequestResponseDocBuilder.buildBestEffortUrl(
+        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+        String url = RequestResponseDocBuilder.buildBestEffortUrl(
                 request,
                 service,
                 requestDoc,
-                "TrafficHttpHandler"));
-        document.put("host", service == null ? null : service.host());
-        document.put("port", service == null ? null : service.port());
-        document.put("scheme", scheme);
-        document.put("protocol_transport", scheme);
-        document.put("protocol_application", "http");
-        document.put("protocol_sub", requestHttpVersion);
-        document.put("http_version", requestHttpVersion);
-        document.put("tool", toolType == null ? null : toolType.toolName());
-        document.put("tool_type", toolType == null ? null : toolType.name());
-        document.put("burp_in_scope", burpInScope);
-        document.put("message_id", request.messageId());
-        document.put("time_start", toIsoInstant(requestSentMs));
-        document.put("time_end", null);
-        document.put("duration_ms", null);
-        putAnnotations(document, request.annotations());
-        document.put("edited", null);
-        document.put("path", requestDoc.get("path"));
-        document.put("method", requestDoc.get("method"));
-        document.put("status", ORPHAN_STATUS);
-        document.put("mime_type", (String) null);
+                "TrafficHttpHandler");
+        requestDoc.put("url", url);
+        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
+                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+
+        Map<String, Object> document = new LinkedHashMap<>();
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("reporting_tool", toolType == null ? null : toolType.toolName());
+        burp.put("is_in_scope", burpInScope);
+        burp.put("message_id", request.messageId());
+        BurpAnnotationFields.put(burp, request.annotations());
+        burp.put("timing", BurpTimingFields.fromHandlerEpochMillis(requestSentMs, null));
+        burp.put("proxy", BurpProxyFields.withoutProxyHistoryEditMetadata(null));
+        document.put("burp", burp);
         RepeaterMetadataFields.put(document, repeaterMetadata);
 
         document.put("request", requestDoc);
+        document.put("websocket", WebSocketTrafficDocumentBuilder.notWebSocket());
 
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        document.put("document_meta", meta);
-        document.put("proxy_history_id", null);
-        document.put("listener_port", null);
-        document.put("time_request_sent", toIsoInstant(requestSentMs));
-        document.put("response_start_latency_ms", null);
-        document.put("websocket_id", null);
-        document.put("ws_direction", null);
-        document.put("ws_message_type", null);
-        document.put("ws_payload", null);
-        document.put("ws_payload_text", null);
-        document.put("ws_payload_length", null);
-        document.put("ws_edited", null);
-        document.put("ws_edited_payload", null);
-        document.put("ws_upgrade_request", null);
-        document.put("ws_time", null);
-        document.put("ws_message_id", null);
-
+        document.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
         return document;
     }
 
@@ -713,39 +681,64 @@ class TrafficHttpHandlerSupport implements HttpHandler {
 
     private static Map<String, Object> buildOrphanResponse() {
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("status", ORPHAN_STATUS);
-        resp.put("status_code_class", null);
-        resp.put("reason_phrase", ORPHAN_REASON_PHRASE);
-        resp.put("http_version", null);
-        Map<String, Object> headers = new LinkedHashMap<>();
-        headers.put("full", List.of());
-        headers.put("names", List.of());
-        headers.put("etag", null);
-        headers.put("last_modified", null);
-        headers.put("content_location", null);
-        resp.put("headers", headers);
-        resp.put("cookies", Collections.emptyList());
-        resp.put("mime_type", null);
-        resp.put("stated_mime_type", null);
-        resp.put("inferred_mime_type", null);
+        resp.put("status", TrafficResponseStatusFields.of(ORPHAN_STATUS, null, ORPHAN_REASON_PHRASE));
+        resp.put("protocol", TrafficProtocolFields.responseProtocol(null));
+        resp.put("header", TrafficResponseHeaderFields.empty());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("length", 0);
         body.put("offset", 0);
         body.put("b64", null);
         body.put("text", null);
+        body.put("markers", Collections.emptyList());
         resp.put("body", body);
-        resp.put("markers", Collections.emptyList());
         return resp;
     }
 
     /**
      * Runs on a daemon thread. Exports pending requests that have not received a response
      * within {@link #ORPHAN_TIMEOUT_MS} as request-only documents with
-     * {@code response.status = 0} and {@code response.reason_phrase = "Timeout"}.
+     * {@code response.status.code = 0} and {@code response.status.description = "Timeout"}.
      */
+    /**
+     * Package-private entry for orphan-flush regression tests in {@code ai.attackframework.tools.burp.sinks}.
+     */
+    static void flushOrphanedRequestsForTest() {
+        flushOrphanedRequests();
+    }
+
+    /**
+     * Package-private entry for orphan-flush regression tests in {@code ai.attackframework.tools.burp.sinks}.
+     */
+    static void clearPendingOrphansForTest() {
+        pendingOrphans.clear();
+    }
+
+    /**
+     * Package-private entry for orphan-flush regression tests in {@code ai.attackframework.tools.burp.sinks}.
+     */
+    static void registerPendingOrphanForTest(
+            int messageId,
+            Map<String, Object> documentSkeleton,
+            ToolType toolType,
+            RequestStageResolution requestStageResolution) {
+        pendingOrphans.put(
+                messageId,
+                new PendingOrphan(documentSkeleton, 0L, toolType, requestStageResolution));
+    }
+
+    /**
+     * Package-private entry for orphan-flush regression tests in {@code ai.attackframework.tools.burp.sinks}.
+     */
+    static boolean containsPendingOrphanForTest(int messageId) {
+        return pendingOrphans.containsKey(messageId);
+    }
+
     private static void flushOrphanedRequests() {
-        if (!RuntimeConfig.isExportReady()
-                || !RuntimeConfig.isAnyTrafficExportEnabled()) {
+        if (!RuntimeConfig.isExportReady()) {
+            return;
+        }
+        if (!RuntimeConfig.trafficExportGate().anyTrafficExportEnabled()) {
+            pendingOrphans.clear();
             return;
         }
         long now = System.currentTimeMillis();
@@ -760,17 +753,24 @@ class TrafficHttpHandlerSupport implements HttpHandler {
             if (po == null) {
                 continue;
             }
+            if (!shouldStillExportPendingOrphan(po)) {
+                ExportStats.recordSkipReason(ExportStats.SKIP_REASON_TOOL_DISABLED, 1);
+                continue;
+            }
             Map<String, Object> doc = new LinkedHashMap<>(po.documentSkeleton);
             long nowMs = System.currentTimeMillis();
-            doc.put("time_end", toIsoInstant(nowMs));
-            doc.put("duration_ms", durationMs(po.timestamp, nowMs));
-            doc.put("response_start_latency_ms", durationMs(po.timestamp, nowMs));
+            Object burpObj = doc.get("burp");
+            if (burpObj instanceof Map<?, ?> burpMap) {
+                Map<String, Object> burp = StringKeyedMaps.copy(burpMap);
+                burp.put("timing", BurpTimingFields.fromHandlerEpochMillis(po.timestamp, nowMs));
+                doc.put("burp", burp);
+            }
             doc.put("response", buildOrphanResponse());
             TrafficExportQueue.offer(doc);
         }
     }
 
-    private static final class PendingOrphan {
+    static final class PendingOrphan {
         final Map<String, Object> documentSkeleton;
         final long timestamp;
         final ToolType toolType;
@@ -835,21 +835,6 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         RepeaterMetadataFields.Metadata metadataForExport() {
             return metadata.isPresent() ? metadata : uiSnapshot;
         }
-    }
-
-    private static String toIsoInstant(Long epochMs) {
-        if (epochMs == null) {
-            return null;
-        }
-        return Instant.ofEpochMilli(epochMs).toString();
-    }
-
-    private static Long durationMs(Long startMs, Long endMs) {
-        if (startMs == null || endMs == null) {
-            return null;
-        }
-        long d = endMs - startMs;
-        return d >= 0 ? d : 0L;
     }
 
 }

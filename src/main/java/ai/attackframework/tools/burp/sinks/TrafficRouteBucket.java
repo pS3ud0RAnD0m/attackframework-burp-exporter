@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.util.Locale;
 import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
@@ -12,7 +13,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
  * <p>Traffic exports can be attributed to either:
  * <ul>
  *   <li>a {@link Kind#TOOL_TYPE} bucket (for example {@code REPEATER_TABS}, {@code PROXY}),
- *       which aligns with the live {@code tool_type} field Burp assigns to HTTP exchanges; or</li>
+ *       which aligns with the Burp tool/source that emitted HTTP exchanges; or</li>
  *   <li>a {@link Kind#SOURCE} bucket (for example {@code proxy_history_snapshot},
  *       {@code proxy_websocket}), which aligns with the reporter or source that produced the
  *       document rather than the requesting Burp tool.</li>
@@ -21,7 +22,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
  * <p>Keeping the decision in one place ensures OpenSearch bulk accounting, file-sink accounting,
  * and {@code StatsPanel} display all agree about which bucket a given document belongs to.
  * Sinks should build a {@link Route} once and use the record/resolve helpers here instead of
- * re-implementing the {@code tool_type} -> bucket mapping locally.</p>
+ * re-implementing the tool label -> bucket mapping locally.</p>
  */
 public final class TrafficRouteBucket {
 
@@ -74,7 +75,7 @@ public final class TrafficRouteBucket {
     }
 
     /**
-     * Resolves the route for a traffic document by inspecting its {@code tool_type} field.
+     * Resolves the route for a traffic document by inspecting its {@code burp.reporting_tool} field.
      *
      * @param document a prepared traffic document; {@code null} resolves to {@link #TOOL_TYPE_UNKNOWN}
      * @return resolved route; never {@code null}
@@ -83,8 +84,35 @@ public final class TrafficRouteBucket {
         if (document == null) {
             return new Route(Kind.TOOL_TYPE, TOOL_TYPE_UNKNOWN);
         }
-        Object raw = document.get("tool_type");
-        return fromToolType(raw == null ? null : String.valueOf(raw));
+        Object raw = null;
+        Object burpObj = document.get("burp");
+        if (burpObj instanceof Map<?, ?> burp) {
+            raw = burp.get("reporting_tool");
+        }
+        return fromToolLabel(raw == null ? null : String.valueOf(raw));
+    }
+
+    /**
+     * Resolves the route for an exported display tool label.
+     *
+     * @param toolLabel exported {@code burp.reporting_tool} value; {@code null} or blank resolves to
+     *                  {@link #TOOL_TYPE_UNKNOWN}
+     * @return resolved route; never {@code null}
+     */
+    public static Route fromToolLabel(String toolLabel) {
+        if (toolLabel == null || toolLabel.isBlank()) {
+            return new Route(Kind.TOOL_TYPE, TOOL_TYPE_UNKNOWN);
+        }
+        return fromToolType(switch (toolLabel.trim()) {
+            case "Proxy History" -> "PROXY_HISTORY";
+            case "Proxy WebSocket" -> "PROXY_WEBSOCKET";
+            case "Repeater Tabs" -> "REPEATER_TABS";
+            case "Burp AI" -> "BURP_AI";
+            default -> toolLabel.trim()
+                    .replace('-', '_')
+                    .replace(' ', '_')
+                    .toUpperCase(Locale.ROOT);
+        });
     }
 
     /**
@@ -116,6 +144,27 @@ public final class TrafficRouteBucket {
     /** Convenience route for Proxy WebSocket messages. */
     public static Route proxyWebSocket() {
         return new Route(Kind.SOURCE, SOURCE_PROXY_WEBSOCKET);
+    }
+
+    /**
+     * Returns whether a queued traffic document route is still enabled by the live traffic gate.
+     *
+     * <p>Source buckets map back to the user-facing traffic selections that produce them:
+     * Proxy History snapshot documents require {@code proxy_history}; proxy WebSocket documents
+     * require live {@code proxy}.</p>
+     */
+    public static boolean isRouteEnabled(Route route, RuntimeConfig.TrafficExportGate gate) {
+        if (route == null || gate == null || !gate.anyTrafficExportEnabled()) {
+            return false;
+        }
+        if (route.kind() == Kind.SOURCE) {
+            return switch (route.key()) {
+                case SOURCE_PROXY_HISTORY_SNAPSHOT -> gate.includesToolType("proxy_history");
+                case SOURCE_PROXY_WEBSOCKET -> gate.includesToolType("proxy");
+                default -> false;
+            };
+        }
+        return gate.includesToolType(route.key().toLowerCase(Locale.ROOT));
     }
 
     /** Records {@code count} successful OpenSearch pushes for {@code route}. */

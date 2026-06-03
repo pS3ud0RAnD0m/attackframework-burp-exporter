@@ -106,42 +106,61 @@ class FindingsIndexReporterIT {
 
             Map<String, Object> doc = awaitFirstDocument();
             assertThat(doc).isNotNull();
-            assertThat(doc).containsKey("name");
-            assertThat(doc).containsKey("severity");
-            assertThat(doc).containsKey("confidence");
-            assertThat(doc).containsKey("host");
-            assertThat(doc).containsKey("port");
-            assertThat(doc).containsKey("protocol_transport");
-            assertThat(doc).containsKey("url");
-            assertThat(doc).containsKey("request_responses");
-            assertThat(doc).containsKey("request_responses_missing");
-            assertThat(doc).containsKey("document_meta");
-            assertThat(doc).containsKey("description");
-            assertThat(doc).containsKey("remediation_detail");
-            assertThat(doc).containsKey("issue_type_id");
-            assertThat(doc).containsKey("typical_severity");
-            assertThat(doc).containsKey("background");
-            assertThat(doc).containsKey("remediation_background");
+            assertThat(doc).containsKey("burp");
+            assertThat(doc).containsKey("issue");
+            assertThat(doc).containsKey("target");
+            assertThat(doc).doesNotContainKey("requests_responses");
+            assertThat(doc).doesNotContainKey("request_responses_missing");
+            assertThat(doc).containsKey("meta");
+            assertThat(doc).doesNotContainKeys(
+                    "name",
+                    "severity",
+                    "confidence",
+                    "host",
+                    "port",
+                    "protocol_transport",
+                    "protocol_application",
+                    "protocol_sub",
+                    "url",
+                    "param",
+                    "description",
+                    "remediation_detail",
+                    "issue_type_id",
+                    "typical_severity",
+                    "background",
+                    "remediation_background");
 
-            assertThat(doc.get("name")).isEqualTo(ISSUE_NAME);
-            assertThat(doc.get("severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
-            assertThat(doc.get("confidence")).isEqualTo(AuditIssueConfidence.CERTAIN.name());
-            assertThat(doc.get("host")).isEqualTo(ISSUE_HOST);
-            assertThat(doc.get("port")).isEqualTo(ISSUE_PORT);
-            assertThat(doc.get("protocol_transport")).isEqualTo("https");
-            assertThat(doc.get("url")).isEqualTo(ISSUE_BASE_URL);
-            assertThat((List<?>) doc.get("request_responses")).isEmpty();
-            assertThat(doc.get("request_responses_missing")).isEqualTo(true);
-            assertThat(doc.get("description")).isEqualTo(ISSUE_DETAIL);
-            assertThat(doc.get("remediation_detail")).isEqualTo(ISSUE_REMEDIATION);
-            assertThat(doc.get("issue_type_id")).isEqualTo(DEF_TYPE_INDEX);
-            assertThat(doc.get("typical_severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
-            assertThat(doc.get("background")).isEqualTo(DEF_BACKGROUND);
-            assertThat(doc.get("remediation_background")).isEqualTo(DEF_REMEDIATION);
+            Map<String, Object> burp = asObjectMap(doc.get("burp"));
+            assertThat(burp).isNotNull();
+            assertThat(burp.get("is_in_scope")).isEqualTo(true);
+            assertThat(burp.get("reporting_tool")).isEqualTo("Scanner");
 
-            Map<String, Object> documentMeta = asObjectMap(doc.get("document_meta"));
-            assertThat(documentMeta).isNotNull();
-            assertThat(documentMeta)
+            Map<String, Object> issue = asObjectMap(doc.get("issue"));
+            assertThat(issue).isNotNull();
+            assertThat(issue.get("name")).isEqualTo(ISSUE_NAME);
+            assertThat(issue.get("severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
+            assertThat(issue.get("confidence")).isEqualTo(AuditIssueConfidence.CERTAIN.name());
+            assertThat(issue.get("description")).isEqualTo(ISSUE_DETAIL);
+            assertThat(issue.get("type_id")).isEqualTo(DEF_TYPE_INDEX);
+            assertThat(issue.get("typical_severity")).isEqualTo(AuditIssueSeverity.HIGH.name());
+            assertThat(issue.get("background")).isEqualTo(DEF_BACKGROUND);
+            Map<String, Object> remediation = asObjectMap(issue.get("remediation"));
+            assertThat(remediation).isNotNull();
+            assertThat(remediation.get("detail")).isEqualTo(ISSUE_REMEDIATION);
+            assertThat(remediation.get("background")).isEqualTo(DEF_REMEDIATION);
+
+            Map<String, Object> target = asObjectMap(doc.get("target"));
+            assertThat(target).isNotNull();
+            assertThat(target.get("host")).isEqualTo(ISSUE_HOST);
+            assertThat(target.get("port")).isEqualTo(ISSUE_PORT);
+            assertThat(target.get("url")).isEqualTo(ISSUE_BASE_URL);
+            Map<String, Object> targetProtocol = asObjectMap(target.get("protocol"));
+            assertThat(targetProtocol).isNotNull();
+            assertThat(targetProtocol.get("scheme")).isEqualTo("https");
+
+            Map<String, Object> meta = asObjectMap(doc.get("meta"));
+            assertThat(meta).isNotNull();
+            assertThat(meta)
                     .containsKey("schema_version")
                     .containsKey("extension_version")
                     .containsKey("indexed_at");
@@ -162,30 +181,35 @@ class FindingsIndexReporterIT {
             FindingsIndexReporter.pushSnapshotNow();
 
             Map<String, Object> doc = awaitFirstDocument();
-            assertThat(doc).isNotNull().containsKey("request_responses");
-            assertThat(doc.get("request_responses_missing")).isEqualTo(false);
+            assertThat(doc).isNotNull().containsKey("requests_responses");
+            assertThat(doc).doesNotContainKey("request_responses_missing");
 
-            List<?> requestResponses = asObjectList(doc.get("request_responses"));
+            List<?> requestResponses = asObjectList(doc.get("requests_responses"));
             assertThat(requestResponses).hasSize(1);
             Map<String, Object> pair = asObjectMap(requestResponses.get(0));
             assertThat(pair).isNotNull();
-            assertThat(pair).containsKey("request").containsKey("response");
+            assertThat(pair).containsKey("burp").containsKey("request").containsKey("response");
 
             Map<String, Object> req = asObjectMap(pair.get("request"));
             assertThat(req).isNotNull();
-            assertThat(req).containsKeys("method", "path", "headers", "parameters", "markers", "body");
+            assertThat(req).containsKeys("url", "port", "method", "path", "protocol", "header", "body");
+            assertThat(req).doesNotContainKey("parameters");
             Map<String, Object> reqBody = asObjectMap(req.get("body"));
             assertThat(reqBody).isNotNull();
             assertThat(reqBody).containsKeys("length", "offset");
+            assertThat(reqBody).doesNotContainKey("markers");
             assertThat(req.get("method")).isEqualTo("POST");
 
             Map<String, Object> resp = asObjectMap(pair.get("response"));
             assertThat(resp).isNotNull();
-            assertThat(resp).containsKeys("status", "reason_phrase", "headers", "markers", "body");
+            assertThat(resp).containsKeys("status", "protocol", "header", "body");
             Map<String, Object> respBody = asObjectMap(resp.get("body"));
             assertThat(respBody).isNotNull();
             assertThat(respBody).containsKeys("length", "offset");
-            assertThat(resp.get("status")).isEqualTo(200);
+            assertThat(respBody).doesNotContainKey("markers");
+            Map<String, Object> status = asObjectMap(resp.get("status"));
+            assertThat(status).isNotNull();
+            assertThat(status.get("code")).isEqualTo(200);
         } finally {
             cleanupAfterTest();
         }
@@ -203,10 +227,10 @@ class FindingsIndexReporterIT {
             FindingsIndexReporter.pushSnapshotNow();
 
             Map<String, Object> doc = awaitFirstDocument();
-            assertThat(doc).isNotNull().containsKey("request_responses");
-            assertThat(doc.get("request_responses_missing")).isEqualTo(false);
+            assertThat(doc).isNotNull().containsKey("requests_responses");
+            assertThat(doc).doesNotContainKey("request_responses_missing");
 
-            List<?> requestResponses = asObjectList(doc.get("request_responses"));
+            List<?> requestResponses = asObjectList(doc.get("requests_responses"));
             assertThat(requestResponses).hasSize(2);
             Map<String, Object> pair0 = asObjectMap(requestResponses.get(0));
             Map<String, Object> pair1 = asObjectMap(requestResponses.get(1));
@@ -234,34 +258,37 @@ class FindingsIndexReporterIT {
             FindingsIndexReporter.start();
             FindingsIndexReporter.pushSnapshotNow();
 
-            // Wait for this test's document (path /no-response, empty response): scheduler is shared, so first doc may be from another test
+            // Wait for this test's document (path /no-response, empty response shape): scheduler is shared, so first doc may be from another test
             Map<String, Object> doc = awaitDocumentMatching(d -> {
-                if (Boolean.TRUE.equals(d.get("request_responses_missing"))) return false;
-                List<?> rr = asObjectList(d.get("request_responses"));
+                List<?> rr = asObjectList(d.get("requests_responses"));
                 if (rr == null || rr.size() != 1) return false;
                 Map<String, Object> pair = asObjectMap(rr.get(0));
                 if (pair == null) return false;
                 Map<String, Object> req = asObjectMap(pair.get("request"));
+                if (req == null) return false;
+                Map<String, Object> path = asObjectMap(req.get("path"));
                 Map<String, Object> resp = asObjectMap(pair.get("response"));
-                if (req == null || resp == null) return false;
-                Object status = resp.get("status");
-                boolean statusZero = status instanceof Number && ((Number) status).intValue() == 0;
-                return "/no-response".equals(req.get("path")) && statusZero;
+                Map<String, Object> respBody = resp == null ? null : asObjectMap(resp.get("body"));
+                return path != null
+                        && "/no-response".equals(path.get("with_query"))
+                        && respBody != null
+                        && Integer.valueOf(0).equals(respBody.get("length"));
             });
-            assertThat(doc.get("request_responses_missing"))
-                    .as("document should have request/response evidence")
-                    .isEqualTo(false);
-            List<?> requestResponses = asObjectList(doc.get("request_responses"));
-            assertThat(requestResponses).as("request_responses").hasSize(1);
+            assertThat(doc).doesNotContainKey("request_responses_missing");
+            List<?> requestResponses = asObjectList(doc.get("requests_responses"));
+            assertThat(requestResponses).as("requests_responses").hasSize(1);
             Map<String, Object> firstPair = asObjectMap(requestResponses.get(0));
-            Map<String, Object> resp = firstPair == null ? null : asObjectMap(firstPair.get("response"));
+            assertThat(firstPair).isNotNull();
+            Map<String, Object> firstPairChecked = Objects.requireNonNull(firstPair);
+            assertThat(firstPairChecked).containsKey("response");
+            Map<String, Object> resp = asObjectMap(firstPairChecked.get("response"));
             assertThat(resp).isNotNull();
             Map<String, Object> respChecked = Objects.requireNonNull(resp);
-            assertThat(respChecked.get("status")).isEqualTo(0);
-            assertThat(asObjectList(respChecked.get("markers"))).isEmpty();
-            Map<String, Object> headers = asObjectMap(respChecked.get("headers"));
-            assertThat(headers).isNotNull();
-            assertThat(asObjectList(headers.get("full"))).isEmpty();
+            Map<String, Object> respBody = asObjectMap(respChecked.get("body"));
+            assertThat(respBody).isNotNull();
+            assertThat(respBody.get("length")).isEqualTo(0);
+            Map<String, Object> status = asObjectMap(respChecked.get("status"));
+            assertThat(status == null || !status.containsKey("code") || status.get("code") == null).isTrue();
         } finally {
             cleanupAfterTest();
         }
@@ -555,9 +582,8 @@ class FindingsIndexReporterIT {
                     sb.append("doc").append(j).append(" source=null");
                     continue;
                 }
-                sb.append("doc").append(j).append(" request_responses_missing=").append(src.get("request_responses_missing"));
-                List<?> rr = asObjectList(src.get("request_responses"));
-                sb.append(" request_responses.size=").append(rr != null ? rr.size() : "null");
+                List<?> rr = asObjectList(src.get("requests_responses"));
+                sb.append("doc").append(j).append(" requests_responses.size=").append(rr != null ? rr.size() : "null");
                 if (rr != null && !rr.isEmpty() && rr.get(0) instanceof Map) {
                     Map<String, Object> pair = asObjectMap(rr.get(0));
                     if (pair == null) {
@@ -566,7 +592,8 @@ class FindingsIndexReporterIT {
                     Map<String, Object> req = asObjectMap(pair.get("request"));
                     sb.append(" first.path=").append(req != null ? req.get("path") : "n/a");
                     Map<String, Object> respDoc = asObjectMap(pair.get("response"));
-                    sb.append(" first.response.status=").append(respDoc != null ? respDoc.get("status") : "n/a");
+                    Map<String, Object> status = respDoc == null ? null : asObjectMap(respDoc.get("status"));
+                    sb.append(" first.response.status.code=").append(status != null ? status.get("code") : "n/a");
                 }
             }
             return sb.toString();

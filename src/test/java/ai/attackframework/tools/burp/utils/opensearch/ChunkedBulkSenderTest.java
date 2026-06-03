@@ -86,9 +86,8 @@ class ChunkedBulkSenderTest {
     void ndjsonQueueInputStream_stillWritesReservedFirstDoc_afterInitialDelay() throws Exception {
         LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
         Map<String, Object> firstDoc = new LinkedHashMap<>();
-        firstDoc.put("tool_type", "REPEATER_TABS");
-        firstDoc.put("status", 0);
-        firstDoc.put("document_meta", new LinkedHashMap<>());
+        firstDoc.put("burp", Map.of("reporting_tool", "Repeater Tabs"));
+        firstDoc.put("meta", new LinkedHashMap<>());
 
         Class<?> streamClass = Class.forName(
                 "ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender$NdjsonQueueInputStream");
@@ -121,7 +120,8 @@ class ChunkedBulkSenderTest {
 
         byte[] payload = stream.readAllBytes();
         assertThat(payload).isNotEmpty();
-        assertThat(new String(payload, StandardCharsets.UTF_8)).contains("\"tool_type\":\"REPEATER_TABS\"");
+        assertThat(new String(payload, StandardCharsets.UTF_8))
+                .contains("\"burp\":{\"reporting_tool\":\"Repeater Tabs\"}");
         assertThat(attempted.get()).isEqualTo(1);
     }
 

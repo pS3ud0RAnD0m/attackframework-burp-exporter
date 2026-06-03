@@ -42,12 +42,12 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
@@ -56,7 +56,7 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);
@@ -88,21 +88,21 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
 
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(exportRootAbs.toString());
                 ref.set(p);
             });
@@ -144,28 +144,28 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
 
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText("   ");
                 ref.set(p);
             });
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);
@@ -197,29 +197,29 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(exportRootAbs.toString());
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (!openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
-                JTextField openSearchUrlField = get(p, "openSearchUrlField");
+                JTextField openSearchUrlField = JTextField.class.cast(get(p, "openSearchUrlField"));
                 openSearchUrlField.setText("");
                 ref.set(p);
             });
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStartedUi(startStop);
@@ -260,30 +260,30 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(exportRootAbs.toString());
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (!openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
-                JTextField openSearchUrlField = get(p, "openSearchUrlField");
+                JTextField openSearchUrlField = JTextField.class.cast(get(p, "openSearchUrlField"));
                 openSearchUrlField.setText("https://[");
                 ref.set(p);
             });
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
-            JTextField openSearchUrlField = get(panel, "openSearchUrlField");
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
+            JTextField openSearchUrlField = JTextField.class.cast(get(panel, "openSearchUrlField"));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStartedUi(startStop);
@@ -325,28 +325,28 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
 
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(notADirectory.toString());
                 ref.set(p);
             });
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);
@@ -374,28 +374,28 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
 
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText("%^&%^&");
                 ref.set(p);
             });
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);
@@ -421,26 +421,26 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                ButtonGroup fileFormatGroup = get(p, "fileFormatGroup");
+                ButtonGroup fileFormatGroup = ButtonGroup.class.cast(get(p, "fileFormatGroup"));
                 fileFormatGroup.clearSelection();
 
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(TestPathSupport.defaultUiFileRoot().toString());
                 ref.set(p);
             });
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);
@@ -466,21 +466,21 @@ class ConfigPanelStartFailureFilesHeadlessTest {
                 p.setSize(1000, 700);
                 p.doLayout();
 
-                JCheckBox openSearchEnabled = get(p, "openSearchSinkCheckbox");
+                JCheckBox openSearchEnabled = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
                 if (openSearchEnabled.isSelected()) {
                     openSearchEnabled.doClick();
                 }
 
-                JCheckBox filesEnabled = get(p, "fileSinkCheckbox");
+                JCheckBox filesEnabled = JCheckBox.class.cast(get(p, "fileSinkCheckbox"));
                 if (!filesEnabled.isSelected()) {
                     filesEnabled.doClick();
                 }
-                JRadioButton bulkNdjsonEnabled = get(p, "fileBulkNdjsonCheckbox");
+                JRadioButton bulkNdjsonEnabled = JRadioButton.class.cast(get(p, "fileBulkNdjsonCheckbox"));
                 if (!bulkNdjsonEnabled.isSelected()) {
                     bulkNdjsonEnabled.doClick();
                 }
 
-                JTextField filePathField = get(p, "filePathField");
+                JTextField filePathField = JTextField.class.cast(get(p, "filePathField"));
                 filePathField.setText(exportRootAbs.toString());
                 JTextField baseTemplateField = Objects.requireNonNull(findByName(p, "indexNaming.baseTemplate", JTextField.class));
                 baseTemplateField.setText("Attackframework Tool Burp");
@@ -489,7 +489,7 @@ class ConfigPanelStartFailureFilesHeadlessTest {
             ConfigPanel panel = Objects.requireNonNull(ref.get());
 
             JButton startStop = Objects.requireNonNull(findByName(panel, "control.startStop", JButton.class));
-            JTextArea controlStatus = Objects.requireNonNull(get(panel, "controlStatus"));
+            JTextArea controlStatus = Objects.requireNonNull(JTextArea.class.cast(get(panel, "controlStatus")));
 
             SwingUtilities.invokeAndWait(startStop::doClick);
             waitForStoppedUi(startStop);

@@ -424,15 +424,10 @@ public final class ChunkedBulkSender {
 
         /** Fetches one document from the queue, serializes to NDJSON, and sets buffer. */
         private boolean fillBuffer() throws IOException {
-            if (attemptedRef.get() >= maxBatch) return false;
-            Map<String, Object> doc = firstDoc;
-            if (doc != null) {
-                firstDoc = null;
-            } else {
-                if ((System.nanoTime() - batchStartNanos) >= maxWaitNanos) return false;
-                doc = queue.poll();
+            Map<String, Object> doc = nextEnabledDocument();
+            if (doc == null) {
+                return false;
             }
-            if (doc == null) return false;
             PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, doc);
             long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
             if (attemptedRef.get() > 0 && runningBytes + docBytes > maxBytes) {
@@ -449,6 +444,33 @@ public final class ChunkedBulkSender {
             attemptedBytesRef.addAndGet(docBytes);
             attemptedTrafficRoutes.add(TrafficRouteBucket.fromDocument(prepared.document()));
             return true;
+        }
+
+        private Map<String, Object> nextEnabledDocument() {
+            while (attemptedRef.get() < maxBatch) {
+                Map<String, Object> doc = firstDoc;
+                if (doc != null) {
+                    firstDoc = null;
+                } else {
+                    if ((System.nanoTime() - batchStartNanos) >= maxWaitNanos) {
+                        return null;
+                    }
+                    doc = queue.poll();
+                }
+                if (doc == null) {
+                    return null;
+                }
+                if (!RuntimeConfig.isExportRunning()) {
+                    return doc;
+                }
+                RuntimeConfig.TrafficExportGate gate = RuntimeConfig.trafficExportGate();
+                if (RuntimeConfig.isExportReady()
+                        && gate.anyTrafficExportEnabled()
+                        && TrafficRouteBucket.isRouteEnabled(TrafficRouteBucket.fromDocument(doc), gate)) {
+                    return doc;
+                }
+            }
+            return null;
         }
 
         List<TrafficRouteBucket.Route> attemptedTrafficRoutes() {

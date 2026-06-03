@@ -9,8 +9,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -32,7 +30,6 @@ import javax.swing.Timer;
 
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.Annotations;
@@ -40,7 +37,6 @@ import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
-import burp.api.montoya.http.handler.TimingData;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
@@ -62,7 +58,7 @@ import burp.api.montoya.ui.editor.extension.HttpResponseEditorProvider;
  * extension editor hooks plus a manual context-menu fallback to observe request/response pairs
  * currently bound into Repeater tabs. Captured items are de-duplicated by request/response content
  * hash, cached in memory for the extension session, and exported to the traffic index with
- * {@code tool_type=REPEATER_TABS} when that traffic option is enabled.</p>
+ * {@code tool=Repeater Tabs} when that traffic option is enabled.</p>
  */
 public final class RepeaterTabsIndexReporter {
 
@@ -1041,65 +1037,39 @@ public final class RepeaterTabsIndexReporter {
         HttpResponse response = requestResponse.response();
         HttpService service = requestResponse.httpService();
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
-        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildRequestDoc(request);
+        Map<String, Object> requestDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
         String url = RequestResponseDocBuilder.buildBestEffortUrl(
                 request,
                 service,
                 requestDoc,
                 "RepeaterTabs");
         boolean burpInScope = isInScope(url);
-        Object requestHttpVersion = requestDoc.get("http_version");
+        requestDoc.put("url", url);
+        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
+                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", url);
-        document.put("host", service == null ? null : service.host());
-        document.put("port", service == null ? null : service.port());
-        document.put("scheme", scheme);
-        document.put("protocol_transport", scheme);
-        document.put("protocol_application", "http");
-        document.put("protocol_sub", requestHttpVersion);
-        document.put("http_version", requestHttpVersion);
-        document.put("tool", TOOL_LABEL);
-        document.put("tool_type", TOOL_TYPE);
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("reporting_tool", TOOL_LABEL);
+        burp.put("is_in_scope", burpInScope);
+        burp.put("message_id", null);
+        burp.put("timing", BurpTimingFields.from(requestResponse));
+        BurpAnnotationFields.put(burp, requestResponse.annotations());
+        burp.put("proxy", BurpProxyFields.withoutProxyHistoryEditMetadata(null));
+        document.put("burp", burp);
         RepeaterMetadataFields.put(document, repeaterTabName, repeaterGroupName);
-        document.put("burp_in_scope", burpInScope);
-        document.put("message_id", null);
-        populateTiming(document, requestResponse);
-        putAnnotations(document, requestResponse.annotations());
-        document.put("path", requestDoc.get("path"));
-        document.put("method", requestDoc.get("method"));
         document.put("request", requestDoc);
 
         if (response != null) {
-            document.put("status", (int) response.statusCode());
-            document.put("mime_type", response.mimeType() == null ? null : response.mimeType().name());
-            document.put("response", RequestResponseDocBuilder.buildResponseDoc(response));
+            document.put("response", RequestResponseDocBuilder.buildTrafficResponseDoc(response));
         } else {
-            document.put("status", 0);
-            document.put("mime_type", null);
-            document.put("response", emptyResponseDoc());
+            document.put("response", RequestResponseDocBuilder.emptyTrafficResponseDoc());
         }
+        document.put("websocket", WebSocketTrafficDocumentBuilder.notWebSocket());
 
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", "1");
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        document.put("document_meta", meta);
+        document.put("meta", ExportMetaFields.meta("1"));
 
-        document.put("proxy_history_id", null);
-        document.put("listener_port", null);
-        document.put("edited", null);
-        document.put("websocket_id", null);
-        document.put("ws_direction", null);
-        document.put("ws_message_type", null);
-        document.put("ws_payload", null);
-        document.put("ws_payload_text", null);
-        document.put("ws_payload_length", null);
-        document.put("ws_edited", null);
-        document.put("ws_edited_payload", null);
-        document.put("ws_upgrade_request", null);
-        document.put("ws_time", null);
-        document.put("ws_message_id", null);
         return document;
     }
 
@@ -1117,79 +1087,6 @@ public final class RepeaterTabsIndexReporter {
             Logger.logDebug("[RepeaterTabs] Scope lookup failed: " + e.getMessage());
             return false;
         }
-    }
-
-    private static void populateTiming(Map<String, Object> document, HttpRequestResponse requestResponse) {
-        String timeRequestSent = null;
-        Integer responseStartLatencyMs = null;
-        Integer durationMs = null;
-        String timeEnd = null;
-        try {
-            Optional<TimingData> timingData = requestResponse.timingData();
-            if (timingData != null && timingData.isPresent()) {
-                TimingData timing = timingData.get();
-                ZonedDateTime sent = timing.timeRequestSent();
-                if (sent != null) {
-                    timeRequestSent = sent.toInstant().toString();
-                }
-                if (timing.timeBetweenRequestSentAndStartOfResponse() != null) {
-                    responseStartLatencyMs = (int) timing.timeBetweenRequestSentAndStartOfResponse().toMillis();
-                }
-                if (timing.timeBetweenRequestSentAndEndOfResponse() != null) {
-                    durationMs = (int) timing.timeBetweenRequestSentAndEndOfResponse().toMillis();
-                    if (sent != null) {
-                        timeEnd = sent.plus(timing.timeBetweenRequestSentAndEndOfResponse()).toInstant().toString();
-                    }
-                }
-            }
-        } catch (RuntimeException e) {
-            Logger.logDebug("[RepeaterTabs] Timing data unavailable: " + e.getMessage());
-        }
-        document.put("time_request_sent", timeRequestSent);
-        document.put("time_start", timeRequestSent);
-        document.put("time_end", timeEnd);
-        document.put("response_start_latency_ms", responseStartLatencyMs);
-        document.put("duration_ms", durationMs);
-    }
-
-    private static void putAnnotations(Map<String, Object> document, Annotations annotations) {
-        if (annotations == null) {
-            return;
-        }
-        if (annotations.hasNotes()) {
-            document.put("comment", annotations.notes());
-        }
-        if (annotations.hasHighlightColor()) {
-            HighlightColor color = annotations.highlightColor();
-            document.put("highlight", color == null ? null : color.name());
-        }
-    }
-
-    private static Map<String, Object> emptyResponseDoc() {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", 0);
-        response.put("status_code_class", null);
-        response.put("reason_phrase", "No response");
-        response.put("http_version", null);
-        Map<String, Object> headers = new LinkedHashMap<>();
-        headers.put("full", List.of());
-        headers.put("names", List.of());
-        headers.put("etag", null);
-        headers.put("last_modified", null);
-        headers.put("content_location", null);
-        response.put("headers", headers);
-        response.put("cookies", List.of());
-        response.put("mime_type", null);
-        response.put("stated_mime_type", null);
-        response.put("inferred_mime_type", null);
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("length", 0);
-        body.put("offset", 0);
-        body.put("b64", null);
-        body.put("text", null);
-        response.put("body", body);
-        response.put("markers", List.of());
-        return response;
     }
 
     private static final class CapturedRepeaterItem {

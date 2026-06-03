@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 /**
  * Unit tests for {@link SingleDocOutcomeRecorder}, covering the success/failure/last-error
@@ -31,7 +32,18 @@ class SingleDocOutcomeRecorderTest {
     }
 
     @Test
+    void record_failureSkippedWhenExportStopped() {
+        RuntimeConfig.setExportRunning(false);
+
+        SingleDocOutcomeRecorder.record("exporter", false, true, "Exporter log push failed");
+
+        assertThat(ExportStats.getFailureCount("exporter")).isZero();
+        assertThat(ExportStats.getLastError("exporter")).isNull();
+    }
+
+    @Test
     void record_failure_incrementsFailureAndLastError() {
+        RuntimeConfig.setExportRunning(true);
         SingleDocOutcomeRecorder.record("exporter", false, true, "Exporter config snapshot push failed");
 
         assertThat(ExportStats.getSuccessCount("exporter")).isZero();
@@ -41,6 +53,7 @@ class SingleDocOutcomeRecorderTest {
 
     @Test
     void record_failureWithBlankSummary_usesDefaultMessage() {
+        RuntimeConfig.setExportRunning(true);
         SingleDocOutcomeRecorder.record("settings", false, true, "  ");
 
         assertThat(ExportStats.getLastError("settings")).isEqualTo("Single-document push failed");
@@ -48,6 +61,7 @@ class SingleDocOutcomeRecorderTest {
 
     @Test
     void record_failureWithNullSummary_usesDefaultMessage() {
+        RuntimeConfig.setExportRunning(true);
         SingleDocOutcomeRecorder.record("settings", false, true, null);
 
         assertThat(ExportStats.getLastError("settings")).isEqualTo("Single-document push failed");

@@ -1,6 +1,5 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -9,9 +8,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.Version;
 import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -85,19 +82,14 @@ public final class ExporterIndexLogForwarder implements Logger.LogListener {
             return;
         }
         Map<String, Object> doc = new LinkedHashMap<>();
-        doc.put("level", level != null ? level : "INFO");
-        doc.put("event_type", EVENT_TYPE);
-        doc.put("message_text", message != null ? message : "");
-        doc.put("source", "burp-exporter");
-        doc.put("thread", Thread.currentThread().getName());
-        doc.put("extension_version", Version.get());
-        doc.put("burp_version", burpVersion());
-        doc.put("project_id", projectId());
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("schema_version", SCHEMA_VERSION);
-        meta.put("extension_version", Version.get());
-        meta.put("indexed_at", Instant.now().toString());
-        doc.put("document_meta", meta);
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("level", level != null ? level : "INFO");
+        event.put("source", "burp-exporter");
+        event.put("thread", Thread.currentThread().getName());
+        event.put("type", EVENT_TYPE);
+        event.put("summary", message != null ? message : "");
+        doc.put("event", event);
+        doc.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
 
         if (!queue.offer(doc)) {
             queue.poll();
@@ -137,7 +129,7 @@ public final class ExporterIndexLogForwarder implements Logger.LogListener {
 
                 Map<String, Object> doc = queue.poll(1, TimeUnit.SECONDS);
                 if (doc == null) continue;
-                if (!RuntimeConfig.isExporterLogLevelEnabled(normalizeLevel((String) doc.get("level")))) {
+                if (!RuntimeConfig.isExporterLogLevelEnabled(normalizeLevel(eventLevel(doc)))) {
                     continue;
                 }
 
@@ -155,12 +147,13 @@ public final class ExporterIndexLogForwarder implements Logger.LogListener {
         }
     }
 
-    private static String burpVersion() {
-        return BurpRuntimeMetadata.burpVersion();
-    }
-
-    private static String projectId() {
-        return BurpRuntimeMetadata.projectId();
+    private static String eventLevel(Map<String, Object> doc) {
+        Object eventObj = doc.get("event");
+        if (eventObj instanceof Map<?, ?> event) {
+            Object level = event.get("level");
+            return level == null ? null : String.valueOf(level);
+        }
+        return null;
     }
 
     private static String normalizeLevel(String level) {

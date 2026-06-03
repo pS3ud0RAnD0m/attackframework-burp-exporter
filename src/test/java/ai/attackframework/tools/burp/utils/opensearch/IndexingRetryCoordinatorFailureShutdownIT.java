@@ -132,7 +132,7 @@ class IndexingRetryCoordinatorFailureShutdownIT {
 
     private static Map<String, Object> sampleDoc(int sequence) {
         return Map.of(
-                "document_meta", Map.of(
+                "meta", Map.of(
                         "schema_version", "1",
                         "indexed_at", Instant.now().toString(),
                         "sequence", sequence),

@@ -88,7 +88,7 @@ class RequestResponseDocBuilderParametersFilterTest {
 
     @Test
     void parametersToList_hardCap_dropsAllBodyWhenBodyCountExceedsCap() {
-        int cap = RequestResponseDocBuilder.PARAMETERS_HARD_CAP;
+        int cap = RequestResponseParametersSupport.PARAMETERS_HARD_CAP;
         List<ParsedHttpParameter> input = new java.util.ArrayList<>(cap + 50);
         input.add(param("u", "1", HttpParameterType.URL));
         input.add(param("c", "2", HttpParameterType.COOKIE));
@@ -107,7 +107,7 @@ class RequestResponseDocBuilderParametersFilterTest {
 
     @Test
     void parametersToList_hardCap_truncatesWhenNonBodyExceedsCap() {
-        int cap = RequestResponseDocBuilder.PARAMETERS_HARD_CAP;
+        int cap = RequestResponseParametersSupport.PARAMETERS_HARD_CAP;
         List<ParsedHttpParameter> input = new java.util.ArrayList<>(cap + 5);
         for (int i = 0; i < cap + 5; i++) {
             input.add(param("u" + i, "v", HttpParameterType.URL));
@@ -122,7 +122,7 @@ class RequestResponseDocBuilderParametersFilterTest {
 
     @Test
     void parametersToList_hardCap_keepsBodyWhenBodyCountUnderCap() {
-        int cap = RequestResponseDocBuilder.PARAMETERS_HARD_CAP;
+        int cap = RequestResponseParametersSupport.PARAMETERS_HARD_CAP;
         List<ParsedHttpParameter> input = new java.util.ArrayList<>(cap + 1);
         for (int i = 0; i < cap - 1; i++) {
             input.add(param("u" + i, "v", HttpParameterType.URL));
@@ -140,9 +140,9 @@ class RequestResponseDocBuilderParametersFilterTest {
     @Test
     void shouldIncludeBodyParameters_formEnumValues_returnTrue() {
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.URL_ENCODED, List.of(), RequestResponseDocBuilder.INFERRED_CT_TEXT)).isTrue();
+                ContentType.URL_ENCODED, List.of(), HttpMessageDocSupport.INFERRED_CT_TEXT)).isTrue();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.MULTIPART, List.of(), RequestResponseDocBuilder.INFERRED_CT_MULTIPART)).isTrue();
+                ContentType.MULTIPART, List.of(), HttpMessageDocSupport.INFERRED_CT_MULTIPART)).isTrue();
     }
 
     @Test
@@ -150,33 +150,33 @@ class RequestResponseDocBuilderParametersFilterTest {
         // The Google federatedcompute case: Content-Type: application/x-www-form-urlencoded on a
         // raw protobuf body. Declared says form, inference sees binary, gate must drop BODY.
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.URL_ENCODED, List.of(), RequestResponseDocBuilder.INFERRED_CT_BINARY)).isFalse();
+                ContentType.URL_ENCODED, List.of(), HttpMessageDocSupport.INFERRED_CT_BINARY)).isFalse();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.MULTIPART, List.of(), RequestResponseDocBuilder.INFERRED_CT_BINARY)).isFalse();
+                ContentType.MULTIPART, List.of(), HttpMessageDocSupport.INFERRED_CT_BINARY)).isFalse();
     }
 
     @Test
     void shouldIncludeBodyParameters_declaredNonFormTextual_returnsFalse() {
         // JSON / XML / AMF should not legitimately emit BODY params; drop regardless of inference.
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.JSON, List.of(), RequestResponseDocBuilder.INFERRED_CT_JSON)).isFalse();
+                ContentType.JSON, List.of(), HttpMessageDocSupport.INFERRED_CT_JSON)).isFalse();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.XML, List.of(), RequestResponseDocBuilder.INFERRED_CT_XML)).isFalse();
+                ContentType.XML, List.of(), HttpMessageDocSupport.INFERRED_CT_XML)).isFalse();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.AMF, List.of(), RequestResponseDocBuilder.INFERRED_CT_TEXT)).isFalse();
+                ContentType.AMF, List.of(), HttpMessageDocSupport.INFERRED_CT_TEXT)).isFalse();
     }
 
     @Test
     void shouldIncludeBodyParameters_noneOrUnknownEnum_withoutHeader_returnsTrue() {
         // Absent/unknown declared + no header + non-binary body preserves legacy headerless-form behavior.
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.NONE, List.of(), RequestResponseDocBuilder.INFERRED_CT_TEXT)).isTrue();
+                ContentType.NONE, List.of(), HttpMessageDocSupport.INFERRED_CT_TEXT)).isTrue();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                ContentType.UNKNOWN, List.of(), RequestResponseDocBuilder.INFERRED_CT_TEXT)).isTrue();
+                ContentType.UNKNOWN, List.of(), HttpMessageDocSupport.INFERRED_CT_TEXT)).isTrue();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                null, null, RequestResponseDocBuilder.INFERRED_CT_EMPTY)).isTrue();
+                null, null, HttpMessageDocSupport.INFERRED_CT_EMPTY)).isTrue();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                null, List.of(), RequestResponseDocBuilder.INFERRED_CT_TEXT)).isTrue();
+                null, List.of(), HttpMessageDocSupport.INFERRED_CT_TEXT)).isTrue();
     }
 
     @Test
@@ -201,16 +201,16 @@ class RequestResponseDocBuilderParametersFilterTest {
     @Test
     void inferRequestContentType_emptyOrNull_returnsEmpty() {
         assertThat(RequestResponseDocBuilder.inferRequestContentType(null, null))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_EMPTY);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_EMPTY);
         assertThat(RequestResponseDocBuilder.inferRequestContentType(new byte[0], List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_EMPTY);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_EMPTY);
     }
 
     @Test
     void inferRequestContentType_nulBytes_returnsBinary() {
         byte[] bytes = new byte[]{0x01, 0x02, 0x00, 0x03, 0x04};
         assertThat(RequestResponseDocBuilder.inferRequestContentType(bytes, List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_BINARY);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_BINARY);
     }
 
     @Test
@@ -220,28 +220,28 @@ class RequestResponseDocBuilderParametersFilterTest {
             bytes[i] = 0x01;
         }
         assertThat(RequestResponseDocBuilder.inferRequestContentType(bytes, List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_BINARY);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_BINARY);
     }
 
     @Test
     void inferRequestContentType_jsonObject_returnsJson() {
         assertThat(RequestResponseDocBuilder.inferRequestContentType(
                 "  {\"a\":1}".getBytes(java.nio.charset.StandardCharsets.UTF_8), List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_JSON);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_JSON);
     }
 
     @Test
     void inferRequestContentType_jsonArray_returnsJson() {
         assertThat(RequestResponseDocBuilder.inferRequestContentType(
                 "[1,2,3]".getBytes(java.nio.charset.StandardCharsets.UTF_8), List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_JSON);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_JSON);
     }
 
     @Test
     void inferRequestContentType_xml_returnsXml() {
         assertThat(RequestResponseDocBuilder.inferRequestContentType(
                 "<?xml version=\"1.0\"?><root/>".getBytes(java.nio.charset.StandardCharsets.UTF_8), List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_XML);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_XML);
     }
 
     @Test
@@ -249,14 +249,14 @@ class RequestResponseDocBuilderParametersFilterTest {
         assertThat(RequestResponseDocBuilder.inferRequestContentType(
                 "--boundary123\r\nContent-Disposition: form-data".getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_MULTIPART);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_MULTIPART);
     }
 
     @Test
     void inferRequestContentType_plainText_returnsText() {
         assertThat(RequestResponseDocBuilder.inferRequestContentType(
                 "name=value&other=thing".getBytes(java.nio.charset.StandardCharsets.UTF_8), List.of()))
-                .isEqualTo(RequestResponseDocBuilder.INFERRED_CT_TEXT);
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_TEXT);
     }
 
     @Test
@@ -279,7 +279,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.URL_ENCODED,
-                        /* retained */ 2, /* dropped */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD,
+                        /* retained */ 2, /* dropped */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD,
                         /* bodyEnumerationSkipped */ false));
 
         assertThat(events).anySatisfy(e -> {
@@ -295,12 +295,12 @@ class RequestResponseDocBuilderParametersFilterTest {
                     .contains("url=https://example.test/upload")
                     .contains("content_type=URL_ENCODED")
                     .contains("retained=2")
-                    .contains("dropped_synthesized=" + RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD);
+                    .contains("dropped_synthesized=" + RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD);
         });
         assertThat(events).noneMatch(e -> "warn".equalsIgnoreCase(e.level())
                 && e.message().contains("[ParameterCardinality]"));
         assertThat(ExportStats.getSynthesizedBodyParamsDropped())
-                .isEqualTo(RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD);
+                .isEqualTo(RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD);
         assertThat(ExportStats.getDocsOverParamsThreshold()).isEqualTo(1);
     }
 
@@ -311,14 +311,14 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.JSON,
-                        /* retained */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, /* dropped */ 0,
+                        /* retained */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD, /* dropped */ 0,
                         /* bodyEnumerationSkipped */ false));
 
         assertThat(events).anySatisfy(e -> {
             assertThat(e.level()).isEqualToIgnoringCase("warn");
             assertThat(e.message())
                     .contains("[ParameterCardinality][retained]")
-                    .contains("retained=" + RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD);
+                    .contains("retained=" + RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD);
         });
         assertThat(ExportStats.getDocsOverParamsThreshold()).isEqualTo(1);
         assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isZero();
@@ -331,8 +331,8 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.MULTIPART,
-                        /* retained */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD,
-                        /* dropped */ RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD,
+                        /* retained */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD,
+                        /* dropped */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD,
                         /* bodyEnumerationSkipped */ false));
 
         assertThat(events).anySatisfy(e -> {
@@ -351,7 +351,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.UNKNOWN,
-                        0, RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, false));
+                        0, RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD, false));
 
         assertThat(events).anySatisfy(e -> {
             assertThat(e.message()).contains("[ParameterCardinality][synthesized_dropped]");
@@ -364,7 +364,7 @@ class RequestResponseDocBuilderParametersFilterTest {
     void recordParameterTelemetry_nullRequest_doesNotThrow_andStillLogs() throws Exception {
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
-                        null, ContentType.NONE, 0, RequestResponseDocBuilder.PARAMETERS_WARN_THRESHOLD, false));
+                        null, ContentType.NONE, 0, RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD, false));
 
         assertThat(events).anySatisfy(e -> assertThat(e.message())
                 .contains("[ParameterCardinality][synthesized_dropped]")
@@ -375,7 +375,7 @@ class RequestResponseDocBuilderParametersFilterTest {
     private static void assertBinaryHeaderFiltered(String contentTypeHeader) {
         List<HttpHeader> headers = List.of(header("Content-Type", contentTypeHeader));
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                null, headers, RequestResponseDocBuilder.INFERRED_CT_TEXT))
+                null, headers, HttpMessageDocSupport.INFERRED_CT_TEXT))
                 .as("header '%s' should classify body as binary", contentTypeHeader)
                 .isFalse();
     }
@@ -383,7 +383,7 @@ class RequestResponseDocBuilderParametersFilterTest {
     private static void assertTextualHeaderKept(String contentTypeHeader) {
         List<HttpHeader> headers = List.of(header("Content-Type", contentTypeHeader));
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
-                null, headers, RequestResponseDocBuilder.INFERRED_CT_TEXT))
+                null, headers, HttpMessageDocSupport.INFERRED_CT_TEXT))
                 .as("header '%s' should classify body as textual", contentTypeHeader)
                 .isTrue();
     }

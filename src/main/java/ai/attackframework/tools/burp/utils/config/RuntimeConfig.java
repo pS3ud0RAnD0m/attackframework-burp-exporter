@@ -12,6 +12,7 @@ import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.Logger;
 import burp.api.montoya.core.BurpSuiteEdition;
+import burp.api.montoya.core.ToolType;
 
 /**
  * Holds the current runtime configuration used by live export pipelines.
@@ -26,6 +27,15 @@ import burp.api.montoya.core.BurpSuiteEdition;
 public final class RuntimeConfig {
     private static final Set<String> COMMUNITY_DISABLED_SOURCES = Set.of(ConfigKeys.SRC_FINDINGS);
     private static final Set<String> COMMUNITY_DISABLED_TRAFFIC_TOOL_TYPES = Set.of("burp_ai", "scanner");
+    private static final int TRAFFIC_TOOL_BURP_AI = 1;
+    private static final int TRAFFIC_TOOL_EXTENSIONS = 1 << 1;
+    private static final int TRAFFIC_TOOL_INTRUDER = 1 << 2;
+    private static final int TRAFFIC_TOOL_PROXY = 1 << 3;
+    private static final int TRAFFIC_TOOL_PROXY_HISTORY = 1 << 4;
+    private static final int TRAFFIC_TOOL_REPEATER = 1 << 5;
+    private static final int TRAFFIC_TOOL_REPEATER_TABS = 1 << 6;
+    private static final int TRAFFIC_TOOL_SCANNER = 1 << 7;
+    private static final int TRAFFIC_TOOL_SEQUENCER = 1 << 8;
 
     private static volatile ConfigState.State state = defaultState();
     private static volatile boolean exportRunning = false;
@@ -34,7 +44,33 @@ public final class RuntimeConfig {
     private static volatile boolean openSearchDisabledForCurrentRun = false;
     private static volatile Map<String, String> resolvedIndexNamesForCurrentRun = Map.of();
     private static volatile Instant resolvedIndexNamesAt = Instant.EPOCH;
+    private static volatile TrafficExportGate trafficExportGate = new TrafficExportGate(false, false, 0);
     private static final CopyOnWriteArrayList<StateListener> listeners = new CopyOnWriteArrayList<>();
+
+    /**
+     * Cached hot-path view of the current traffic export gate.
+     *
+     * <p>Live HTTP and WebSocket callbacks can fire at high volume. This record lets those paths
+     * perform one volatile read and one set lookup instead of repeatedly walking the full runtime
+     * config, normalizing strings, and checking edition state.</p>
+     */
+    public record TrafficExportGate(
+            boolean exportReady,
+            boolean anyTrafficExportEnabled,
+            int enabledToolMask) {
+
+        public boolean allowsToolType(String normalizedToolType) {
+            return exportReady
+                    && anyTrafficExportEnabled
+                    && normalizedToolType != null
+                    && includesToolType(normalizedToolType);
+        }
+
+        public boolean includesToolType(String normalizedToolType) {
+            return normalizedToolType != null
+                    && (enabledToolMask & trafficToolTypeMask(normalizedToolType)) != 0;
+        }
+    }
 
     /** Listener notified when the normalized runtime state changes. */
     @FunctionalInterface
@@ -43,6 +79,10 @@ public final class RuntimeConfig {
     }
 
     private RuntimeConfig() { }
+
+    static {
+        refreshTrafficExportGate();
+    }
 
     /** Returns the current runtime config state. */
     public static ConfigState.State getState() {
@@ -104,6 +144,7 @@ public final class RuntimeConfig {
             fileExportDisabledForCurrentRun = false;
             openSearchDisabledForCurrentRun = false;
         }
+        refreshTrafficExportGate();
     }
 
     /**
@@ -114,12 +155,24 @@ public final class RuntimeConfig {
      */
     public static void setExportStarting(boolean starting) {
         exportStarting = exportRunning && starting;
+        refreshTrafficExportGate();
     }
 
     /** Updates the runtime config state with a normalized, non-null value. */
     public static void updateState(ConfigState.State newState) {
         state = applyCurrentRunDestinationSuppression(normalize(newState));
+        refreshTrafficExportGate();
         notifyListeners(state);
+    }
+
+    /** Returns a cached traffic export gate for high-volume listener paths. */
+    public static TrafficExportGate trafficExportGate() {
+        return trafficExportGate;
+    }
+
+    /** Returns the lowercase {@link ToolType#name()} key used by traffic export gating. */
+    public static String normalizedToolTypeKey(ToolType toolType) {
+        return toolType == null ? null : toolType.name().toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -623,6 +676,84 @@ public final class RuntimeConfig {
         return suppressed;
     }
 
+    private static void refreshTrafficExportGate() {
+        trafficExportGate = buildTrafficExportGate(state, isExportReady());
+    }
+
+    private static TrafficExportGate buildTrafficExportGate(ConfigState.State current, boolean ready) {
+        if (current == null || current.trafficToolTypes() == null) {
+            return new TrafficExportGate(ready, false, 0);
+        }
+        return new TrafficExportGate(
+                ready,
+                isTrafficExportEnabledForState(current),
+                trafficToolTypeMask(current.trafficToolTypes()));
+    }
+
+    private static int trafficToolTypeMask(List<String> trafficToolTypes) {
+        if (trafficToolTypes == null || trafficToolTypes.isEmpty()) {
+            return 0;
+        }
+        int mask = 0;
+        for (String toolType : trafficToolTypes) {
+            mask |= trafficToolTypeMask(toolType);
+        }
+        return mask;
+    }
+
+    private static int trafficToolTypeMask(String normalizedToolType) {
+        if (normalizedToolType == null) {
+            return 0;
+        }
+        return switch (normalizedToolType) {
+            case "burp_ai" -> TRAFFIC_TOOL_BURP_AI;
+            case "extensions" -> TRAFFIC_TOOL_EXTENSIONS;
+            case "intruder" -> TRAFFIC_TOOL_INTRUDER;
+            case "proxy" -> TRAFFIC_TOOL_PROXY;
+            case "proxy_history" -> TRAFFIC_TOOL_PROXY_HISTORY;
+            case "repeater" -> TRAFFIC_TOOL_REPEATER;
+            case "repeater_tabs" -> TRAFFIC_TOOL_REPEATER_TABS;
+            case "scanner" -> TRAFFIC_TOOL_SCANNER;
+            case "sequencer" -> TRAFFIC_TOOL_SEQUENCER;
+            default -> 0;
+        };
+    }
+
+    private static boolean isTrafficExportEnabledForState(ConfigState.State current) {
+        return current != null
+                && current.dataSources() != null
+                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
+                && current.trafficToolTypes() != null
+                && !current.trafficToolTypes().isEmpty()
+                && (isOpenSearchTrafficEnabledForState(current) || isAnyFileExportEnabledForState(current));
+    }
+
+    private static boolean isOpenSearchTrafficEnabledForState(ConfigState.State current) {
+        return current != null
+                && current.dataSources() != null
+                && current.dataSources().contains(ConfigKeys.SRC_TRAFFIC)
+                && current.trafficToolTypes() != null
+                && !current.trafficToolTypes().isEmpty()
+                && isOpenSearchExportEnabledForState(current);
+    }
+
+    private static boolean isOpenSearchExportEnabledForState(ConfigState.State current) {
+        return current != null
+                && current.sinks() != null
+                && current.sinks().osEnabled()
+                && !safe(current.sinks().openSearchUrl()).isBlank();
+    }
+
+    private static boolean isAnyFileExportEnabledForState(ConfigState.State current) {
+        if (current == null || current.sinks() == null) {
+            return false;
+        }
+        ConfigState.Sinks sinks = current.sinks();
+        return sinks.filesEnabled()
+                && !safe(sinks.filesPath()).isBlank()
+                && (sinks.fileJsonlEnabled() || sinks.fileBulkNdjsonEnabled());
+    }
+
     private static ConfigState.State withOpenSearchEnabled(ConfigState.State current, boolean enabled) {
         ConfigState.Sinks sinks = current.sinks();
         if (sinks == null) {
@@ -701,7 +832,7 @@ public final class RuntimeConfig {
     }
 
     /**
-     * Returns the set of top-level field keys allowed for export for the given index.
+     * Returns the dotted field paths and required container keys allowed for the given index.
      * Used for document filtering (which fields to include in pushed documents). When no
      * field selection is saved, returns required + all toggleable fields.
      */

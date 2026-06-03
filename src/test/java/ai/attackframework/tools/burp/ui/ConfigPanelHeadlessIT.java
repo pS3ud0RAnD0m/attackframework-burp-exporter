@@ -45,7 +45,7 @@ class ConfigPanelHeadlessIT {
             }
             p.doLayout();
 
-            JCheckBox osEnable = get(p, "openSearchSinkCheckbox");
+            JCheckBox osEnable = JCheckBox.class.cast(get(p, "openSearchSinkCheckbox"));
             if (!osEnable.isSelected()) osEnable.doClick();
 
             ref.set(p);
@@ -55,7 +55,7 @@ class ConfigPanelHeadlessIT {
 
     @Test
     void testConnection_button_completes_and_setsStatus() throws Exception {
-        JButton test = get(panel, "testConnectionButton");
+        JButton test = JButton.class.cast(get(panel, "testConnectionButton"));
         onEdtAndWait(test::doClick);
         await(() -> ui.os.get() != null);
         assertThat(ui.os.get()).isNotBlank();

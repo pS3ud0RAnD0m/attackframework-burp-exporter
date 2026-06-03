@@ -239,35 +239,20 @@ public final class Tooltips {
         return body.isEmpty() ? null : "<html>" + body + "</html>";
     }
 
-    /**
-     * Formats a description/source tooltip pair.
-     *
-     * <p>Short values stay on the compact single-paragraph layout, while longer values are split
-     * into labeled {@code Description} and {@code Source} sections so field tooltips remain
-     * readable in Swing's constrained popup width.</p>
-     */
     public static String htmlWithSource(String description, String source) {
         String cleanDescription = description == null ? "" : description.trim();
         String cleanSource = source == null ? "" : source.trim();
-        if (cleanDescription.isEmpty()) {
-            return cleanSource.isEmpty() ? null : htmlRaw("<b>Source:</b> " + escapeHtml(cleanSource));
+        if (cleanDescription.isEmpty() && cleanSource.isEmpty()) {
+            return null;
         }
-        if (cleanSource.isEmpty()) {
-            return html(cleanDescription);
+        List<String> lines = new ArrayList<>();
+        if (!cleanDescription.isEmpty()) {
+            appendLabeledTooltipText(lines, "Description", cleanDescription);
         }
-        if (shouldUseStructuredTooltip(cleanDescription, cleanSource)) {
-            List<String> lines = new ArrayList<>();
-            lines.add("<b>Description</b>");
-            appendStructuredTooltipLines(lines, cleanDescription, false);
-            lines.add("");
-            lines.add("<b>Source</b>");
-            appendStructuredTooltipLines(lines, cleanSource, true);
-            return htmlRaw(lines.toArray(String[]::new));
+        if (!cleanSource.isEmpty()) {
+            appendLabeledTooltipText(lines, "Source", cleanSource);
         }
-        return htmlRaw(
-                escapeHtml(cleanDescription),
-                "<b>Source:</b> " + escapeHtml(cleanSource)
-        );
+        return htmlRaw(lines.toArray(String[]::new));
     }
 
     public static String textWithSource(String description, String source) {
@@ -284,16 +269,18 @@ public final class Tooltips {
                 .replace(">", "&gt;");
     }
 
-    private static boolean shouldUseStructuredTooltip(String description, String source) {
-        return description.length() > STRUCTURED_TOOLTIP_THRESHOLD
-                || source.length() > STRUCTURED_TOOLTIP_THRESHOLD
-                || source.contains("; ")
-                || description.contains(". ");
-    }
-
-    private static void appendStructuredTooltipLines(List<String> lines, String text, boolean indent) {
-        for (String line : splitTooltipText(text)) {
-            lines.add((indent ? "&nbsp;&nbsp;" : "") + escapeHtml(line));
+    private static void appendLabeledTooltipText(List<String> lines, String label, String text) {
+        List<String> textLines = splitTooltipText(text);
+        if (textLines.isEmpty()) {
+            return;
+        }
+        if (textLines.size() == 1 && text.length() <= STRUCTURED_TOOLTIP_THRESHOLD) {
+            lines.add("<b>" + label + ":</b> " + escapeHtml(textLines.getFirst()));
+            return;
+        }
+        lines.add("<b>" + label + ":</b>");
+        for (String line : textLines) {
+            lines.add("&nbsp;&nbsp;" + escapeHtml(line));
         }
     }
 

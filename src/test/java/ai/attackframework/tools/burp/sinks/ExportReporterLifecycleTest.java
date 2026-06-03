@@ -7,7 +7,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,7 +58,7 @@ class ExportReporterLifecycleTest {
             SettingsIndexReporter.start();
             FindingsIndexReporter.start();
             SitemapIndexReporter.start();
-            ProxyWebSocketIndexReporter.start();
+            ProxyWebSocketIndexReporter.startLivePoll();
 
             ExportReporterLifecycle.resetForTests();
 
@@ -86,7 +85,7 @@ class ExportReporterLifecycleTest {
 
             String exporterIndexName = IndexNaming.indexNameForShortName("exporter");
             IndexingRetryCoordinator coordinator = IndexingRetryCoordinator.getInstance();
-            coordinator.pushDocument("https://127.0.0.1:1", exporterIndexName, Map.of("message_text", "x"), "exporter");
+            coordinator.pushDocument("https://127.0.0.1:1", exporterIndexName, Map.of("message", Map.of("summary", "x")), "exporter");
             TrafficExportQueue.offer(Map.of("url", "https://example.com/", "status", 200));
 
             ExportReporterLifecycle.stopAndClearPendingExportWork();
@@ -193,9 +192,9 @@ class ExportReporterLifecycleTest {
     }
 
     @Test
-    void stopAndClearPendingExportWork_flushesQueuedTrafficDocsToFiles_beforeClearingBacklog() throws Exception {
+    void stopAndClearPendingExportWork_purgesQueuedTrafficDocs_withoutDrainingBacklogToFiles() throws Exception {
         try {
-            Path root = TestPathSupport.createDirectory("repeater-tabs-stop-flush");
+            Path root = TestPathSupport.createDirectory("repeater-tabs-stop-purge");
             RuntimeConfig.updateState(fileExportState(root));
             RuntimeConfig.setExportRunning(true);
 
@@ -205,8 +204,7 @@ class ExportReporterLifecycleTest {
             ExportReporterLifecycle.stopAndClearPendingExportWork();
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("traffic") + ".jsonl");
-            assertThat(jsonlPath).exists();
-            assertThat(Files.readAllLines(jsonlPath)).hasSize(2);
+            assertThat(jsonlPath).doesNotExist();
             assertThat(TrafficExportQueue.getCurrentSize()).isZero();
             assertThat(TrafficExportQueue.getCurrentSpillSize()).isZero();
         } finally {
@@ -236,7 +234,7 @@ class ExportReporterLifecycleTest {
     }
 
     private static LinkedBlockingQueue<Map<String, Object>> trafficQueue() {
-        return getStatic(TrafficExportQueue.class, "queue");
+        return LinkedBlockingQueue.class.cast(getStatic(TrafficExportQueue.class, "queue"));
     }
 
     private static ConfigState.State fileExportState(Path root) {
@@ -270,24 +268,22 @@ class ExportReporterLifecycleTest {
         meta.put("indexed_at", "2026-04-19T00:00:00Z");
 
         Map<String, Object> request = new LinkedHashMap<>();
+        request.put("url", url);
         request.put("method", "GET");
         request.put("path", "/repeater");
 
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", 200);
+        response.put("status_code", 200);
+
+        Map<String, Object> burp = new LinkedHashMap<>();
+        burp.put("reporting_tool", "Repeater Tabs");
 
         Map<String, Object> document = new LinkedHashMap<>();
-        document.put("url", url);
-        document.put("method", "GET");
-        document.put("path", "/repeater");
-        document.put("status", 200);
-        document.put("tool", "Repeater Tabs");
-        document.put("tool_type", "REPEATER_TABS");
-        document.put("repeater_tab_name", repeaterTabName);
-        document.put("repeater_group_name", "Large Set");
+        document.put("burp", burp);
+        RepeaterMetadataFields.put(document, repeaterTabName, "Large Set");
         document.put("request", request);
         document.put("response", response);
-        document.put("document_meta", meta);
+        document.put("meta", meta);
         return document;
     }
 }

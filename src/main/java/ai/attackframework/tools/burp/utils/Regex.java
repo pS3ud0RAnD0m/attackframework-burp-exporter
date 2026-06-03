@@ -38,9 +38,19 @@ public final class Regex {
      * @return compiled {@link Pattern}
      * @throws java.util.regex.PatternSyntaxException if the pattern is invalid
      */
-    @SuppressWarnings("MagicConstant") // flags(caseSensitive, multiline) intentionally combines valid Pattern flags
     public static Pattern compile(String pattern, boolean caseSensitive, boolean multiline) {
-        return Pattern.compile(pattern, flags(caseSensitive, multiline));
+        if (multiline) {
+            if (caseSensitive) {
+                return Pattern.compile(pattern, Pattern.MULTILINE);
+            }
+            return Pattern.compile(
+                    pattern,
+                    Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.MULTILINE);
+        }
+        if (caseSensitive) {
+            return Pattern.compile(pattern);
+        }
+        return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     }
 
     /**

@@ -10,6 +10,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.awt.FlowLayout;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -691,17 +692,15 @@ class RepeaterTabsIndexReporterTest {
     @Test
     void buildDocument_includesRepeaterTabAndGroupNames_whenProvided() {
         try {
-            // buildDocument returns LinkedHashMap<String, Object>; cast narrows the erased signature.
-            @SuppressWarnings("unchecked")
-            Map<String, Object> document = (Map<String, Object>) callStatic(
+            Map<String, Object> document = objectMap(callStatic(
                     RepeaterTabsIndexReporter.class,
                     "buildDocument",
                     repeaterRequestResponse("GET /grouped HTTP/1.1\r\nHost: example.test\r\n\r\n"),
                     "2",
-                    "Group Alpha");
+                    "Group Alpha"));
 
-            assertThat(document.get("repeater_tab_name")).isEqualTo("2");
-            assertThat(document.get("repeater_group_name")).isEqualTo("Group Alpha");
+            assertThat(burpRepeater(document)).containsEntry("tab_name", "2");
+            assertThat(burpRepeater(document)).containsEntry("tab_group", "Group Alpha");
         } finally {
             RepeaterTabsIndexReporter.clearSessionState();
         }
@@ -755,29 +754,24 @@ class RepeaterTabsIndexReporterTest {
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8));
             when(response.toByteArray()).thenReturn(responseBytes);
 
-            // buildDocument returns LinkedHashMap<String, Object>; cast narrows the erased signature.
-            @SuppressWarnings("unchecked")
-            Map<String, Object> document = (Map<String, Object>) callStatic(
+            Map<String, Object> document = objectMap(callStatic(
                     RepeaterTabsIndexReporter.class,
                     "buildDocument",
                     requestResponse,
                     "FallbackTab",
-                    null);
+                    null));
 
-            assertThat(document.get("url")).isEqualTo("https://example.test/fallback/path?q=1");
-            assertThat(document.get("method")).isEqualTo("POST");
-            assertThat(document.get("path")).isEqualTo("/fallback/path?q=1");
-            assertThat(document.get("http_version")).isEqualTo("HTTP/2");
-            assertThat(document.get("repeater_tab_name")).isEqualTo("FallbackTab");
+            assertThat(burpRepeater(document)).containsEntry("tab_name", "FallbackTab");
 
-            // Nested JSON-derived Map<?, ?>; this test controls the document shape end-to-end.
-            @SuppressWarnings("unchecked")
-            Map<String, Object> requestDoc = (Map<String, Object>) document.get("request");
+            Map<String, Object> requestDoc = objectMap(document.get("request"));
+            assertThat(requestDoc.get("url")).isEqualTo("https://example.test/fallback/path?q=1");
             assertThat(requestDoc.get("method")).isEqualTo("POST");
-            assertThat(requestDoc.get("path")).isEqualTo("/fallback/path?q=1");
-            assertThat(requestDoc.get("path_without_query")).isEqualTo("/fallback/path");
-            assertThat(requestDoc.get("query")).isEqualTo("q=1");
-            assertThat(requestDoc.get("http_version")).isEqualTo("HTTP/2");
+            Map<String, Object> path = objectMap(requestDoc.get("path"));
+            assertThat(path.get("with_query")).isEqualTo("/fallback/path?q=1");
+            assertThat(path.get("without_query")).isEqualTo("/fallback/path");
+            assertThat(path.get("query")).isEqualTo("q=1");
+            Map<String, Object> protocol = objectMap(requestDoc.get("protocol"));
+            assertThat(protocol.get("http_version")).isEqualTo("HTTP/2");
         } finally {
             RepeaterTabsIndexReporter.clearSessionState();
         }
@@ -1160,5 +1154,22 @@ class RepeaterTabsIndexReporterTest {
         header.add(new JLabel(groupName));
         header.add(new JLabel(childCount));
         return header;
+    }
+
+    private static Map<String, Object> burpRepeater(Map<String, Object> doc) {
+        return objectMap(objectMap(doc.get("burp")).get("repeater"));
+    }
+
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            return Map.of();
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                out.put(key, entry.getValue());
+            }
+        }
+        return out;
     }
 }

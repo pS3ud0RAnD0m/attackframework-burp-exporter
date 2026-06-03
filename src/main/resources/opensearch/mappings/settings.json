@@ -3,16 +3,22 @@
   "mappings": {
     "dynamic": true,
     "properties": {
-      "project_id": { "type": "keyword", "ignore_above": 8191 },
-      "settings_user": { "type": "object", "enabled": true },
-      "settings_project": { "type": "object", "enabled": true },
-      "document_meta": {
+      "burp": {
+        "properties": {
+          "project_id": { "type": "keyword", "ignore_above": 8191 },
+          "version": { "type": "keyword", "ignore_above": 8191 }
+        }
+      },
+      "meta": {
         "properties": {
           "schema_version": { "type": "keyword", "ignore_above": 8191 },
           "extension_version": { "type": "keyword", "ignore_above": 8191 },
-          "indexed_at": { "type": "date" }
+          "indexed_at": { "type": "date" },
+          "export_id": { "type": "keyword", "ignore_above": 8191 }
         }
-      }
+      },
+      "project": { "type": "object", "enabled": true },
+      "user": { "type": "object", "enabled": true }
     }
   }
 }

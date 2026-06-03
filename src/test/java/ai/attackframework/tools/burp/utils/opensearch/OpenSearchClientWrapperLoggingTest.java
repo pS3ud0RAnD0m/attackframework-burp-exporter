@@ -1,11 +1,16 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
+import ai.attackframework.tools.burp.testutils.OpenSearchTestConfig;
+import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.config.SecureCredentialStore;
 import ai.attackframework.tools.burp.utils.Logger;
 import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.util.List;
 
 import javax.swing.SwingUtilities;
 
@@ -62,6 +67,63 @@ class OpenSearchClientWrapperLoggingTest {
     }
 
     @Test
+    void logPushOutcome_whenExportStopped_emitsTraceWithOpenSearchPrefix() {
+        Logger.resetState();
+        Logger.registerListener(listener);
+        RuntimeConfig.setExportRunning(false);
+        try {
+            Reflect.callStatic(
+                    OpenSearchClientWrapper.class,
+                    "logPushOutcome",
+                    "attackframework-tool-burp-traffic",
+                    "doPushBulk",
+                    new IOException("Connection is closed"));
+
+            assertThat(events).anySatisfy(e -> assertThat(e.level()).isEqualTo("TRACE"));
+            assertThat(events).anySatisfy(e -> assertThat(e.message())
+                    .contains("[OpenSearch]")
+                    .contains("doPushBulk cancelled")
+                    .contains("export stopped"));
+            assertThat(events).noneMatch(e -> e.message().contains("failed for"));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    @Test
+    void logPushOutcome_whenExportRunning_emitsDebugWithOpenSearchPrefix() {
+        Logger.resetState();
+        Logger.registerListener(listener);
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of("traffic"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, true, OpenSearchTestConfig.get().baseUrl(), null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        RuntimeConfig.setExportRunning(true);
+        try {
+            Reflect.callStatic(
+                    OpenSearchClientWrapper.class,
+                    "logPushOutcome",
+                    "attackframework-tool-burp-traffic",
+                    "doPushDocument",
+                    new IOException("mapper parsing exception"));
+
+            assertThat(events).anySatisfy(e -> assertThat(e.level()).isEqualTo("DEBUG"));
+            assertThat(events).anySatisfy(e -> assertThat(e.message())
+                    .contains("[OpenSearch]")
+                    .contains("doPushDocument failed")
+                    .contains("mapper parsing exception"));
+            assertThat(events).noneMatch(e -> e.message().contains("cancelled"));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    @Test
     void testConnection_withPinnedModeButNoImportedCertificate_emitsTlsLogEvents() throws Exception {
         String originalInsecure = System.getProperty("OPENSEARCH_INSECURE");
         Logger.resetState();
@@ -73,7 +135,7 @@ class OpenSearchClientWrapperLoggingTest {
                 new ConfigState.Sinks(false, "", false, false,
                         true, ConfigState.DEFAULT_FILE_TOTAL_CAP_GB,
                         true, ConfigState.DEFAULT_FILE_MAX_DISK_USED_PERCENT,
-                        true, "https://opensearch.url:9200", "", "", ConfigState.OPEN_SEARCH_TLS_PINNED),
+                        true, OpenSearchTestConfig.get().baseUrl(), "", "", ConfigState.OPEN_SEARCH_TLS_PINNED),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
@@ -83,16 +145,16 @@ class OpenSearchClientWrapperLoggingTest {
         Logger.registerListener(listener);
         try {
             SwingUtilities.invokeAndWait(() ->
-                    OpenSearchClientWrapper.testConnection("https://opensearch.url:9200"));
+                    OpenSearchClientWrapper.testConnection(OpenSearchTestConfig.get().baseUrl()));
 
             assertThat(events).anySatisfy(e -> assertThat(e.message())
-                    .contains("Testing connection: url=https://opensearch.url:9200")
+                    .contains("Testing connection: url=" + OpenSearchTestConfig.get().baseUrl())
                     .contains("tlsMode=pinned")
                     .contains("pinnedCertificateLoaded=false"));
             assertThat(events).anySatisfy(e -> assertThat(e.message())
                     .contains("TLS mode requires a pinned certificate, but none is imported"));
             assertThat(events).anySatisfy(e -> assertThat(e.message())
-                    .contains("Connection failed for https://opensearch.url:9200")
+                    .contains("Connection failed for " + OpenSearchTestConfig.get().baseUrl())
                     .contains("trust=Pinned certificate not imported"));
         } finally {
             if (originalInsecure == null) {

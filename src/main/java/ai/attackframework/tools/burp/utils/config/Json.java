@@ -75,38 +75,36 @@ public final class Json {
 
     /**
      * Parsed config projection used by the UI and tests.
-     * Null/empty defaulting behavior is handled via the constructor.
+     * Null/empty defaulting behavior is handled via the canonical constructor.
      */
-    @SuppressWarnings("java:S6206") // Sonar: this could be a record; keep as class for explicit defensive copying and SpotBugs-friendly structure
-    public static final class ImportedConfig {
-
-        private final List<String> dataSources;
-        private final String scopeType;
-        private final List<String> scopeRegexes;
-        private final List<String> scopeKinds;
-        private final boolean filesEnabled;
-        private final String filesPath;
-        private final boolean fileJsonlEnabled;
-        private final boolean fileBulkNdjsonEnabled;
-        private final boolean fileTotalCapEnabled;
-        private final double fileTotalCapGb;
-        private final boolean fileDiskUsagePercentEnabled;
-        private final int fileDiskUsagePercent;
-        private final boolean openSearchEnabled;
-        private final String openSearchUrl;
-        private final String openSearchUser;
-        private final String openSearchPassword;
-        private final String openSearchTlsMode;
-        private final ConfigState.OpenSearchOptions openSearchOptions;
-        private final List<String> settingsSub;
-        private final List<String> trafficToolTypes;
-        private final List<String> findingsSeverities;
-        private final List<String> exporterSubOptions;
-        private final int exporterStatsIntervalSeconds;
-        private final boolean exporterOptionsPresent;
-        private final String indexNameBaseTemplate;
-        private final Map<String, Set<String>> enabledExportFieldsByIndex;
-        private final ConfigState.UiPreferences uiPreferences;
+    public static final record ImportedConfig(
+            List<String> dataSources,
+            String scopeType,
+            List<String> scopeRegexes,
+            List<String> scopeKinds,
+            boolean filesEnabled,
+            String filesPath,
+            boolean fileJsonlEnabled,
+            boolean fileBulkNdjsonEnabled,
+            boolean fileTotalCapEnabled,
+            double fileTotalCapGb,
+            boolean fileDiskUsagePercentEnabled,
+            int fileDiskUsagePercent,
+            boolean openSearchEnabled,
+            String openSearchUrl,
+            String openSearchUser,
+            String openSearchPassword,
+            String openSearchTlsMode,
+            ConfigState.OpenSearchOptions openSearchOptions,
+            List<String> settingsSub,
+            List<String> trafficToolTypes,
+            List<String> findingsSeverities,
+            List<String> exporterSubOptions,
+            int exporterStatsIntervalSeconds,
+            boolean exporterOptionsPresent,
+            String indexNameBaseTemplate,
+            Map<String, Set<String>> enabledExportFieldsByIndex,
+            ConfigState.UiPreferences uiPreferences) {
 
         public ImportedConfig(
                 List<String> dataSources,
@@ -170,120 +168,11 @@ public final class Json {
             if (map == null || map.isEmpty()) return null;
             Map<String, Set<String>> out = new java.util.LinkedHashMap<>();
             for (Map.Entry<String, Set<String>> e : map.entrySet()) {
-                if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) {
+                if (e.getKey() != null && e.getValue() != null) {
                     out.put(e.getKey(), Collections.unmodifiableSet(new LinkedHashSet<>(e.getValue())));
                 }
             }
             return out.isEmpty() ? null : Collections.unmodifiableMap(out);
-        }
-
-        public List<String> dataSources() {
-            return dataSources;
-        }
-
-        public String scopeType() {
-            return scopeType;
-        }
-
-        public List<String> scopeRegexes() {
-            return scopeRegexes;
-        }
-
-        public List<String> scopeKinds() {
-            return scopeKinds;
-        }
-
-        public String filesPath() {
-            return filesPath;
-        }
-
-        public boolean filesEnabled() {
-            return filesEnabled;
-        }
-
-        public boolean fileJsonlEnabled() {
-            return fileJsonlEnabled;
-        }
-
-        public boolean fileBulkNdjsonEnabled() {
-            return fileBulkNdjsonEnabled;
-        }
-
-        public boolean fileTotalCapEnabled() {
-            return fileTotalCapEnabled;
-        }
-
-        public double fileTotalCapGb() {
-            return fileTotalCapGb;
-        }
-
-        public boolean fileDiskUsagePercentEnabled() {
-            return fileDiskUsagePercentEnabled;
-        }
-
-        public int fileDiskUsagePercent() {
-            return fileDiskUsagePercent;
-        }
-
-        public String openSearchUrl() {
-            return openSearchUrl;
-        }
-
-        public boolean openSearchEnabled() {
-            return openSearchEnabled;
-        }
-
-        public String openSearchUser() {
-            return openSearchUser;
-        }
-
-        public String openSearchPassword() {
-            return openSearchPassword;
-        }
-
-        public String openSearchTlsMode() {
-            return openSearchTlsMode;
-        }
-
-        public ConfigState.OpenSearchOptions openSearchOptions() {
-            return openSearchOptions;
-        }
-
-        public List<String> settingsSub() {
-            return settingsSub;
-        }
-
-        public List<String> trafficToolTypes() {
-            return trafficToolTypes;
-        }
-
-        public List<String> findingsSeverities() {
-            return findingsSeverities;
-        }
-
-        public List<String> exporterSubOptions() {
-            return exporterSubOptions;
-        }
-
-        public int exporterStatsIntervalSeconds() {
-            return exporterStatsIntervalSeconds;
-        }
-
-        public boolean exporterOptionsPresent() {
-            return exporterOptionsPresent;
-        }
-
-        public String indexNameBaseTemplate() {
-            return indexNameBaseTemplate;
-        }
-
-        /** Null when absent or empty (all fields enabled). */
-        public Map<String, Set<String>> enabledExportFieldsByIndex() {
-            return enabledExportFieldsByIndex;
-        }
-
-        public ConfigState.UiPreferences uiPreferences() {
-            return uiPreferences;
         }
     }
 
@@ -897,7 +786,7 @@ public final class Json {
         return new IndexNamesParts(ConfigState.normalizeIndexNameBaseTemplate(baseTemplate));
     }
 
-    /** Returns null when absent or empty (all fields enabled). */
+    /** Returns null when absent (all fields enabled); empty per-index arrays disable optional fields. */
     private static Map<String, Set<String>> parseExportFields(JsonNode root) {
         JsonNode exportFields = root.path("exportFields");
         if (!exportFields.isObject()) return null;
@@ -908,11 +797,30 @@ public final class Json {
             if (!arr.isArray()) continue;
             Set<String> set = new LinkedHashSet<>();
             for (JsonNode n : arr) {
-                if (n.isTextual()) set.add(n.asText());
+                if (!n.isTextual()) {
+                    continue;
+                }
+                String normalized = normalizeExportFieldKey(indexName, n.asText());
+                if (normalized != null) {
+                    set.add(normalized);
+                }
             }
-            if (!set.isEmpty()) out.put(indexName, Set.copyOf(set));
+            if (arr.isEmpty() || !set.isEmpty()) {
+                out.put(indexName, Set.copyOf(set));
+            }
         }
         return out.isEmpty() ? null : Map.copyOf(out);
+    }
+
+    private static String normalizeExportFieldKey(String indexName, String fieldKey) {
+        if (indexName == null || fieldKey == null || fieldKey.isBlank()) {
+            return null;
+        }
+        String trimmed = fieldKey.trim();
+        if (ExportFieldRegistry.getToggleableFields(indexName).contains(trimmed)) {
+            return trimmed;
+        }
+        return null;
     }
 
     private static String textOrNull(JsonNode node) {

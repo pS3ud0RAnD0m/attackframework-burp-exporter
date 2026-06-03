@@ -37,7 +37,7 @@ class ConfigPanelStopLifecycleHeadlessTest {
             SettingsIndexReporter.start();
             FindingsIndexReporter.start();
             SitemapIndexReporter.start();
-            ProxyWebSocketIndexReporter.start();
+            ProxyWebSocketIndexReporter.startLivePoll();
 
             ConfigPanel panel = newPanelOnEdt();
             JButton stopButton = (JButton) findByName(panel, "control.startStop");
@@ -67,8 +67,8 @@ class ConfigPanelStopLifecycleHeadlessTest {
             JTextArea controlStatus = findByName(panel, "control.status", JTextArea.class);
             JCheckBox openSearchEnabled = findByName(panel, "os.enable", JCheckBox.class);
             JCheckBox filesEnabled = findByName(panel, "files.enable", JCheckBox.class);
-            JTextField openSearchUrlField = get(panel, "openSearchUrlField");
-            JTextField filePathField = get(panel, "filePathField");
+            JTextField openSearchUrlField = JTextField.class.cast(get(panel, "openSearchUrlField"));
+            JTextField filePathField = JTextField.class.cast(get(panel, "filePathField"));
             assertThat(startStop).isNotNull();
             assertThat(controlStatus).isNotNull();
 

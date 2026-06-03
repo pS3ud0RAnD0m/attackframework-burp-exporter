@@ -6,7 +6,6 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
 import java.lang.management.OperatingSystemMXBean;
-import java.lang.management.RuntimeMXBean;
 import java.lang.management.ThreadMXBean;
 import java.util.List;
 
@@ -46,8 +45,6 @@ public final class SystemMetrics {
             int peakThreadCount,
             long gcCollectionCount,
             long gcCollectionTimeMs,
-            long uptimeMs,
-            int availableProcessors,
             double processCpuLoad,
             long directBufferUsedBytes,
             long mappedBufferUsedBytes) {}
@@ -65,8 +62,6 @@ public final class SystemMetrics {
         int peakThreadCount = -1;
         long gcCount = -1L;
         long gcTimeMs = -1L;
-        long uptimeMs = -1L;
-        int availableProcessors = rt.availableProcessors();
         double processCpuLoad = Double.NaN;
 
         try {
@@ -86,13 +81,6 @@ public final class SystemMetrics {
             peakThreadCount = Math.max(-1, threadBean.getPeakThreadCount());
         } catch (RuntimeException ignored) {
             // Thread bean may be disabled; keep defaults.
-        }
-
-        try {
-            RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
-            uptimeMs = Math.max(-1L, runtimeBean.getUptime());
-        } catch (RuntimeException ignored) {
-            // Runtime bean failure; keep default.
         }
 
         try {
@@ -165,8 +153,6 @@ public final class SystemMetrics {
                 peakThreadCount,
                 gcCount,
                 gcTimeMs,
-                uptimeMs,
-                availableProcessors,
                 processCpuLoad,
                 directBufferUsed,
                 mappedBufferUsed);

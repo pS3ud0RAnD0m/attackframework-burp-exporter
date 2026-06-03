@@ -94,10 +94,10 @@ class ExporterIndexStatsReporterTest {
 
             ExporterIndexStatsReporter.refreshScheduleForCurrentState();
 
-            LazyScheduler holder = getStatic(ExporterIndexStatsReporter.class, "SCHEDULER");
+            LazyScheduler holder = LazyScheduler.class.cast(getStatic(ExporterIndexStatsReporter.class, "SCHEDULER"));
             ScheduledExecutorService firstScheduler = holder.peek();
             assertThat(firstScheduler).isNotNull();
-            assertThat((Integer) getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(30);
+            assertThat(Integer.class.cast(getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds"))).isEqualTo(30);
 
             RuntimeConfig.updateState(stateWithInterval(45));
             ExporterIndexStatsReporter.refreshScheduleForCurrentState();
@@ -105,7 +105,7 @@ class ExporterIndexStatsReporterTest {
             ScheduledExecutorService secondScheduler = holder.peek();
             assertThat(secondScheduler).isNotNull();
             assertThat(secondScheduler).isNotSameAs(firstScheduler);
-            assertThat((Integer) getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds")).isEqualTo(45);
+            assertThat(Integer.class.cast(getStatic(ExporterIndexStatsReporter.class, "scheduledIntervalSeconds"))).isEqualTo(45);
         } finally {
             tearDown();
         }
