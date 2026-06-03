@@ -11,12 +11,10 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.List;
-
-import javax.swing.SwingUtilities;
-
-import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+
+import javax.swing.SwingUtilities;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -67,23 +65,23 @@ class OpenSearchClientWrapperLoggingTest {
     }
 
     @Test
-    void logPushOutcome_whenExportStopped_emitsTraceWithOpenSearchPrefix() {
+    void logPushOutcome_whenExportStopped_emitsTraceWithOpenSearchPrefix() throws Exception {
         Logger.resetState();
         Logger.registerListener(listener);
         RuntimeConfig.setExportRunning(false);
         try {
-            Reflect.callStatic(
-                    OpenSearchClientWrapper.class,
-                    "logPushOutcome",
+            invokeLogPushOutcomeOnEdt(
                     "attackframework-tool-burp-traffic",
                     "doPushBulk",
                     new IOException("Connection is closed"));
 
-            assertThat(events).anySatisfy(e -> assertThat(e.level()).isEqualTo("TRACE"));
-            assertThat(events).anySatisfy(e -> assertThat(e.message())
-                    .contains("[OpenSearch]")
-                    .contains("doPushBulk cancelled")
-                    .contains("export stopped"));
+            assertThat(events).anySatisfy(e -> {
+                assertThat(e.level()).isEqualTo("TRACE");
+                assertThat(e.message())
+                        .contains("[OpenSearch]")
+                        .contains("doPushBulk cancelled")
+                        .contains("export stopped");
+            });
             assertThat(events).noneMatch(e -> e.message().contains("failed for"));
         } finally {
             cleanUp();
@@ -91,7 +89,7 @@ class OpenSearchClientWrapperLoggingTest {
     }
 
     @Test
-    void logPushOutcome_whenExportRunning_emitsDebugWithOpenSearchPrefix() {
+    void logPushOutcome_whenExportRunning_emitsDebugWithOpenSearchPrefix() throws Exception {
         Logger.resetState();
         Logger.registerListener(listener);
         RuntimeConfig.updateState(new ConfigState.State(
@@ -105,22 +103,34 @@ class OpenSearchClientWrapperLoggingTest {
                 null));
         RuntimeConfig.setExportRunning(true);
         try {
-            Reflect.callStatic(
-                    OpenSearchClientWrapper.class,
-                    "logPushOutcome",
+            invokeLogPushOutcomeOnEdt(
                     "attackframework-tool-burp-traffic",
                     "doPushDocument",
                     new IOException("mapper parsing exception"));
 
-            assertThat(events).anySatisfy(e -> assertThat(e.level()).isEqualTo("DEBUG"));
-            assertThat(events).anySatisfy(e -> assertThat(e.message())
-                    .contains("[OpenSearch]")
-                    .contains("doPushDocument failed")
-                    .contains("mapper parsing exception"));
+            assertThat(events).anySatisfy(e -> {
+                assertThat(e.level()).isEqualTo("DEBUG");
+                assertThat(e.message())
+                        .contains("[OpenSearch]")
+                        .contains("doPushDocument failed")
+                        .contains("mapper parsing exception");
+            });
             assertThat(events).noneMatch(e -> e.message().contains("cancelled"));
         } finally {
             cleanUp();
         }
+    }
+
+    /**
+     * Invokes {@code logPushOutcome} on the EDT so {@link Logger} listener delivery is synchronous.
+     */
+    private void invokeLogPushOutcomeOnEdt(String indexName, String operation, Exception failure) throws Exception {
+        SwingUtilities.invokeAndWait(() -> Reflect.callStatic(
+                OpenSearchClientWrapper.class,
+                "logPushOutcome",
+                indexName,
+                operation,
+                failure));
     }
 
     @Test
