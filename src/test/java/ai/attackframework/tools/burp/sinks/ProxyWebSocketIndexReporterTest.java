@@ -39,6 +39,8 @@ class ProxyWebSocketIndexReporterTest {
     @AfterEach
     void resetRuntimeConfig() {
         ProxyWebSocketIndexReporter.stop();
+        TrafficExportQueue.stopWorker();
+        TrafficExportQueue.clearPendingWork();
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of("traffic"),
                 "all",
@@ -452,6 +454,7 @@ class ProxyWebSocketIndexReporterTest {
 
         assertThat(pushedKeys()).doesNotContain("5:9");
         assertThat(liveHistoryCursor()).isZero();
+        TrafficExportQueue.stopWorker();
         assertThat(TrafficExportQueue.getCurrentSize()).isZero();
 
         RuntimeConfig.updateState(new ConfigState.State(
@@ -466,6 +469,7 @@ class ProxyWebSocketIndexReporterTest {
         ProxyWebSocketIndexReporter.pushNewItemsOnly();
 
         assertThat(pushedKeys()).contains("5:9");
+        TrafficExportQueue.stopWorker();
         assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
     }
 
@@ -495,6 +499,7 @@ class ProxyWebSocketIndexReporterTest {
         ProxyWebSocketIndexReporter.pushNewItemsOnly();
 
         assertThat(pushedKeys()).contains("2:1", "2:2");
+        TrafficExportQueue.stopWorker();
         assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(2);
     }
 
@@ -531,6 +536,7 @@ class ProxyWebSocketIndexReporterTest {
 
         ProxyWebSocketIndexReporter.pushNewItemsOnly();
 
+        TrafficExportQueue.stopWorker();
         assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
         assertThat(pushedKeys()).contains("1:101");
         assertThat(liveHistoryCursor()).isEqualTo(101);
