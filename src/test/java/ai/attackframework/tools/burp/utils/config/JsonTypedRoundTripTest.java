@@ -401,7 +401,7 @@ class JsonTypedRoundTripTest {
                 null,
                 new ConfigState.UiPreferences(
                         2,
-                        new ConfigState.LogPanelPreferences("warn", true, "tls", true, false, "retry", false, true)));
+                        new ConfigState.LogPanelPreferences("warn", true, "tls", true, false, false, "retry", false, true)));
 
         String json = ConfigJsonMapper.build(state);
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
@@ -413,8 +413,32 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.uiPreferences().logPanel().filterText()).isEqualTo("tls");
         assertThat(parsed.uiPreferences().logPanel().filterCase()).isTrue();
         assertThat(parsed.uiPreferences().logPanel().filterRegex()).isFalse();
+        assertThat(parsed.uiPreferences().logPanel().filterNegative()).isFalse();
         assertThat(parsed.uiPreferences().logPanel().searchText()).isEqualTo("retry");
         assertThat(parsed.uiPreferences().logPanel().searchCase()).isFalse();
         assertThat(parsed.uiPreferences().logPanel().searchRegex()).isTrue();
+    }
+
+    @Test
+    void build_and_parse_preserves_log_panel_filterNegative() throws IOException {
+        var state = new ConfigState.State(
+                List.of("settings"),
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null,
+                new ConfigState.UiPreferences(
+                        ConfigState.DEFAULT_STATS_CHART_STYLE,
+                        new ConfigState.LogPanelPreferences(
+                                "info", false, "", false, false, true, "", false, false)));
+
+        String json = ConfigJsonMapper.build(state);
+        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+
+        assertThat(json).contains("\"filterNegative\" : true");
+        assertThat(parsed.uiPreferences().logPanel().filterNegative()).isTrue();
     }
 }

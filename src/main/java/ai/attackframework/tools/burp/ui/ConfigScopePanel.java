@@ -72,7 +72,7 @@ public final class ConfigScopePanel {
         JPanel customRow = new JPanel(new MigLayout("insets 0", "[150!,left]20[fill,grow]", ""));
         customRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         customRow.add(customRadio, GAPLEFT + indentPx + ", " + ALIGN_LEFT_TOP);
-        customRow.add(grid.component(), "growx");
+        customRow.add(grid, "growx");
         panel.add(customRow, "growx");
 
         // All radio (indented)

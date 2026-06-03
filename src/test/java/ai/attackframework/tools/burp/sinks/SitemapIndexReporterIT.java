@@ -1,7 +1,9 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Assumptions;
@@ -24,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
@@ -76,15 +79,28 @@ class SitemapIndexReporterIT {
     }
 
     @Test
-    void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() {
+    void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() throws InterruptedException {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         try {
             createSitemapIndex();
             setRuntimeConfigForSitemapExport();
             setMockMontoyaApiWithOneSitemapItem();
 
-            SitemapIndexReporter.start();
-            SitemapIndexReporter.pushSnapshotNow();
+            List<String> infoLines = new ArrayList<>();
+            Logger.LogListener logListener = (level, message) -> {
+                if ("INFO".equals(level)) {
+                    infoLines.add(message);
+                }
+            };
+            Logger.registerListener(logListener);
+            try {
+                SitemapIndexReporter.start();
+                SitemapIndexReporter.pushSnapshotNow();
+                awaitInfoLog(infoLines, "[Sitemap] Exporting sitemap backlog: 1 item(s).");
+                awaitInfoLogStartingWith(infoLines, "[Sitemap] snapshot complete: captured=");
+            } finally {
+                Logger.unregisterListener(logListener);
+            }
 
             Map<String, Object> doc = awaitFirstDocument();
             assertThat(doc).isNotNull();
@@ -255,5 +271,27 @@ class SitemapIndexReporterIT {
         for (String key : keys) {
             assertThat(map.containsKey(key)).isTrue();
         }
+    }
+
+    private static void awaitInfoLog(List<String> infoLines, String expected) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (infoLines.contains(expected)) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        assertThat(infoLines).contains(expected);
+    }
+
+    private static void awaitInfoLogStartingWith(List<String> infoLines, String prefix) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (infoLines.stream().anyMatch(line -> line.startsWith(prefix))) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        assertThat(infoLines).anyMatch(line -> line.startsWith(prefix));
     }
 }

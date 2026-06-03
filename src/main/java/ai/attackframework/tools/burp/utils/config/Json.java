@@ -363,6 +363,7 @@ public final class Json {
         logNode.put("filterText", log.filterText());
         logNode.put("filterCase", log.filterCase());
         logNode.put("filterRegex", log.filterRegex());
+        logNode.put("filterNegative", log.filterNegative());
         logNode.put("searchText", log.searchText());
         logNode.put("searchCase", log.searchCase());
         logNode.put("searchRegex", log.searchRegex());
@@ -440,6 +441,7 @@ public final class Json {
                 textOrEmpty(log.get("filterText")),
                 bool(log.get("filterCase"), false),
                 bool(log.get("filterRegex"), false),
+                bool(log.get("filterNegative"), false),
                 textOrEmpty(log.get("searchText")),
                 bool(log.get("searchCase"), false),
                 bool(log.get("searchRegex"), false));

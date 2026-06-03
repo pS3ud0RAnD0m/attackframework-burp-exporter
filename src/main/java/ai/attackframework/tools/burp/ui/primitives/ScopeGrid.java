@@ -17,7 +17,6 @@ import javax.swing.event.DocumentListener;
 import ai.attackframework.tools.burp.ui.text.RegexIndicatorBinder;
 import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.Logger;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.miginfocom.swing.MigLayout;
 
 /**
@@ -28,7 +27,7 @@ import net.miginfocom.swing.MigLayout;
  *
  * <p><strong>EDT:</strong> Public mutators expect to be called on the EDT.</p>
  */
-public class ScopeGrid implements Serializable {
+public class ScopeGrid extends JPanel {
 
     @Serial private static final long serialVersionUID = 1L;
 
@@ -48,13 +47,6 @@ public class ScopeGrid implements Serializable {
     public record ScopeEntryInit(String value, boolean regex) implements Serializable {
         @Serial private static final long serialVersionUID = 1L;
     }
-
-    private final JPanel grid = new JPanel(
-            new MigLayout(
-                    "insets 0, gapx 20, gapy 6",
-                    "[fill,grow,sg tf]20[]20[sg btn,left]"
-            )
-    );
 
     private final List<Row> rows = new ArrayList<>();
     private final JButton addButton = new Tooltips.HtmlButton("Add");
@@ -76,6 +68,9 @@ public class ScopeGrid implements Serializable {
      * @param initial ordered initial entries; blank row created when {@code null} or empty
      */
     public ScopeGrid(List<ScopeEntryInit> initial) {
+        super(new MigLayout(
+                "insets 0, gapx 20, gapy 6",
+                "[fill,grow,sg tf]20[]20[sg btn,left]"));
         if (initial == null || initial.isEmpty()) {
             rows.add(new Row("", true)); // default: regex ON
         } else {
@@ -97,17 +92,6 @@ public class ScopeGrid implements Serializable {
 
         rebuild();
     }
-
-    /**
-     * Returns the internal grid component to be added by higher-level panels.
-     *
-     * <p>This is an intentional exposure of a UI primitive so callers can
-     * place the grid into their layouts; the panel is not shared across
-     * independent owners.</p>
-     * @return grid component to embed in layouts
-     */
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "ScopeGrid is a UI primitive; callers must embed the internal JPanel in their layouts.")
-    public JPanel component() { return grid; }
 
     /**
      * Current text values across rows (in order).
@@ -188,7 +172,7 @@ public class ScopeGrid implements Serializable {
      * <p>Caller must invoke on the EDT.</p>
      */
     private void rebuild() {
-        grid.removeAll();
+        removeAll();
 
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
@@ -198,28 +182,28 @@ public class ScopeGrid implements Serializable {
             assignRowToolTips(r);
 
             // Common part: field + toggle + indicator
-            grid.add(r.field, "sg tf, growx"); // col 1
-            grid.add(r.toggle, "split 2");     // col 2
-            grid.add(r.indicator);
+            add(r.field, "sg tf, growx"); // col 1
+            add(r.toggle, "split 2");     // col 2
+            add(r.indicator);
 
             if (i == 0) {
                 // Row 1 has Add
-                grid.add(addButton, "sg btn"); // col 3
+                add(addButton, "sg btn"); // col 3
             } else {
                 // Rows > 1 have Delete
                 r.ensureDeleteHandler(() -> {
                     rows.remove(r);
                     rebuild();
                 });
-                grid.add(r.delete, "sg btn");  // col 3
+                add(r.delete, "sg btn");  // col 3
             }
 
-            grid.add(new JLabel(), "wrap");
+            add(new JLabel(), "wrap");
         }
 
         applyEnablement();
-        grid.revalidate();
-        grid.repaint();
+        revalidate();
+        repaint();
     }
 
     /**

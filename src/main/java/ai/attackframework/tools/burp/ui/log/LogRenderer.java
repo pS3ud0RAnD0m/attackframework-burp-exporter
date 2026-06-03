@@ -7,9 +7,9 @@ import javax.swing.text.AbstractDocument;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.text.Element;
-import javax.swing.text.JTextComponent;
+import java.util.Objects;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import javax.swing.text.JTextComponent;
 
 import ai.attackframework.tools.burp.utils.Logger;
 
@@ -26,9 +26,8 @@ import ai.attackframework.tools.burp.utils.Logger;
  */
 public final class LogRenderer {
 
-    @SuppressFBWarnings(value = "EI_EXPOSE_REP2", justification = "LogRenderer intentionally holds the provided text component as a UI peer; it is never re-exposed.")
-    private final JTextComponent textComponent;
     private final Document doc;
+    private final Runnable scrollToEnd;
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -40,8 +39,10 @@ public final class LogRenderer {
      * @param textComponent target component to render into (must have an AbstractDocument)
      */
     public LogRenderer(JTextComponent textComponent) {
-        this.textComponent = textComponent;
-        this.doc = textComponent.getDocument();
+        JTextComponent component = Objects.requireNonNull(textComponent, "textComponent");
+        this.doc = component.getDocument();
+        Document document = this.doc;
+        this.scrollToEnd = () -> component.setCaretPosition(document.getLength());
     }
 
     /**
@@ -143,7 +144,9 @@ public final class LogRenderer {
      * Scrolls to the bottom unless paused.
      */
     public void autoscrollIfNeeded(boolean paused) {
-        if (!paused) textComponent.setCaretPosition(doc.getLength());
+        if (!paused) {
+            scrollToEnd.run();
+        }
     }
 
     /**

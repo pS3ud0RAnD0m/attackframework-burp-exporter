@@ -70,6 +70,20 @@ class LogPanelPersistenceHeadlessTest {
     }
 
     @Test
+    void persists_filterNegative_acrossPanelInstances() {
+        LogPanel a = newPanel();
+        JCheckBox filterNegative = check(a, "log.filter.negative");
+        if (!filterNegative.isSelected()) {
+            click(filterNegative);
+        }
+        a.removeNotify();
+
+        LogPanel b = newPanel();
+        JCheckBox restored = check(b, "log.filter.negative");
+        assertThat(restored.isSelected()).isTrue();
+    }
+
+    @Test
     void ui_changes_update_runtime_config_log_panel_preferences() {
         ConfigState.State previous = RuntimeConfig.getState();
         try {
@@ -84,6 +98,8 @@ class LogPanelPersistenceHeadlessTest {
             setText(field(panel, "log.filter.text"), "opensearch");
             JCheckBox filterRegex = check(panel, "log.filter.regex");
             if (!filterRegex.isSelected()) click(filterRegex);
+            JCheckBox filterNegative = check(panel, "log.filter.negative");
+            if (!filterNegative.isSelected()) click(filterNegative);
             setText(field(panel, "log.search.field"), "traffic");
 
             ConfigState.LogPanelPreferences preferences = RuntimeConfig.logPanelPreferences();
@@ -91,6 +107,7 @@ class LogPanelPersistenceHeadlessTest {
             assertThat(preferences.pauseAutoscroll()).isTrue();
             assertThat(preferences.filterText()).isEqualTo("opensearch");
             assertThat(preferences.filterRegex()).isTrue();
+            assertThat(preferences.filterNegative()).isTrue();
             assertThat(preferences.searchText()).isEqualTo("traffic");
         } finally {
             RuntimeConfig.updateState(previous);

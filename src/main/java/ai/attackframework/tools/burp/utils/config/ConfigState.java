@@ -213,6 +213,7 @@ public final class ConfigState {
             String filterText,
             boolean filterCase,
             boolean filterRegex,
+            boolean filterNegative,
             String searchText,
             boolean searchCase,
             boolean searchRegex) {
@@ -371,7 +372,7 @@ public final class ConfigState {
 
     /** Default persisted LogPanel preferences. */
     public static LogPanelPreferences defaultLogPanelPreferences() {
-        return new LogPanelPreferences(DEFAULT_LOG_MIN_LEVEL, false, "", false, false, "", false, false);
+        return new LogPanelPreferences(DEFAULT_LOG_MIN_LEVEL, false, "", false, false, false, "", false, false);
     }
 
     /** Default persisted UI preferences. */

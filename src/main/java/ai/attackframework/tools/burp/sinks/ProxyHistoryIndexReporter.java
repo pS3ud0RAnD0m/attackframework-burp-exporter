@@ -130,7 +130,8 @@ public final class ProxyHistoryIndexReporter {
         long lastChunkGcMs = startGcMs;
         long lastChunkWallMs = System.currentTimeMillis();
         int chunkSeq = 0;
-        Logger.logInfoPanelOnly("[ProxyHistory.snapshot] start: wt=" + nowWallClock()
+        Logger.logInfoPanelOnly("[ProxyHistory] Exporting proxy history backlog: " + history.size() + " item(s).");
+        Logger.logDebug("[ProxyHistory.snapshot] start: wt=" + nowWallClock()
                 + " items=" + history.size()
                 + " initial_chunk_target=" + chunkTarget
                 + " heap_used_mib=" + heapUsedMib()
@@ -213,7 +214,7 @@ public final class ProxyHistoryIndexReporter {
             ExportStats.recordLastPush(TrafficRouteBucket.INDEX_KEY, durationMs);
         }
         ExportStats.recordProxyHistorySnapshot(attempted, success, durationMs, chunkTarget);
-        Logger.logInfoPanelOnly(SnapshotPacing.summaryLine("ProxyHistory")
+        Logger.logDebug(SnapshotPacing.summaryLine("ProxyHistory")
                 + " wt=" + nowWallClock()
                 + " elapsed_ms=" + durationMs
                 + " chunks=" + chunkSeq);
@@ -247,7 +248,7 @@ public final class ProxyHistoryIndexReporter {
             long gcDeltaMs,
             int processed,
             int total) {
-        Logger.logInfoPanelOnly("[ProxyHistory.chunk] wt=" + nowWallClock()
+        Logger.logDebug("[ProxyHistory.chunk] wt=" + nowWallClock()
                 + " seq=" + chunkSeq
                 + " items=" + attemptedChunk
                 + " sent=" + sent

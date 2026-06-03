@@ -317,8 +317,10 @@ public class LogPanelTestHarness {
 
         JCheckBox fCase = check(p, "log.filter.case");
         JCheckBox fRegex = check(p, "log.filter.regex");
+        JCheckBox fNegative = check(p, "log.filter.negative");
         if (fCase.isSelected()) click(fCase);
         if (fRegex.isSelected()) click(fRegex);
+        if (fNegative.isSelected()) click(fNegative);
         setText(field(p, "log.filter.text"), "");
 
         JCheckBox sCase = check(p, "log.search.case");

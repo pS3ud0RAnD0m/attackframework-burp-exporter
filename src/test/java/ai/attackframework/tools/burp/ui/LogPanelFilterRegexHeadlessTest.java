@@ -10,13 +10,16 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.newPanel;
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.resetPanelState;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LogPanelFilterRegexHeadlessTest {
 
     @Test
     void filter_regex_respects_case_toggle_and_matches_substrings() throws Exception {
-        LogPanel panel = new LogPanel();
+        LogPanel panel = newPanel();
+        resetPanelState(panel);
 
         JTextField filterField = JTextField.class.cast(get(panel, "filterField", JTextField.class));
         JCheckBox filterCaseToggle = JCheckBox.class.cast(get(panel, "filterCaseToggle", JCheckBox.class));

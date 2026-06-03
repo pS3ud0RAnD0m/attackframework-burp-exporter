@@ -33,11 +33,11 @@ import org.slf4j.LoggerFactory;
  * Output/Error consoles stay quiet.</p>
  * <table border="1" summary="Logger API levels and destinations">
  *   <tr><th>Method</th><th>SLF4J</th><th>Log tab</th><th>Burp console</th><th>Typical use</th></tr>
- *   <tr><td>{@link #logInfoPanelOnly}</td><td>INFO</td><td>yes</td><td>no</td><td>Start/Stop, snapshot complete, connection recovered</td></tr>
+ *   <tr><td>{@link #logInfoPanelOnly}</td><td>INFO</td><td>yes</td><td>no</td><td>Start/Stop, index create, backlog export start, one-shot snapshot complete, connection recovered</td></tr>
+ *   <tr><td>{@link #logDebug}</td><td>DEBUG</td><td>yes</td><td>no</td><td>Per-chunk snapshot progress ({@code [ProxyHistory.chunk]}), pacing summaries, OpenSearch push detail</td></tr>
  *   <tr><td>{@link #logWarnPanelOnly}</td><td>WARN</td><td>yes</td><td>no</td><td>Recoverable sink degradation (push failed, retry pressure)</td></tr>
  *   <tr><td>{@link #logErrorPanelOnly}</td><td>ERROR</td><td>yes</td><td>no</td><td>Start aborted, index init failed, retry queue full</td></tr>
  *   <tr><td>{@link #logInfo} / {@link #logWarn} / {@link #logError}</td><td>matching</td><td>yes</td><td>yes</td><td>Extension load, severe file I/O loss, must appear in Burp console</td></tr>
- *   <tr><td>{@link #logDebug}</td><td>DEBUG</td><td>yes</td><td>no</td><td>Diagnostic detail (malformed doc fallback, OpenSearch push detail)</td></tr>
  *   <tr><td>{@link #logTrace}</td><td>TRACE</td><td>yes</td><td>no</td><td>High-volume diagnostics (Repeater tab capture, cancelled OpenSearch push)</td></tr>
  *   <tr><td>{@link #internalDebug} / {@link #internalTrace}</td><td>DEBUG/TRACE</td><td>no</td><td>no</td><td>LogPanel internals; avoid feedback loops</td></tr>
  * </table>

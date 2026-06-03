@@ -50,6 +50,7 @@
       "filterText" : "tls",
       "filterCase" : true,
       "filterRegex" : false,
+      "filterNegative" : false,
       "searchText" : "retry",
       "searchCase" : false,
       "searchRegex" : true

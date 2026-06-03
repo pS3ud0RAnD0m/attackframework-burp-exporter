@@ -669,7 +669,7 @@ class ProxyWebSocketIndexReporterTest {
         assertThat(pushedKeys().contains(key)).isTrue();
     }
 
-    private static ProxyWebSocketMessage webSocketMessage(int webSocketId, int messageId) {
+    static ProxyWebSocketMessage webSocketMessage(int webSocketId, int messageId) {
         ProxyWebSocketMessage ws = mock(ProxyWebSocketMessage.class);
         HttpRequest upgrade = mock(HttpRequest.class);
         HttpService service = mock(HttpService.class);

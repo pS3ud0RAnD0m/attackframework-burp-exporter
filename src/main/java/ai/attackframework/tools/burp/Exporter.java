@@ -52,7 +52,7 @@ public class Exporter implements BurpExtension {
     @Override
     public void initialize(MontoyaApi api) {
         final String extensionName = "Attack Framework: Burp Exporter";
-        final String tabTitle = "Attack Framework";
+        final String tabTitle = "Exporter";
         String version = Version.get();
 
         try {

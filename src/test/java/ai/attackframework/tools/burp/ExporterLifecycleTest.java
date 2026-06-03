@@ -75,7 +75,7 @@ class ExporterLifecycleTest {
 
             verify(fixture.extension).setName("Attack Framework: Burp Exporter");
             verify(fixture.extension).registerUnloadingHandler(any(ExtensionUnloadingHandler.class));
-            verify(fixture.userInterface).registerSuiteTab(eq("Attack Framework"), any(Component.class));
+            verify(fixture.userInterface).registerSuiteTab(eq("Exporter"), any(Component.class));
             verify(fixture.http).registerHttpHandler(any());
             verify(fixture.webSockets).registerWebSocketCreatedHandler(any());
         } finally {
@@ -193,7 +193,7 @@ class ExporterLifecycleTest {
                 unloadHandler.set(invocation.getArgument(0));
                 return unloadRegistration;
             });
-            when(userInterface.registerSuiteTab(eq("Attack Framework"), any(Component.class)))
+            when(userInterface.registerSuiteTab(eq("Exporter"), any(Component.class)))
                     .thenReturn(suiteTabRegistration);
             when(http.registerHttpHandler(any())).thenReturn(httpRegistration);
             when(webSockets.registerWebSocketCreatedHandler(any())).thenReturn(webSocketRegistration);

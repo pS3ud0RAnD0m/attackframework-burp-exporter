@@ -252,6 +252,8 @@ public final class RepeaterTabsIndexReporter {
         }
         int generation = RUN_GENERATION.get();
         openCaptureWindowForCurrentRun();
+        Logger.logInfoPanelOnly("[Traffic] Repeater Tabs startup export starting startupSession="
+                + currentStartupSessionId() + ".");
         Logger.logDebug("[RepeaterTabs] Scheduling startup tab walk for generation "
                 + generation
                 + " startupSession=" + currentStartupSessionId()

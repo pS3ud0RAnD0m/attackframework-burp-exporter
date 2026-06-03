@@ -255,12 +255,16 @@ public final class ProxyWebSocketIndexReporter {
     }
 
     private static void pushHistoricSnapshotItems(MontoyaApi api, List<ProxyWebSocketMessage> history) {
+        long startNs = System.nanoTime();
+        Logger.logInfoPanelOnly("[ProxyWebSocket] Exporting proxy WebSocket history backlog: "
+                + history.size() + " frame(s).");
         SnapshotPacing.resetCountersForSnapshot();
         int chunkTarget = BatchSizeController.getInstance().getCurrentBatchSize();
         long estBytes = 0;
         List<String> chunkKeys = new ArrayList<>(chunkTarget);
         List<Map<String, Object>> chunkDocs = new ArrayList<>(chunkTarget);
         int processed = 0;
+        int attempted = 0;
         for (ProxyWebSocketMessage msg : history) {
             if (!shouldRunHistoricSnapshot()) {
                 break;
@@ -275,6 +279,7 @@ public final class ProxyWebSocketIndexReporter {
             boolean sizeCapReached = !chunkDocs.isEmpty() && (estBytes + docBytes) > BULK_MAX_BYTES;
             boolean countCapReached = !chunkDocs.isEmpty() && chunkDocs.size() >= chunkTarget;
             if (sizeCapReached || countCapReached) {
+                attempted += chunkDocs.size();
                 flushBatch(chunkKeys, chunkDocs);
                 chunkKeys.clear();
                 chunkDocs.clear();
@@ -285,12 +290,15 @@ public final class ProxyWebSocketIndexReporter {
             estBytes += docBytes;
         }
         if (shouldRunHistoricSnapshot() && !chunkDocs.isEmpty()) {
+            attempted += chunkDocs.size();
             flushBatch(chunkKeys, chunkDocs);
         }
         liveHistoryCursor = Math.max(liveHistoryCursor, history.size());
         liveHistoryTailKey = lastHistoryKey(history);
-        Logger.logInfoPanelOnly(SnapshotPacing.summaryLine("ProxyWebSocket")
-                + " processed=" + processed);
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+        Logger.logDebug(SnapshotPacing.summaryLine("ProxyWebSocket")
+                + " processed=" + processed + " attempted=" + attempted
+                + " duration_ms=" + durationMs);
     }
 
     private static void pushLivePollItems(MontoyaApi api, List<ProxyWebSocketMessage> history) {

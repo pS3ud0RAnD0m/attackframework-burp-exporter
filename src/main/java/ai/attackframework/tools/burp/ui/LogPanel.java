@@ -65,8 +65,8 @@ import ai.attackframework.tools.burp.utils.text.TextSearchEngine;
 import net.miginfocom.swing.MigLayout;
 
 /**
- * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex),
- * search (case/regex, highlight all, match count), and duplicate compaction.
+ * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex,
+ * optional exclude via ¬), search (case/regex, highlight all, match count), and duplicate compaction.
  *
  * <p><strong>Design:</strong> Coordinates a {@link LogStore} (model) with a {@link LogRenderer} (view).
  * Keeps regex compilation and flag rules centralized via {@link ai.attackframework.tools.burp.utils.Regex}.</p>
@@ -109,6 +109,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private final AutoSizingTextField filterField;
     private final JCheckBox filterCaseToggle;
     private final JCheckBox filterRegexToggle;
+    private final JCheckBox filterNegativeToggle;
 
     // Search controls
     private final AutoSizingTextField searchField;
@@ -129,6 +130,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private static final String PREF_FILTER_TEXT   = "filterText";
     private static final String PREF_FILTER_CASE   = "filterCase";
     private static final String PREF_FILTER_REGEX  = "filterRegex";
+    private static final String PREF_FILTER_NEGATIVE = "filterNegative";
     private static final String PREF_SEARCH_CASE   = "searchCase";
     private static final String PREF_SEARCH_REGEX  = "searchRegex";
 
@@ -221,6 +223,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         filterCaseToggle.setSelected(PREFS.getBoolean(PREF_FILTER_CASE, false));
         filterRegexToggle = new Tooltips.HtmlCheckBox(".*");
         filterRegexToggle.setName("log.filter.regex");
+        filterNegativeToggle = new Tooltips.HtmlCheckBox("¬");
+        filterNegativeToggle.setName("log.filter.negative");
+        filterNegativeToggle.setSelected(PREFS.getBoolean(PREF_FILTER_NEGATIVE, false));
         final JLabel filterRegexIndicator = new Tooltips.HtmlLabel("");
         filterRegexIndicator.setName("log.filter.regex.indicator");
 
@@ -277,6 +282,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         toolbar.add(filterField, GAP0);
         toolbar.add(filterCaseToggle, GAP4);
         toolbar.add(filterRegexToggle, GAP4);
+        toolbar.add(filterNegativeToggle, GAP4);
         toolbar.add(filterRegexIndicator, GAP6);
 
         toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
@@ -344,6 +350,11 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         });
         filterRegexToggle.addActionListener(e -> {
             PREFS.putBoolean(PREF_FILTER_REGEX, filterRegexToggle.isSelected());
+            rebuildView();
+            syncRuntimePreferencesFromUi();
+        });
+        filterNegativeToggle.addActionListener(e -> {
+            PREFS.putBoolean(PREF_FILTER_NEGATIVE, filterNegativeToggle.isSelected());
             rebuildView();
             syncRuntimePreferencesFromUi();
         });
@@ -463,6 +474,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         Tooltips.apply(filterField, Tooltips.html("Filter by string or regex."));
         Tooltips.apply(filterCaseToggle, Tooltips.html("Case-sensitive filter."));
         Tooltips.apply(filterRegexToggle, Tooltips.html("Regex filter."));
+        Tooltips.apply(filterNegativeToggle, Tooltips.html(
+                "Exclude lines that match the filter (show only non-matching entries)."));
 
         Tooltips.apply(searchField, Tooltips.html("Find string or regex."));
         Tooltips.apply(searchCaseToggle, Tooltips.html("Case-sensitive search."));
@@ -538,6 +551,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             filterField.setText(preferences.filterText());
             filterCaseToggle.setSelected(preferences.filterCase());
             filterRegexToggle.setSelected(preferences.filterRegex());
+            filterNegativeToggle.setSelected(preferences.filterNegative());
             searchField.setText(preferences.searchText());
             searchCaseToggle.setSelected(preferences.searchCase());
             searchRegexToggle.setSelected(preferences.searchRegex());
@@ -562,6 +576,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
                 filterField.getText(),
                 filterCaseToggle.isSelected(),
                 filterRegexToggle.isSelected(),
+                filterNegativeToggle.isSelected(),
                 searchField.getText(),
                 searchCaseToggle.isSelected(),
                 searchRegexToggle.isSelected());
@@ -588,6 +603,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         PREFS.put(PREF_FILTER_TEXT, preferences.filterText());
         PREFS.putBoolean(PREF_FILTER_CASE, preferences.filterCase());
         PREFS.putBoolean(PREF_FILTER_REGEX, preferences.filterRegex());
+        PREFS.putBoolean(PREF_FILTER_NEGATIVE, preferences.filterNegative());
         PREFS.put(PREF_LAST_SEARCH, preferences.searchText());
         PREFS.putBoolean(PREF_SEARCH_CASE, preferences.searchCase());
         PREFS.putBoolean(PREF_SEARCH_REGEX, preferences.searchRegex());
@@ -776,21 +792,25 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      */
     private boolean passesTextFilter(String msg) {
         String f = filterField.getText();
-        if (f == null || f.isEmpty()) return true;
+        if (f == null || f.isEmpty()) {
+            return true;
+        }
         try {
+            boolean matches;
             if (filterRegexToggle.isSelected()) {
                 int flags = filterCaseToggle.isSelected()
                         ? 0
                         : (java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
-                return java.util.regex.Pattern.compile(f, flags)
+                matches = java.util.regex.Pattern.compile(f, flags)
                         .matcher(msg == null ? "" : msg)
                         .find();
             } else {
                 String m = msg == null ? "" : msg;
-                return filterCaseToggle.isSelected()
+                matches = filterCaseToggle.isSelected()
                         ? m.contains(f)
                         : m.toLowerCase(Locale.ROOT).contains(f.toLowerCase(Locale.ROOT));
             }
+            return filterNegativeToggle.isSelected() ? !matches : matches;
         } catch (RuntimeException ex) {
             Logger.internalWarn("LogPanel invalid regex: " + ex.getMessage());
             return false;

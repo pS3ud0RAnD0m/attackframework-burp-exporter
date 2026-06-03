@@ -1,11 +1,13 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 import org.junit.jupiter.api.Assumptions;
@@ -94,15 +96,28 @@ class FindingsIndexReporterIT {
     }
 
     @Test
-    void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() {
+    void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() throws InterruptedException {
         prepareTestEnvironment();
         try {
             createFindingsIndex();
             setRuntimeConfigForFindingsExport();
             setMockMontoyaApiWithOneIssue();
 
-            FindingsIndexReporter.start();
-            FindingsIndexReporter.pushSnapshotNow();
+            List<String> infoLines = new ArrayList<>();
+            Logger.LogListener logListener = (level, message) -> {
+                if ("INFO".equals(level)) {
+                    infoLines.add(message);
+                }
+            };
+            Logger.registerListener(logListener);
+            try {
+                FindingsIndexReporter.start();
+                FindingsIndexReporter.pushSnapshotNow();
+                awaitInfoLog(infoLines, "[Findings] Exporting findings backlog: 1 issue(s).");
+            } finally {
+                Logger.unregisterListener(logListener);
+            }
+            assertThat(infoLines).noneMatch(line -> line.contains("snapshot complete"));
 
             Map<String, Object> doc = awaitFirstDocument();
             assertThat(doc).isNotNull();
@@ -620,5 +635,16 @@ class FindingsIndexReporterIT {
             return list;
         }
         return null;
+    }
+
+    private static void awaitInfoLog(List<String> infoLines, String expected) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (infoLines.contains(expected)) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        assertThat(infoLines).contains(expected);
     }
 }

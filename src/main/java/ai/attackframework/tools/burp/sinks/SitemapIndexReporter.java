@@ -166,6 +166,9 @@ public final class SitemapIndexReporter {
             boolean openSearchActive = pushAll && RuntimeConfig.isOpenSearchActive();
             boolean fileActive = pushAll && RuntimeConfig.isAnyFileExportEnabled();
             long startNs = pushAll ? System.nanoTime() : 0L;
+            if (pushAll) {
+                Logger.logInfoPanelOnly("[Sitemap] Exporting sitemap backlog: " + items.size() + " item(s).");
+            }
 
             int processed = 0;
             for (HttpRequestResponse item : items) {

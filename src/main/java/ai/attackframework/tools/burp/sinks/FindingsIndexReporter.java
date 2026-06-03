@@ -170,6 +170,10 @@ public final class FindingsIndexReporter {
             boolean filterBySeverity = severities != null && !severities.isEmpty();
             Set<String> selectedSeverities = filterBySeverity ? Set.copyOf(severities) : Set.of();
 
+            if (pushAll) {
+                Logger.logInfoPanelOnly("[Findings] Exporting findings backlog: " + issues.size() + " issue(s).");
+            }
+
             for (AuditIssue issue : issues) {
                 if (!RuntimeConfig.isExportRunning()) {
                     break;
