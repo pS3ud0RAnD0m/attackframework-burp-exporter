@@ -31,18 +31,22 @@ public final class Tooltips {
     private static final String TOOLTIP_FORWARDER_KEY = Tooltips.class.getName() + ".tooltipForwarder";
     private static final int STRUCTURED_TOOLTIP_THRESHOLD = 120;
 
+    /** Hover delay before showing a tooltip (initial and when moving to another control). */
+    public static final int TOOLTIP_SHOW_DELAY_MS = 250;
+
     private Tooltips() {}
 
     /**
-     * Configures the shared Swing tooltip manager for hover-friendly behavior.
+     * Configures the shared Swing tooltip manager for consistent hover behavior.
      *
-     * <p>Tooltips appear immediately, reshow immediately when moving between related controls, and
-     * stay visible while the cursor remains over the hover target.</p>
+     * <p>Tooltips appear after {@link #TOOLTIP_SHOW_DELAY_MS} ms on first hover and when moving to
+     * another control, reducing pop-up noise during casual mouse movement. They stay visible while
+     * the cursor remains over the hover target ({@code dismissDelay} is effectively unlimited).</p>
      */
     public static void configureSharedToolTipManager() {
         ToolTipManager manager = ToolTipManager.sharedInstance();
-        manager.setInitialDelay(0);
-        manager.setReshowDelay(0);
+        manager.setInitialDelay(TOOLTIP_SHOW_DELAY_MS);
+        manager.setReshowDelay(TOOLTIP_SHOW_DELAY_MS);
         manager.setDismissDelay(Integer.MAX_VALUE);
     }
 

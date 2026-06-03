@@ -1,3 +1,4 @@
+import java.util.Collections
 import org.gradle.api.tasks.testing.TestDescriptor
 import org.gradle.api.tasks.testing.TestListener
 import org.gradle.api.tasks.testing.TestResult
@@ -87,6 +88,9 @@ tasks.test {
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = verboseTests
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 
@@ -94,6 +98,7 @@ tasks.test {
     val red = "\u001B[31m"
     val yellow = "\u001B[33m"
     val reset = "\u001B[0m"
+    val failedTests = Collections.synchronizedList(mutableListOf<String>())
 
     addTestListener(object : TestListener {
         override fun beforeTest(descriptor: TestDescriptor) {}
@@ -108,18 +113,28 @@ tasks.test {
             val skipped = result.skippedTestCount
             val passed = total - failed - skipped
             println("Test summary: total=$total, passed=$passed, failed=$failed, skipped=$skipped")
+            if (failed > 0) {
+                println("${red}Failed tests:${reset}")
+                failedTests.forEach { println("  - $it") }
+            }
         }
 
         override fun afterTest(descriptor: TestDescriptor, result: TestResult) {
-            if (!verboseTests) {
-                return
+            val label = "${descriptor.className} > ${descriptor.displayName}"
+            when (result.resultType) {
+                TestResult.ResultType.FAILURE -> {
+                    failedTests.add(label)
+                    // Gradle's test log sometimes omits the failing test on CI; always echo it here.
+                    println("${red}FAILED${reset} $label")
+                    result.exception?.printStackTrace(System.out)
+                }
+                TestResult.ResultType.SKIPPED -> if (verboseTests) {
+                    println("${yellow}SKIPPED${reset} $label")
+                }
+                else -> if (verboseTests) {
+                    println("${green}PASSED${reset} $label")
+                }
             }
-            val status = when (result.resultType) {
-                TestResult.ResultType.SUCCESS -> "${green}PASSED${reset}"
-                TestResult.ResultType.FAILURE -> "${red}FAILED${reset}"
-                TestResult.ResultType.SKIPPED -> "${yellow}SKIPPED${reset}"
-            }
-            println("${descriptor.className} > ${descriptor.displayName} $status")
         }
     })
 }

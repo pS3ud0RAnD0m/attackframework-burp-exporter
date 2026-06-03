@@ -39,6 +39,49 @@ jobs:
       - name: Build extension
         run: ./gradlew --no-daemon clean build
 
+      - name: Print failing tests from JUnit XML
+        if: failure()
+        run: |
+          python3 <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          results_dir = Path("build/test-results/test")
+          if not results_dir.is_dir():
+              print("No build/test-results/test directory (test task may have aborted early).")
+              raise SystemExit(0)
+
+          failures = []
+          for xml_path in sorted(results_dir.glob("TEST-*.xml")):
+              root = ET.parse(xml_path).getroot()
+              for case in root.iter("testcase"):
+                  for tag in ("failure", "error"):
+                          node = case.find(tag)
+                          if node is not None:
+                              classname = case.get("classname") or xml_path.stem.removeprefix("TEST-")
+                              name = case.get("name") or "?"
+                              message = (node.get("message") or node.text or "").strip()
+                              failures.append((f"{classname} > {name}", message))
+
+          if not failures:
+              print("No JUnit <failure>/<error> entries found under build/test-results/test/.")
+          else:
+              print(f"Failing tests ({len(failures)}):")
+              for label, message in failures:
+                  print(f"\n=== {label} ===")
+                  print(message if message else "(no message)")
+          PY
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
+          if-no-files-found: ignore
+
       - name: Read Gradle properties
         id: props
         run: |

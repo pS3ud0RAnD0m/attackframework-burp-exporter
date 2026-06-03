@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.ui;
 
+import static ai.attackframework.tools.burp.ui.text.Tooltips.TOOLTIP_SHOW_DELAY_MS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -12,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class AttackFrameworkPanelTest {
 
     @Test
-    void constructor_setsHoverFriendlyTooltipTiming() throws Exception {
+    void constructor_setsSharedTooltipShowDelay() throws Exception {
         AtomicInteger previousInitialDelay = new AtomicInteger();
         AtomicInteger previousReshowDelay = new AtomicInteger();
         AtomicInteger previousDismissDelay = new AtomicInteger();
@@ -35,8 +36,8 @@ class AttackFrameworkPanelTest {
                 actualDismissDelay.set(manager.getDismissDelay());
             });
 
-            assertThat(actualInitialDelay.get()).isZero();
-            assertThat(actualReshowDelay.get()).isZero();
+            assertThat(actualInitialDelay.get()).isEqualTo(TOOLTIP_SHOW_DELAY_MS);
+            assertThat(actualReshowDelay.get()).isEqualTo(TOOLTIP_SHOW_DELAY_MS);
             assertThat(actualDismissDelay.get()).isEqualTo(Integer.MAX_VALUE);
         } finally {
             SwingUtilities.invokeAndWait(() -> {
