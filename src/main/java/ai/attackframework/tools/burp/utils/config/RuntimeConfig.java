@@ -40,6 +40,7 @@ public final class RuntimeConfig {
     private static volatile ConfigState.State state = defaultState();
     private static volatile boolean exportRunning = false;
     private static volatile boolean exportStarting = false;
+    private static volatile boolean exportStopping = false;
     private static volatile boolean fileExportDisabledForCurrentRun = false;
     private static volatile boolean openSearchDisabledForCurrentRun = false;
     private static volatile Map<String, String> resolvedIndexNamesForCurrentRun = Map.of();
@@ -125,6 +126,21 @@ public final class RuntimeConfig {
         return exportRunning && !exportStarting;
     }
 
+    /** Returns whether the UI is showing the Stop-in-progress state. */
+    public static boolean isExportStopping() {
+        return exportStopping;
+    }
+
+    /**
+     * Sets whether export shutdown is in progress (Stop clicked, workers still draining).
+     *
+     * <p>While {@code true}, {@link ai.attackframework.tools.burp.ui.ConfigPanel} ignores
+     * background control-status posts so {@code Stopping ...} is not overwritten.</p>
+     */
+    public static void setExportStopping(boolean stopping) {
+        exportStopping = stopping;
+    }
+
     /**
      * Sets the export-running flag.
      *
@@ -137,6 +153,7 @@ public final class RuntimeConfig {
         exportRunning = running;
         if (!running) {
             exportStarting = false;
+            exportStopping = false;
             fileExportDisabledForCurrentRun = false;
             openSearchDisabledForCurrentRun = false;
             clearResolvedIndexNamesForCurrentRun();

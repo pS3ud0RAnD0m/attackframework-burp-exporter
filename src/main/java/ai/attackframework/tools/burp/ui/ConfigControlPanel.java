@@ -35,7 +35,8 @@ import net.miginfocom.swing.MigLayout;
  * Callers supply actions and a status configurator for consistent text-area setup. A single
  * Start/Stop button toggles {@link RuntimeConfig#setExportRunning(boolean)}; its label and
  * tooltip show "Start" when stopped and "Stop" when running. The indicator shows starting
- * (yellow), running (green), or stopped (red), and the control status reflects those states.</p>
+ * (yellow), running (green), stopping (yellow), or stopped (red), and the control status
+ * reflects those states.</p>
  *
  * <p><strong>Threading:</strong> created/used on the EDT. {@link #build()} mounts status text areas
  * into their wrapper panels so callers can update them via
@@ -60,7 +61,8 @@ public final class ConfigControlPanel {
         private enum State {
             STOPPED,
             STARTING,
-            RUNNING
+            RUNNING,
+            STOPPING
         }
 
         IndicatorDot(int sizePx) {
@@ -88,6 +90,7 @@ public final class ConfigControlPanel {
                 case STOPPED -> "Export is stopped";
                 case STARTING -> "Export is starting";
                 case RUNNING -> "Export is running";
+                case STOPPING -> "Export is stopping";
             }));
         }
 
@@ -102,7 +105,7 @@ public final class ConfigControlPanel {
 
             Color base = switch (state) {
                 case STOPPED -> INDICATOR_RED;
-                case STARTING -> INDICATOR_YELLOW;
+                case STARTING, STOPPING -> INDICATOR_YELLOW;
                 case RUNNING -> INDICATOR_GREEN;
             };
             g2.setColor(base);
@@ -136,7 +139,8 @@ public final class ConfigControlPanel {
     private final Runnable exportAction;
     /** Receives UI callbacks to complete or revert startup state after bootstrap. */
     private final Consumer<StartUiCallbacks> startAction;
-    private final Runnable stopAction;
+    /** Invoked on Stop; caller runs {@code onStopComplete} on the EDT when shutdown work finishes. */
+    private final Consumer<Runnable> stopAction;
 
     public record StartUiCallbacks(Runnable onStartFailure, Runnable onStartSuccess) {}
 
@@ -152,7 +156,7 @@ public final class ConfigControlPanel {
             Runnable importAction,
             Runnable exportAction,
             Consumer<StartUiCallbacks> startAction,
-            Runnable stopAction
+            Consumer<Runnable> stopAction
     ) {
         this.importExportStatus = Objects.requireNonNull(importExportStatus, "importExportStatus");
         this.importExportStatusWrapper = Objects.requireNonNull(importExportStatusWrapper, "importExportStatusWrapper");
@@ -199,10 +203,18 @@ public final class ConfigControlPanel {
             boolean wasRunning = RuntimeConfig.isExportRunning();
             Logger.logDebug("[Control] " + (wasRunning ? "Stop" : "Start") + " clicked; running=" + wasRunning + " -> " + !wasRunning);
             if (wasRunning) {
-                stopAction.run();
+                RuntimeConfig.setExportRunning(false);
+                RuntimeConfig.setExportStopping(true);
                 updateStartStopButton(startStopBtn, false);
-                indicator.setState(IndicatorDot.State.STOPPED);
-                updateControlStatus("Stopped");
+                indicator.setState(IndicatorDot.State.STOPPING);
+                updateControlStatus("Stopping ...");
+                Runnable markStoppedUi = () -> {
+                    RuntimeConfig.setExportStopping(false);
+                    indicator.setState(IndicatorDot.State.STOPPED);
+                    updateControlStatus("Stopped");
+                };
+                // Post stop work after this listener returns so Stopping paints before shutdown.
+                SwingUtilities.invokeLater(() -> stopAction.accept(markStoppedUi));
             } else {
                 RuntimeConfig.setExportRunning(true);
                 RuntimeConfig.setExportStarting(true);

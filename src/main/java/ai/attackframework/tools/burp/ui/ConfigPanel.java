@@ -372,14 +372,13 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::importConfig,
                 this::exportConfig,
                 this::startExportAsync,
-                () -> {
-                    RuntimeConfig.setExportRunning(false);
-                    ExportReporterLifecycle.stopBackgroundReporters();
+                onStopComplete -> {
                     startupExecutor.execute(() -> {
                         ExportReporterLifecycle.stopAndClearPendingExportWork();
                         // Off-thread: close pooled OpenSearch clients without holding up the Stop button.
                         ExportReporterLifecycle.releaseRunResourcesAsync();
                         Logger.logInfoPanelOnly("[Export] Stopped.");
+                        SwingUtilities.invokeLater(onStopComplete);
                     });
                 }
         ).build(), MIG_FILL_WRAP);
@@ -1010,6 +1009,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param message status text to display (nullable)
      */
     @Override public void onControlStatus(String message) {
+        if (RuntimeConfig.isExportStopping()) {
+            return;
+        }
         String formattedMessage = formatControlStatusMessage(message);
         Runnable r = () -> {
             StatusViews.setStatus(

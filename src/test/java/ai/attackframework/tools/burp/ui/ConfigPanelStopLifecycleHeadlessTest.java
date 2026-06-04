@@ -44,6 +44,8 @@ class ConfigPanelStopLifecycleHeadlessTest {
             assertThat(stopButton).isNotNull();
 
             runEdt(stopButton::doClick);
+            waitUntilExportNotRunning();
+            waitUntilBackgroundReportersStopped();
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(peek(ExporterIndexStatsReporter.class, "SCHEDULER")).isNull();
@@ -116,6 +118,33 @@ class ConfigPanelStopLifecycleHeadlessTest {
             ref.set(panel);
         });
         return ref.get();
+    }
+
+    private static void waitUntilExportNotRunning() throws Exception {
+        long deadline = System.currentTimeMillis() + 10_000L;
+        while (RuntimeConfig.isExportRunning() && System.currentTimeMillis() < deadline) {
+            runEdt(() -> { });
+            java.util.concurrent.locks.LockSupport.parkNanos(50_000_000L);
+        }
+        if (RuntimeConfig.isExportRunning()) {
+            throw new AssertionError("Export still running after Stop");
+        }
+    }
+
+    private static void waitUntilBackgroundReportersStopped() throws Exception {
+        long deadline = System.currentTimeMillis() + 30_000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (peek(ExporterIndexStatsReporter.class, "SCHEDULER") == null
+                    && peek(SettingsIndexReporter.class, "SCHEDULER") == null
+                    && peek(FindingsIndexReporter.class, "SCHEDULER") == null
+                    && peek(SitemapIndexReporter.class, "SCHEDULER") == null
+                    && peek(ProxyWebSocketIndexReporter.class, "SCHEDULER") == null) {
+                return;
+            }
+            runEdt(() -> { });
+            java.util.concurrent.locks.LockSupport.parkNanos(100_000_000L);
+        }
+        throw new AssertionError("Background reporters still running after Stop");
     }
 
     private static void runEdt(Runnable runnable) throws Exception {
