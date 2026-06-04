@@ -100,6 +100,43 @@ class StatsPanelFormattersTest {
     }
 
     @Test
+    void chooseByteRateAxisScale_staysKiBUntilDisplayUpperExceeds999() {
+        assertThat(StatsPanelFormatters.chooseByteRateAxisScale(500.0, 1.5).label()).isEqualTo("KiB per second");
+        assertThat(StatsPanelFormatters.chooseByteRateAxisScale(500.0, 1.5).displayDivisor()).isEqualTo(1.0);
+
+        assertThat(StatsPanelFormatters.chooseByteRateAxisScale(800.0, 1.5).label()).isEqualTo("MiB per second");
+        assertThat(StatsPanelFormatters.chooseByteRateAxisScale(800.0, 1.5).displayDivisor()).isEqualTo(1024.0);
+    }
+
+    @Test
+    void nicePositiveUpperBound_roundsSmallCeilingsToWholeNumbers() {
+        assertThat(StatsPanelFormatters.nicePositiveUpperBound(3.9)).isEqualTo(4.0);
+        assertThat(StatsPanelFormatters.nicePositiveUpperBound(2.01)).isEqualTo(3.0);
+        assertThat(StatsPanelFormatters.nicePositiveUpperBound(87.0)).isEqualTo(100.0);
+    }
+
+    @Test
+    void integerDisplayTickStep_isAlwaysAtLeastOneWholeUnit() {
+        assertThat(StatsPanelFormatters.integerDisplayTickStep(4.0)).isEqualTo(1);
+        assertThat(StatsPanelFormatters.integerDisplayTickStep(100.0)).isEqualTo(50);
+    }
+
+    @Test
+    void rangeUpperInBaseUnits_usesNiceDisplayCeiling() {
+        StatsPanelFormatters.ChartAxisScale gib = StatsPanelFormatters.chooseMemoryAxisScale(2500.0, 1.5);
+        double upper = StatsPanelFormatters.rangeUpperInBaseUnits(2500.0, 1.5, gib);
+        assertThat(upper / gib.displayDivisor()).isEqualTo(4.0);
+        assertThat(upper).isEqualTo(4.0 * 1024.0);
+    }
+
+    @Test
+    void chooseMemoryAxisScale_rollsToGiBWhenHeapExceeds999MiBDisplay() {
+        assertThat(StatsPanelFormatters.chooseMemoryAxisScale(500.0, 1.5).label()).isEqualTo("MiB");
+        assertThat(StatsPanelFormatters.chooseMemoryAxisScale(2500.0, 1.5).label()).isEqualTo("GiB");
+        assertThat(StatsPanelFormatters.chooseMemoryAxisScale(2500.0, 1.5).displayDivisor()).isEqualTo(1024.0);
+    }
+
+    @Test
     void formatSkipReasons_multipleReasons_joinsWithSpacesAndThousandsSeparators() {
         ExportStats.recordSkipReason(ExportStats.SKIP_REASON_SCOPE, 1_234);
         ExportStats.recordSkipReason(ExportStats.SKIP_REASON_TOOL_DISABLED, 5);

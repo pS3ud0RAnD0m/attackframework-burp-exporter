@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.ui;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.GradientPaint;
 import java.awt.Container;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -30,6 +31,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.DateTickUnitType;
@@ -123,7 +125,7 @@ class StatsPanelTest {
 
         NumberAxis range = (NumberAxis) plot.getRangeAxis();
         assertThat(range.getRangeType()).isEqualTo(RangeType.POSITIVE);
-        assertThat(range.getUpperMargin()).isEqualTo(0.12);
+        assertThat(range.getUpperMargin()).isEqualTo(0.20);
         assertThat(range.getLowerBound()).isEqualTo(0.0);
         assertThat(range.getUpperBound()).isEqualTo(10.0);
 
@@ -1097,6 +1099,7 @@ class StatsPanelTest {
             onEdt((Runnable) styleButton::doClick);
             assertThat(plot.getRenderer()).isInstanceOf(XYSplineRenderer.class);
             XYSplineRenderer renderer = (XYSplineRenderer) plot.getRenderer();
+            assertThat(renderer.getPrecision()).isEqualTo(5);
             assertThat(renderer.getFillType()).isEqualTo(XYSplineRenderer.FillType.TO_LOWER_BOUND);
             assertThat(renderer.getSeriesFillPaint(0)).isInstanceOf(call(panel, "seriesAreaPaint", 0).getClass());
             assertThat(plot.getDataset(1)).isNull();
@@ -1104,6 +1107,76 @@ class StatsPanelTest {
         } finally {
             RuntimeConfig.updateState(previous);
         }
+    }
+
+    @Test
+    void smoothStyle_trafficAndSitemapFillsAreMoreTransparentThanExporter() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(2, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+
+            GradientPaint trafficFill = GradientPaint.class.cast(call(panel, "seriesPaint", 0));
+            GradientPaint exporterFill = GradientPaint.class.cast(call(panel, "seriesPaint", 1));
+            GradientPaint sitemapFill = GradientPaint.class.cast(call(panel, "seriesPaint", 3));
+
+            assertThat(trafficFill.getColor1().getAlpha()).isLessThan(exporterFill.getColor1().getAlpha());
+            assertThat(sitemapFill.getColor1().getAlpha()).isLessThan(exporterFill.getColor1().getAlpha());
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void chartPanels_drawAtFullSizeWithoutJFreeChartBitmapUpscaling() throws Exception {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        ChartPanel docsPanel = ChartPanel.class.cast(get(panel, "openSearchDocsChartPanel"));
+        ChartPanel memoryPanel = ChartPanel.class.cast(get(panel, "memoryChartPanel"));
+
+        assertThat(docsPanel.getMinimumDrawWidth()).isZero();
+        assertThat(docsPanel.getMinimumDrawHeight()).isZero();
+        assertThat(docsPanel.getMaximumDrawWidth()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(docsPanel.getMaximumDrawHeight()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(memoryPanel.getMaximumDrawWidth()).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
+    void sectionHeaders_openSearchAndJvmHeapPlain_fileExportBold() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JLabel openSearch = JLabel.class.cast(get(panel, "openSearchChartsSectionHeaderLabel"));
+        JLabel fileExport = JLabel.class.cast(get(panel, "fileChartsSectionHeaderLabel"));
+        JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
+
+        assertThat(openSearch.getFont().isBold()).isFalse();
+        assertThat(fileExport.getFont().isBold()).isTrue();
+        assertThat(memoryChart.getTitle().getFont().isBold()).isFalse();
+    }
+
+    @Test
+    void charts_useMatchingStatsRangeAxisWidthSoPlotAreasAlign() {
+        StatsPanel panel = onEdt(StatsPanel::new);
+        JFreeChart docsChart = JFreeChart.class.cast(get(panel, "docsChart"));
+        JFreeChart kibChart = JFreeChart.class.cast(get(panel, "kibChart"));
+        JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
+
+        assertThat(docsChart.getXYPlot().getRangeAxis()).isInstanceOf(StatsChartRangeAxis.class);
+        assertThat(rangeAxisWidth(docsChart)).isEqualTo(StatsChartRangeAxis.TOTAL_WIDTH);
+        assertThat(rangeAxisWidth(kibChart)).isEqualTo(StatsChartRangeAxis.TOTAL_WIDTH);
+        assertThat(rangeAxisWidth(memoryChart)).isEqualTo(StatsChartRangeAxis.TOTAL_WIDTH);
+        assertThat(docsChart.getXYPlot().getFixedRangeAxisSpace()).isNull();
+    }
+
+    private static double rangeAxisWidth(JFreeChart chart) {
+        return ((StatsChartRangeAxis) chart.getXYPlot().getRangeAxis()).getFixedDimension();
     }
 
     @Test
@@ -1137,8 +1210,8 @@ class StatsPanelTest {
         JPanel fileChartsSection = JPanel.class.cast(get(panel, "fileChartsSectionPanel"));
         JPanel openSearchChartsSection = JPanel.class.cast(get(panel, "openSearchChartsSectionPanel"));
         JPanel memoryChartSectionPanel = JPanel.class.cast(get(panel, "memoryChartSectionPanel"));
-        javax.swing.JLabel fileChartsSectionHeader = javax.swing.JLabel.class.cast(get(panel, "fileChartsSectionHeader"));
-        javax.swing.JLabel openSearchChartsSectionHeader = javax.swing.JLabel.class.cast(get(panel, "openSearchChartsSectionHeader"));
+        JPanel fileChartsSectionHeader = JPanel.class.cast(get(panel, "fileChartsSectionHeader"));
+        JPanel openSearchChartsSectionHeader = JPanel.class.cast(get(panel, "openSearchChartsSectionHeader"));
         JPanel lowerPanel = JPanel.class.cast(get(panel, "lowerPanel"));
         JPanel cardsRow = JPanel.class.cast(get(panel, "cardsRow"));
         JPanel miscCard = findByName(cardsRow, "miscStatsCard", JPanel.class);

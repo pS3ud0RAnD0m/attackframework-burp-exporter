@@ -51,6 +51,7 @@ import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.DateTickUnit;
 import org.jfree.chart.axis.DateTickUnitType;
 import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.axis.NumberTickUnit;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
@@ -84,6 +85,31 @@ import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 public class StatsPanel extends JPanel {
 
     private static final String[] CHART_STYLE_NAMES = { "Simple", "Smooth", "Accessible" };
+
+    /** Smooth style area-fill alpha (0–255); lower values reduce overlap saturation. */
+    private static final int SMOOTH_FILL_TOP_ALPHA_DARK = 132;
+    private static final int SMOOTH_FILL_TOP_ALPHA_LIGHT = 122;
+    private static final int SMOOTH_FILL_BOTTOM_ALPHA_DARK = 40;
+    private static final int SMOOTH_FILL_BOTTOM_ALPHA_LIGHT = 50;
+    private static final int SMOOTH_LINE_ALPHA_DARK = 202;
+    private static final int SMOOTH_LINE_ALPHA_LIGHT = 187;
+    private static final int SMOOTH_LEGEND_BOTTOM_ALPHA_DARK = 62;
+    private static final int SMOOTH_LEGEND_BOTTOM_ALPHA_LIGHT = 72;
+    /**
+     * Spline segments between samples for Smooth style (JFree default is 5). Lower than the
+     * previous 12 so curves stay closer to the data and look less heavily rounded.
+     */
+    private static final int SMOOTH_SPLINE_PRECISION = 5;
+    /** Extra range above raw samples so smoothed splines are not clipped at the plot top. */
+    private static final double SPLINE_RANGE_HEADROOM_MULTIPLIER = 1.50;
+    private static final double LINE_RANGE_HEADROOM_MULTIPLIER = 1.20;
+    private static final double RANGE_AXIS_UPPER_MARGIN = 0.20;
+    /** {@link ExportStats#getIndexKeys()} order: traffic is series 0, sitemap is series 3. */
+    private static final int TRAFFIC_SERIES_STYLE_INDEX = 0;
+    private static final int SITEMAP_SERIES_STYLE_INDEX = 3;
+    /** Extra transparency for high-volume traffic/sitemap overlays (fills vs lines). */
+    private static final double SMOOTH_TRAFFIC_SITEMAP_FILL_ALPHA_FACTOR = 0.56;
+    private static final double SMOOTH_TRAFFIC_SITEMAP_LINE_ALPHA_FACTOR = 0.80;
 
     private static final int PANEL_BASE_WIDTH = 1200;
     private static final int PANEL_BASE_HEIGHT = 900;
@@ -326,8 +352,10 @@ public class StatsPanel extends JPanel {
     private final JPanel chartSectionsPanel;
     private final JPanel fileChartsSectionPanel;
     private final JPanel openSearchChartsSectionPanel;
-    private final JLabel fileChartsSectionHeader;
-    private final JLabel openSearchChartsSectionHeader;
+    private final JLabel fileChartsSectionHeaderLabel;
+    private final JLabel openSearchChartsSectionHeaderLabel;
+    private final JPanel fileChartsSectionHeader;
+    private final JPanel openSearchChartsSectionHeader;
     private final JPanel memoryChartSectionPanel;
     private final JPanel openSearchDocsChartPanel;
     private final JPanel openSearchKibChartPanel;
@@ -447,8 +475,10 @@ public class StatsPanel extends JPanel {
         memoryLegendPanel = createMemoryLegendPanel();
         String memoryChartTooltip = memoryChartTooltip();
         Tooltips.apply(memoryLegendPanel, memoryChartTooltip);
-        fileChartsSectionHeader = buildChartSectionHeader("File Export");
-        openSearchChartsSectionHeader = buildChartSectionHeader("OpenSearch Export");
+        fileChartsSectionHeaderLabel = createChartSectionHeaderLabel("File Export", true);
+        openSearchChartsSectionHeaderLabel = createChartSectionHeaderLabel("OpenSearch Export", false);
+        fileChartsSectionHeader = wrapChartSectionHeader(fileChartsSectionHeaderLabel);
+        openSearchChartsSectionHeader = wrapChartSectionHeader(openSearchChartsSectionHeaderLabel);
         fileChartsSectionPanel = buildChartSection(
                 fileChartsSectionHeader, fileDocsChartPanel, fileKibChartPanel, 12);
         openSearchChartsSectionPanel = buildChartSection(
@@ -849,17 +879,16 @@ public class StatsPanel extends JPanel {
         plot.setDomainGridlinesVisible(true);
         plot.setRangeGridlinesVisible(true);
         ValueAxis domain = plot.getDomainAxis();
-        ValueAxis range = plot.getRangeAxis();
-        if (range instanceof NumberAxis numberAxis) {
-            numberAxis.setRangeType(RangeType.POSITIVE);
-            numberAxis.setAutoRangeIncludesZero(true);
-            numberAxis.setAutoRangeStickyZero(true);
-            numberAxis.setLowerMargin(0.0);
-            numberAxis.setUpperMargin(0.12);
-            numberAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
-            numberAxis.setLabelPaint(TEXT_FG);
-            numberAxis.setTickLabelPaint(TEXT_FG);
-        }
+        configureStatsRangeAxis(plot, "MiB");
+        NumberAxis range = (NumberAxis) plot.getRangeAxis();
+        range.setRangeType(RangeType.POSITIVE);
+        range.setAutoRangeIncludesZero(true);
+        range.setAutoRangeStickyZero(true);
+        range.setLowerMargin(0.0);
+        range.setUpperMargin(RANGE_AXIS_UPPER_MARGIN);
+        range.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+        range.setLabelPaint(TEXT_FG);
+        range.setTickLabelPaint(TEXT_FG);
         if (domain != null) {
             domain.setLabelPaint(TEXT_FG);
             domain.setTickLabelPaint(TEXT_FG);
@@ -869,7 +898,7 @@ public class StatsPanel extends JPanel {
                 dateAxis.setDateFormatOverride(new SimpleDateFormat(DOMAIN_TIME_PATTERN));
             }
         }
-        applyChartFonts(chart);
+        applyChartFonts(chart, true);
         return chart;
     }
 
@@ -1118,23 +1147,27 @@ public class StatsPanel extends JPanel {
         applyChartFonts(kibChart);
         applyChartFonts(fileDocsChart);
         applyChartFonts(fileKibChart);
-        applyChartFonts(memoryChart);
-        if (openSearchChartsSectionHeader != null) {
-            openSearchChartsSectionHeader.setFont(chartTitleFont());
+        applyChartFonts(memoryChart, true);
+        if (openSearchChartsSectionHeaderLabel != null) {
+            openSearchChartsSectionHeaderLabel.setFont(chartBaseFont());
         }
-        if (fileChartsSectionHeader != null) {
-            fileChartsSectionHeader.setFont(chartTitleFont());
+        if (fileChartsSectionHeaderLabel != null) {
+            fileChartsSectionHeaderLabel.setFont(chartTitleFont());
         }
     }
 
     private static void applyChartFonts(JFreeChart chart) {
+        applyChartFonts(chart, false);
+    }
+
+    private static void applyChartFonts(JFreeChart chart, boolean plainTitle) {
         if (chart == null) {
             return;
         }
         Font tick = chartTickFont();
         Font axisLabel = chartAxisLabelFont();
         if (chart.getTitle() != null) {
-            chart.getTitle().setFont(chartTitleFont());
+            chart.getTitle().setFont(plainTitle ? chartBaseFont() : chartTitleFont());
         }
         if (chart.getLegend() != null) {
             chart.getLegend().setItemFont(chartLegendFont());
@@ -1405,7 +1438,7 @@ public class StatsPanel extends JPanel {
      * it above the header at index 0; the resulting stack is [legend, header, top chart,
      * strut, bottom chart].
      */
-    private static JPanel buildChartSection(JLabel header, JPanel topChartPanel, JPanel bottomChartPanel, int bottomGap) {
+    private static JPanel buildChartSection(JPanel header, JPanel topChartPanel, JPanel bottomChartPanel, int bottomGap) {
         JPanel section = new JPanel();
         section.setLayout(new javax.swing.BoxLayout(section, javax.swing.BoxLayout.Y_AXIS));
         section.setOpaque(false);
@@ -1418,17 +1451,29 @@ public class StatsPanel extends JPanel {
     }
 
     /**
-     * Builds a centered, theme-aware label that captions a per-sink chart pair. Mirrors the
-     * memory chart's "Memory - Heap Used / Committed (MiB)" caption styling so all three
-     * chart blocks share a consistent visual rhythm.
+     * Builds a centered, theme-aware label that captions a per-sink chart pair.
+     *
+     * @param bold {@code true} for File Export (emphasized); {@code false} for OpenSearch Export
+     *             (matches the plain JVM heap chart title)
      */
-    private static JLabel buildChartSectionHeader(String text) {
+    private static JLabel createChartSectionHeaderLabel(String text, boolean bold) {
         JLabel label = new JLabel(text, SwingConstants.CENTER);
         label.setForeground(TEXT_FG);
-        label.setFont(chartTitleFont());
-        label.setAlignmentX(Component.CENTER_ALIGNMENT);
-        label.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+        label.setFont(bold ? chartTitleFont() : chartBaseFont());
         return label;
+    }
+
+    /**
+     * Centers a section caption without letting {@link BoxLayout} stretch the label to the
+     * full panel width (which some LAFs render as horizontally scaled text).
+     */
+    private static JPanel wrapChartSectionHeader(JLabel label) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.CENTER_ALIGNMENT);
+        row.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+        row.add(label);
+        return row;
     }
 
     private static String formatWhole(long value) {
@@ -1814,18 +1859,16 @@ public class StatsPanel extends JPanel {
         plot.setDomainGridlinesVisible(true);
         plot.setRangeGridlinesVisible(true);
         ValueAxis domain = plot.getDomainAxis();
-        ValueAxis range = plot.getRangeAxis();
-        if (range instanceof NumberAxis numberAxis) {
-            // Throughput charts are non-negative metrics; keep zero anchored at the bottom.
-            numberAxis.setRangeType(RangeType.POSITIVE);
-            numberAxis.setAutoRangeIncludesZero(true);
-            numberAxis.setAutoRangeStickyZero(true);
-            numberAxis.setLowerMargin(0.0);
-            // Smoothed spline peaks can rise slightly above raw samples; keep some headroom.
-            numberAxis.setUpperMargin(0.12);
-            // Keep Y-axis labels/ticks as whole numbers for readability.
-            numberAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
-        }
+        configureStatsRangeAxis(plot, yLabel);
+        NumberAxis range = (NumberAxis) plot.getRangeAxis();
+        // Throughput charts are non-negative metrics; keep zero anchored at the bottom.
+        range.setRangeType(RangeType.POSITIVE);
+        range.setAutoRangeIncludesZero(true);
+        range.setAutoRangeStickyZero(true);
+        range.setLowerMargin(0.0);
+        range.setUpperMargin(RANGE_AXIS_UPPER_MARGIN);
+        // Keep Y-axis labels/ticks as whole numbers for readability.
+        range.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
         if (domain != null) {
             domain.setLabelPaint(TEXT_FG);
             domain.setTickLabelPaint(TEXT_FG);
@@ -1852,12 +1895,19 @@ public class StatsPanel extends JPanel {
         return chart;
     }
 
+    private static void configureStatsRangeAxis(XYPlot plot, String yLabel) {
+        StatsChartRangeAxis rangeAxis = new StatsChartRangeAxis(yLabel);
+        plot.setRangeAxis(rangeAxis);
+        plot.setFixedRangeAxisSpace(null);
+    }
+
     private void applyChartStyles() {
         applyChartStyle(docsChart);
         applyChartStyle(kibChart);
         applyChartStyle(fileDocsChart);
         applyChartStyle(fileKibChart);
         applyMemoryChartStyle(memoryChart);
+        refreshChartRangeAxes();
         applyAllChartFonts();
     }
 
@@ -1900,13 +1950,13 @@ public class StatsPanel extends JPanel {
      * series matches the throughput charts' line weight.
      */
     private BasicStroke memoryLineStroke() {
-        return new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+        return chartStyleIndex == 1 ? smoothChartLineStroke() : chartLineStroke();
     }
 
     private void applyChartStyle(JFreeChart chart) {
         XYPlot plot = chart.getXYPlot();
         XYLineAndShapeRenderer renderer = rendererForStyle(chart);
-        renderer.setDefaultStroke(new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        renderer.setDefaultStroke(chartStyleIndex == 1 ? smoothChartLineStroke() : chartLineStroke());
         for (int i = 0; i < SERIES_STYLES.length; i++) {
             renderer.setSeriesPaint(i, seriesLinePaint(i));
             renderer.setSeriesStroke(i, seriesStroke(i));
@@ -1929,10 +1979,10 @@ public class StatsPanel extends JPanel {
         XYPlot plot = chart.getXYPlot();
         if (chartStyleIndex == 1) {
             if (plot.getRenderer() instanceof XYSplineRenderer splineRenderer) {
-                splineRenderer.setPrecision(12);
+                splineRenderer.setPrecision(SMOOTH_SPLINE_PRECISION);
                 return splineRenderer;
             }
-            XYSplineRenderer splineRenderer = new XYSplineRenderer(12);
+            XYSplineRenderer splineRenderer = new XYSplineRenderer(SMOOTH_SPLINE_PRECISION);
             plot.setRenderer(splineRenderer);
             return splineRenderer;
         }
@@ -1954,10 +2004,23 @@ public class StatsPanel extends JPanel {
 
     private static ChartPanel createRateChartPanel(JFreeChart chart) {
         ChartPanel panel = new ChartPanel(chart);
+        configureChartPanelDrawing(panel);
+        return panel;
+    }
+
+    /**
+     * Configures {@link ChartPanel} so charts render at the panel's actual size. JFreeChart's
+     * defaults cap drawing at 2048×1536 and scale the bitmap to fit, which stretches or
+     * compresses axis and title fonts when the Stats tab is resized.
+     */
+    private static void configureChartPanelDrawing(ChartPanel panel) {
         panel.setFont(chartBaseFont());
         panel.setMouseWheelEnabled(false);
         panel.setPopupMenu(null);
-        return panel;
+        panel.setMinimumDrawWidth(0);
+        panel.setMinimumDrawHeight(0);
+        panel.setMaximumDrawWidth(Integer.MAX_VALUE);
+        panel.setMaximumDrawHeight(Integer.MAX_VALUE);
     }
 
     private JPanel createSharedLegendPanel() {
@@ -2099,30 +2162,40 @@ public class StatsPanel extends JPanel {
     private Paint seriesPaint(int index) {
         SeriesStyle base = SERIES_STYLES[index];
         return switch (chartStyleIndex) {
-            case 0 -> withAlpha(base.paint(), isDarkTheme() ? 235 : 210);
-            case 1 -> slickGradientAreaPaint(base);
+            case 0 -> withAlpha(base.paint(), smoothSeriesAlpha(index, isDarkTheme() ? 245 : 225, false));
+            case 1 -> slickGradientAreaPaint(index, base);
             case 2 -> base.paint();
             default -> base.paint();
         };
     }
 
     private Paint seriesLinePaint(int index) {
-        return chartStyleIndex == 1
-                ? withAlpha(seriesSolidColor(index), isDarkTheme() ? 245 : 225)
-                : seriesPaint(index);
+        if (chartStyleIndex == 1) {
+            int alpha = smoothSeriesAlpha(
+                    index,
+                    isDarkTheme() ? SMOOTH_LINE_ALPHA_DARK : SMOOTH_LINE_ALPHA_LIGHT,
+                    true);
+            return withAlpha(seriesSolidColor(index), alpha);
+        }
+        return seriesPaint(index);
     }
 
     private Paint seriesAreaPaint(int index) {
         return chartStyleIndex == 1 ? seriesPaint(index) : seriesLinePaint(index);
     }
 
+    /**
+     * Paint for the shared top legend swatches. Uses fully opaque series colors so keys stay
+     * readable; chart area fills keep their separate transparency settings.
+     */
     private Paint legendPaint(int index, int topY, int bottomY) {
+        Color opaque = seriesSolidColor(index);
         if (chartStyleIndex == 1) {
-            Color top = withAlpha(seriesSolidColor(index), isDarkTheme() ? 235 : 210);
-            Color bottom = withAlpha(adjust(seriesSolidColor(index), isDarkTheme() ? -34 : -26), isDarkTheme() ? 130 : 150);
-            return new GradientPaint(0f, topY, top, 0f, bottomY, bottom);
+            Color bottom = withAlpha(adjust(opaque, isDarkTheme() ? -34 : -26),
+                    isDarkTheme() ? SMOOTH_LEGEND_BOTTOM_ALPHA_DARK : SMOOTH_LEGEND_BOTTOM_ALPHA_LIGHT);
+            return new GradientPaint(0f, topY, opaque, 0f, bottomY, bottom);
         }
-        return seriesPaint(index);
+        return opaque;
     }
 
     private BasicStroke seriesStroke(int index) {
@@ -2130,11 +2203,24 @@ public class StatsPanel extends JPanel {
         // layers per-series dash patterns (carried by SeriesStyle) on top of that width so
         // series remain distinguishable for color-blind users without relying on color.
         return switch (chartStyleIndex) {
-            case 0 -> new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-            case 1 -> new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+            case 0 -> chartLineStroke();
+            case 1 -> smoothChartLineStroke();
             case 2 -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
             default -> SERIES_STYLES[index].stroke(CHART_LINE_STROKE_WIDTH);
         };
+    }
+
+    private static BasicStroke chartLineStroke() {
+        return new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
+    }
+
+    /** Slightly sharper joins than Simple so splines read less blob-like at sample points. */
+    private static BasicStroke smoothChartLineStroke() {
+        return new BasicStroke(
+                CHART_LINE_STROKE_WIDTH,
+                BasicStroke.CAP_BUTT,
+                BasicStroke.JOIN_MITER,
+                6f);
     }
 
     private Shape seriesMarkerShape(int index) {
@@ -2165,10 +2251,36 @@ public class StatsPanel extends JPanel {
         };
     }
 
-    private Paint slickGradientAreaPaint(SeriesStyle base) {
-        Color top = withAlpha(base.paint(), isDarkTheme() ? 235 : 215);
-        Color bottom = withAlpha(adjust(base.paint(), isDarkTheme() ? -44 : -34), isDarkTheme() ? 80 : 105);
+    private Paint slickGradientAreaPaint(int seriesIndex, SeriesStyle base) {
+        Color top = withAlpha(
+                base.paint(),
+                smoothSeriesAlpha(
+                        seriesIndex,
+                        isDarkTheme() ? SMOOTH_FILL_TOP_ALPHA_DARK : SMOOTH_FILL_TOP_ALPHA_LIGHT,
+                        false));
+        Color bottom = withAlpha(
+                adjust(base.paint(), isDarkTheme() ? -44 : -34),
+                smoothSeriesAlpha(
+                        seriesIndex,
+                        isDarkTheme() ? SMOOTH_FILL_BOTTOM_ALPHA_DARK : SMOOTH_FILL_BOTTOM_ALPHA_LIGHT,
+                        false));
         return new GradientPaint(0f, 0f, top, 0f, CHART_PANEL_HEIGHT / 2f, bottom, true);
+    }
+
+    /**
+     * Lowers alpha for traffic and sitemap only so their overlays stay readable without
+     * washing out exporter/settings/findings. {@code forLine} uses a milder factor.
+     */
+    private static int smoothSeriesAlpha(int seriesIndex, int baseAlpha, boolean forLine) {
+        if (seriesIndex != TRAFFIC_SERIES_STYLE_INDEX && seriesIndex != SITEMAP_SERIES_STYLE_INDEX) {
+            return baseAlpha;
+        }
+        double factor = forLine
+                ? SMOOTH_TRAFFIC_SITEMAP_LINE_ALPHA_FACTOR
+                : SMOOTH_TRAFFIC_SITEMAP_FILL_ALPHA_FACTOR;
+        int scaled = (int) Math.round(baseAlpha * factor);
+        int floor = forLine ? 90 : 16;
+        return Math.clamp(scaled, floor, 255);
     }
 
     private static Color withAlpha(Color color, int alpha) {
@@ -2230,10 +2342,98 @@ public class StatsPanel extends JPanel {
         updateDomainRange(fileDocsChart, minMs, nowMs);
         updateDomainRange(fileKibChart, minMs, nowMs);
         updateDomainRange(memoryChart, minMs, nowMs);
-        applyReasonableDefaultRange(docsChart, docsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
-        applyReasonableDefaultRange(kibChart, kibPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
-        applyReasonableDefaultRange(fileDocsChart, fileDocsPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
-        applyReasonableDefaultRange(fileKibChart, fileKibPerSecondDataset, DEFAULT_RATE_RANGE_MAX);
+        refreshChartRangeAxes();
+    }
+
+    private void refreshChartRangeAxes() {
+        applyDocsPerSecondRange(docsChart, docsPerSecondDataset);
+        applyDocsPerSecondRange(fileDocsChart, fileDocsPerSecondDataset);
+        applyScaledByteRateRange(kibChart, kibPerSecondDataset);
+        applyScaledByteRateRange(fileKibChart, fileKibPerSecondDataset);
+        applyScaledMemoryRange(memoryChart, memoryDataset);
+    }
+
+    private double rangeHeadroomMultiplier() {
+        return chartStyleIndex == 1 ? SPLINE_RANGE_HEADROOM_MULTIPLIER : LINE_RANGE_HEADROOM_MULTIPLIER;
+    }
+
+    /**
+     * Docs/sec charts: non-negative range from data max plus headroom, rounded to integer ticks.
+     */
+    private void applyDocsPerSecondRange(JFreeChart chart, TimeSeriesCollection dataset) {
+        NumberAxis axis = (NumberAxis) chart.getXYPlot().getRangeAxis();
+        double max = maxTimeSeriesValue(dataset);
+        if (max <= 0.0) {
+            axis.setAutoRange(false);
+            axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
+            axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            return;
+        }
+        double rangeUpper = StatsPanelFormatters.nicePositiveUpperBound(max * rangeHeadroomMultiplier());
+        axis.setAutoRange(false);
+        axis.setRange(0.0, rangeUpper);
+        axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+    }
+
+    private void applyScaledByteRateRange(JFreeChart chart, TimeSeriesCollection dataset) {
+        NumberAxis axis = (NumberAxis) chart.getXYPlot().getRangeAxis();
+        double max = maxTimeSeriesValue(dataset);
+        double headroom = rangeHeadroomMultiplier();
+        if (max <= 0.0) {
+            axis.setAutoRange(false);
+            axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
+            axis.setLabel("KiB per second");
+            axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            return;
+        }
+        StatsPanelFormatters.ChartAxisScale scale = StatsPanelFormatters.chooseByteRateAxisScale(max, headroom);
+        applyScaledPositiveRange(axis, max, headroom, scale);
+    }
+
+    private void applyScaledMemoryRange(JFreeChart chart, TimeSeriesCollection dataset) {
+        NumberAxis axis = (NumberAxis) chart.getXYPlot().getRangeAxis();
+        double max = maxTimeSeriesValue(dataset);
+        double headroom = rangeHeadroomMultiplier();
+        if (max <= 0.0) {
+            axis.setAutoRange(false);
+            axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
+            axis.setLabel("MiB");
+            axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            return;
+        }
+        StatsPanelFormatters.ChartAxisScale scale = StatsPanelFormatters.chooseMemoryAxisScale(max, headroom);
+        applyScaledPositiveRange(axis, max, headroom, scale);
+    }
+
+    private static void applyScaledPositiveRange(
+            NumberAxis axis,
+            double maxInBaseUnits,
+            double headroomMultiplier,
+            StatsPanelFormatters.ChartAxisScale scale) {
+        double rangeUpper = StatsPanelFormatters.rangeUpperInBaseUnits(maxInBaseUnits, headroomMultiplier, scale);
+        double niceDisplayUpper = rangeUpper / scale.displayDivisor();
+        int tickStepDisplay = StatsPanelFormatters.integerDisplayTickStep(niceDisplayUpper);
+        axis.setLabel(scale.label());
+        axis.setNumberFormatOverride(StatsPanelFormatters.axisTickNumberFormat(scale.displayDivisor()));
+        axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+        axis.setTickUnit(new NumberTickUnit(tickStepDisplay * scale.displayDivisor()));
+        axis.setAutoRange(false);
+        axis.setRange(0.0, rangeUpper);
+    }
+
+    private static double maxTimeSeriesValue(TimeSeriesCollection dataset) {
+        double max = 0.0;
+        for (int seriesIndex = 0; seriesIndex < dataset.getSeriesCount(); seriesIndex++) {
+            TimeSeries series = dataset.getSeries(seriesIndex);
+            int items = series.getItemCount();
+            for (int itemIndex = 0; itemIndex < items; itemIndex++) {
+                Number value = series.getValue(itemIndex);
+                if (value != null) {
+                    max = Math.max(max, value.doubleValue());
+                }
+            }
+        }
+        return max;
     }
 
     private static void updateDomainRange(JFreeChart chart, long minMs, long maxMs) {
@@ -2265,43 +2465,6 @@ public class StatsPanel extends JPanel {
             }
         }
         axis.setTickUnit(new DateTickUnit(DateTickUnitType.SECOND, chosenSec));
-    }
-
-    /**
-     * Keeps a sane startup Y-axis range while charts have no positive throughput yet.
-     *
-     * <p>With empty/zero-only data, chart auto-range can pick confusing scientific-notation bounds
-     * near zero. This fallback shows {@code 0..defaultMax} until positive values appear, then
-     * returns to adaptive auto-range.</p>
-     */
-    private static void applyReasonableDefaultRange(
-            JFreeChart chart, TimeSeriesCollection dataset, double defaultMax) {
-        XYPlot plot = chart.getXYPlot();
-        ValueAxis rangeAxis = plot.getRangeAxis();
-        if (!(rangeAxis instanceof NumberAxis numberAxis)) {
-            return;
-        }
-        if (hasAnyPositiveSample(dataset)) {
-            numberAxis.setAutoRange(true);
-            return;
-        }
-        numberAxis.setAutoRange(false);
-        numberAxis.setRange(0.0, defaultMax);
-    }
-
-    /** Returns {@code true} when any series currently contains a value &gt; 0. */
-    private static boolean hasAnyPositiveSample(TimeSeriesCollection dataset) {
-        for (int seriesIndex = 0; seriesIndex < dataset.getSeriesCount(); seriesIndex++) {
-            TimeSeries series = dataset.getSeries(seriesIndex);
-            int items = series.getItemCount();
-            for (int itemIndex = 0; itemIndex < items; itemIndex++) {
-                Number value = series.getValue(itemIndex);
-                if (value != null && value.doubleValue() > 0.0) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     private record MetricSection(String title, String[] keys) { }

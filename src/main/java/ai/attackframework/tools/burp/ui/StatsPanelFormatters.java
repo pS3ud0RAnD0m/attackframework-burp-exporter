@@ -6,6 +6,9 @@ import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.text.FieldPosition;
+import java.text.NumberFormat;
+import java.text.ParsePosition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -27,7 +30,119 @@ final class StatsPanelFormatters {
     private static final DecimalFormat DECIMAL_ONE =
             new DecimalFormat("0.0", DecimalFormatSymbols.getInstance(Locale.ROOT));
 
+    /** Y-axis tick labels stay at or below this value by rolling KiB → MiB → GiB (or MiB → GiB). */
+    static final double AXIS_TICK_LABEL_MAX = 999.0;
+
     private StatsPanelFormatters() {}
+
+    /**
+     * Y-axis label and tick scaling for throughput byte-rate charts (dataset values are KiB/s).
+     *
+     * @param maxKiBPerSec largest series sample in KiB/s (before headroom)
+     * @param headroomMultiplier applied to max when picking the display unit (matches chart range)
+     */
+    static ChartAxisScale chooseByteRateAxisScale(double maxKiBPerSec, double headroomMultiplier) {
+        return chooseAxisScale(
+                maxKiBPerSec * headroomMultiplier,
+                new String[] { "KiB per second", "MiB per second", "GiB per second" },
+                new double[] { 1.0, 1024.0, 1024.0 * 1024.0 });
+    }
+
+    /**
+     * Y-axis label and tick scaling for the JVM heap chart (dataset values are MiB).
+     */
+    static ChartAxisScale chooseMemoryAxisScale(double maxMiB, double headroomMultiplier) {
+        return chooseAxisScale(
+                maxMiB * headroomMultiplier,
+                new String[] { "MiB", "GiB" },
+                new double[] { 1.0, 1024.0 });
+    }
+
+    private static ChartAxisScale chooseAxisScale(
+            double rangeUpperInBaseUnits,
+            String[] labels,
+            double[] divisorsFromBase) {
+        for (int unitIndex = 0; unitIndex < labels.length; unitIndex++) {
+            double displayUpper = rangeUpperInBaseUnits / divisorsFromBase[unitIndex];
+            boolean lastUnit = unitIndex == labels.length - 1;
+            if (displayUpper <= AXIS_TICK_LABEL_MAX || lastUnit) {
+                return new ChartAxisScale(labels[unitIndex], divisorsFromBase[unitIndex]);
+            }
+        }
+        throw new AssertionError("unreachable");
+    }
+
+    /**
+     * Range maximum in stored units after headroom and a readable tick ceiling in display units
+     * (e.g. raw 3.9 GiB → 4 GiB → {@code 4 * 1024} MiB).
+     */
+    static double rangeUpperInBaseUnits(double maxInBaseUnits, double headroomMultiplier, ChartAxisScale scale) {
+        double rawUpper = maxInBaseUnits * headroomMultiplier;
+        double niceDisplayUpper = nicePositiveUpperBound(rawUpper / scale.displayDivisor());
+        return niceDisplayUpper * scale.displayDivisor();
+    }
+
+    /**
+     * Rounds a positive ceiling up to human-friendly axis ticks ({@code 3.9 → 4}, {@code 87 → 90}).
+     */
+    static double nicePositiveUpperBound(double value) {
+        if (value <= 0.0) {
+            return 1.0;
+        }
+        if (value <= 10.0) {
+            return Math.ceil(value);
+        }
+        double magnitude = Math.pow(10.0, Math.floor(Math.log10(value)));
+        double normalized = value / magnitude;
+        double niceNormalized;
+        if (normalized <= 1.0) {
+            niceNormalized = 1.0;
+        } else if (normalized <= 2.0) {
+            niceNormalized = 2.0;
+        } else if (normalized <= 5.0) {
+            niceNormalized = 5.0;
+        } else {
+            niceNormalized = 10.0;
+        }
+        return niceNormalized * magnitude;
+    }
+
+    /**
+     * Tick step in display units (whole numbers only) targeting about four labels on the axis.
+     */
+    static int integerDisplayTickStep(double niceDisplayUpper) {
+        if (niceDisplayUpper <= 0.0) {
+            return 1;
+        }
+        double step = nicePositiveUpperBound(niceDisplayUpper / 4.0);
+        return (int) Math.max(1L, Math.round(step));
+    }
+
+    /**
+     * Formats range-axis ticks as whole display units ({@code divisor} converts stored values).
+     */
+    static NumberFormat axisTickNumberFormat(double divisor) {
+        DecimalFormat pattern = new DecimalFormat("#,##0", DecimalFormatSymbols.getInstance(Locale.ROOT));
+        return new NumberFormat() {
+            @Override
+            public StringBuffer format(double number, StringBuffer toAppendTo, FieldPosition pos) {
+                return pattern.format(Math.round(number / divisor), toAppendTo, pos);
+            }
+
+            @Override
+            public StringBuffer format(long number, StringBuffer toAppendTo, FieldPosition pos) {
+                return format((double) number, toAppendTo, pos);
+            }
+
+            @Override
+            public Number parse(String source, ParsePosition parsePosition) {
+                return null;
+            }
+        };
+    }
+
+    /** Label and divisor from stored units to display units. */
+    record ChartAxisScale(String label, double displayDivisor) {}
 
     /**
      * Formats an epoch-ms timestamp as a compact "Xs ago" label.
