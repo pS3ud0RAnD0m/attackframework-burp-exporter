@@ -57,12 +57,11 @@ class ExporterIndexStatsReporterTest {
             assertThat(jsonl)
                     .contains("\"jvm\"")
                     .contains("\"indexes\"")
-                    .contains("\"exporter_index\"")
+                    .contains("\"exporter\"")
                     .contains("\"traffic\"")
                     .contains("\"telemetry\"")
                     .contains("\"repeater_live_metadata_sources\"")
                     .contains("request_identity");
-            assertThat(jsonl).doesNotContain("\"exporter\":{\"count\"");
             assertThat(jsonl)
                     .doesNotContain("repeater_live_metadata_source_summary")
                     .doesNotContain("traffic_indexed_count")

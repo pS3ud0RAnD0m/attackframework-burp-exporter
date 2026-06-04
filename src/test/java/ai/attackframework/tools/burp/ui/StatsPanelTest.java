@@ -292,7 +292,7 @@ class StatsPanelTest {
             assertThat(legendPanel.getLayout()).isInstanceOf(FlowLayout.class);
             FlowLayout layout = (FlowLayout) legendPanel.getLayout();
             assertThat(layout.getAlignment()).isEqualTo(FlowLayout.LEFT);
-            Font expectedLegendFont = Font.class.cast(getStatic(StatsPanel.class, "CHART_LEGEND_FONT"));
+            Font expectedLegendFont = StatsPanel.chartLegendFont();
             Color expectedTextColor = Color.class.cast(getStatic(StatsPanel.class, "TEXT_FG"));
             JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
 
@@ -545,17 +545,16 @@ class StatsPanelTest {
             JPanel openSearchRow1 = findByName(miscCard, "miscStats.row.OpenSearch.1", JPanel.class);
             JPanel openSearchRow2 = findByName(miscCard, "miscStats.row.OpenSearch.2", JPanel.class);
 
-            assertThat(labels).contains("Global", "OpenSearch", "Files");
+            assertThat(labels).contains("Global", "OpenSearch", "Spill", "Retry", "Files");
             assertThat(labels).contains("Export Running", "Current Batch Size", "Traffic Queue Size", "Queue Drops");
-            assertThat(labels).contains("Spill Queue Docs");
-            assertThat(labels).contains("Spill Oldest Age (s)");
-            assertThat(labels).contains("Spill Enq/Deq/Drops");
-            assertThat(labels).contains("Drop Reasons (Spill/Queue/Requeue/Retention)");
-            assertThat(labels).contains("Spill Directory");
-            assertThat(labels).contains("OpenSearch Throughput (Last 10s)");
-            assertThat(labels).contains("OpenSearch Total Size Exported");
-            assertThat(labels).contains("OpenSearch Total Docs Exported");
-            assertThat(labels).contains("OpenSearch Total Failures");
+            assertThat(labels).contains("Throughput (10s)");
+            assertThat(labels).contains("Exported (docs · size · failures)");
+            assertThat(labels).contains("Last Success");
+            assertThat(labels).contains("Bulk In-Flight");
+            assertThat(findByName(miscCard, "miscStats.section.Spill", JLabel.class)).isNotNull();
+            assertThat(labels).contains("Queue", "Oldest Age (s)", "Enqueued / Dequeued / Dropped", "Drop Reasons");
+            assertThat(labels).contains("Queue Depth", "Oldest Queued Age");
+            assertThat(labels).doesNotContain("Spill Directory", "Skips by Reason", "Retry Queue Bytes (per index)");
             assertThat(openSearchRow0.getBackground()).isNotEqualTo(openSearchRow1.getBackground());
             assertThat(openSearchRow1.getBackground()).isNotEqualTo(openSearchRow2.getBackground());
             assertThat(openSearchRow0.getBackground()).isEqualTo(openSearchRow2.getBackground());
@@ -583,6 +582,8 @@ class StatsPanelTest {
             assertThat(findByName(miscCard, "miscStats.section.Global", JLabel.class).isVisible()).isTrue();
             assertThat(findByName(miscCard, "miscStats.section.Files", JLabel.class).isVisible()).isTrue();
             assertThat(findByName(miscCard, "miscStats.section.OpenSearch", JLabel.class).isVisible()).isFalse();
+            assertThat(findByName(miscCard, "miscStats.section.Spill", JLabel.class).isVisible()).isFalse();
+            assertThat(findByName(miscCard, "miscStats.section.Retry", JLabel.class).isVisible()).isFalse();
             assertThat(findByName(miscCard, "miscStats.row.OpenSearch.0", JPanel.class).isVisible()).isFalse();
         } finally {
             RuntimeConfig.updateState(previous);
@@ -844,18 +845,18 @@ class StatsPanelTest {
     @Test
     void refreshDashboard_updatesTotalExportedValueWithHumanReadableSize() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JLabel totalExportedValue = JLabel.class.cast(get(panel, "totalExportedValue"));
+        JLabel exportedSummaryValue = JLabel.class.cast(get(panel, "exportedSummaryValue"));
         long beforeTotal = ExportStats.getTotalExportedBytes();
 
         onEdt(() -> call(panel, "refreshDashboard"));
         ExportStats.recordExportedBytes("traffic", 1024L * 1024L);
 
         onEdt(() -> call(panel, "refreshDashboard"));
-        String expected = (String) callStatic(
+        String expectedSize = (String) callStatic(
                 StatsPanel.class,
                 "formatHumanReadableBytes",
                 beforeTotal + (1024L * 1024L));
-        assertThat(totalExportedValue.getText()).isEqualTo(expected);
+        assertThat(exportedSummaryValue.getText()).contains(expectedSize);
     }
 
     @Test
@@ -878,31 +879,31 @@ class StatsPanelTest {
     @Test
     void totalExportedValue_transitionsAcrossUnits_fromRecordedIndexBytes() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JLabel totalExportedValue = JLabel.class.cast(get(panel, "totalExportedValue"));
+        JLabel exportedSummaryValue = JLabel.class.cast(get(panel, "exportedSummaryValue"));
 
         long beforeTotal = ExportStats.getTotalExportedBytes();
 
         ExportStats.recordExportedBytes("traffic", 1536L);
         onEdt(() -> call(panel, "refreshDashboard"));
         long afterKb = beforeTotal + 1536L;
-        assertThat(totalExportedValue.getText())
-                .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterKb));
+        assertThat(exportedSummaryValue.getText())
+                .contains((String) callStatic(StatsPanel.class, "formatHumanReadableBytes", afterKb));
 
         long deltaToMb = Math.max(0L, (1024L * 1024L) - afterKb);
         ExportStats.recordExportedBytes("exporter", deltaToMb);
         onEdt(() -> call(panel, "refreshDashboard"));
         long afterMb = afterKb + deltaToMb;
-        assertThat(totalExportedValue.getText())
-                .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterMb));
-        assertThat(totalExportedValue.getText()).endsWith("MB");
+        String afterMbHuman = (String) callStatic(StatsPanel.class, "formatHumanReadableBytes", afterMb);
+        assertThat(exportedSummaryValue.getText()).contains(afterMbHuman);
+        assertThat(afterMbHuman).endsWith("MB");
 
         long deltaToGb = Math.max(0L, (1024L * 1024L * 1024L) - afterMb);
         ExportStats.recordExportedBytes("findings", deltaToGb);
         onEdt(() -> call(panel, "refreshDashboard"));
         long afterGb = afterMb + deltaToGb;
-        assertThat(totalExportedValue.getText())
-                .isEqualTo(callStatic(StatsPanel.class, "formatHumanReadableBytes", afterGb));
-        assertThat(totalExportedValue.getText()).endsWith("GB");
+        String afterGbHuman = (String) callStatic(StatsPanel.class, "formatHumanReadableBytes", afterGb);
+        assertThat(exportedSummaryValue.getText()).contains(afterGbHuman);
+        assertThat(afterGbHuman).endsWith("GB");
     }
 
     @Test
@@ -1240,14 +1241,18 @@ class StatsPanelTest {
             long before = onEdt(() -> ExportStats.getTotalSuccessCount());
             onEdt(() -> call(panel, "timerTick"));
 
-            JLabel totalDocsValue = JLabel.class.cast(get(panel, "totalDocsPushedValue"));
-            assertThat(totalDocsValue.getText()).isEqualTo(String.format(java.util.Locale.ROOT, "%,d", before));
+            JLabel exportedSummaryValue = JLabel.class.cast(get(panel, "exportedSummaryValue"));
+            assertThat(exportedSummaryValue.getText())
+                    .startsWith(String.format(java.util.Locale.ROOT, "%,d docs", before));
 
             ExportStats.recordSuccess("traffic", 2);
             onEdt(() -> call(panel, "timerTick"));
-            assertThat(totalDocsValue.getText())
+            assertThat(exportedSummaryValue.getText())
                     .as("running ticks should always refresh, no skip")
-                    .isEqualTo(String.format(java.util.Locale.ROOT, "%,d", ExportStats.getTotalSuccessCount()));
+                    .startsWith(String.format(
+                            java.util.Locale.ROOT,
+                            "%,d docs",
+                            ExportStats.getTotalSuccessCount()));
         } finally {
             RuntimeConfig.setExportRunning(originalRunning);
             ExportStats.resetForTests();
@@ -1261,26 +1266,26 @@ class StatsPanelTest {
             ExportStats.resetForTests();
             RuntimeConfig.setExportRunning(false);
             StatsPanel panel = onEdt(StatsPanel::new);
-            JLabel totalDocsValue = JLabel.class.cast(get(panel, "totalDocsPushedValue"));
+            JLabel exportedSummaryValue = JLabel.class.cast(get(panel, "exportedSummaryValue"));
 
             // Constructor's initial refresh paints 0; bump counter and confirm idle ticks skip.
             ExportStats.recordSuccess("traffic", 7);
             // First idle tick after construction: counter == 0 means it RUNS the refresh.
             onEdt(() -> call(panel, "timerTick"));
-            assertThat(totalDocsValue.getText()).isEqualTo("7");
+            assertThat(exportedSummaryValue.getText()).startsWith("7 docs");
 
             ExportStats.recordSuccess("traffic", 100);
             // Next four idle ticks should all skip (counter values 1..4 are non-zero mod 5).
             for (int i = 0; i < 4; i++) {
                 onEdt(() -> call(panel, "timerTick"));
             }
-            assertThat(totalDocsValue.getText())
+            assertThat(exportedSummaryValue.getText())
                     .as("idle ticks 1..4 should not refresh, label is stale")
-                    .isEqualTo("7");
+                    .startsWith("7 docs");
 
             // Fifth idle tick (counter == 5 -> 5 % 5 == 0) refreshes again.
             onEdt(() -> call(panel, "timerTick"));
-            assertThat(totalDocsValue.getText()).isEqualTo("107");
+            assertThat(exportedSummaryValue.getText()).startsWith("107 docs");
         } finally {
             RuntimeConfig.setExportRunning(originalRunning);
             ExportStats.resetForTests();

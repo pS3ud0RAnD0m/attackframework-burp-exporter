@@ -155,8 +155,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     private final JCheckBox issuesLowCheckbox           = new Tooltips.HtmlCheckBox("Low", true);
     private final JCheckBox issuesInformationalCheckbox = new Tooltips.HtmlCheckBox("Informational", true);
 
-    private final JCheckBox exporterTraceCheckbox  = new Tooltips.HtmlCheckBox("Trace", false);
-    private final JCheckBox exporterDebugCheckbox  = new Tooltips.HtmlCheckBox("Debug", false);
+    private final JCheckBox exporterTraceCheckbox  = new Tooltips.HtmlCheckBox("Trace", true);
+    private final JCheckBox exporterDebugCheckbox  = new Tooltips.HtmlCheckBox("Debug", true);
     private final JCheckBox exporterInfoCheckbox   = new Tooltips.HtmlCheckBox("Info", true);
     private final JCheckBox exporterWarnCheckbox   = new Tooltips.HtmlCheckBox("Warn", true);
     private final JCheckBox exporterErrorCheckbox  = new Tooltips.HtmlCheckBox("Error", true);

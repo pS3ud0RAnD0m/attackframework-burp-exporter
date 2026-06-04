@@ -9,9 +9,11 @@ import org.junit.jupiter.api.Test;
 class ConfigStateExporterSubOptionsTest {
 
     @Test
-    void defaultExporterSubOptions_excludesTraceAndDebug() {
+    void defaultExporterSubOptions_includesTraceAndDebug() {
         assertThat(ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS)
                 .containsExactly(
+                        ConfigKeys.SRC_EXPORTER_TRACE,
+                        ConfigKeys.SRC_EXPORTER_DEBUG,
                         ConfigKeys.SRC_EXPORTER_INFO,
                         ConfigKeys.SRC_EXPORTER_WARN,
                         ConfigKeys.SRC_EXPORTER_ERROR,
@@ -20,18 +22,22 @@ class ConfigStateExporterSubOptionsTest {
     }
 
     @Test
-    void normalizeExporterSubOptions_stripsTraceAndDebug() {
+    void normalizeExporterSubOptions_preservesTraceAndDebug() {
         List<String> normalized = ConfigState.normalizeExporterSubOptions(List.of(
                 ConfigKeys.SRC_EXPORTER_TRACE,
                 ConfigKeys.SRC_EXPORTER_DEBUG,
                 ConfigKeys.SRC_EXPORTER_INFO,
                 ConfigKeys.SRC_EXPORTER_STATS));
 
-        assertThat(normalized).containsExactly(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS);
+        assertThat(normalized).containsExactly(
+                ConfigKeys.SRC_EXPORTER_TRACE,
+                ConfigKeys.SRC_EXPORTER_DEBUG,
+                ConfigKeys.SRC_EXPORTER_INFO,
+                ConfigKeys.SRC_EXPORTER_STATS);
     }
 
     @Test
-    void parse_json_stripsTraceAndDebugFromExporterOptions() throws Exception {
+    void parse_json_preservesTraceAndDebugFromExporterOptions() throws Exception {
         String json = """
             {
               "version": "1.0",
@@ -46,6 +52,10 @@ class ConfigStateExporterSubOptionsTest {
         ConfigState.State parsed = ConfigJsonMapper.parse(json);
 
         assertThat(parsed.exporterSubOptions())
-                .containsExactly(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_STATS);
+                .containsExactly(
+                        ConfigKeys.SRC_EXPORTER_TRACE,
+                        ConfigKeys.SRC_EXPORTER_DEBUG,
+                        ConfigKeys.SRC_EXPORTER_INFO,
+                        ConfigKeys.SRC_EXPORTER_STATS);
     }
 }

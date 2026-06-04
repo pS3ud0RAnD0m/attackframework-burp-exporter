@@ -43,14 +43,6 @@ public final class ExporterIndexStatsReporter {
     private static final String EVENT_TYPE = "stats_snapshot";
 
     /**
-     * JSON key for exporter-index write totals in {@code event.data.indexes}.
-     *
-     * <p>Distinct from the {@code exporter} data-source name: this counts documents indexed into
-     * {@code attackframework-tool-burp-exporter} (stats, logs, config), not engagement payloads.</p>
-     */
-    static final String EXPORTER_INDEX_STATS_KEY = "exporter_index";
-
-    /**
      * Single-owner scheduler for the periodic exporter-stats push.
      *
      * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
@@ -243,19 +235,9 @@ public final class ExporterIndexStatsReporter {
             if (failures > 0) {
                 index.put("failures", failures);
             }
-            indexes.put(statsSnapshotIndexKey(key), index);
+            indexes.put(key, index);
         }
         return indexes;
-    }
-
-    /**
-     * Maps internal {@link ExportStats} index keys to {@code stats_snapshot} JSON keys.
-     */
-    static String statsSnapshotIndexKey(String exportStatsIndexKey) {
-        if ("exporter".equals(exportStatsIndexKey)) {
-            return EXPORTER_INDEX_STATS_KEY;
-        }
-        return exportStatsIndexKey;
     }
 
     private static Map<String, Object> buildTrafficSection() {

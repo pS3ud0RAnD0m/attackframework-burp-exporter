@@ -28,16 +28,25 @@ class StatsPanelFormattersTest {
     }
 
     @Test
-    void formatRetryQueueDepthPerIndex_zeroDepthRendersAllIndexes() {
-        String rendered = StatsPanelFormatters.formatRetryQueueDepthPerIndex();
-        assertThat(rendered).contains("traffic=").contains("exporter=").contains("settings=")
-                .contains("sitemap=").contains("findings=");
+    void formatSpillQueue_combinesDocsAndMiB() {
+        assertThat(StatsPanelFormatters.formatSpillQueue(0, 0)).isEqualTo("0 docs (0.0 MiB)");
+        assertThat(StatsPanelFormatters.formatSpillQueue(12, 1024L * 1024L)).isEqualTo("12 docs (1.0 MiB)");
     }
 
     @Test
-    void formatRetryQueueBytesPerIndex_zeroBytesRendersAllIndexes() {
-        String rendered = StatsPanelFormatters.formatRetryQueueBytesPerIndex();
-        assertThat(rendered).contains("traffic=").contains("0 B");
+    void formatExportedSummary_joinsDocsSizeAndFailures() {
+        assertThat(StatsPanelFormatters.formatExportedSummary(100, "2.4 GB", 0))
+                .isEqualTo("100 docs · 2.4 GB · 0 failures");
+    }
+
+    @Test
+    void formatRetryQueueDepthSummary_allZero_returnsEmDash() {
+        assertThat(StatsPanelFormatters.formatRetryQueueDepthSummary()).isEqualTo("—");
+    }
+
+    @Test
+    void formatOldestQueuedAgeSummary_allEmpty_returnsEmDash() {
+        assertThat(StatsPanelFormatters.formatOldestQueuedAgeSummary()).isEqualTo("—");
     }
 
     @Test
@@ -83,17 +92,6 @@ class StatsPanelFormattersTest {
     void formatRelativeTime_futureTimestamp_clampsToZero() {
         long now = 1_000_000L;
         assertThat(StatsPanelFormatters.formatRelativeTime(now + 5_000L, now)).isEqualTo("0s ago");
-    }
-
-    @Test
-    void formatOldestQueuedAges_allEmptyQueues_showsEachKeyAsDash() {
-        String rendered = StatsPanelFormatters.formatOldestQueuedAges();
-
-        assertThat(rendered)
-                .contains("traffic=-")
-                .contains("sitemap=-")
-                .contains("findings=-");
-        assertThat(rendered).doesNotMatch(".*\\d+\\.\\d+s.*");
     }
 
     @Test

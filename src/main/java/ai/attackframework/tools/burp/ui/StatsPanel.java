@@ -96,6 +96,8 @@ public class StatsPanel extends JPanel {
      * still on screen, we want minimal background churn until the next Start.
      */
     private static final int IDLE_REFRESH_SKIP_FACTOR = 5;
+    /** Misc Stats groups toggled with the OpenSearch destination section. */
+    private static final List<String> MISC_OPEN_SEARCH_SECTIONS = List.of("OpenSearch", "Spill", "Retry");
     private static final int ERROR_COL_MAX = 50;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
     private static final int CHART_MAX_POINTS = (int) (CHART_WINDOW_MAX_MS / REFRESH_INTERVAL_MS) + 5;
@@ -124,10 +126,6 @@ public class StatsPanel extends JPanel {
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
     private static final int DOMAIN_TARGET_LABELS = 14;
     private static final int[] DOMAIN_CANDIDATE_SECONDS = new int[] { 1, 2, 3, 5, 6, 10, 12, 15, 20, 30, 60, 120, 300 };
-    private static final Font CHART_TITLE_FONT = uiFont(Font.PLAIN, 14f);
-    private static final Font CHART_AXIS_LABEL_FONT = uiFont(Font.PLAIN, 15f);
-    private static final Font CHART_TICK_FONT = uiFont(Font.PLAIN, 11f);
-    private static final Font CHART_LEGEND_FONT = uiFont(Font.PLAIN, 15f);
     private static final Font CARD_KEY_FONT = cardFont();
     private static final Font CARD_VALUE_FONT = cardFont();
     private static final float CHART_LINE_STROKE_WIDTH = 1.5f;
@@ -344,17 +342,12 @@ public class StatsPanel extends JPanel {
     private final JLabel trafficQueueValue;
     private final JLabel queueDropsValue;
     private final JLabel repeaterMetadataSourcesValue;
-    private final JLabel spillQueueDocsValue;
-    private final JLabel spillQueueMibValue;
+    private final JLabel spillQueueValue;
     private final JLabel spillOldestAgeValue;
     private final JLabel spillFlowValue;
     private final JLabel dropReasonValue;
-    private final JLabel spillRecoveredValue;
-    private final JLabel spillDirectoryValue;
     private final JLabel throughputValue;
-    private final JLabel totalExportedValue;
-    private final JLabel totalDocsPushedValue;
-    private final JLabel totalFailuresValue;
+    private final JLabel exportedSummaryValue;
     private final JLabel fileTotalExportedValue;
     private final JLabel fileTotalDocsPushedValue;
     private final JLabel fileTotalFailuresValue;
@@ -367,14 +360,10 @@ public class StatsPanel extends JPanel {
     private final JLabel gcCountTimeValue;
     private final JLabel processCpuLoadValue;
     private final JLabel permanentDropsTotalValue;
-    private final JLabel synthesizedBodyParamsDroppedValue;
-    private final JLabel docsOverParamsThresholdValue;
     private final JLabel openSearchLastSuccessValue;
     private final JLabel openSearchConsecutiveFailuresValue;
     private final JLabel oldestQueuedAgeValue;
-    private final JLabel skipReasonsValue;
     private final JLabel trafficQueueBytesValue;
-    private final JLabel retryQueueBytesValue;
     private final JLabel retryQueueDepthValue;
     private final JLabel pendingOrphansValue;
     private final JLabel bulkInFlightValue;
@@ -497,15 +486,14 @@ public class StatsPanel extends JPanel {
                         "GC (Count / Time)", "Process CPU Load"
                 }),
                 new MetricSection("OpenSearch", new String[] {
-                        "Spill Queue Docs", "Spill Queue MiB", "Spill Oldest Age (s)", "Spill Enq/Deq/Drops",
-                        "Drop Reasons (Spill/Queue/Requeue/Retention)", "Spill Recovered (Startup)", "Spill Directory",
-                        "OpenSearch Throughput (Last 10s)", "OpenSearch Total Size Exported",
-                        "OpenSearch Total Docs Exported", "OpenSearch Total Failures",
-                        "Permanent Drops (Total)", "Synthesized Body Params Dropped",
-                        "Docs Over Param Threshold",
-                        "OpenSearch Last Success", "OpenSearch Consecutive Failures",
-                        "Oldest Queued Age", "Retry Queue Depth (per index)", "Retry Queue Bytes (per index)",
-                        "Bulk Requests In-Flight", "Skips by Reason"
+                        "Throughput (10s)", "Exported (docs · size · failures)",
+                        "Last Success", "Consecutive Failures", "Bulk In-Flight", "Permanent Drops"
+                }),
+                new MetricSection("Spill", new String[] {
+                        "Queue", "Oldest Age (s)", "Enqueued / Dequeued / Dropped", "Drop Reasons"
+                }),
+                new MetricSection("Retry", new String[] {
+                        "Queue Depth", "Oldest Queued Age"
                 }),
                 new MetricSection("Files", new String[] {
                         "File Total Size Exported", "File Total Docs Exported", "File Total Failures"
@@ -521,17 +509,12 @@ public class StatsPanel extends JPanel {
         trafficQueueValue = miscValues.get("Traffic Queue Size");
         queueDropsValue = miscValues.get("Queue Drops");
         repeaterMetadataSourcesValue = miscValues.get("Repeater Metadata Sources");
-        spillQueueDocsValue = miscValues.get("Spill Queue Docs");
-        spillQueueMibValue = miscValues.get("Spill Queue MiB");
-        spillOldestAgeValue = miscValues.get("Spill Oldest Age (s)");
-        spillFlowValue = miscValues.get("Spill Enq/Deq/Drops");
-        dropReasonValue = miscValues.get("Drop Reasons (Spill/Queue/Requeue/Retention)");
-        spillRecoveredValue = miscValues.get("Spill Recovered (Startup)");
-        spillDirectoryValue = miscValues.get("Spill Directory");
-        throughputValue = miscValues.get("OpenSearch Throughput (Last 10s)");
-        totalExportedValue = miscValues.get("OpenSearch Total Size Exported");
-        totalDocsPushedValue = miscValues.get("OpenSearch Total Docs Exported");
-        totalFailuresValue = miscValues.get("OpenSearch Total Failures");
+        spillQueueValue = miscValues.get("Queue");
+        spillOldestAgeValue = miscValues.get("Oldest Age (s)");
+        spillFlowValue = miscValues.get("Enqueued / Dequeued / Dropped");
+        dropReasonValue = miscValues.get("Drop Reasons");
+        throughputValue = miscValues.get("Throughput (10s)");
+        exportedSummaryValue = miscValues.get("Exported (docs · size · failures)");
         fileTotalExportedValue = miscValues.get("File Total Size Exported");
         fileTotalDocsPushedValue = miscValues.get("File Total Docs Exported");
         fileTotalFailuresValue = miscValues.get("File Total Failures");
@@ -543,18 +526,14 @@ public class StatsPanel extends JPanel {
         threadsLivePeakValue = miscValues.get("Threads (Live / Peak)");
         gcCountTimeValue = miscValues.get("GC (Count / Time)");
         processCpuLoadValue = miscValues.get("Process CPU Load");
-        permanentDropsTotalValue = miscValues.get("Permanent Drops (Total)");
-        synthesizedBodyParamsDroppedValue = miscValues.get("Synthesized Body Params Dropped");
-        docsOverParamsThresholdValue = miscValues.get("Docs Over Param Threshold");
-        openSearchLastSuccessValue = miscValues.get("OpenSearch Last Success");
-        openSearchConsecutiveFailuresValue = miscValues.get("OpenSearch Consecutive Failures");
+        permanentDropsTotalValue = miscValues.get("Permanent Drops");
+        openSearchLastSuccessValue = miscValues.get("Last Success");
+        openSearchConsecutiveFailuresValue = miscValues.get("Consecutive Failures");
         oldestQueuedAgeValue = miscValues.get("Oldest Queued Age");
-        skipReasonsValue = miscValues.get("Skips by Reason");
         trafficQueueBytesValue = miscValues.get("Traffic Queue Bytes (est.)");
-        retryQueueBytesValue = miscValues.get("Retry Queue Bytes (per index)");
-        retryQueueDepthValue = miscValues.get("Retry Queue Depth (per index)");
+        retryQueueDepthValue = miscValues.get("Queue Depth");
         pendingOrphansValue = miscValues.get("Pending Orphans");
-        bulkInFlightValue = miscValues.get("Bulk Requests In-Flight");
+        bulkInFlightValue = miscValues.get("Bulk In-Flight");
 
         // Merged sink-counts model: index rows on top, traffic-source sub-rows nested directly
         // under the Traffic index row (visually distinguished by SUBROW_INDENT on column 0),
@@ -643,9 +622,9 @@ public class StatsPanel extends JPanel {
         trafficQueueValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSize()));
         queueDropsValue.setText(formatWhole(ExportStats.getTrafficQueueDrops()));
         repeaterMetadataSourcesValue.setText(ExportStats.describeRepeaterMetadataSourceCounts());
-        spillQueueDocsValue.setText(formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillSize()));
-        long spillBytes = ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillBytes();
-        spillQueueMibValue.setText(DECIMAL_ONE.format(spillBytes / (1024.0 * 1024.0)));
+        spillQueueValue.setText(StatsPanelFormatters.formatSpillQueue(
+                ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillSize(),
+                ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillBytes()));
         spillOldestAgeValue.setText(
                 DECIMAL_ONE.format(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentSpillOldestAgeMs() / 1000.0));
         spillFlowValue.setText(
@@ -657,12 +636,11 @@ public class StatsPanel extends JPanel {
                         + formatWhole(ExportStats.getTrafficDropReasonCount("queue_contention_drop")) + " / "
                         + formatWhole(ExportStats.getTrafficDropReasonCount("spill_requeue_failed_drop")) + " / "
                         + formatWhole(ExportStats.getTrafficSpillExpiredPruned()));
-        spillRecoveredValue.setText(
-                formatWhole(ExportStats.getTrafficSpillRecovered()) + " (live: "
-                        + formatWhole(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getRecoveredSpillCount()) + ")");
-        spillDirectoryValue.setText(ai.attackframework.tools.burp.sinks.TrafficExportQueue.getSpillDirectoryPath());
         throughputValue.setText(DECIMAL_ONE.format(ExportStats.getThroughputDocsPerSecLast10s()) + " docs/s");
-        totalExportedValue.setText(formatHumanReadableBytes(ExportStats.getTotalExportedBytes()));
+        exportedSummaryValue.setText(StatsPanelFormatters.formatExportedSummary(
+                totalSuccess,
+                formatHumanReadableBytes(ExportStats.getTotalExportedBytes()),
+                totalFailure));
         fileTotalExportedValue.setText(formatHumanReadableBytes(FileExportStats.getTotalExportedBytes()));
         long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
         if (fallbackHits > 0 && fallbackHits != lastLoggedToolSourceFallbacks) {
@@ -670,25 +648,20 @@ public class StatsPanel extends JPanel {
             lastLoggedToolSourceFallbacks = fallbackHits;
         }
 
-        totalDocsPushedValue.setText(formatWhole(totalSuccess));
-        totalFailuresValue.setText(formatWhole(totalFailure));
         fileTotalDocsPushedValue.setText(formatWhole(FileExportStats.getTotalSuccessCount()));
         fileTotalFailuresValue.setText(formatWhole(FileExportStats.getTotalFailureCount()));
         permanentDropsTotalValue.setText(formatWhole(ExportStats.getTotalPermanentDrops()));
-        synthesizedBodyParamsDroppedValue.setText(formatWhole(ExportStats.getSynthesizedBodyParamsDropped()));
-        docsOverParamsThresholdValue.setText(formatWhole(ExportStats.getDocsOverParamsThreshold()));
         openSearchLastSuccessValue.setText(StatsPanelFormatters.formatRelativeTime(ExportStats.getOpenSearchLastSuccessAtMs()));
         openSearchConsecutiveFailuresValue.setText(formatWhole(ExportStats.getOpenSearchConsecutiveFailures()));
-        oldestQueuedAgeValue.setText(StatsPanelFormatters.formatOldestQueuedAges());
-        skipReasonsValue.setText(StatsPanelFormatters.formatSkipReasons());
+        oldestQueuedAgeValue.setText(StatsPanelFormatters.formatOldestQueuedAgeSummary());
         trafficQueueBytesValue.setText(StatsPanelFormatters.formatBytesHuman(
                 ai.attackframework.tools.burp.sinks.TrafficExportQueue.getCurrentBytesEstimate()));
-        retryQueueBytesValue.setText(StatsPanelFormatters.formatRetryQueueBytesPerIndex());
-        retryQueueDepthValue.setText(StatsPanelFormatters.formatRetryQueueDepthPerIndex());
+        retryQueueDepthValue.setText(StatsPanelFormatters.formatRetryQueueDepthSummary());
         pendingOrphansValue.setText(formatWhole(
                 ai.attackframework.tools.burp.sinks.TrafficHttpHandler.pendingOrphansSize()));
         bulkInFlightValue.setText(formatWhole(ExportStats.getBulkInFlight()));
         applySystemMetrics(SystemMetrics.snapshot());
+        applyAllChartFonts();
 
         rebuildByIndexTable();
         rebuildFileByIndexTable();
@@ -865,7 +838,6 @@ public class StatsPanel extends JPanel {
         chart.setPadding(RectangleInsets.ZERO_INSETS);
         TextTitle titleNode = chart.getTitle();
         titleNode.setPaint(TEXT_FG);
-        titleNode.setFont(CHART_TITLE_FONT);
         titleNode.setVerticalAlignment(VerticalAlignment.BOTTOM);
         titleNode.setMargin(RectangleInsets.ZERO_INSETS);
         titleNode.setPadding(RectangleInsets.ZERO_INSETS);
@@ -887,20 +859,17 @@ public class StatsPanel extends JPanel {
             numberAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
             numberAxis.setLabelPaint(TEXT_FG);
             numberAxis.setTickLabelPaint(TEXT_FG);
-            numberAxis.setLabelFont(CHART_AXIS_LABEL_FONT);
-            numberAxis.setTickLabelFont(CHART_TICK_FONT);
         }
         if (domain != null) {
             domain.setLabelPaint(TEXT_FG);
             domain.setTickLabelPaint(TEXT_FG);
-            domain.setLabelFont(CHART_AXIS_LABEL_FONT);
-            domain.setTickLabelFont(CHART_TICK_FONT);
             domain.setTickLabelsVisible(true);
             domain.setLabel(null);
             if (domain instanceof DateAxis dateAxis) {
                 dateAxis.setDateFormatOverride(new SimpleDateFormat(DOMAIN_TIME_PATTERN));
             }
         }
+        applyChartFonts(chart);
         return chart;
     }
 
@@ -1120,15 +1089,70 @@ public class StatsPanel extends JPanel {
         return ((color.getRed() * 299) + (color.getGreen() * 587) + (color.getBlue() * 114)) / 1000 < 128;
     }
 
-    private static Font uiFont(int style, float size) {
-        Font base = UIManager.getFont("Label.font");
-        if (base == null) {
-            base = new JLabel().getFont();
+    /**
+     * Base UI font for charts and legends — matches {@link #cardFont()} / the counts tables.
+     */
+    static Font chartBaseFont() {
+        return cardFont();
+    }
+
+    static Font chartTickFont() {
+        return chartBaseFont();
+    }
+
+    static Font chartAxisLabelFont() {
+        return chartBaseFont();
+    }
+
+    static Font chartTitleFont() {
+        Font base = chartBaseFont();
+        return base.isBold() ? base : base.deriveFont(Font.BOLD);
+    }
+
+    static Font chartLegendFont() {
+        return chartBaseFont();
+    }
+
+    private void applyAllChartFonts() {
+        applyChartFonts(docsChart);
+        applyChartFonts(kibChart);
+        applyChartFonts(fileDocsChart);
+        applyChartFonts(fileKibChart);
+        applyChartFonts(memoryChart);
+        if (openSearchChartsSectionHeader != null) {
+            openSearchChartsSectionHeader.setFont(chartTitleFont());
         }
-        if (base == null) {
-            base = new Font("SansSerif", Font.PLAIN, Math.round(size));
+        if (fileChartsSectionHeader != null) {
+            fileChartsSectionHeader.setFont(chartTitleFont());
         }
-        return base.deriveFont(style, size);
+    }
+
+    private static void applyChartFonts(JFreeChart chart) {
+        if (chart == null) {
+            return;
+        }
+        Font tick = chartTickFont();
+        Font axisLabel = chartAxisLabelFont();
+        if (chart.getTitle() != null) {
+            chart.getTitle().setFont(chartTitleFont());
+        }
+        if (chart.getLegend() != null) {
+            chart.getLegend().setItemFont(chartLegendFont());
+        }
+        XYPlot plot = chart.getXYPlot();
+        if (plot == null) {
+            return;
+        }
+        ValueAxis domain = plot.getDomainAxis();
+        if (domain != null) {
+            domain.setLabelFont(axisLabel);
+            domain.setTickLabelFont(tick);
+        }
+        ValueAxis range = plot.getRangeAxis();
+        if (range != null) {
+            range.setLabelFont(axisLabel);
+            range.setTickLabelFont(tick);
+        }
     }
 
     /**
@@ -1270,15 +1294,18 @@ public class StatsPanel extends JPanel {
      *
      * <p>Caller must invoke on the EDT because this method mutates Swing component visibility and
      * triggers layout/paint work on {@link #miscStatsCard}. The {@code Global} group always
-     * remains visible, while {@code Files} and {@code OpenSearch} follow the currently visible
-     * lower-panel sections.</p>
+     * remains visible, while {@code Files} and the OpenSearch-related groups ({@code OpenSearch},
+     * {@code Spill}, {@code Retry}) follow the currently visible lower-panel sections.</p>
      *
      * @param fileVisible whether the Files metrics group should be visible
      * @param openSearchVisible whether the OpenSearch metrics group should be visible
      */
     private void updateMiscStatsSectionVisibility(boolean fileVisible, boolean openSearchVisible) {
         setMiscSectionVisible("Global", true);
-        setMiscSectionVisible("OpenSearch", openSearchVisible);
+        setMiscSectionVisible("Process", true);
+        for (String section : MISC_OPEN_SEARCH_SECTIONS) {
+            setMiscSectionVisible(section, openSearchVisible);
+        }
         setMiscSectionVisible("Files", fileVisible);
         miscStatsCard.revalidate();
         miscStatsCard.repaint();
@@ -1398,7 +1425,7 @@ public class StatsPanel extends JPanel {
     private static JLabel buildChartSectionHeader(String text) {
         JLabel label = new JLabel(text, SwingConstants.CENTER);
         label.setForeground(TEXT_FG);
-        label.setFont(CHART_TITLE_FONT);
+        label.setFont(chartTitleFont());
         label.setAlignmentX(Component.CENTER_ALIGNMENT);
         label.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
         return label;
@@ -1640,9 +1667,6 @@ public class StatsPanel extends JPanel {
         if (key == null || key.isBlank()) {
             return "";
         }
-        if ("exporter".equalsIgnoreCase(key)) {
-            return "Exporter index";
-        }
         String[] parts = key.toLowerCase(Locale.ROOT).replace('_', ' ').split("\\s+");
         StringBuilder sb = new StringBuilder();
         for (String part : parts) {
@@ -1805,8 +1829,6 @@ public class StatsPanel extends JPanel {
         if (domain != null) {
             domain.setLabelPaint(TEXT_FG);
             domain.setTickLabelPaint(TEXT_FG);
-            domain.setLabelFont(CHART_AXIS_LABEL_FONT);
-            domain.setTickLabelFont(CHART_TICK_FONT);
             domain.setTickLabelsVisible(true);
             if (!showDomainLabel) {
                 domain.setLabel(null);
@@ -1819,16 +1841,14 @@ public class StatsPanel extends JPanel {
         if (range != null) {
             range.setLabelPaint(TEXT_FG);
             range.setTickLabelPaint(TEXT_FG);
-            range.setLabelFont(CHART_AXIS_LABEL_FONT);
-            range.setTickLabelFont(CHART_TICK_FONT);
         }
         XYLineAndShapeRenderer renderer = (XYLineAndShapeRenderer) plot.getRenderer();
         renderer.setDefaultStroke(new BasicStroke(CHART_LINE_STROKE_WIDTH, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         if (chart.getLegend() != null) {
             chart.getLegend().setBackgroundPaint(chartBackground);
             chart.getLegend().setItemPaint(TEXT_FG);
-            chart.getLegend().setItemFont(CHART_LEGEND_FONT);
         }
+        applyChartFonts(chart);
         return chart;
     }
 
@@ -1838,6 +1858,7 @@ public class StatsPanel extends JPanel {
         applyChartStyle(fileDocsChart);
         applyChartStyle(fileKibChart);
         applyMemoryChartStyle(memoryChart);
+        applyAllChartFonts();
     }
 
     /**
@@ -1933,6 +1954,7 @@ public class StatsPanel extends JPanel {
 
     private static ChartPanel createRateChartPanel(JFreeChart chart) {
         ChartPanel panel = new ChartPanel(chart);
+        panel.setFont(chartBaseFont());
         panel.setMouseWheelEnabled(false);
         panel.setPopupMenu(null);
         return panel;
@@ -1987,8 +2009,7 @@ public class StatsPanel extends JPanel {
     private JButton createChartStyleButton() {
         JButton button = new Tooltips.HtmlButton(chartStyleButtonLabel());
         button.setFocusable(false);
-        Font buttonFont = UIManager.getFont("Button.font");
-        button.setFont(uiFont(Font.PLAIN, buttonFont == null ? 12f : buttonFont.getSize2D()));
+        button.setFont(chartBaseFont());
         Tooltips.apply(button, Tooltips.htmlRaw("Cycle chart styles: <b>Simple</b>, <b>Smooth</b>, and <b>Accessible</b>."));
         button.addActionListener(event -> cycleChartStyle());
         return button;
@@ -2000,7 +2021,7 @@ public class StatsPanel extends JPanel {
         for (int i = 0; i < SERIES_STYLES.length; i++) {
             JLabel legendItem = new JLabel(SERIES_STYLES[i].label(), new LegendSampleIcon(i), SwingConstants.LEFT);
             legendItem.setForeground(TEXT_FG);
-            legendItem.setFont(CHART_LEGEND_FONT);
+            legendItem.setFont(chartLegendFont());
             legendItem.setIconTextGap(6);
             sharedLegendPanel.add(legendItem);
         }
@@ -2026,7 +2047,7 @@ public class StatsPanel extends JPanel {
             legendItem.setIcon(new MemoryLegendIcon(i));
             legendItem.setHorizontalAlignment(SwingConstants.LEFT);
             legendItem.setForeground(TEXT_FG);
-            legendItem.setFont(CHART_LEGEND_FONT);
+            legendItem.setFont(chartLegendFont());
             legendItem.setIconTextGap(6);
             Tooltips.apply(legendItem, tooltip);
             memoryLegendPanel.add(legendItem);

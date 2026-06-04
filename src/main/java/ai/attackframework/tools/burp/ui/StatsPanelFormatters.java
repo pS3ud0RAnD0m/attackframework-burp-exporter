@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.LongFunction;
+import java.util.function.ToLongFunction;
 
 /**
  * Pure string formatters for the Misc Stats rows that surface OpenSearch health, retry-queue
@@ -67,29 +69,57 @@ final class StatsPanelFormatters {
     }
 
     /**
-     * Builds a compact "index=Ns" summary of the oldest-queued-document age per index, suitable
-     * for a single Misc Stats row. Indexes with an empty queue are shown as {@code "index=-"}.
-     * When {@link ExportStats#getIndexKeys()} is itself empty the method returns a bare
-     * {@code "-"} as a defensive fallback.
+     * Formats spill backlog as {@code "N docs (X.X MiB)"}.
      */
-    static String formatOldestQueuedAges() {
+    static String formatSpillQueue(long docs, long bytes) {
+        double mib = bytes / (1024.0 * 1024.0);
+        return formatWhole(docs) + " docs (" + DECIMAL_ONE.format(mib) + " MiB)";
+    }
+
+    /**
+     * Summarizes OpenSearch export totals on one line: docs, size, and failure count.
+     */
+    static String formatExportedSummary(long docs, String sizeHuman, long failures) {
+        return formatWhole(docs) + " docs · " + sizeHuman + " · " + formatWhole(failures) + " failures";
+    }
+
+    /**
+     * Lists per-index retry-queue depths, omitting indexes at zero. Returns {@code "—"} when
+     * every queue is empty.
+     */
+    static String formatRetryQueueDepthSummary() {
+        return formatPerIndexNonZero(
+                indexKey -> (long) IndexingRetryCoordinator.getInstance()
+                        .getQueueSize(RuntimeConfig.indexNameForKey(indexKey)),
+                value -> formatWhole(value) + " queued");
+    }
+
+    /**
+     * Lists per-index oldest queued ages, omitting empty queues. Returns {@code "—"} when none
+     * are queued.
+     */
+    static String formatOldestQueuedAgeSummary() {
+        return formatPerIndexNonZero(
+                ExportStats::getOldestQueuedAgeMs,
+                ageMs -> DECIMAL_ONE.format(ageMs / 1000.0) + "s");
+    }
+
+    private static String formatPerIndexNonZero(
+            ToLongFunction<String> valueForKey,
+            LongFunction<String> formatValue) {
         List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
         sortedKeys.sort(String::compareToIgnoreCase);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < sortedKeys.size(); i++) {
-            String indexKey = sortedKeys.get(i);
-            long ageMs = ExportStats.getOldestQueuedAgeMs(indexKey);
-            if (i > 0) {
-                sb.append(' ');
-            }
-            sb.append(indexKey).append('=');
-            if (ageMs < 0) {
-                sb.append('-');
-            } else {
-                sb.append(DECIMAL_ONE.format(ageMs / 1000.0)).append('s');
+        List<String> parts = new ArrayList<>();
+        for (String indexKey : sortedKeys) {
+            long value = valueForKey.applyAsLong(indexKey);
+            if (value > 0) {
+                parts.add(indexKey + ": " + formatValue.apply(value));
             }
         }
-        return sb.length() == 0 ? "-" : sb.toString();
+        if (parts.isEmpty()) {
+            return "—";
+        }
+        return String.join(", ", parts);
     }
 
     /**
@@ -142,45 +172,4 @@ final class StatsPanelFormatters {
         return DECIMAL_ONE.format(gib) + " GiB";
     }
 
-    /**
-     * Builds a "index=X MiB" compact row for per-index retry-queue byte estimates. Keys are in
-     * the stable {@link ExportStats#getIndexKeys()} alphabetical order; empty queues render as
-     * {@code "index=0 B"} so the row width is stable across refreshes.
-     */
-    static String formatRetryQueueBytesPerIndex() {
-        List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
-        sortedKeys.sort(String::compareToIgnoreCase);
-        IndexingRetryCoordinator coord = IndexingRetryCoordinator.getInstance();
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < sortedKeys.size(); i++) {
-            String indexKey = sortedKeys.get(i);
-            String indexName = RuntimeConfig.indexNameForKey(indexKey);
-            long bytes = coord.getQueueBytesEstimate(indexName);
-            if (i > 0) {
-                sb.append(' ');
-            }
-            sb.append(indexKey).append('=').append(formatBytesHuman(bytes));
-        }
-        return sb.length() == 0 ? "-" : sb.toString();
-    }
-
-    /**
-     * Builds a "index=N" compact row for per-index retry-queue doc counts.
-     */
-    static String formatRetryQueueDepthPerIndex() {
-        List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
-        sortedKeys.sort(String::compareToIgnoreCase);
-        IndexingRetryCoordinator coord = IndexingRetryCoordinator.getInstance();
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < sortedKeys.size(); i++) {
-            String indexKey = sortedKeys.get(i);
-            String indexName = RuntimeConfig.indexNameForKey(indexKey);
-            int depth = coord.getQueueSize(indexName);
-            if (i > 0) {
-                sb.append(' ');
-            }
-            sb.append(indexKey).append('=').append(formatWhole(depth));
-        }
-        return sb.length() == 0 ? "-" : sb.toString();
-    }
 }
