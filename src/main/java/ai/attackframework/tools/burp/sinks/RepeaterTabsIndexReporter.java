@@ -377,6 +377,16 @@ public final class RepeaterTabsIndexReporter {
                     + " metadata={" + RepeaterTabsCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
             return false;
         }
+        if (captureDecision.ignoreAuxiliaryTabNameBinding()) {
+            Logger.logTrace("[RepeaterTabs] Skipped Repeater Tabs capture because tab name refers to a right-rail message view "
+                    + "startupSession=" + currentStartupSessionId()
+                    + " metadataSource=" + RepeaterMetadataTraceLabels.NONE
+                    + " capturePath=" + safeLogValue(capturePath)
+                    + " captureKey=" + safeLogValue(captureDecision.captureKey())
+                    + " fingerprint=" + safeLogValue(fingerprint)
+                    + " metadata={" + RepeaterTabsCapturePolicy.describeMetadata(repeaterTabMetadata) + "}");
+            return false;
+        }
         long now = System.currentTimeMillis();
         boolean[] newCapture = { false };
         boolean[] metadataUpgraded = { false };

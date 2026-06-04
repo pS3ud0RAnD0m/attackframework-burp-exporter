@@ -16,7 +16,9 @@ final class RepeaterTabsCapturePolicy {
      *
      * <p>Startup captures prefer logical slot keys so distinct tabs with identical traffic still
      * export separately. Startup callbacks that expose no slot, tab, or group metadata are treated
-     * as anonymous editor noise and ignored.</p>
+     * as anonymous editor noise and ignored. Bindings whose inferred {@code tab_name} is an
+     * auxiliary message-view label (Inspector, Notes, Explanations, Raw, …) are suppressed even
+     * outside the startup capture window.</p>
      */
     static CaptureDecision decide(
             String fingerprint,
@@ -29,7 +31,13 @@ final class RepeaterTabsCapturePolicy {
                 || (metadata.slotIdentityKey() == null
                 && metadata.tabName() == null
                 && metadata.groupName() == null));
-        return new CaptureDecision(captureKey, startupSlotKey, ignoreAnonymousStartupBinding);
+        boolean ignoreAuxiliaryTabNameBinding = metadata != null
+                && RepeaterTabMetadataHeuristics.isAuxiliaryRepeaterTabLabel(metadata.tabName());
+        return new CaptureDecision(
+                captureKey,
+                startupSlotKey,
+                ignoreAnonymousStartupBinding,
+                ignoreAuxiliaryTabNameBinding);
     }
 
     static String startupSlotKey(RepeaterTabsIndexReporter.RepeaterTabMetadata metadata) {
@@ -59,9 +67,11 @@ final class RepeaterTabsCapturePolicy {
      * @param captureKey dedupe/export key for this observation
      * @param startupSlotKey logical startup slot key when available
      * @param ignoreAnonymousStartupBinding whether this startup-only binding should be suppressed
+     * @param ignoreAuxiliaryTabNameBinding whether the inferred tab name is a right-rail view label
      */
     static record CaptureDecision(
             String captureKey,
             String startupSlotKey,
-            boolean ignoreAnonymousStartupBinding) { }
+            boolean ignoreAnonymousStartupBinding,
+            boolean ignoreAuxiliaryTabNameBinding) { }
 }

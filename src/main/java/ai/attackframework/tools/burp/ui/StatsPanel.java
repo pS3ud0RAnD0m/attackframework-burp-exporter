@@ -2363,7 +2363,8 @@ public class StatsPanel extends JPanel {
      */
     private void applyDocsPerSecondRange(JFreeChart chart, TimeSeriesCollection dataset) {
         NumberAxis axis = (NumberAxis) chart.getXYPlot().getRangeAxis();
-        double max = maxTimeSeriesValue(dataset);
+        long[] domainMs = chartDomainMillis(chart);
+        double max = StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, domainMs[0], domainMs[1]);
         if (max <= 0.0) {
             axis.setAutoRange(false);
             axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
@@ -2378,7 +2379,8 @@ public class StatsPanel extends JPanel {
 
     private void applyScaledByteRateRange(JFreeChart chart, TimeSeriesCollection dataset) {
         NumberAxis axis = (NumberAxis) chart.getXYPlot().getRangeAxis();
-        double max = maxTimeSeriesValue(dataset);
+        long[] domainMs = chartDomainMillis(chart);
+        double max = StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, domainMs[0], domainMs[1]);
         double headroom = rangeHeadroomMultiplier();
         if (max <= 0.0) {
             axis.setAutoRange(false);
@@ -2393,7 +2395,8 @@ public class StatsPanel extends JPanel {
 
     private void applyScaledMemoryRange(JFreeChart chart, TimeSeriesCollection dataset) {
         NumberAxis axis = (NumberAxis) chart.getXYPlot().getRangeAxis();
-        double max = maxTimeSeriesValue(dataset);
+        long[] domainMs = chartDomainMillis(chart);
+        double max = StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, domainMs[0], domainMs[1]);
         double headroom = rangeHeadroomMultiplier();
         if (max <= 0.0) {
             axis.setAutoRange(false);
@@ -2422,19 +2425,15 @@ public class StatsPanel extends JPanel {
         axis.setRange(0.0, rangeUpper);
     }
 
-    private static double maxTimeSeriesValue(TimeSeriesCollection dataset) {
-        double max = 0.0;
-        for (int seriesIndex = 0; seriesIndex < dataset.getSeriesCount(); seriesIndex++) {
-            TimeSeries series = dataset.getSeries(seriesIndex);
-            int items = series.getItemCount();
-            for (int itemIndex = 0; itemIndex < items; itemIndex++) {
-                Number value = series.getValue(itemIndex);
-                if (value != null) {
-                    max = Math.max(max, value.doubleValue());
-                }
-            }
+    private static long[] chartDomainMillis(JFreeChart chart) {
+        ValueAxis domainAxis = chart.getXYPlot().getDomainAxis();
+        if (domainAxis instanceof DateAxis dateAxis && !dateAxis.isAutoRange()) {
+            return new long[] {
+                    dateAxis.getMinimumDate().getTime(),
+                    dateAxis.getMaximumDate().getTime()
+            };
         }
-        return max;
+        return new long[] { Long.MIN_VALUE, Long.MAX_VALUE };
     }
 
     private static void updateDomainRange(JFreeChart chart, long minMs, long maxMs) {

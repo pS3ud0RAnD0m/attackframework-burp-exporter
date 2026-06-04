@@ -1,8 +1,13 @@
 package ai.attackframework.tools.burp.ui;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import org.jfree.data.time.Millisecond;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -106,6 +111,33 @@ class StatsPanelFormattersTest {
 
         assertThat(StatsPanelFormatters.chooseByteRateAxisScale(800.0, 1.5).label()).isEqualTo("MiB per second");
         assertThat(StatsPanelFormatters.chooseByteRateAxisScale(800.0, 1.5).displayDivisor()).isEqualTo(1024.0);
+    }
+
+    @Test
+    void maxTimeSeriesValueInDomain_usesOnlySamplesInsideWindow() {
+        TimeSeriesCollection dataset = new TimeSeriesCollection();
+        TimeSeries traffic = new TimeSeries("Traffic");
+        long baseMs = 1_700_000_000_000L;
+        traffic.addOrUpdate(new Millisecond(new Date(baseMs)), 400.0);
+        traffic.addOrUpdate(new Millisecond(new Date(baseMs + 30_000L)), 55.0);
+        dataset.addSeries(traffic);
+
+        assertThat(StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, baseMs, baseMs + 40_000L))
+                .isEqualTo(400.0);
+        assertThat(StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, baseMs + 20_000L, baseMs + 40_000L))
+                .isEqualTo(55.0);
+    }
+
+    @Test
+    void maxTimeSeriesValueInDomain_emptyWindow_returnsZero() {
+        TimeSeriesCollection dataset = new TimeSeriesCollection();
+        TimeSeries traffic = new TimeSeries("Traffic");
+        long baseMs = 1_700_000_000_000L;
+        traffic.addOrUpdate(new Millisecond(new Date(baseMs)), 100.0);
+        dataset.addSeries(traffic);
+
+        assertThat(StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, baseMs + 60_000L, baseMs + 120_000L))
+                .isEqualTo(0.0);
     }
 
     @Test

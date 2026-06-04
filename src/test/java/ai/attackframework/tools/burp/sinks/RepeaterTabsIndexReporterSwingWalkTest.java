@@ -1,10 +1,13 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
+import static ai.attackframework.tools.burp.testutils.Reflect.get;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JButton;
@@ -14,6 +17,8 @@ import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class RepeaterTabsIndexReporterSwingWalkTest {
 
@@ -159,6 +164,126 @@ class RepeaterTabsIndexReporterSwingWalkTest {
         });
 
         assertThat(groupNameRef.get()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Inspector", "Notes", "Explanations", "Custom actions"})
+    void inferRepeaterTabName_ignoresRightRailMessageViewSelection(String selectedRailTab) throws Exception {
+        AtomicReference<String> tabNameRef = new AtomicReference<>();
+
+        SwingUtilities.invokeAndWait(() -> {
+            JTabbedPane messageViewTabs = new JTabbedPane();
+            messageViewTabs.addTab("Inspector", new JPanel());
+            messageViewTabs.addTab("Notes", new JPanel());
+            messageViewTabs.addTab("Explanations", new JPanel());
+            messageViewTabs.addTab("Custom actions", new JPanel());
+            for (int i = 0; i < messageViewTabs.getTabCount(); i++) {
+                if (selectedRailTab.equals(messageViewTabs.getTitleAt(i))) {
+                    messageViewTabs.setSelectedIndex(i);
+                    break;
+                }
+            }
+
+            JPanel requestTabBody = new JPanel(new BorderLayout());
+            requestTabBody.add(messageViewTabs, BorderLayout.CENTER);
+
+            JTabbedPane repeaterTabs = new JTabbedPane();
+            repeaterTabs.addTab("GetGateway", requestTabBody);
+            repeaterTabs.addTab("385", new JPanel());
+            repeaterTabs.setSelectedIndex(0);
+
+            JPanel repeaterRoot = new JPanel(new BorderLayout());
+            repeaterRoot.add(repeaterTabs, BorderLayout.CENTER);
+
+            tabNameRef.set(RepeaterTabsIndexReporter.inferRepeaterTabName(repeaterRoot));
+        });
+
+        assertThat(tabNameRef.get()).isEqualTo("GetGateway");
+    }
+
+    @Test
+    void performStartupTabWalk_doesNotCycleRightRailMessageViewTabs() throws Exception {
+        AtomicReference<RepeaterTabsIndexReporter.StartupTabWalkResult> resultRef = new AtomicReference<>();
+        AtomicReference<JTabbedPane> messageViewTabsRef = new AtomicReference<>();
+
+        SwingUtilities.invokeAndWait(() -> {
+            JTabbedPane messageViewTabs = new JTabbedPane();
+            messageViewTabs.addTab("Inspector", new JPanel());
+            messageViewTabs.addTab("Notes", new JPanel());
+            messageViewTabs.addTab("Explanations", new JPanel());
+            messageViewTabs.addTab("Custom actions", new JPanel());
+            messageViewTabs.setSelectedIndex(3);
+
+            JPanel requestTabBody = new JPanel(new BorderLayout());
+            requestTabBody.add(messageViewTabs, BorderLayout.CENTER);
+
+            JTabbedPane repeaterTabs = new JTabbedPane();
+            repeaterTabs.addTab("GetGateway", requestTabBody);
+            repeaterTabs.addTab("385", new JPanel());
+            repeaterTabs.setSelectedIndex(0);
+
+            JPanel repeaterRoot = new JPanel(new BorderLayout());
+            repeaterRoot.add(repeaterTabs, BorderLayout.CENTER);
+
+            JTabbedPane toolTabs = new JTabbedPane();
+            toolTabs.addTab("Dashboard", new JPanel());
+            toolTabs.addTab("Repeater", repeaterRoot);
+            toolTabs.setSelectedIndex(0);
+
+            JPanel root = new JPanel(new BorderLayout());
+            root.add(toolTabs, BorderLayout.CENTER);
+
+            resultRef.set(RepeaterTabsIndexReporter.performStartupTabWalk(List.of(root)));
+            messageViewTabsRef.set(messageViewTabs);
+        });
+
+        assertThat(resultRef.get().tabbedPaneCount()).isEqualTo(1);
+        assertThat(messageViewTabsRef.get().getSelectedIndex()).isEqualTo(3);
+    }
+
+    @Test
+    void startupTabWalkPlan_oneStepPerRequestTab_notPerRightRailTab() throws Exception {
+        AtomicInteger stepCountRef = new AtomicInteger();
+
+        SwingUtilities.invokeAndWait(() -> {
+            JTabbedPane messageViewTabs = new JTabbedPane();
+            messageViewTabs.addTab("Inspector", new JPanel());
+            messageViewTabs.addTab("Notes", new JPanel());
+            messageViewTabs.addTab("Explanations", new JPanel());
+            messageViewTabs.addTab("Custom actions", new JPanel());
+
+            JPanel requestTabBody = new JPanel(new BorderLayout());
+            requestTabBody.add(messageViewTabs, BorderLayout.CENTER);
+
+            JTabbedPane repeaterTabs = new JTabbedPane();
+            repeaterTabs.addTab("GetGateway", requestTabBody);
+            repeaterTabs.addTab("385", new JPanel());
+            repeaterTabs.addTab("386", new JPanel());
+
+            JPanel repeaterRoot = new JPanel(new BorderLayout());
+            repeaterRoot.add(repeaterTabs, BorderLayout.CENTER);
+
+            JTabbedPane toolTabs = new JTabbedPane();
+            toolTabs.addTab("Dashboard", new JPanel());
+            toolTabs.addTab("Repeater", repeaterRoot);
+
+            JPanel root = new JPanel(new BorderLayout());
+            root.add(toolTabs, BorderLayout.CENTER);
+
+            Object repeaterLocation = callStatic(
+                    RepeaterTabsIndexReporter.class,
+                    "findToolTabLocation",
+                    List.of(root),
+                    "Repeater");
+            Object plan = callStatic(
+                    RepeaterTabsIndexReporter.class,
+                    "buildStartupTabWalkPlan",
+                    repeaterLocation);
+            List<?> steps = get(plan, "steps", List.class);
+            stepCountRef.set(steps.size());
+        });
+
+        assertThat(stepCountRef.get()).isEqualTo(3);
     }
 
     @Test

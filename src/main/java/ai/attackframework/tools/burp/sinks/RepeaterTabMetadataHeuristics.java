@@ -26,12 +26,21 @@ import javax.swing.SwingUtilities;
  */
 final class RepeaterTabMetadataHeuristics {
 
+    /**
+     * Lowercase titles for Burp message-view {@link JTabbedPane}s: request/response views (Raw,
+     * Pretty, Hex, …) and the Repeater right rail (Inspector, Notes, Explanations, Custom actions).
+     * When every titled tab in a pane matches this set, the pane is not cycled during startup tab
+     * walks and its labels are not used as {@code burp.repeater.tab_name}.
+     */
     private static final Set<String> MESSAGE_VIEW_TAB_TITLES = Set.of(
             "beautify",
+            "burp ai",
             "custom actions",
+            "explanations",
             "headers",
             "hex",
             "inspector",
+            "notes",
             "params",
             "pretty",
             "raw",
@@ -166,7 +175,8 @@ final class RepeaterTabMetadataHeuristics {
     }
 
     /**
-     * Returns whether the label refers to an auxiliary Repeater message view such as Raw/Pretty.
+     * Returns whether the label refers to an auxiliary message view (request/response or Repeater
+     * right rail), not a Repeater request tab name.
      */
     static boolean isAuxiliaryRepeaterTabLabel(String value) {
         String normalized = normalizeBlank(value);

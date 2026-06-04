@@ -16,6 +16,9 @@ import java.util.Map;
 import java.util.function.LongFunction;
 import java.util.function.ToLongFunction;
 
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+
 /**
  * Pure string formatters for the Misc Stats rows that surface OpenSearch health, retry-queue
  * age, and silent-skip counters. Extracted from {@link StatsPanel} so the logic is
@@ -104,6 +107,32 @@ final class StatsPanelFormatters {
             }
         }
         return 10.0 * magnitude;
+    }
+
+    /**
+     * Largest sample in {@code dataset} whose timestamp falls in {@code [minMs, maxMs]} (inclusive).
+     * Used so the Y-axis tracks the visible chart window, not older points still held in the series.
+     */
+    static double maxTimeSeriesValueInDomain(TimeSeriesCollection dataset, long minMs, long maxMs) {
+        if (maxMs < minMs) {
+            maxMs = minMs;
+        }
+        double max = 0.0;
+        for (int seriesIndex = 0; seriesIndex < dataset.getSeriesCount(); seriesIndex++) {
+            TimeSeries series = dataset.getSeries(seriesIndex);
+            int items = series.getItemCount();
+            for (int itemIndex = 0; itemIndex < items; itemIndex++) {
+                long t = series.getTimePeriod(itemIndex).getMiddleMillisecond();
+                if (t < minMs || t > maxMs) {
+                    continue;
+                }
+                Number value = series.getValue(itemIndex);
+                if (value != null) {
+                    max = Math.max(max, value.doubleValue());
+                }
+            }
+        }
+        return max;
     }
 
     /**
