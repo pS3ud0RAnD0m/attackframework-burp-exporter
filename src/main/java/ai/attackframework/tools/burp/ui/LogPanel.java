@@ -66,7 +66,7 @@ import net.miginfocom.swing.MigLayout;
 
 /**
  * Log view with level filter, pause autoscroll, clear/copy/save, text filter (case/regex,
- * optional exclude via ¬), search (case/regex, highlight all, match count), and duplicate compaction.
+ * optional exclude via ! toggle), search (case/regex, highlight all, match count), and duplicate compaction.
  *
  * <p><strong>Design:</strong> Coordinates a {@link LogStore} (model) with a {@link LogRenderer} (view).
  * Keeps regex compilation and flag rules centralized via {@link ai.attackframework.tools.burp.utils.Regex}.</p>
@@ -90,6 +90,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
+    /** Label for the exclude (invert) filter toggle. */
+    private static final String FILTER_NEGATIVE_TOGGLE_LABEL = "!";
     private static final String DEFAULT_MIN_LEVEL  = "trace";
     private static final String[] LEVEL_LABELS = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR"};
     private static final int MAX_MODEL_ENTRIES     = 5000;
@@ -223,7 +225,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         filterCaseToggle.setSelected(PREFS.getBoolean(PREF_FILTER_CASE, false));
         filterRegexToggle = new Tooltips.HtmlCheckBox(".*");
         filterRegexToggle.setName("log.filter.regex");
-        filterNegativeToggle = new Tooltips.HtmlCheckBox("¬");
+        filterNegativeToggle = new Tooltips.HtmlCheckBox(FILTER_NEGATIVE_TOGGLE_LABEL);
         filterNegativeToggle.setName("log.filter.negative");
         filterNegativeToggle.setSelected(PREFS.getBoolean(PREF_FILTER_NEGATIVE, false));
         final JLabel filterRegexIndicator = new Tooltips.HtmlLabel("");
@@ -475,7 +477,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         Tooltips.apply(filterCaseToggle, Tooltips.html("Case-sensitive filter."));
         Tooltips.apply(filterRegexToggle, Tooltips.html("Regex filter."));
         Tooltips.apply(filterNegativeToggle, Tooltips.html(
-                "Exclude lines that match the filter (show only non-matching entries)."));
+                "Exclude (!): show only lines that do not match the filter."));
 
         Tooltips.apply(searchField, Tooltips.html("Find string or regex."));
         Tooltips.apply(searchCaseToggle, Tooltips.html("Case-sensitive search."));

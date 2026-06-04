@@ -88,9 +88,9 @@ public final class ConfigControlPanel {
             }
             Tooltips.apply(this, Tooltips.html(switch (state) {
                 case STOPPED -> "Export is stopped";
-                case STARTING -> "Export is starting";
+                case STARTING -> "Export is starting (preparing destinations)";
                 case RUNNING -> "Export is running";
-                case STOPPING -> "Export is stopping";
+                case STOPPING -> "Export is stopping (finishing in-flight work)";
             }));
         }
 
@@ -137,12 +137,33 @@ public final class ConfigControlPanel {
     private final Consumer<JTextArea> statusConfigurator;
     private final Runnable importAction;
     private final Runnable exportAction;
-    /** Receives UI callbacks to complete or revert startup state after bootstrap. */
+    /** Receives start UI callbacks; caller posts phased status and completes or reverts on the EDT. */
     private final Consumer<StartUiCallbacks> startAction;
-    /** Invoked on Stop; caller runs {@code onStopComplete} on the EDT when shutdown work finishes. */
-    private final Consumer<Runnable> stopAction;
+    /** Invoked on Stop; caller runs phased shutdown and invokes callbacks on the EDT. */
+    private final Consumer<StopUiCallbacks> stopAction;
 
-    public record StartUiCallbacks(Runnable onStartFailure, Runnable onStartSuccess) {}
+    /**
+     * Start lifecycle UI hooks. {@link #snapshot()} is captured on the EDT when Start is clicked;
+     * {@link #onStartProgress()} receives status lines during bootstrap; {@link #onStartSuccess()}
+     * runs on the EDT when startup finishes (final running status is posted separately).
+     */
+    public record StartUiCallbacks(
+            Runnable onStartFailure,
+            Runnable onStartSuccess,
+            Consumer<String> onStartProgress,
+            ExportStartupStatus.Snapshot snapshot
+    ) {}
+
+    /**
+     * Stop lifecycle UI hooks. {@link #snapshot()} is captured on the EDT when Stop is clicked;
+     * {@link #onStopProgress()} receives status lines during wind-down; {@link #onStopComplete()}
+     * runs on the EDT when shutdown is fully finished.
+     */
+    public record StopUiCallbacks(
+            Runnable onStopComplete,
+            Consumer<String> onStopProgress,
+            ExportShutdownStatus.Snapshot snapshot
+    ) {}
 
     /** Canonical constructor with null checks. */
     public ConfigControlPanel(
@@ -156,7 +177,7 @@ public final class ConfigControlPanel {
             Runnable importAction,
             Runnable exportAction,
             Consumer<StartUiCallbacks> startAction,
-            Consumer<Runnable> stopAction
+            Consumer<StopUiCallbacks> stopAction
     ) {
         this.importExportStatus = Objects.requireNonNull(importExportStatus, "importExportStatus");
         this.importExportStatusWrapper = Objects.requireNonNull(importExportStatusWrapper, "importExportStatusWrapper");
@@ -207,20 +228,26 @@ public final class ConfigControlPanel {
                 RuntimeConfig.setExportStopping(true);
                 updateStartStopButton(startStopBtn, false);
                 indicator.setState(IndicatorDot.State.STOPPING);
-                updateControlStatus("Stopping ...");
+                ExportShutdownStatus.Snapshot snapshot = ExportShutdownStatus.capture();
+                updateControlStatus(ExportShutdownStatus.initialStoppingMessage(snapshot));
                 Runnable markStoppedUi = () -> {
                     RuntimeConfig.setExportStopping(false);
                     indicator.setState(IndicatorDot.State.STOPPED);
-                    updateControlStatus("Stopped");
+                    updateControlStatus(ExportShutdownStatus.stoppedMessage());
                 };
+                StopUiCallbacks callbacks = new StopUiCallbacks(
+                        markStoppedUi,
+                        this::updateControlStatus,
+                        snapshot);
                 // Post stop work after this listener returns so Stopping paints before shutdown.
-                SwingUtilities.invokeLater(() -> stopAction.accept(markStoppedUi));
+                SwingUtilities.invokeLater(() -> stopAction.accept(callbacks));
             } else {
                 RuntimeConfig.setExportRunning(true);
                 RuntimeConfig.setExportStarting(true);
                 updateStartStopButton(startStopBtn, true);
                 indicator.setState(IndicatorDot.State.STARTING);
-                updateControlStatus("Starting ...");
+                ExportStartupStatus.Snapshot snapshot = ExportStartupStatus.capture();
+                updateControlStatus(ExportStartupStatus.initialStartingMessage(snapshot));
                 Runnable revertUi = () -> {
                     RuntimeConfig.setExportRunning(false);
                     updateStartStopButton(startStopBtn, false);
@@ -230,9 +257,13 @@ public final class ConfigControlPanel {
                     RuntimeConfig.setExportStarting(false);
                     updateStartStopButton(startStopBtn, true);
                     indicator.setState(IndicatorDot.State.RUNNING);
-                    updateControlStatus("Running");
                 };
-                SwingUtilities.invokeLater(() -> startAction.accept(new StartUiCallbacks(revertUi, markStartedUi)));
+                StartUiCallbacks callbacks = new StartUiCallbacks(
+                        revertUi,
+                        markStartedUi,
+                        this::updateControlStatus,
+                        snapshot);
+                SwingUtilities.invokeLater(() -> startAction.accept(callbacks));
             }
         });
 

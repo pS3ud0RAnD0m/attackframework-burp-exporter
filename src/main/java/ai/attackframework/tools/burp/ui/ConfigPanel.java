@@ -372,15 +372,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 this::importConfig,
                 this::exportConfig,
                 this::startExportAsync,
-                onStopComplete -> {
-                    startupExecutor.execute(() -> {
-                        ExportReporterLifecycle.stopAndClearPendingExportWork();
-                        // Off-thread: close pooled OpenSearch clients without holding up the Stop button.
-                        ExportReporterLifecycle.releaseRunResourcesAsync();
-                        Logger.logInfoPanelOnly("[Export] Stopped.");
-                        SwingUtilities.invokeLater(onStopComplete);
-                    });
-                }
+                this::runExportStopAsync
         ).build(), MIG_FILL_WRAP);
 
         add(Box.createVerticalGlue(), "growy, wrap");
@@ -454,6 +446,50 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
     }
 
     /**
+     * Runs cooperative export shutdown off the EDT and posts phased status to the control panel.
+     *
+     * @param callbacks stop UI hooks from {@link ConfigControlPanel}
+     */
+    private void runExportStopAsync(ConfigControlPanel.StopUiCallbacks callbacks) {
+        ExportShutdownStatus.Snapshot snapshot = callbacks.snapshot();
+        startupExecutor.execute(() -> {
+            postStopProgress(callbacks, ExportShutdownStatus.waitingForBatchMessage());
+            ExportReporterLifecycle.stopBackgroundReporters();
+            TrafficExportQueue.stopWorker();
+            postStopProgress(callbacks, ExportShutdownStatus.clearingQueuedTrafficMessage(snapshot));
+            ExportReporterLifecycle.clearRepeaterRunState();
+            TrafficExportQueue.clearPendingWork();
+            IndexingRetryCoordinator.getInstance().clearPendingWork();
+            IndexingRetryCoordinator.getInstance().stopDrainThread();
+            FileExportService.resetForRuntime();
+            postStopProgress(callbacks, ExportShutdownStatus.closingConnectionsMessage());
+            ExportReporterLifecycle.releaseRunResourcesAsync();
+            ExportReporterLifecycle.awaitStopReclaim(ExportReporterLifecycle.STOP_UI_RECLAIM_TIMEOUT_MS);
+            Logger.logInfoPanelOnly("[Export] Stopped.");
+            SwingUtilities.invokeLater(() -> {
+                callbacks.onStopProgress().accept(ExportShutdownStatus.stoppedMessage());
+                callbacks.onStopComplete().run();
+            });
+        });
+    }
+
+    private static void postStopProgress(ConfigControlPanel.StopUiCallbacks callbacks, String message) {
+        SwingUtilities.invokeLater(() -> {
+            if (RuntimeConfig.isExportStopping()) {
+                callbacks.onStopProgress().accept(message);
+            }
+        });
+    }
+
+    private static void postStartProgress(ConfigControlPanel.StartUiCallbacks callbacks, String message) {
+        SwingUtilities.invokeLater(() -> {
+            if (RuntimeConfig.isExportStarting()) {
+                callbacks.onStartProgress().accept(message);
+            }
+        });
+    }
+
+    /**
      * Starts export without blocking the EDT.
      *
      * <p>Caller must invoke on the EDT. This method captures UI state, marks export running
@@ -489,9 +525,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             abortStartOnEdt(reason, uiCallbacks);
             return;
         }
-        RuntimeConfig.setExportStarting(true);
         String url = openSearchUrlField.getText().trim();
         List<String> sources = List.copyOf(getSelectedSources());
+        ExportStartupStatus.Snapshot startupSnapshot =
+                new ExportStartupStatus.Snapshot(filesSelected, openSearchSelected);
+        postStartProgress(uiCallbacks, ExportStartupStatus.initialStartingMessage(startupSnapshot));
         Logger.logDebug("[Export] Runtime traffic tool types at Start: "
                 + (RuntimeConfig.getState() == null || RuntimeConfig.getState().trafficToolTypes() == null
                         ? "[]"
@@ -532,6 +570,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         List<String> runtimeStartIssues = new ArrayList<>(startupIssues);
+        if (filesSelected) {
+            postStartProgress(uiCallbacks, ExportStartupStatus.initializingFilesMessage());
+        }
         boolean openSearchEnabled = RuntimeConfig.getState() != null
                 && RuntimeConfig.getState().sinks() != null
                 && RuntimeConfig.getState().sinks().osEnabled()
@@ -577,6 +618,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
         }
         if (openSearchEnabled && !url.isEmpty()) {
+            postStartProgress(uiCallbacks, ExportStartupStatus.testingOpenSearchConnectionMessage());
             Logger.logDebug("[OpenSearch] Preflight connection test for " + url);
             var preflight = ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper.safeTestConnection(
                     url,
@@ -602,6 +644,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             }
 
             if (openSearchEnabled) {
+                postStartProgress(uiCallbacks, ExportStartupStatus.creatingOpenSearchIndexesMessage());
                 Logger.logInfoPanelOnly("[OpenSearch] Initializing indexes for selected sources.");
                 Logger.logDebug("[OpenSearch] Ensuring indexes for sources: " + sources);
                 List<OpenSearchSink.IndexResult> results = OpenSearchSink.createSelectedIndexes(url, sources,
@@ -632,6 +675,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
+        postStartProgress(uiCallbacks, ExportStartupStatus.startingBackgroundReportersMessage());
         RuntimeConfig.setExportStarting(false);
         String runningStatus = buildRunningStatusMessage(runtimeStartIssues, filesSelected, openSearchSelected);
         SwingUtilities.invokeLater(() -> {
@@ -1009,7 +1053,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
      * @param message status text to display (nullable)
      */
     @Override public void onControlStatus(String message) {
-        if (RuntimeConfig.isExportStopping()) {
+        if (RuntimeConfig.isExportStopping() || RuntimeConfig.isExportStarting()) {
             return;
         }
         String formattedMessage = formatControlStatusMessage(message);

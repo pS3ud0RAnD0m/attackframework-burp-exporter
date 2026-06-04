@@ -118,10 +118,10 @@ class ConfigControlPanelHeadlessTest {
                         startCount.incrementAndGet();
                         RuntimeConfig.setExportRunning(true);
                     },
-                    onStopComplete -> {
+                    callbacks -> {
                         stopCount.incrementAndGet();
                         RuntimeConfig.setExportRunning(false);
-                        onStopComplete.run();
+                        callbacks.onStopComplete().run();
                     },
                     controlStatusRef
             );
@@ -143,8 +143,9 @@ class ConfigControlPanelHeadlessTest {
             assertThat(stopCount.get()).isEqualTo(0);
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
-            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is starting</html>");
-            assertThat(controlStatusRef.get().getText()).isEqualTo("Starting ...");
+            assertThat(indicator.getToolTipText())
+                    .isEqualTo("<html>Export is starting (preparing destinations)</html>");
+            assertThat(controlStatusRef.get().getText()).startsWith("Starting:");
 
             runEdt(startStop::doClick);
             runEdt(() -> { });
@@ -153,7 +154,7 @@ class ConfigControlPanelHeadlessTest {
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
             assertThat(startStop.getText()).isEqualTo("Start");
             assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
-            assertThat(controlStatusRef.get().getText()).isEqualTo("Stopped");
+            assertThat(controlStatusRef.get().getText()).isEqualTo(ExportShutdownStatus.stoppedMessage());
         } finally {
             resetExportRunning();
         }
@@ -166,7 +167,7 @@ class ConfigControlPanelHeadlessTest {
             AtomicReference<Boolean> runningWhenStopActionRuns = new AtomicReference<>();
             JPanel root = buildPanel(
                     callbacks -> callbacks.onStartSuccess().run(),
-                    onStopComplete -> runningWhenStopActionRuns.set(RuntimeConfig.isExportRunning()));
+                    callbacks -> runningWhenStopActionRuns.set(RuntimeConfig.isExportRunning()));
             runEdt(() -> {
                 root.setSize(600, 400);
                 root.doLayout();
@@ -192,7 +193,7 @@ class ConfigControlPanelHeadlessTest {
             AtomicReference<JTextArea> controlStatusRef = new AtomicReference<>();
             JPanel root = buildPanel(
                     callbacks -> callbacks.onStartSuccess().run(),
-                    onStopComplete -> stopCompleteRef.set(onStopComplete),
+                    callbacks -> stopCompleteRef.set(callbacks.onStopComplete()),
                     controlStatusRef
             );
             runEdt(() -> {
@@ -207,14 +208,15 @@ class ConfigControlPanelHeadlessTest {
             runEdt(startStop::doClick);
 
             assertThat(RuntimeConfig.isExportStopping()).isTrue();
-            assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopping</html>");
-            assertThat(controlStatusRef.get().getText()).isEqualTo("Stopping ...");
+            assertThat(indicator.getToolTipText())
+                    .isEqualTo("<html>Export is stopping (finishing in-flight work)</html>");
+            assertThat(controlStatusRef.get().getText()).startsWith("Stopping:");
 
             runEdt(() -> { });
             runEdt(() -> stopCompleteRef.get().run());
             assertThat(RuntimeConfig.isExportStopping()).isFalse();
             assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopped</html>");
-            assertThat(controlStatusRef.get().getText()).isEqualTo("Stopped");
+            assertThat(controlStatusRef.get().getText()).isEqualTo(ExportShutdownStatus.stoppedMessage());
         } finally {
             resetExportRunning();
         }
@@ -261,7 +263,7 @@ class ConfigControlPanelHeadlessTest {
             assertThat(RuntimeConfig.isExportRunning()).isTrue();
             assertThat(startStop.getText()).isEqualTo("Stop");
             assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is running</html>");
-            assertThat(controlStatusRef.get().getText()).isEqualTo("Running");
+            assertThat(controlStatusRef.get().getText()).startsWith("Starting:");
         } finally {
             resetExportRunning();
         }
@@ -280,10 +282,10 @@ class ConfigControlPanelHeadlessTest {
                         }
                         startAcceptedCount.incrementAndGet();
                     },
-                    onStopComplete -> {
+                    callbacks -> {
                         stopCount.incrementAndGet();
                         RuntimeConfig.setExportRunning(false);
-                        onStopComplete.run();
+                        callbacks.onStopComplete().run();
                     }
             );
             runEdt(() -> {
@@ -297,10 +299,12 @@ class ConfigControlPanelHeadlessTest {
                 startStop.doClick();
                 assertThat(RuntimeConfig.isExportRunning()).isTrue();
                 assertThat(startStop.getText()).isEqualTo("Stop");
-                assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is starting</html>");
+                assertThat(indicator.getToolTipText())
+                        .isEqualTo("<html>Export is starting (preparing destinations)</html>");
                 startStop.doClick();
                 assertThat(RuntimeConfig.isExportRunning()).isFalse();
-                assertThat(indicator.getToolTipText()).isEqualTo("<html>Export is stopping</html>");
+                assertThat(indicator.getToolTipText())
+                        .isEqualTo("<html>Export is stopping (finishing in-flight work)</html>");
             });
             runEdt(() -> { });
             assertThat(stopCount.get()).isEqualTo(1);
@@ -360,14 +364,14 @@ class ConfigControlPanelHeadlessTest {
 
     private static JPanel buildPanel(
             Consumer<ConfigControlPanel.StartUiCallbacks> startAction,
-            Consumer<Runnable> stopAction
+            Consumer<ConfigControlPanel.StopUiCallbacks> stopAction
     ) {
         return buildPanel(startAction, stopAction, new AtomicReference<>());
     }
 
     private static JPanel buildPanel(
             Consumer<ConfigControlPanel.StartUiCallbacks> startAction,
-            Consumer<Runnable> stopAction,
+            Consumer<ConfigControlPanel.StopUiCallbacks> stopAction,
             AtomicReference<JTextArea> controlStatusRef
     ) {
         JTextArea importExportStatus = new JTextArea();
@@ -396,8 +400,8 @@ class ConfigControlPanelHeadlessTest {
         return callbacks -> { };
     }
 
-    private static Consumer<Runnable> noOpStopAction() {
-        return onStopComplete -> onStopComplete.run();
+    private static Consumer<ConfigControlPanel.StopUiCallbacks> noOpStopAction() {
+        return callbacks -> callbacks.onStopComplete().run();
     }
 
     private static <T extends Component> T findByName(Container root, String name, Class<T> type) {

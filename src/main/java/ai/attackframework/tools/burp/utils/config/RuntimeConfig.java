@@ -126,6 +126,11 @@ public final class RuntimeConfig {
         return exportRunning && !exportStarting;
     }
 
+    /** Returns whether export startup/bootstrap is still in progress. */
+    public static boolean isExportStarting() {
+        return exportStarting;
+    }
+
     /** Returns whether the UI is showing the Stop-in-progress state. */
     public static boolean isExportStopping() {
         return exportStopping;
@@ -135,7 +140,7 @@ public final class RuntimeConfig {
      * Sets whether export shutdown is in progress (Stop clicked, workers still draining).
      *
      * <p>While {@code true}, {@link ai.attackframework.tools.burp.ui.ConfigPanel} ignores
-     * background control-status posts so {@code Stopping ...} is not overwritten.</p>
+     * background control-status posts so phased stop lines are not overwritten.</p>
      */
     public static void setExportStopping(boolean stopping) {
         exportStopping = stopping;
@@ -167,8 +172,9 @@ public final class RuntimeConfig {
     /**
      * Sets whether export startup/bootstrap is still in progress.
      *
-     * <p>When {@code true}, the UI may show a running state while runtime exporters remain
-     * gated until startup succeeds.</p>
+     * <p>When {@code true}, the UI may show a starting state while runtime exporters remain
+     * gated until startup succeeds, and phased start lines are not overwritten by
+     * {@link ai.attackframework.tools.burp.utils.ControlStatusBridge}.</p>
      */
     public static void setExportStarting(boolean starting) {
         exportStarting = exportRunning && starting;

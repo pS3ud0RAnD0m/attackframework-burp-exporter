@@ -21,6 +21,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * recurring background work or session-scoped reporter state.</p>
  */
 public final class ExportReporterLifecycle {
+
+    /** Max wait for {@link #releaseRunResourcesAsync()} before the Stop UI shows Stopped. */
+    public static final long STOP_UI_RECLAIM_TIMEOUT_MS = 10_000L;
+
     private ExportReporterLifecycle() {}
 
     /**
@@ -49,6 +53,17 @@ public final class ExportReporterLifecycle {
     }
 
     /**
+     * Clears repeater tab and live-metadata state held for the current export run.
+     *
+     * <p>Call after {@link TrafficExportQueue#stopWorker()} so in-flight traffic indexing can
+     * finish before run-scoped repeater caches are discarded.</p>
+     */
+    public static void clearRepeaterRunState() {
+        RepeaterTabsIndexReporter.clearRunState();
+        RepeaterLiveMetadataTracker.clear();
+    }
+
+    /**
      * Stops recurring reporters and clears queued export work that would otherwise keep retrying.
      *
      * <p>Use when the UI transitions to a stopped state, including failed Start attempts, so the
@@ -57,8 +72,7 @@ public final class ExportReporterLifecycle {
     public static void stopAndClearPendingExportWork() {
         RuntimeConfig.setExportRunning(false);
         stopBackgroundReporters();
-        RepeaterTabsIndexReporter.clearRunState();
-        RepeaterLiveMetadataTracker.clear();
+        clearRepeaterRunState();
         TrafficExportQueue.stopWorker();
         TrafficExportQueue.clearPendingWork();
         IndexingRetryCoordinator.getInstance().clearPendingWork();
