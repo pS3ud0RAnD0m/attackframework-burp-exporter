@@ -39,10 +39,8 @@ public final class ConfigState {
     public static final List<String> DEFAULT_FINDINGS_SEVERITIES =
             List.of("critical", "high", "medium", "low", "informational");
 
-    /** Default exporter sub-options: all tool documents enabled by default. */
+    /** Default exporter sub-options: operator logs and metrics; not trace/debug (too noisy in the exporter index). */
     public static final List<String> DEFAULT_EXPORTER_SUB_OPTIONS = List.of(
-            ConfigKeys.SRC_EXPORTER_TRACE,
-            ConfigKeys.SRC_EXPORTER_DEBUG,
             ConfigKeys.SRC_EXPORTER_INFO,
             ConfigKeys.SRC_EXPORTER_WARN,
             ConfigKeys.SRC_EXPORTER_ERROR,
@@ -470,9 +468,21 @@ public final class ConfigState {
         return normalizeLowercaseList(values);
     }
 
-    /** Normalizes exporter sub-option ids to lowercase. */
+    /**
+     * Normalizes exporter sub-option ids to lowercase and drops {@code trace} / {@code debug}.
+     *
+     * <p>Imported or saved configs that still list those levels are upgraded on load so the
+     * exporter index is not flooded with high-volume diagnostic logs.</p>
+     */
     public static List<String> normalizeExporterSubOptions(List<String> values) {
-        return normalizeLowercaseList(values);
+        List<String> normalized = normalizeLowercaseList(values);
+        if (normalized.isEmpty()) {
+            return normalized;
+        }
+        return normalized.stream()
+                .filter(id -> !ConfigKeys.SRC_EXPORTER_TRACE.equals(id)
+                        && !ConfigKeys.SRC_EXPORTER_DEBUG.equals(id))
+                .toList();
     }
 
     /** Normalizes the stored global index base template. */

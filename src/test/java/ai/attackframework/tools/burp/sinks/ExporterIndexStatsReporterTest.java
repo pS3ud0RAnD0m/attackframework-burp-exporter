@@ -52,8 +52,22 @@ class ExporterIndexStatsReporterTest {
 
             Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl");
             assertThat(jsonlPath).exists();
-            assertThat(Files.readString(jsonlPath)).contains("stats_snapshot");
-            assertThat(Files.readString(jsonlPath)).contains("repeater_live_metadata_source_summary");
+            String jsonl = Files.readString(jsonlPath);
+            assertThat(jsonl).contains("stats_snapshot");
+            assertThat(jsonl)
+                    .contains("\"jvm\"")
+                    .contains("\"indexes\"")
+                    .contains("\"exporter_index\"")
+                    .contains("\"traffic\"")
+                    .contains("\"telemetry\"")
+                    .contains("\"repeater_live_metadata_sources\"")
+                    .contains("request_identity");
+            assertThat(jsonl).doesNotContain("\"exporter\":{\"count\"");
+            assertThat(jsonl)
+                    .doesNotContain("repeater_live_metadata_source_summary")
+                    .doesNotContain("traffic_indexed_count")
+                    .doesNotContain("total_indexed_bytes")
+                    .doesNotContain("traffic_opensearch_tool_type_success");
         } finally {
             tearDown();
         }

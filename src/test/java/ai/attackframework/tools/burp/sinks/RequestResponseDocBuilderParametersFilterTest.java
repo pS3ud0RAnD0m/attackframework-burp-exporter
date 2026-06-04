@@ -465,7 +465,7 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_skippedBody_underThreshold_emitsDebugAndBumpsCounter() throws Exception {
+    void recordParameterTelemetry_skippedBody_underThreshold_bumpsCounterOnly() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/binary-misdeclared");
 
         SwingUtilities.invokeAndWait(() ->
@@ -473,15 +473,7 @@ class RequestResponseDocBuilderParametersFilterTest {
                         request, ContentType.URL_ENCODED, /* retained */ 3, /* dropped */ 0,
                         /* bodyEnumerationSkipped */ true));
 
-        assertThat(events).anySatisfy(e -> {
-            assertThat(e.level()).isEqualToIgnoringCase("debug");
-            assertThat(e.message())
-                    .contains("[ParameterCardinality][skipped_body_enumeration]")
-                    .contains("Skipped synthetic BODY enumeration")
-                    .contains("method=POST")
-                    .contains("url=https://example.test/binary-misdeclared");
-        });
-        assertThat(events).noneMatch(e -> "warn".equalsIgnoreCase(e.level()));
+        assertThat(events).noneMatch(e -> e.message().contains("[ParameterCardinality]"));
         assertThat(ExportStats.getDocsWithSkippedBodyEnumeration()).isEqualTo(1);
         assertThat(ExportStats.getDocsOverParamsThreshold()).isZero();
         assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isZero();

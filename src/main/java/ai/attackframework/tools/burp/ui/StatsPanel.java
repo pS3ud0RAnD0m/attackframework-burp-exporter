@@ -1640,6 +1640,9 @@ public class StatsPanel extends JPanel {
         if (key == null || key.isBlank()) {
             return "";
         }
+        if ("exporter".equalsIgnoreCase(key)) {
+            return "Exporter index";
+        }
         String[] parts = key.toLowerCase(Locale.ROOT).replace('_', ' ').split("\\s+");
         StringBuilder sb = new StringBuilder();
         for (String part : parts) {

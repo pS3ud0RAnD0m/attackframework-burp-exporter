@@ -118,17 +118,12 @@ public final class ProxyHistoryIndexReporter {
         long estBytes = 0;
         List<Map<String, Object>> chunk = new ArrayList<>(chunkTarget);
 
-        // Run-scoped diagnostics. Every chunk log line embeds a worker-side wall-clock
-        // ({@code wt=}) so EDT-side log delivery lag can be measured against ground truth, and
-        // {@link EdtMonitor} captures stack traces whenever the EDT misses its tick deadline.
-        // Together these let post-incident log review distinguish "snapshot thread is slow"
-        // from "snapshot thread is fine but the EDT is blocked".
+        // {@link EdtMonitor} captures stack traces when the EDT misses its tick deadline during
+        // large snapshots. Completion is logged once via {@link SnapshotSummary#logInfo}.
         SnapshotPacing.resetCountersForSnapshot();
         EdtMonitor.start();
         try {
         long startGcMs = totalGcCollectionTimeMs();
-        long lastChunkGcMs = startGcMs;
-        long lastChunkWallMs = System.currentTimeMillis();
         int chunkSeq = 0;
         Logger.logInfoPanelOnly("[ProxyHistory] Exporting proxy history backlog: " + history.size() + " item(s).");
         Logger.logDebug("[ProxyHistory.snapshot] start: wt=" + nowWallClock()
@@ -157,7 +152,6 @@ public final class ProxyHistoryIndexReporter {
             if (sizeCapReached || countCapReached) {
                 chunkTarget = applyLiveBackpressure(chunkTarget);
                 int attemptedChunk = chunk.size();
-                long preBytes = estBytes;
                 int sent = OpenSearchClientWrapper.pushBulk(
                         baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, chunk);
                 success += sent;
@@ -165,20 +159,6 @@ public final class ProxyHistoryIndexReporter {
                 recordChunkOutcome(route, openSearchActive, attemptedChunk, sent);
                 chunkTarget = adjustSnapshotBatchTarget(chunkTarget, attemptedChunk, sent);
                 chunkSeq++;
-                long nowMs = System.currentTimeMillis();
-                long curGcMs = totalGcCollectionTimeMs();
-                logChunkProgress(
-                        chunkSeq,
-                        attemptedChunk,
-                        sent,
-                        preBytes,
-                        nowMs - lastChunkWallMs,
-                        chunkTarget,
-                        curGcMs - lastChunkGcMs,
-                        processed,
-                        history.size());
-                lastChunkWallMs = nowMs;
-                lastChunkGcMs = curGcMs;
                 chunk.clear();
                 estBytes = 0;
             }
@@ -188,25 +168,12 @@ public final class ProxyHistoryIndexReporter {
         if (RuntimeConfig.isExportRunning() && !chunk.isEmpty()) {
             chunkTarget = applyLiveBackpressure(chunkTarget);
             int attemptedChunk = chunk.size();
-            long preBytes = estBytes;
             int sent = OpenSearchClientWrapper.pushBulk(
                     baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, chunk);
             success += sent;
             attempted += attemptedChunk;
             recordChunkOutcome(route, openSearchActive, attemptedChunk, sent);
             chunkSeq++;
-            long nowMs = System.currentTimeMillis();
-            long curGcMs = totalGcCollectionTimeMs();
-            logChunkProgress(
-                    chunkSeq,
-                    attemptedChunk,
-                    sent,
-                    preBytes,
-                    nowMs - lastChunkWallMs,
-                    chunkTarget,
-                    curGcMs - lastChunkGcMs,
-                    processed,
-                    history.size());
         }
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
@@ -231,40 +198,8 @@ public final class ProxyHistoryIndexReporter {
     }
 
     /**
-     * Emits a single-line per-chunk progress record for after-the-fact snapshot timeline review.
-     *
-     * <p>Each line carries the JMX GC-time delta accumulated since the previous chunk push, so a
-     * reader can see exactly which chunks coincided with stop-the-world pressure. The worker-side
-     * {@code wt=} timestamp lets readers correlate against the {@code [yyyy-MM-dd HH:mm:ss]} EDT
-     * render prefix and detect log-delivery lag during EDT stalls.</p>
-     */
-    private static void logChunkProgress(
-            int chunkSeq,
-            int attemptedChunk,
-            int sent,
-            long estBytes,
-            long sinceLastChunkMs,
-            int chunkTarget,
-            long gcDeltaMs,
-            int processed,
-            int total) {
-        Logger.logDebug("[ProxyHistory.chunk] wt=" + nowWallClock()
-                + " seq=" + chunkSeq
-                + " items=" + attemptedChunk
-                + " sent=" + sent
-                + " est_bytes=" + estBytes
-                + " elapsed_ms=" + sinceLastChunkMs
-                + " chunk_target=" + chunkTarget
-                + " heap_used_mib=" + heapUsedMib()
-                + " gc_time_delta_ms=" + gcDeltaMs
-                + " duty_per_mille=" + SnapshotPacing.lastDutyPerMille()
-                + " gate_trips_total=" + SnapshotPacing.gateTripCount()
-                + " progress=" + processed + "/" + total);
-    }
-
-    /**
      * Returns a worker-side wall-clock timestamp ({@code HH:mm:ss.SSS}) captured on the calling
-     * thread. Embedded into every diagnostic log line so we can compute the EDT delivery lag by
+     * thread. Embedded into snapshot diagnostic log lines so we can compute the EDT delivery lag by
      * comparing this value with the {@code [yyyy-MM-dd HH:mm:ss]} prefix that the LogPanel
      * appends when it renders the entry on the EDT.
      */

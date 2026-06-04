@@ -336,10 +336,11 @@ final class RequestResponseParametersSupport {
      *       {@code DEBUG} is emitted. Message tag: {@code [ParameterCardinality][synthesized_dropped]}.</li>
      * </ul>
      *
-     * <p>Both the {@code Synthesized Body Params Dropped} counter (on every non-zero drop) and
-     * the {@code Docs Over Param Threshold} counter (on every threshold crossing, regardless of
-     * branch) always update in {@link ai.attackframework.tools.burp.utils.ExportStats} so
-     * dashboards stay complete independent of log level.</p>
+     * <p>Routine body-enumeration skips (non-form / binary bodies) update
+     * {@link ai.attackframework.tools.burp.utils.ExportStats} only; they are not logged. The
+     * {@code Synthesized Body Params Dropped} and {@code Docs Over Param Threshold} counters
+     * also update in {@link ai.attackframework.tools.burp.utils.ExportStats} independent of log
+     * level.</p>
      */
     /** Package-private for direct testing of the threshold branches. */
     static void recordParameterTelemetry(
@@ -356,12 +357,10 @@ final class RequestResponseParametersSupport {
         }
         boolean retainedHigh = retained >= PARAMETERS_WARN_THRESHOLD;
         boolean droppedHigh = droppedSynthesized >= PARAMETERS_WARN_THRESHOLD;
-        if (!retainedHigh && !droppedHigh && !bodyEnumerationSkipped) {
+        if (!retainedHigh && !droppedHigh) {
             return;
         }
-        if (retainedHigh || droppedHigh) {
-            ai.attackframework.tools.burp.utils.ExportStats.recordDocsOverParamsThreshold();
-        }
+        ai.attackframework.tools.burp.utils.ExportStats.recordDocsOverParamsThreshold();
         String ct = contentType == null ? "unknown" : contentType.toString();
         String commonFields = formatCommonFields(
                 safeMethod(request),
@@ -372,7 +371,7 @@ final class RequestResponseParametersSupport {
         if (retainedHigh) {
             Logger.logWarnPanelOnly("[ParameterCardinality][retained] High retained parameter count; "
                     + "likely a legitimate request with unusual cardinality - review: " + commonFields);
-        } else if (droppedHigh) {
+        } else {
             Logger.logDebug("[ParameterCardinality][synthesized_dropped] Content-Type mismatch "
                     + "caused Burp's parameters() API to mis-infer "
                     + droppedSynthesized
@@ -380,10 +379,6 @@ final class RequestResponseParametersSupport {
                     + "Content-Type (" + ct + ") but carried a binary body, so Burp scanned the "
                     + "raw bytes as if form-encoded and fabricated entries. All dropped. "
                     + "Expected on binary request bodies such as protobuf/gRPC: " + commonFields);
-        } else {
-            Logger.logDebug("[ParameterCardinality][skipped_body_enumeration] Skipped synthetic BODY "
-                    + "enumeration on a non-form / binary body to keep heap bounded; only non-BODY "
-                    + "parameter types were collected: " + commonFields);
         }
     }
 
