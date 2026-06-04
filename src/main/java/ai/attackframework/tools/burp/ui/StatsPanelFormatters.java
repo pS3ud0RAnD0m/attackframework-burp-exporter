@@ -33,6 +33,10 @@ final class StatsPanelFormatters {
     /** Y-axis tick labels stay at or below this value by rolling KiB → MiB → GiB (or MiB → GiB). */
     static final double AXIS_TICK_LABEL_MAX = 999.0;
 
+    /** Smallest nice axis ceiling ≥ normalized value (1, 1.2, … 10), used for values &gt; 10. */
+    private static final double[] NICE_AXIS_NORMALIZED =
+            {1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0};
+
     private StatsPanelFormatters() {}
 
     /**
@@ -83,7 +87,7 @@ final class StatsPanelFormatters {
     }
 
     /**
-     * Rounds a positive ceiling up to human-friendly axis ticks ({@code 3.9 → 4}, {@code 87 → 90}).
+     * Smallest readable axis ceiling ≥ {@code value} ({@code 7.5 → 8}, {@code 750 → 800}, not {@code 1000}).
      */
     static double nicePositiveUpperBound(double value) {
         if (value <= 0.0) {
@@ -94,17 +98,12 @@ final class StatsPanelFormatters {
         }
         double magnitude = Math.pow(10.0, Math.floor(Math.log10(value)));
         double normalized = value / magnitude;
-        double niceNormalized;
-        if (normalized <= 1.0) {
-            niceNormalized = 1.0;
-        } else if (normalized <= 2.0) {
-            niceNormalized = 2.0;
-        } else if (normalized <= 5.0) {
-            niceNormalized = 5.0;
-        } else {
-            niceNormalized = 10.0;
+        for (double candidate : NICE_AXIS_NORMALIZED) {
+            if (candidate + 1e-9 >= normalized) {
+                return candidate * magnitude;
+            }
         }
-        return niceNormalized * magnitude;
+        return 10.0 * magnitude;
     }
 
     /**

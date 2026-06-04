@@ -125,7 +125,7 @@ class StatsPanelTest {
 
         NumberAxis range = (NumberAxis) plot.getRangeAxis();
         assertThat(range.getRangeType()).isEqualTo(RangeType.POSITIVE);
-        assertThat(range.getUpperMargin()).isEqualTo(0.20);
+        assertThat(range.getUpperMargin()).isZero();
         assertThat(range.getLowerBound()).isEqualTo(0.0);
         assertThat(range.getUpperBound()).isEqualTo(10.0);
 
@@ -147,7 +147,8 @@ class StatsPanelTest {
         StatsPanel panel = onEdt(StatsPanel::new);
         assertThat(onEdt(panel::isShowing)).isFalse();
 
-        Map<String, TimeSeries> seriesByIndex = Map.class.cast(get(panel, "docsSeriesByIndex"));
+        Map<String, TimeSeries> seriesByIndex =
+                Reflect.stringKeyedMap(panel, "docsSeriesByIndex", TimeSeries.class);
         int before = onEdt(() -> {
             TimeSeries traffic = seriesByIndex.get("traffic");
             return traffic == null ? 0 : traffic.getItemCount();
@@ -1245,7 +1246,8 @@ class StatsPanelTest {
     void fileTablesAndCharts_updateFromFileExportStats() throws Exception {
         StatsPanel panel = onEdt(StatsPanel::new);
         DefaultTableModel fileIndexModel = DefaultTableModel.class.cast(get(panel, "fileByIndexModel"));
-        Map<String, TimeSeries> fileDocsSeriesByIndex = Map.class.cast(get(panel, "fileDocsSeriesByIndex"));
+        Map<String, TimeSeries> fileDocsSeriesByIndex =
+                Reflect.stringKeyedMap(panel, "fileDocsSeriesByIndex", TimeSeries.class);
         String indent = String.class.cast(getStatic(StatsPanel.class, "SUBROW_INDENT"));
 
         onEdt(() -> call(panel, "refreshDashboard"));

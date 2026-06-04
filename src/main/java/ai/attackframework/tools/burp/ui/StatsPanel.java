@@ -100,10 +100,11 @@ public class StatsPanel extends JPanel {
      * previous 12 so curves stay closer to the data and look less heavily rounded.
      */
     private static final int SMOOTH_SPLINE_PRECISION = 5;
-    /** Extra range above raw samples so smoothed splines are not clipped at the plot top. */
-    private static final double SPLINE_RANGE_HEADROOM_MULTIPLIER = 1.50;
-    private static final double LINE_RANGE_HEADROOM_MULTIPLIER = 1.20;
-    private static final double RANGE_AXIS_UPPER_MARGIN = 0.20;
+    /** Modest headroom above sample max for spline overshoot (range ceiling also rounds up to nice ticks). */
+    private static final double SPLINE_RANGE_HEADROOM_MULTIPLIER = 1.12;
+    private static final double LINE_RANGE_HEADROOM_MULTIPLIER = 1.06;
+    /** Range max is computed explicitly; do not add JFreeChart margin on top. */
+    private static final double RANGE_AXIS_UPPER_MARGIN = 0.0;
     /** {@link ExportStats#getIndexKeys()} order: traffic is series 0, sitemap is series 3. */
     private static final int TRAFFIC_SERIES_STYLE_INDEX = 0;
     private static final int SITEMAP_SERIES_STYLE_INDEX = 3;

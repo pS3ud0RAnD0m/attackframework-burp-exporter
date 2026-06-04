@@ -35,10 +35,15 @@ final class StatsChartRangeAxis extends NumberAxis {
         setTickLabelInsets(RectangleInsets.ZERO_INSETS);
     }
 
-    /** Signature matches JFreeChart {@link org.jfree.chart.axis.ValueAxis} (raw {@link List}). */
+    /**
+     * {@link org.jfree.chart.axis.ValueAxis} declares a raw {@link List}; {@code List<?>} does not override.
+     */
     @Override
     protected double findMaximumTickLabelWidth(
-            List ticks, Graphics2D g2, Rectangle2D drawArea, boolean vertical) {
+            @SuppressWarnings("rawtypes") List ticks,
+            Graphics2D g2,
+            Rectangle2D drawArea,
+            boolean vertical) {
         if (!vertical) {
             return TICK_COLUMN_WIDTH;
         }

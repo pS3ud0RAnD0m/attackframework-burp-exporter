@@ -112,21 +112,23 @@ class StatsPanelFormattersTest {
     void nicePositiveUpperBound_roundsSmallCeilingsToWholeNumbers() {
         assertThat(StatsPanelFormatters.nicePositiveUpperBound(3.9)).isEqualTo(4.0);
         assertThat(StatsPanelFormatters.nicePositiveUpperBound(2.01)).isEqualTo(3.0);
-        assertThat(StatsPanelFormatters.nicePositiveUpperBound(87.0)).isEqualTo(100.0);
+        assertThat(StatsPanelFormatters.nicePositiveUpperBound(87.0)).isEqualTo(90.0);
+        assertThat(StatsPanelFormatters.nicePositiveUpperBound(750.0)).isEqualTo(800.0);
     }
 
     @Test
     void integerDisplayTickStep_isAlwaysAtLeastOneWholeUnit() {
         assertThat(StatsPanelFormatters.integerDisplayTickStep(4.0)).isEqualTo(1);
-        assertThat(StatsPanelFormatters.integerDisplayTickStep(100.0)).isEqualTo(50);
+        assertThat(StatsPanelFormatters.integerDisplayTickStep(100.0)).isEqualTo(25);
     }
 
     @Test
     void rangeUpperInBaseUnits_usesNiceDisplayCeiling() {
-        StatsPanelFormatters.ChartAxisScale gib = StatsPanelFormatters.chooseMemoryAxisScale(2500.0, 1.5);
-        double upper = StatsPanelFormatters.rangeUpperInBaseUnits(2500.0, 1.5, gib);
-        assertThat(upper / gib.displayDivisor()).isEqualTo(4.0);
-        assertThat(upper).isEqualTo(4.0 * 1024.0);
+        double headroom = 1.12;
+        StatsPanelFormatters.ChartAxisScale gib = StatsPanelFormatters.chooseMemoryAxisScale(2500.0, headroom);
+        double upper = StatsPanelFormatters.rangeUpperInBaseUnits(2500.0, headroom, gib);
+        assertThat(upper / gib.displayDivisor()).isEqualTo(3.0);
+        assertThat(upper).isEqualTo(3.0 * 1024.0);
     }
 
     @Test
