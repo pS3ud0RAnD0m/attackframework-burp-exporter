@@ -153,6 +153,37 @@ public final class ExportFieldRegistry {
     }
 
     /**
+     * Reduces an enabled-fields map for JSON export by dropping indexes where every toggleable
+     * field is selected.
+     *
+     * <p>Returns {@code null} when the entire {@code exportFields} object can be omitted (global
+     * all-on). Indexes absent from {@code enabledByIndex} are treated as all-on and are not
+     * written. An empty per-index set is kept so import can mean "no optional fields" for that
+     * index only.</p>
+     *
+     * @param enabledByIndex inclusion sets from the Fields panel or import; {@code null} when all-on
+     * @return sparse map suitable for {@code exportFields}, or {@code null} to omit the key
+     */
+    public static Map<String, Set<String>> compactEnabledFieldsForExport(
+            Map<String, Set<String>> enabledByIndex) {
+        if (enabledByIndex == null || enabledByIndex.isEmpty()) {
+            return null;
+        }
+        Map<String, Set<String>> out = new LinkedHashMap<>();
+        for (String index : INDEX_ORDER) {
+            if (!enabledByIndex.containsKey(index)) {
+                continue;
+            }
+            Set<String> enabled = enabledByIndex.get(index);
+            if (enabled == null || isAllToggleableSelected(index, enabled)) {
+                continue;
+            }
+            out.put(index, Set.copyOf(enabled));
+        }
+        return out.isEmpty() ? null : Map.copyOf(out);
+    }
+
+    /**
      * Returns the field keys allowed for documents written to the index.
      *
      * <p>The result always contains the system keys (including top-level {@code meta}). When
@@ -174,5 +205,14 @@ public final class ExportFieldRegistry {
             }
         }
         return Collections.unmodifiableSet(out);
+    }
+
+    private static boolean isAllToggleableSelected(String indexShortName, Set<String> enabledToggleable) {
+        if (enabledToggleable.isEmpty()) {
+            return false;
+        }
+        List<String> toggleable = getToggleableFields(indexShortName);
+        return enabledToggleable.size() >= toggleable.size()
+                && enabledToggleable.containsAll(toggleable);
     }
 }

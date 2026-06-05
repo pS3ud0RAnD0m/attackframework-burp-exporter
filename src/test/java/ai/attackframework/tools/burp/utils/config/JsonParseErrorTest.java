@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -35,41 +36,45 @@ class JsonParseErrorTest {
     }
 
     @Test
-    void parse_unknown_sinks_field_throwsIOException() {
-        String invalid = """
+    void parse_unknown_sinks_field_reportsWarningAndContinues() throws IOException {
+        String json = """
             {
+              "dataSources": ["exporter"],
               "sinks": {
                 "files": {
                   "enabled": true
                 },
                 "openSearch": {
-                  "enabled": true
+                  "enabled": false,
+                  "auth": { "type": "None" }
                 },
                 "unexpected": {}
               }
             }
             """;
-        assertThatThrownBy(() -> Json.parseConfigJson(invalid))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("sinks.unexpected")
-                .hasMessageContaining("Allowed fields: files, openSearch");
+        ConfigParseResult result = ConfigJsonMapper.parse(json);
+        assertThat(result.state().dataSources()).containsExactly("exporter");
+        assertThat(result.report().warnings())
+                .anyMatch(w -> w.jsonPath().equals("unexpected") || w.jsonPath().equals("sinks.unexpected"));
     }
 
     @Test
-    void parse_unknown_files_format_throwsIOException() {
-        String invalid = """
+    void parse_unknown_files_format_reportsWarningAndContinues() throws IOException {
+        String json = """
             {
+              "dataSources": ["exporter"],
               "sinks": {
                 "files": {
                   "formats": [ "ndjson" ]
-                }
+                },
+                "openSearch": { "enabled": false, "auth": { "type": "None" } }
               }
             }
             """;
-        assertThatThrownBy(() -> Json.parseConfigJson(invalid))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("sinks.files.formats[0]")
-                .hasMessageContaining("Allowed values: jsonl, bulkNdjson");
+        ConfigParseResult result = ConfigJsonMapper.parse(json);
+        assertThat(result.report().warnings())
+                .anyMatch(w -> w.kind() == ConfigImportReport.Kind.UNSUPPORTED_FORMAT
+                        && "ndjson".equals(w.rejectedValue()));
     }
 
     @Test
@@ -88,31 +93,36 @@ class JsonParseErrorTest {
     }
 
     @Test
-    void parse_unknown_files_limits_field_throwsIOException() {
-        String invalid = """
+    void parse_unknown_files_limits_field_reportsWarningAndContinues() throws IOException {
+        String json = """
             {
+              "dataSources": ["exporter"],
               "sinks": {
                 "files": {
                   "limits": {
                     "totalEnabled": true,
                     "maxDiskPercent": 90
                   }
-                }
+                },
+                "openSearch": { "enabled": false, "auth": { "type": "None" } }
               }
             }
             """;
-        assertThatThrownBy(() -> Json.parseConfigJson(invalid))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("sinks.files.limits.maxDiskPercent")
-                .hasMessageContaining("Allowed fields: totalEnabled, totalGb, diskUsedPercentEnabled, maxDiskUsedPercent");
+        ConfigParseResult result = ConfigJsonMapper.parse(json);
+        assertThat(result.state().sinks().fileTotalCapEnabled()).isTrue();
+        assertThat(result.report().warnings())
+                .anyMatch(w -> w.jsonPath().equals("sinks.files.limits.maxDiskPercent"));
     }
 
     @Test
-    void parse_unknown_openSearch_auth_field_throwsIOException() {
-        String invalid = """
+    void parse_unknown_openSearch_auth_field_reportsWarningAndContinues() throws IOException {
+        String json = """
             {
+              "dataSources": ["exporter"],
               "sinks": {
                 "openSearch": {
+                  "enabled": true,
+                  "url": "https://example:9200",
                   "auth": {
                     "type": "Basic",
                     "username": "admin",
@@ -122,10 +132,10 @@ class JsonParseErrorTest {
               }
             }
             """;
-        assertThatThrownBy(() -> Json.parseConfigJson(invalid))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("sinks.openSearch.auth.password")
-                .hasMessageContaining("Allowed fields: type, username, apiKeyId, certPath, certKeyPath");
+        ConfigParseResult result = ConfigJsonMapper.parse(json);
+        assertThat(result.state().sinks().openSearchUser()).isEqualTo("admin");
+        assertThat(result.report().warnings())
+                .anyMatch(w -> w.jsonPath().equals("sinks.openSearch.auth.password"));
     }
 
     @Test
@@ -144,11 +154,14 @@ class JsonParseErrorTest {
     }
 
     @Test
-    void parse_unknown_pinned_certificate_field_throwsIOException() {
-        String invalid = """
+    void parse_unknown_pinned_certificate_field_reportsWarningAndContinues() throws IOException {
+        String json = """
             {
+              "dataSources": ["exporter"],
               "sinks": {
                 "openSearch": {
+                  "enabled": false,
+                  "auth": { "type": "None" },
                   "pinnedTlsCertificate": {
                     "sourcePath": "cert.pem",
                     "sha256": "abc123"
@@ -157,10 +170,10 @@ class JsonParseErrorTest {
               }
             }
             """;
-        assertThatThrownBy(() -> Json.parseConfigJson(invalid))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("sinks.openSearch.pinnedTlsCertificate.sha256")
-                .hasMessageContaining("Allowed fields: sourcePath, fingerprintSha256, encodedBase64");
+        ConfigParseResult result = ConfigJsonMapper.parse(json);
+        assertThat(result.state().sinks().openSearchOptions().pinnedTlsCertificateSourcePath()).isEqualTo("cert.pem");
+        assertThat(result.report().warnings())
+                .anyMatch(w -> w.jsonPath().equals("sinks.openSearch.pinnedTlsCertificate.sha256"));
     }
 
     private static void assertInvalidAuthFieldCombination(String authType, String fieldName, String fieldValue) {

@@ -49,7 +49,7 @@ class ConfigStateExporterSubOptionsTest {
               }
             }
             """;
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(parsed.exporterSubOptions())
                 .containsExactly(

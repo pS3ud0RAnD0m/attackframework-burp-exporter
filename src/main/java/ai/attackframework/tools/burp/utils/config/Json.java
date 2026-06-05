@@ -35,7 +35,6 @@ public final class Json {
     private static final String LIT_CUSTOM = "custom";
     private static final String LIT_REGEX  = "regex";
     private static final String LIT_STRING = "string";
-    private static final List<String> ALLOWED_FILE_FORMATS = List.of("jsonl", "bulkNdjson");
     private static final List<String> ALLOWED_OPEN_SEARCH_AUTH_TYPES = List.of(
             "API Key",
             "Basic",
@@ -199,39 +198,67 @@ public final class Json {
     }
 
     private static void buildDataSources(ObjectNode root, ConfigState.State state) {
+        List<String> sources = ConfigImportCatalog.compactDataSourcesForExport(
+                state.dataSources(), RuntimeConfig.isCommunityEdition());
+        if (sources == null) {
+            return;
+        }
         ArrayNode srcArr = root.putArray("dataSources");
-        for (String s : state.dataSources()) {
-            if (s != null) srcArr.add(s);
+        for (String s : sources) {
+            if (s != null) {
+                srcArr.add(s);
+            }
         }
     }
 
     private static void buildDataSourceOptions(ObjectNode root, ConfigState.State state) {
+        ConfigImportCatalog.CompactDataSourceOptions compact =
+                ConfigImportCatalog.compactDataSourceOptionsForExport(
+                        state.settingsSub(),
+                        state.trafficToolTypes(),
+                        state.findingsSeverities(),
+                        state.exporterSubOptions(),
+                        state.exporterStatsIntervalSeconds(),
+                        RuntimeConfig.isCommunityEdition());
+        if (compact == null) {
+            return;
+        }
         ObjectNode opts = root.putObject("dataSourceOptions");
-        ArrayNode settingsArr = opts.putArray("settings");
-        if (state.settingsSub() != null) {
-            for (String s : state.settingsSub()) {
-                if (s != null) settingsArr.add(s);
+        if (compact.settings() != null) {
+            ArrayNode settingsArr = opts.putArray("settings");
+            for (String s : compact.settings()) {
+                if (s != null) {
+                    settingsArr.add(s);
+                }
             }
         }
-        ArrayNode trafficArr = opts.putArray("traffic");
-        if (state.trafficToolTypes() != null) {
-            for (String s : state.trafficToolTypes()) {
-                if (s != null) trafficArr.add(s);
+        if (compact.traffic() != null) {
+            ArrayNode trafficArr = opts.putArray("traffic");
+            for (String s : compact.traffic()) {
+                if (s != null) {
+                    trafficArr.add(s);
+                }
             }
         }
-        ArrayNode findingsArr = opts.putArray("findings");
-        if (state.findingsSeverities() != null) {
-            for (String s : state.findingsSeverities()) {
-                if (s != null) findingsArr.add(s);
+        if (compact.findings() != null) {
+            ArrayNode findingsArr = opts.putArray("findings");
+            for (String s : compact.findings()) {
+                if (s != null) {
+                    findingsArr.add(s);
+                }
             }
         }
-        ArrayNode exporterArr = opts.putArray("exporter");
-        if (state.exporterSubOptions() != null) {
-            for (String s : state.exporterSubOptions()) {
-                if (s != null) exporterArr.add(s);
+        if (compact.exporter() != null) {
+            ArrayNode exporterArr = opts.putArray("exporter");
+            for (String s : compact.exporter()) {
+                if (s != null) {
+                    exporterArr.add(s);
+                }
             }
         }
-        opts.put("exporterStatsIntervalSeconds", state.exporterStatsIntervalSeconds());
+        if (compact.exporterStatsIntervalSeconds() != null) {
+            opts.put("exporterStatsIntervalSeconds", compact.exporterStatsIntervalSeconds());
+        }
     }
 
     private static void buildScope(ObjectNode root, ConfigState.State state) {
@@ -375,7 +402,8 @@ public final class Json {
     }
 
     private static void buildExportFields(ObjectNode root, ConfigState.State state) {
-        Map<String, Set<String>> byIndex = state.enabledExportFieldsByIndex();
+        Map<String, Set<String>> byIndex =
+                ExportFieldRegistry.compactEnabledFieldsForExport(state.enabledExportFieldsByIndex());
         if (byIndex == null || byIndex.isEmpty()) return;
         ObjectNode exportFields = root.putObject("exportFields");
         for (Map.Entry<String, Set<String>> e : byIndex.entrySet()) {
@@ -389,16 +417,36 @@ public final class Json {
 
     /* ======================== PARSE (into ImportedConfig) ===================== */
 
-    public static ImportedConfig parseConfigJson(String json) throws IOException {
-        JsonNode root = MAPPER.readTree(json);
+    /**
+     * Parsed config plus any non-fatal import warnings.
+     */
+    public static final record ConfigJsonParseResult(ImportedConfig config, ConfigImportReport report) { }
 
-        List<String> sources = parseDataSources(root);
-        DataSourceOptionsParts opts = parseDataSourceOptions(root);
-        ScopeParts scope = parseScope(root);
-        SinksParts sinks = parseSinks(root);
-        IndexNamesParts indexNames = parseIndexNames(root);
-        UiParts ui = parseUi(root);
-        Map<String, Set<String>> exportFields = parseExportFields(root);
+    public static ConfigJsonParseResult parseConfigJsonWithReport(String json) throws IOException {
+        ConfigImportReport report = new ConfigImportReport();
+        ImportedConfig config = parseConfigJson(json, report);
+        return new ConfigJsonParseResult(config, report);
+    }
+
+    public static ImportedConfig parseConfigJson(String json) throws IOException {
+        return parseConfigJson(json, new ConfigImportReport());
+    }
+
+    private static ImportedConfig parseConfigJson(String json, ConfigImportReport report) throws IOException {
+        JsonNode root = MAPPER.readTree(json);
+        if (!root.isObject()) {
+            throw new IOException("Invalid config: root must be a JSON object.");
+        }
+        ConfigImportCatalog.collectUnknownRootKeys(root, report);
+        boolean communityEdition = RuntimeConfig.isCommunityEdition();
+
+        List<String> sources = parseDataSources(root, report, communityEdition);
+        DataSourceOptionsParts opts = parseDataSourceOptions(root, report, communityEdition);
+        ScopeParts scope = parseScope(root, report);
+        SinksParts sinks = parseSinks(root, report);
+        IndexNamesParts indexNames = parseIndexNames(root, report);
+        UiParts ui = parseUi(root, report);
+        Map<String, Set<String>> exportFields = parseExportFields(root, report);
 
         return new ImportedConfig(
                 sources,
@@ -431,10 +479,24 @@ public final class Json {
         );
     }
 
-    private static UiParts parseUi(JsonNode root) {
+    private static UiParts parseUi(JsonNode root, ConfigImportReport report) throws IOException {
         JsonNode ui = root.path("ui");
+        if (!ui.isMissingNode() && !ui.isNull()) {
+            if (!ui.isObject()) {
+                throw new IOException("Invalid config: 'ui' must be an object.");
+            }
+            ConfigImportCatalog.collectUnknownObjectKeys(ui, "ui", ConfigImportCatalog.UI_KEYS, report);
+        }
         JsonNode stats = ui.path("stats");
+        if (stats.isObject()) {
+            ConfigImportCatalog.collectUnknownObjectKeys(
+                    stats, "ui.stats", ConfigImportCatalog.UI_STATS_KEYS, report);
+        }
         JsonNode log = ui.path("log");
+        if (log.isObject()) {
+            ConfigImportCatalog.collectUnknownObjectKeys(
+                    log, "ui.log", ConfigImportCatalog.UI_LOG_KEYS, report);
+        }
         ConfigState.LogPanelPreferences logPreferences = new ConfigState.LogPanelPreferences(
                 textOrNull(log.get("minLevel")),
                 bool(log.get("pauseAutoscroll"), false),
@@ -453,21 +515,34 @@ public final class Json {
 
     /* ----------------------- parse helpers ----------------------- */
 
-    private static List<String> parseDataSources(JsonNode root) {
-        List<String> out = new ArrayList<>();
+    private static List<String> parseDataSources(
+            JsonNode root,
+            ConfigImportReport report,
+            boolean communityEdition) {
         JsonNode ds = root.path("dataSources");
-        if (ds.isArray()) {
-            for (JsonNode n : ds) {
-                if (n.isTextual()) out.add(n.asText());
+        if (ds.isMissingNode() || ds.isNull()) {
+            return ConfigImportCatalog.allDataSourcesForEdition(communityEdition);
+        }
+        if (!ds.isArray()) {
+            report.add(ConfigImportReport.Kind.UNKNOWN_KEY, "dataSources", "<non-array>");
+            return ConfigImportCatalog.allDataSourcesForEdition(communityEdition);
+        }
+        List<String> raw = new ArrayList<>();
+        for (JsonNode n : ds) {
+            if (n.isTextual()) {
+                raw.add(n.asText());
             }
         }
-        return out;
+        return ConfigImportCatalog.filterKnownDataSources(raw, report, communityEdition);
     }
 
     /**
      * Parses dataSourceOptions. If absent, returns current defaults.
      */
-    private static DataSourceOptionsParts parseDataSourceOptions(JsonNode root) {
+    private static DataSourceOptionsParts parseDataSourceOptions(
+            JsonNode root,
+            ConfigImportReport report,
+            boolean communityEdition) {
         JsonNode opts = root.path("dataSourceOptions");
         if (!opts.isObject()) {
             return new DataSourceOptionsParts(
@@ -479,18 +554,60 @@ public final class Json {
                     false
             );
         }
-        List<String> settings = arrayToStringList(opts.path("settings"));
-        List<String> traffic = arrayToStringList(opts.path("traffic"));
-        List<String> findings = arrayToStringList(opts.path("findings"));
+        ConfigImportCatalog.collectUnknownObjectKeys(
+                opts, "dataSourceOptions", ConfigImportCatalog.DATA_SOURCE_OPTIONS_KEYS, report);
+        List<String> settings;
+        if (!opts.has("settings")) {
+            settings = List.copyOf(ConfigState.DEFAULT_SETTINGS_SUB);
+        } else {
+            List<String> filtered = ConfigImportCatalog.filterKnownListValues(
+                    arrayToStringList(opts.path("settings")),
+                    Set.copyOf(ConfigState.DEFAULT_SETTINGS_SUB),
+                    "dataSourceOptions.settings",
+                    report);
+            settings = filtered.isEmpty() ? ConfigState.DEFAULT_SETTINGS_SUB : filtered;
+        }
+        List<String> traffic;
+        if (!opts.has("traffic")) {
+            traffic = ConfigImportCatalog.defaultTrafficToolTypesForEdition(communityEdition);
+        } else {
+            traffic = ConfigImportCatalog.filterTrafficToolTypes(
+                    arrayToStringList(opts.path("traffic")),
+                    report,
+                    communityEdition);
+        }
+        List<String> findings;
+        if (!opts.has("findings")) {
+            findings = List.copyOf(ConfigState.DEFAULT_FINDINGS_SEVERITIES);
+        } else {
+            List<String> filtered = ConfigImportCatalog.filterKnownListValues(
+                    arrayToStringList(opts.path("findings")),
+                    Set.copyOf(ConfigState.DEFAULT_FINDINGS_SEVERITIES),
+                    "dataSourceOptions.findings",
+                    report);
+            findings = filtered.isEmpty() ? ConfigState.DEFAULT_FINDINGS_SEVERITIES : filtered;
+        }
         boolean exporterSpecified = opts.has("exporter");
-        List<String> exporter = arrayToStringList(opts.path("exporter"));
+        List<String> exporter;
+        if (!exporterSpecified) {
+            exporter = List.copyOf(ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS);
+        } else {
+            exporter = ConfigImportCatalog.filterKnownListValues(
+                    arrayToStringList(opts.path("exporter")),
+                    Set.copyOf(ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS),
+                    "dataSourceOptions.exporter",
+                    report);
+        }
         boolean exporterOptionsPresent = opts.has("exporter") || opts.has("exporterStatsIntervalSeconds");
+        int statsInterval = opts.has("exporterStatsIntervalSeconds")
+                ? intOr(opts.get("exporterStatsIntervalSeconds"), ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS)
+                : ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS;
         return new DataSourceOptionsParts(
-                settings.isEmpty() ? ConfigState.DEFAULT_SETTINGS_SUB : settings,
+                settings,
                 traffic,
-                findings.isEmpty() ? ConfigState.DEFAULT_FINDINGS_SEVERITIES : findings,
-                exporterSpecified ? exporter : ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
-                intOr(opts.get("exporterStatsIntervalSeconds"), ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS),
+                findings,
+                exporter,
+                statsInterval,
                 exporterOptionsPresent
         );
     }
@@ -505,7 +622,7 @@ public final class Json {
         return out;
     }
 
-    private static ScopeParts parseScope(JsonNode root) {
+    private static ScopeParts parseScope(JsonNode root, ConfigImportReport report) {
         JsonNode scope = root.path(LIT_SCOPE);
 
         // Current representation: simple scopes as array of strings, e.g. ["all"] or ["burp"].
@@ -516,8 +633,13 @@ public final class Json {
                 if ("all".equals(v) || "burp".equals(v)) {
                     return new ScopeParts(v, List.of(), null);
                 }
+                report.add(ConfigImportReport.Kind.UNRECOGNIZED_SCOPE, "scope", v);
             }
-            // Empty / unrecognized array: fall through to other accepted scope shapes below.
+            // Unrecognized array: fall through to other accepted scope shapes below.
+        }
+        if (scope.isObject()) {
+            ConfigImportCatalog.collectUnknownObjectKeys(
+                    scope, "scope", List.of("all", "burp", LIT_CUSTOM, "customTypes"), report);
         }
 
         // Also accept object flags ("all": true / "burp": true).
@@ -573,9 +695,9 @@ public final class Json {
         return new ScopeParts(LIT_CUSTOM, vals, kindsList);
     }
 
-    private static SinksParts parseSinks(JsonNode root) throws IOException {
+    private static SinksParts parseSinks(JsonNode root, ConfigImportReport report) throws IOException {
         JsonNode sinks = root.path("sinks");
-        validateSinksShape(sinks);
+        validateSinksShape(sinks, report);
         JsonNode filesNode = sinks.path("files");
         JsonNode openSearchNode = sinks.path("openSearch");
 
@@ -594,12 +716,21 @@ public final class Json {
         boolean filesEnabled = bool(filesNode.get("enabled"), files != null);
         JsonNode fileFormatsNode = filesNode.path("formats");
         if (fileFormatsNode.isArray()) {
-            for (JsonNode formatNode : fileFormatsNode) {
+            for (int i = 0; i < fileFormatsNode.size(); i++) {
+                JsonNode formatNode = fileFormatsNode.get(i);
+                if (!formatNode.isTextual()) {
+                    throw new IOException("Invalid config: 'sinks.files.formats[" + i + "]' must be a string.");
+                }
                 String format = formatNode.asText();
                 if ("jsonl".equals(format)) {
                     fileJsonlEnabled = true;
                 } else if ("bulkNdjson".equals(format)) {
                     fileBulkNdjsonEnabled = true;
+                } else {
+                    report.add(
+                            ConfigImportReport.Kind.UNSUPPORTED_FORMAT,
+                            "sinks.files.formats",
+                            format);
                 }
             }
         }
@@ -646,7 +777,7 @@ public final class Json {
                 openSearchEnabled, os, username == null ? "" : username, "", tlsMode, openSearchOptions);
     }
 
-    private static void validateSinksShape(JsonNode sinks) throws IOException {
+    private static void validateSinksShape(JsonNode sinks, ConfigImportReport report) throws IOException {
         if (sinks.isMissingNode() || sinks.isNull()) {
             return;
         }
@@ -657,16 +788,17 @@ public final class Json {
             throw new IOException("Invalid config: sink settings must live under nested 'sinks.files' and "
                     + "'sinks.openSearch' objects (for example 'sinks.files.limits.totalEnabled').");
         }
-        validateAllowedObjectKeys(sinks, "sinks", SINKS_KEYS);
-        validateNestedSinkNode(sinks, "files", FILES_KEYS);
-        validateNestedSinkNode(sinks, "openSearch", OPEN_SEARCH_KEYS);
-        validateNestedObject(sinks.path("files").path("limits"), "sinks.files.limits", FILE_LIMITS_KEYS);
+        ConfigImportCatalog.collectUnknownObjectKeys(sinks, "sinks", SINKS_KEYS, report);
+        validateNestedSinkNode(sinks, "files", FILES_KEYS, report);
+        validateNestedSinkNode(sinks, "openSearch", OPEN_SEARCH_KEYS, report);
+        validateNestedObject(sinks.path("files").path("limits"), "sinks.files.limits", FILE_LIMITS_KEYS, report);
         validateFilesFormatsNode(sinks.path("files").path("formats"));
-        validateNestedObject(sinks.path("openSearch").path("auth"), "sinks.openSearch.auth", OPEN_SEARCH_AUTH_KEYS);
+        validateNestedObject(sinks.path("openSearch").path("auth"), "sinks.openSearch.auth", OPEN_SEARCH_AUTH_KEYS, report);
         validateNestedObject(
                 sinks.path("openSearch").path("pinnedTlsCertificate"),
                 "sinks.openSearch.pinnedTlsCertificate",
-                PINNED_TLS_KEYS);
+                PINNED_TLS_KEYS,
+                report);
     }
 
     private static boolean hasLegacyFlatSinksKeys(JsonNode sinks) {
@@ -681,35 +813,30 @@ public final class Json {
                 || sinks.has("openSearchPinnedTlsCertificate");
     }
 
-    private static void validateNestedSinkNode(JsonNode sinks, String key, List<String> allowedKeys) throws IOException {
+    private static void validateNestedSinkNode(
+            JsonNode sinks,
+            String key,
+            List<String> allowedKeys,
+            ConfigImportReport report) throws IOException {
         JsonNode node = sinks.get(key);
         if (node != null && !node.isNull() && !node.isObject()) {
             throw new IOException("Invalid config: 'sinks." + key + "' must be an object.");
         }
-        validateAllowedObjectKeys(node, "sinks." + key, allowedKeys);
+        ConfigImportCatalog.collectUnknownObjectKeys(node, "sinks." + key, allowedKeys, report);
     }
 
-    private static void validateNestedObject(JsonNode node, String path, List<String> allowedKeys) throws IOException {
+    private static void validateNestedObject(
+            JsonNode node,
+            String path,
+            List<String> allowedKeys,
+            ConfigImportReport report) throws IOException {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return;
         }
         if (!node.isObject()) {
             throw new IOException("Invalid config: '" + path + "' must be an object.");
         }
-        validateAllowedObjectKeys(node, path, allowedKeys);
-    }
-
-    private static void validateAllowedObjectKeys(JsonNode node, String path, List<String> allowedKeys) throws IOException {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return;
-        }
-        for (Iterator<String> it = node.fieldNames(); it.hasNext(); ) {
-            String field = it.next();
-            if (!allowedKeys.contains(field)) {
-                throw new IOException("Invalid config: unknown field '" + path + "." + field
-                        + "'. Allowed fields: " + String.join(", ", allowedKeys) + ".");
-            }
-        }
+        ConfigImportCatalog.collectUnknownObjectKeys(node, path, allowedKeys, report);
     }
 
     private static void validateFilesFormatsNode(JsonNode formatsNode) throws IOException {
@@ -718,17 +845,6 @@ public final class Json {
         }
         if (!formatsNode.isArray()) {
             throw new IOException("Invalid config: 'sinks.files.formats' must be an array.");
-        }
-        for (int i = 0; i < formatsNode.size(); i++) {
-            JsonNode formatNode = formatsNode.get(i);
-            if (!formatNode.isTextual()) {
-                throw new IOException("Invalid config: 'sinks.files.formats[" + i + "]' must be a string.");
-            }
-            String format = formatNode.asText();
-            if (!ALLOWED_FILE_FORMATS.contains(format)) {
-                throw new IOException("Invalid config: unsupported value '" + format + "' at 'sinks.files.formats[" + i
-                        + "]'. Allowed values: " + String.join(", ", ALLOWED_FILE_FORMATS) + ".");
-            }
         }
     }
 
@@ -779,30 +895,42 @@ public final class Json {
                 + "'. Allowed non-secret fields for this auth type: " + allowed + ".");
     }
 
-    private static IndexNamesParts parseIndexNames(JsonNode root) {
+    private static IndexNamesParts parseIndexNames(JsonNode root, ConfigImportReport report) {
         JsonNode indexNames = root.path("indexNames");
         if (!indexNames.isObject()) {
             return new IndexNamesParts(ConfigState.DEFAULT_INDEX_NAME_BASE_TEMPLATE);
         }
+        ConfigImportCatalog.collectUnknownObjectKeys(
+                indexNames, "indexNames", ConfigImportCatalog.INDEX_NAMES_KEYS, report);
         String baseTemplate = textOrNull(indexNames.get("baseTemplate"));
         return new IndexNamesParts(ConfigState.normalizeIndexNameBaseTemplate(baseTemplate));
     }
 
     /** Returns null when absent (all fields enabled); empty per-index arrays disable optional fields. */
-    private static Map<String, Set<String>> parseExportFields(JsonNode root) {
+    private static Map<String, Set<String>> parseExportFields(JsonNode root, ConfigImportReport report) {
         JsonNode exportFields = root.path("exportFields");
-        if (!exportFields.isObject()) return null;
+        if (!exportFields.isObject()) {
+            return null;
+        }
         Map<String, Set<String>> out = new java.util.LinkedHashMap<>();
         for (Iterator<String> it = exportFields.fieldNames(); it.hasNext(); ) {
             String indexName = it.next();
+            if (!ConfigImportCatalog.isKnownExportIndex(indexName)) {
+                report.add(ConfigImportReport.Kind.UNKNOWN_KEY, "exportFields." + indexName, indexName);
+                continue;
+            }
             JsonNode arr = exportFields.get(indexName);
-            if (!arr.isArray()) continue;
+            if (!arr.isArray()) {
+                report.add(ConfigImportReport.Kind.UNKNOWN_KEY, "exportFields." + indexName, "<non-array>");
+                continue;
+            }
             Set<String> set = new LinkedHashSet<>();
             for (JsonNode n : arr) {
                 if (!n.isTextual()) {
                     continue;
                 }
-                String normalized = normalizeExportFieldKey(indexName, n.asText());
+                String normalized = ConfigImportCatalog.normalizeExportFieldKey(
+                        indexName, n.asText(), report);
                 if (normalized != null) {
                     set.add(normalized);
                 }
@@ -812,17 +940,6 @@ public final class Json {
             }
         }
         return out.isEmpty() ? null : Map.copyOf(out);
-    }
-
-    private static String normalizeExportFieldKey(String indexName, String fieldKey) {
-        if (indexName == null || fieldKey == null || fieldKey.isBlank()) {
-            return null;
-        }
-        String trimmed = fieldKey.trim();
-        if (ExportFieldRegistry.getToggleableFields(indexName).contains(trimmed)) {
-            return trimmed;
-        }
-        return null;
     }
 
     private static String textOrNull(JsonNode node) {

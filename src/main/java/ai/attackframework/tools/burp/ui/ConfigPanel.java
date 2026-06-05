@@ -1990,11 +1990,16 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 : current.uiPreferences();
     }
 
-    /** Builds enabled export fields map from Fields panel checkboxes; null = all enabled (omit from JSON). */
+    /**
+     * Builds enabled export fields from Fields panel checkboxes.
+     *
+     * <p>{@code null} means every toggleable field is on (omit {@code exportFields} from JSON).
+     * When only some indexes differ from all-on, the map lists just those indexes; others are
+     * implied all-on on import and at runtime.</p>
+     */
     private java.util.Map<String, java.util.Set<String>> buildEnabledExportFieldsByIndex() {
         if (fieldCheckboxesByIndex == null) return null;
-        java.util.Map<String, java.util.Set<String>> out = new java.util.LinkedHashMap<>();
-        boolean allSelected = true;
+        java.util.Map<String, java.util.Set<String>> raw = new java.util.LinkedHashMap<>();
         for (String indexName : ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.INDEX_ORDER) {
             java.util.Map<String, JCheckBox> checkboxes = fieldCheckboxesByIndex.get(indexName);
             if (checkboxes == null) continue;
@@ -2002,14 +2007,11 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             for (java.util.Map.Entry<String, JCheckBox> e : checkboxes.entrySet()) {
                 if (e.getValue().isSelected()) {
                     enabled.add(e.getKey());
-                } else {
-                    allSelected = false;
                 }
             }
-            out.put(indexName, java.util.Collections.unmodifiableSet(enabled));
+            raw.put(indexName, java.util.Collections.unmodifiableSet(enabled));
         }
-        if (allSelected) return null;
-        return java.util.Collections.unmodifiableMap(out);
+        return ai.attackframework.tools.burp.utils.config.ExportFieldRegistry.compactEnabledFieldsForExport(raw);
     }
 
     /**

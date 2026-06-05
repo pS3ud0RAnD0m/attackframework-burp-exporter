@@ -22,17 +22,33 @@ public final class ConfigJsonMapper {
     }
 
     /**
-     * Parses config JSON into a normalized typed state.
+     * Parses config JSON into a normalized typed state and import report.
      *
      * <p>Legacy payloads that predate explicit exporter options are normalized to include the
      * {@code exporter} source so Exporter-index export remains enabled by default.</p>
      *
      * @param json raw config JSON
+     * @return parsed state and any non-fatal import warnings
+     * @throws IOException when the JSON cannot be parsed
+     */
+    public static ConfigParseResult parse(String json) throws IOException {
+        Json.ConfigJsonParseResult parsed = Json.parseConfigJsonWithReport(json);
+        State state = stateFrom(parsed.config());
+        return new ConfigParseResult(state, parsed.report());
+    }
+
+    /**
+     * Parses config JSON into a normalized typed state (warnings discarded).
+     *
+     * @param json raw config JSON
      * @return normalized typed state
      * @throws IOException when the JSON cannot be parsed
      */
-    public static State parse(String json) throws IOException {
-        Json.ImportedConfig cfg = Json.parseConfigJson(json);
+    public static State parseState(String json) throws IOException {
+        return parse(json).state();
+    }
+
+    private static State stateFrom(Json.ImportedConfig cfg) {
         List<ScopeEntry> entries = entriesFrom(cfg);
         List<String> dataSources = new ArrayList<>(cfg.dataSources());
         if (!cfg.exporterOptionsPresent() && !dataSources.contains(ConfigKeys.SRC_EXPORTER)) {

@@ -1,9 +1,9 @@
 {
   "version" : "${VERSION}",
-  "dataSources" : [ "exporter", "traffic", "settings", "findings" ],
+  "dataSources" : [ "settings", "findings", "traffic", "exporter" ],
   "dataSourceOptions" : {
     "settings" : [ "project" ],
-    "traffic" : [ "proxy", "extensions" ],
+    "traffic" : [ "extensions", "proxy" ],
     "findings" : [ "high", "low" ],
     "exporter" : [ "info", "warn", "stats", "config" ],
     "exporterStatsIntervalSeconds" : 45

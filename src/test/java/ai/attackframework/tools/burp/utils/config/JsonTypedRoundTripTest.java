@@ -95,7 +95,7 @@ class JsonTypedRoundTripTest {
         );
 
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(json).contains("\"traffic\"");
         assertThat(json).contains("\"proxy\"");
@@ -125,7 +125,7 @@ class JsonTypedRoundTripTest {
                 null
         );
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
         assertThat(parsed.trafficToolTypes()).containsExactlyInAnyOrder("proxy", "proxy_history", "repeater", "repeater_tabs");
     }
 
@@ -145,7 +145,7 @@ class JsonTypedRoundTripTest {
                 null);
 
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(json).contains("\"indexNames\"");
         assertThat(json).contains("\"baseTemplate\" : \"${now:yyyyMMdd}-attackframework-tool-burp\"");
@@ -189,7 +189,7 @@ class JsonTypedRoundTripTest {
                 null);
 
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(json).contains("\"sinks\" : {");
         assertThat(json).contains("\"files\" : {");
@@ -232,7 +232,7 @@ class JsonTypedRoundTripTest {
         String legacy = """
             {"version":"1.0","dataSources":["traffic"],"scope":["burp"],"sinks":{}}
             """;
-        ConfigState.State parsed = ConfigJsonMapper.parse(legacy);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(legacy);
         assertThat(parsed.dataSources()).contains("traffic", ConfigKeys.SRC_EXPORTER);
         assertThat(parsed.trafficToolTypes()).containsExactly(
                 "burp_ai", "extensions", "intruder", "proxy",
@@ -257,7 +257,7 @@ class JsonTypedRoundTripTest {
             }
             """;
 
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(parsed.trafficToolTypes()).containsExactly("proxy", "repeater");
     }
@@ -280,11 +280,102 @@ class JsonTypedRoundTripTest {
             }
             """;
 
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(parsed.dataSources()).containsExactly(ConfigKeys.SRC_EXPORTER);
         assertThat(parsed.exporterSubOptions()).isEmpty();
         assertThat(parsed.exporterStatsIntervalSeconds()).isEqualTo(15);
+    }
+
+    @Test
+    void build_omitsDataSourceOptionsExceptTrafficWhenOnlyIntruderDisabled() throws IOException {
+        List<String> trafficWithoutIntruder = ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES.stream()
+                .filter(tool -> !"intruder".equals(tool))
+                .toList();
+        var state = new ConfigState.State(
+                ConfigImportCatalog.allDataSourcesForEdition(false),
+                ConfigKeys.SCOPE_BURP,
+                List.of(),
+                new ConfigState.Sinks(false, "/path/to/directory", false, false, true,
+                        "https://opensearch.url:9200", "", "", ConfigState.OPEN_SEARCH_TLS_VERIFY),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                trafficWithoutIntruder,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                Map.of("settings", Set.of("project", "user", "burp.version")),
+                ConfigState.defaultUiPreferences());
+
+        String json = ConfigJsonMapper.build(state);
+
+        assertThat(json).contains("\"dataSourceOptions\"");
+        assertThat(json).doesNotContain("exporterStatsIntervalSeconds");
+        assertThat(json).doesNotContain("intruder");
+        assertThat(json).doesNotContain("\"dataSourceOptions\" : {\n    \"settings\"");
+        assertThat(json).doesNotContain("\"dataSourceOptions\" : {\n    \"findings\"");
+
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
+        assertThat(parsed.trafficToolTypes()).containsExactlyElementsOf(trafficWithoutIntruder);
+        assertThat(parsed.settingsSub()).containsExactlyInAnyOrder("project", "user");
+    }
+
+    @Test
+    void build_omitsDataSourcesWhenAllKnownSourcesSelected() throws IOException {
+        List<String> allSources = ConfigImportCatalog.allDataSourcesForEdition(false);
+        var state = new ConfigState.State(
+                allSources,
+                "all",
+                List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                null);
+
+        String json = ConfigJsonMapper.build(state);
+
+        assertThat(json).doesNotContain("\"dataSources\"");
+        assertThat(ConfigJsonMapper.parseState(json).dataSources()).containsExactlyElementsOf(allSources);
+    }
+
+    @Test
+    void parse_missingDataSources_defaultsToAllKnownSources() throws IOException {
+        String json = """
+            {
+              "version": "1.0",
+              "scope": ["all"],
+              "sinks": {
+                "openSearch": { "enabled": false, "auth": { "type": "None" } }
+              }
+            }
+            """;
+
+        assertThat(ConfigJsonMapper.parseState(json).dataSources())
+                .containsExactlyElementsOf(ConfigImportCatalog.allDataSourcesForEdition(false));
+    }
+
+    @Test
+    void build_omitsExportFieldsEntriesForIndexesWithAllToggleablesSelected() throws IOException {
+        String trafficField = ExportFieldRegistry.getToggleableFields("traffic").getFirst();
+        Map<String, Set<String>> enabledByIndex = Map.of(
+                "traffic", Set.of(trafficField),
+                "settings", Set.copyOf(ExportFieldRegistry.getToggleableFields("settings")));
+
+        var state = new ConfigState.State(
+                List.of("settings", "traffic"), "all", List.of(),
+                new ConfigState.Sinks(false, null, false, null, null, null, false),
+                ConfigState.DEFAULT_SETTINGS_SUB, ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS, ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                enabledByIndex);
+
+        ConfigState.State parsed = ConfigJsonMapper.parseState(ConfigJsonMapper.build(state));
+
+        assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
+        assertThat(parsed.enabledExportFieldsByIndex()).containsOnlyKeys("traffic");
+        assertThat(parsed.enabledExportFieldsByIndex().get("traffic")).containsExactly(trafficField);
     }
 
     @Test
@@ -302,7 +393,7 @@ class JsonTypedRoundTripTest {
         );
         String json = ConfigJsonMapper.build(state);
         assertThat(json).contains("exportFields");
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
         assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
         assertThat(parsed.enabledExportFieldsByIndex().get("traffic"))
                 .containsExactlyInAnyOrder("request.url", "request.port", "request.method");
@@ -321,7 +412,7 @@ class JsonTypedRoundTripTest {
         );
 
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(json).contains("\"traffic\" : [ ]");
         assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
@@ -345,7 +436,7 @@ class JsonTypedRoundTripTest {
             }
             """;
 
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
         assertThat(parsed.enabledExportFieldsByIndex().get("traffic"))
@@ -372,9 +463,12 @@ class JsonTypedRoundTripTest {
             }
             """;
 
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigParseResult result = ConfigJsonMapper.parse(json);
 
-        assertThat(parsed.enabledExportFieldsByIndex()).isNull();
+        assertThat(result.state().enabledExportFieldsByIndex()).isNull();
+        assertThat(result.report().warnings())
+                .anyMatch(w -> w.jsonPath().equals("exportFields.traffic")
+                        && w.rejectedValue().equals("unknown_field"));
     }
 
     @Test
@@ -382,7 +476,7 @@ class JsonTypedRoundTripTest {
         String json = """
             {"version":"1.0","dataSources":["settings"],"scope":["all"],"sinks":{},"dataSourceOptions":{"settings":["project","user"],"traffic":[],"findings":["critical","high","medium","low","informational"]}}
             """;
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
         assertThat(parsed.enabledExportFieldsByIndex()).isNull();
     }
 
@@ -404,7 +498,7 @@ class JsonTypedRoundTripTest {
                         new ConfigState.LogPanelPreferences("warn", true, "tls", true, false, false, "retry", false, true)));
 
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(json).contains("\"minLevel\" : \"warn\"");
         assertThat(parsed.uiPreferences().statsChartStyle()).isEqualTo(2);
@@ -436,7 +530,7 @@ class JsonTypedRoundTripTest {
                                 "info", false, "", false, false, true, "", false, false)));
 
         String json = ConfigJsonMapper.build(state);
-        ConfigState.State parsed = ConfigJsonMapper.parse(json);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(json);
 
         assertThat(json).contains("\"filterNegative\" : true");
         assertThat(parsed.uiPreferences().logPanel().filterNegative()).isTrue();

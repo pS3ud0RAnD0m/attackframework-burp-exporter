@@ -11,6 +11,7 @@ import ai.attackframework.tools.burp.utils.FileUtil;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
+import ai.attackframework.tools.burp.utils.config.ConfigParseResult;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -87,24 +88,35 @@ public final class ConfigController {
      * Reads and parses a configuration file asynchronously.
      *
      * <p>On success, forwards the parsed state to the UI on the EDT and reports status through
-     * {@link Ui#onControlStatus}. Errors are surfaced as status strings.</p>
+     * {@link Ui#onControlStatus}. Unrecognized keys and values are skipped with INFO log lines and
+     * a multi-line status summary; hard failures (invalid JSON, legacy flat sinks, invalid auth)
+     * surface as error status only.</p>
+     *
+     * <p>Caller thread: {@code SwingWorker} background thread for I/O and parse; UI callbacks on
+     * the EDT.</p>
      *
      * @param in config file to load
      */
     public void importConfigAsync(Path in) {
         Logger.logDebug("[Config] Import requested: " + in);
-        new SwingWorker<ConfigState.State, Void>() {
-            @Override protected ConfigState.State doInBackground() throws Exception {
+        new SwingWorker<ConfigParseResult, Void>() {
+            @Override protected ConfigParseResult doInBackground() throws Exception {
                 String json = FileUtil.readString(in);
                 Logger.logInfoPanelOnly("[Config] Importing configuration from " + in + ".");
                 return ConfigJsonMapper.parse(json);
             }
             @Override protected void done() {
                 try {
-                    ConfigState.State state = get();
-                    String status = "Imported configuration from: " + in;
+                    ConfigParseResult result = get();
+                    ConfigState.State state = result.state();
+                    String status = result.report().formatControlStatusSummary(in);
                     ui.onControlStatus(status);
-                    Logger.logInfoPanelOnly("[Config] " + status);
+                    for (String line : result.report().formatLogLines(20)) {
+                        Logger.logInfoPanelOnly(line);
+                    }
+                    if (result.report().isEmpty()) {
+                        Logger.logInfoPanelOnly("[Config] Imported configuration from " + in + ".");
+                    }
                     SwingUtilities.invokeLater(() -> {
                         if (ui instanceof ai.attackframework.tools.burp.ui.ConfigPanel p) {
                             p.onImportResult(state);

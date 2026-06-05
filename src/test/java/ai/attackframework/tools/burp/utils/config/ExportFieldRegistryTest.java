@@ -1,5 +1,8 @@
 package ai.attackframework.tools.burp.utils.config;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
@@ -83,6 +86,41 @@ class ExportFieldRegistryTest {
         Set<String> allowed = ExportFieldRegistry.getAllowedKeys(index, null);
         assertThat(allowed).contains("meta");
         assertThat(allowed).containsAll(ExportFieldRegistry.getToggleableFields(index));
+    }
+
+    @Test
+    void compactEnabledFieldsForExport_null_whenGloballyAllOn() {
+        Map<String, Set<String>> full = new LinkedHashMap<>();
+        for (String index : ExportFieldRegistry.INDEX_ORDER) {
+            full.put(index, Set.copyOf(ExportFieldRegistry.getToggleableFields(index)));
+        }
+        assertThat(ExportFieldRegistry.compactEnabledFieldsForExport(full)).isNull();
+        assertThat(ExportFieldRegistry.compactEnabledFieldsForExport(null)).isNull();
+    }
+
+    @Test
+    void compactEnabledFieldsForExport_keepsOnlyIndexesWithPartialOrEmptySelection() {
+        String index = "traffic";
+        List<String> toggleable = ExportFieldRegistry.getToggleableFields(index);
+        assertThat(toggleable).isNotEmpty();
+
+        Map<String, Set<String>> partialOnly = Map.of(index, Set.of(toggleable.getFirst()));
+        Map<String, Set<String>> compacted = ExportFieldRegistry.compactEnabledFieldsForExport(partialOnly);
+
+        assertThat(compacted).containsOnlyKeys(index);
+        assertThat(compacted.get(index)).containsExactly(toggleable.getFirst());
+
+        Map<String, Set<String>> fat = new LinkedHashMap<>();
+        fat.put(index, Set.of(toggleable.getFirst()));
+        fat.put("settings", Set.copyOf(ExportFieldRegistry.getToggleableFields("settings")));
+        assertThat(ExportFieldRegistry.compactEnabledFieldsForExport(fat)).containsOnlyKeys(index);
+    }
+
+    @Test
+    void compactEnabledFieldsForExport_preservesExplicitEmptyIndex() {
+        Map<String, Set<String>> compacted =
+                ExportFieldRegistry.compactEnabledFieldsForExport(Map.of("traffic", Set.of()));
+        assertThat(compacted).containsEntry("traffic", Set.of());
     }
 
     @Test

@@ -13,7 +13,7 @@ class JsonFixtureRoundTripTest {
     void example_export_fixture_matches_current_export_shape() throws IOException {
         String fixture = normalizeLineEndings(readResource("/config/example-exported-config.json"));
 
-        ConfigState.State parsed = ConfigJsonMapper.parse(fixture);
+        ConfigState.State parsed = ConfigJsonMapper.parseState(fixture);
         String rebuilt = normalizeLineEndings(ConfigJsonMapper.build(parsed)).stripTrailing();
         String expected = fixture.replace("${VERSION}", Json.MAPPER.readTree(rebuilt).path("version").asText())
                 .stripTrailing();

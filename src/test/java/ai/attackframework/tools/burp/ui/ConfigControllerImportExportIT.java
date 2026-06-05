@@ -45,7 +45,9 @@ class ConfigControllerImportExportIT {
             }
 
             CountDownLatch imp = importDone;
-            if (imp != null && (message.startsWith("Imported") || message.startsWith("Import failed"))) {
+            if (imp != null && (message.startsWith("Imported")
+                    || message.startsWith("Import failed")
+                    || message.contains("not recognized"))) {
                 imp.countDown();
             }
         }
@@ -136,10 +138,10 @@ class ConfigControllerImportExportIT {
 
         cc.importConfigAsync(tmp);
         assertThat(importDone.await(3, TimeUnit.SECONDS)).isTrue();
-        assertThat(ui.control).contains("Import failed:");
-        assertThat(ui.control).contains("sinks.files");
-        assertThat(ui.control).contains("sinks.openSearch");
-        assertThat(ui.control).contains("sinks.files.limits.totalEnabled");
+        assertThat(ui.control).contains("Imported configuration from:");
+        assertThat(ui.control).contains("not recognized and were skipped");
+        assertThat(ui.control).contains("sinks.files.limit");
+        assertThat(ui.control).contains("All other settings were applied");
     }
 
     @Test

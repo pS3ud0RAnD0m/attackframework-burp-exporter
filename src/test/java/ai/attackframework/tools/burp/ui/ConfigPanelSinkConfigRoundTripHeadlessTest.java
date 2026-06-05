@@ -84,7 +84,7 @@ class ConfigPanelSinkConfigRoundTripHeadlessTest {
             assertThat(json).doesNotContain("\"openSearchEnabled\"");
             assertThat(json).doesNotContain("\"username\" : \"stale-user\"");
 
-            ConfigState.State imported = ConfigJsonMapper.parse(json);
+            ConfigState.State imported = ConfigJsonMapper.parseState(json);
 
             SecureCredentialStore.clearAll();
             RuntimeConfig.updateState(null);
