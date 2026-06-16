@@ -1,7 +1,7 @@
 package ai.attackframework.tools.burp.sinks;
 
 import static ai.attackframework.tools.burp.testutils.LazySchedulers.peek;
-import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
+import static ai.attackframework.tools.burp.testutils.Reflect.getStaticLinkedBlockingQueue;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -198,8 +198,8 @@ class ExportReporterLifecycleTest {
             RuntimeConfig.updateState(fileExportState(root));
             RuntimeConfig.setExportRunning(true);
 
-            trafficQueue().offer(trafficDocument("https://example.test/repeater/1", "Tab 1"));
-            trafficQueue().offer(trafficDocument("https://example.test/repeater/2", "Tab 2"));
+            trafficQueue().offer(TrafficQueueEntry.from(trafficDocument("https://example.test/repeater/1", "Tab 1")));
+            trafficQueue().offer(TrafficQueueEntry.from(trafficDocument("https://example.test/repeater/2", "Tab 2")));
 
             ExportReporterLifecycle.stopAndClearPendingExportWork();
 
@@ -233,8 +233,8 @@ class ExportReporterLifecycleTest {
         return bytes;
     }
 
-    private static LinkedBlockingQueue<Map<String, Object>> trafficQueue() {
-        return LinkedBlockingQueue.class.cast(getStatic(TrafficExportQueue.class, "queue"));
+    private static LinkedBlockingQueue<TrafficQueueEntry> trafficQueue() {
+        return getStaticLinkedBlockingQueue(TrafficExportQueue.class, "queue");
     }
 
     private static ConfigState.State fileExportState(Path root) {

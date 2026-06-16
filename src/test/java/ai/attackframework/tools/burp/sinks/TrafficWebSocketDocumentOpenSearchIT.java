@@ -1,45 +1,31 @@
 package ai.attackframework.tools.burp.sinks;
 
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.pushAndAwaitIndexedDocument;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.mockito.Answers;
-import org.opensearch.client.opensearch.OpenSearchClient;
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.opensearch.client.opensearch.core.SearchRequest;
-import org.opensearch.client.opensearch.core.SearchResponse;
-import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
-import org.opensearch.client.opensearch.indices.RefreshRequest;
 
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.testutils.OpenSearchTestConfig;
-import ai.attackframework.tools.burp.utils.IndexNaming;
-import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
-import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.HttpService;
@@ -51,9 +37,9 @@ import burp.api.montoya.websocket.Direction;
  * Integration test: filtered proxy WebSocket traffic documents round-trip through OpenSearch.
  */
 @Tag("integration")
+@ResourceLock("traffic-opensearch-index")
 class TrafficWebSocketDocumentOpenSearchIT {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
     private static final String BASE_URL = OpenSearchReachable.BASE_URL;
     private final ConfigState.State previous = RuntimeConfig.getState();
 
@@ -62,22 +48,14 @@ class TrafficWebSocketDocumentOpenSearchIT {
         RuntimeConfig.updateState(previous);
         RuntimeConfig.setExportRunning(false);
         MontoyaApiProvider.set(null);
-        try {
-            OpenSearchReachable.getClient().indices().delete(
-                    new DeleteIndexRequest.Builder().index(trafficIndexName()).build());
-        } catch (IOException | RuntimeException e) {
-            Logger.logError("[TrafficWebSocketDocumentOpenSearchIT] cleanup failed", e);
-        }
+        deleteIndex("traffic");
     }
 
     @Test
     void filteredProxyWebSocketDocument_indexesNestedWebSocketShape() throws Exception {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-        OpenSearchReachable.createSelectedIndexes(List.of("traffic"));
         OpenSearchTestConfig config = OpenSearchTestConfig.get();
-        RuntimeConfig.setExportRunning(true);
-        RuntimeConfig.setExportStarting(false);
-        RuntimeConfig.updateState(new ConfigState.State(
+        ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_TRAFFIC),
                 ConfigKeys.SCOPE_ALL,
                 List.of(),
@@ -101,20 +79,15 @@ class TrafficWebSocketDocumentOpenSearchIT {
                                 "websocket.payload.text",
                                 "websocket.is_websocket",
                                 "request.url",
-                                "burp.reporting_tool"))));
+                                "burp.reporting_tool")));
 
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
         when(api.scope().isInScope(anyString())).thenReturn(true);
         MontoyaApiProvider.set(api);
 
         Map<String, Object> built = buildProxyWebSocketDocument(api);
-        PreparedExportDocument prepared =
-                ExportDocumentIdentity.prepare(trafficIndexName(), "traffic", built);
-        int pushed = OpenSearchClientWrapper.pushBulk(
-                BASE_URL, trafficIndexName(), "traffic", List.of(prepared.document()));
-        assertThat(pushed).isEqualTo(1);
-
-        Map<String, Object> stored = awaitDocumentByExportId(prepared.exportId());
+        Map<String, Object> stored = pushAndAwaitIndexedDocument(
+                "traffic", built, state, "request.url.raw", "https://example.com/ws");
         assertThat(stored).containsKeys("meta", "burp", "request", "websocket");
         assertThat(stored).doesNotContainKey("response");
         Map<?, ?> websocket = nestedMap(stored, "websocket");
@@ -125,10 +98,6 @@ class TrafficWebSocketDocumentOpenSearchIT {
         assertThat(nestedMap(websocket, "payload").get("text")).isEqualTo("ws-it");
         assertThat(nestedMap(stored, "request").get("url")).isEqualTo("https://example.com/ws");
         assertThat(nestedMap(stored, "burp").get("reporting_tool")).isEqualTo("Proxy WebSocket");
-    }
-
-    private static String trafficIndexName() {
-        return IndexNaming.indexNameForShortName("traffic");
     }
 
     private static Map<String, Object> buildProxyWebSocketDocument(MontoyaApi api) {
@@ -163,40 +132,6 @@ class TrafficWebSocketDocumentOpenSearchIT {
         when(ws.time()).thenReturn(ZonedDateTime.now());
         when(ws.annotations()).thenReturn(null);
         return ProxyWebSocketIndexReporter.buildDocument(api, ws);
-    }
-
-    private static Map<String, Object> awaitDocumentByExportId(String exportId) {
-        OpenSearchClient client = OpenSearchReachable.getClient();
-        SearchRequest request = new SearchRequest.Builder()
-                .index(trafficIndexName())
-                .size(5)
-                .build();
-        for (int attempt = 0; attempt < 80; attempt++) {
-            try {
-                client.indices().refresh(new RefreshRequest.Builder().index(trafficIndexName()).build());
-            } catch (IOException | RuntimeException ignored) {
-                // best-effort refresh
-            }
-            try {
-                SearchResponse<JsonNode> response = client.search(request, JsonNode.class);
-                for (var hit : response.hits().hits()) {
-                    JsonNode sourceNode = hit.source();
-                    if (sourceNode == null) {
-                        continue;
-                    }
-                    Map<String, Object> source =
-                            JSON.convertValue(sourceNode, new TypeReference<Map<String, Object>>() { });
-                    Map<?, ?> meta = nestedMap(source, "meta");
-                    if (exportId.equals(meta.get("export_id"))) {
-                        return source;
-                    }
-                }
-            } catch (IOException | RuntimeException e) {
-                throw new AssertionError("Search failed: " + e.getMessage(), e);
-            }
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(250));
-        }
-        throw new AssertionError("No traffic document indexed for export_id=" + exportId);
     }
 
     private static Map<?, ?> nestedMap(Map<?, ?> parent, String key) {

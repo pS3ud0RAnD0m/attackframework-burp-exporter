@@ -209,4 +209,3 @@ public final class TriStateCheckBox extends JCheckBox {
         uiBehaviorInstalled = true;
     }
 }
-

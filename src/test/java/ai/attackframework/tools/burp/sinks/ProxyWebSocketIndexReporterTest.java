@@ -10,8 +10,6 @@ import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
@@ -19,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Answers;
 
-import ai.attackframework.tools.burp.testutils.Reflect;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -319,7 +316,6 @@ class ProxyWebSocketIndexReporterTest {
         ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
 
         assertEventuallySchedulerStarted();
-        assertEventuallyPushedKey("17:42");
     }
 
     @Test
@@ -344,31 +340,6 @@ class ProxyWebSocketIndexReporterTest {
     }
 
     @Test
-    void seedPushedKeysFromCurrentHistory_recordsExistingMessageKeys() throws Exception {
-        resetRuntimeConfig();
-        RuntimeConfig.setExportRunning(true);
-        RuntimeConfig.updateState(new ConfigState.State(
-                List.of("traffic"),
-                "all",
-                List.of(),
-                new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
-                ConfigState.DEFAULT_SETTINGS_SUB,
-                List.of("proxy"),
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
-                null));
-        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
-        ProxyWebSocketMessage existing = mock(ProxyWebSocketMessage.class);
-        when(existing.webSocketId()).thenReturn(7);
-        when(existing.id()).thenReturn(12);
-        when(api.proxy().webSocketHistory()).thenReturn(List.of(existing));
-        MontoyaApiProvider.set(api);
-
-        ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
-
-        assertThat(pushedKeys().contains("7:12")).isTrue();
-    }
-
-    @Test
     void refreshLivePollSchedule_seedsHistoryOffCallerThreadBeforeStartingPoll() throws Exception {
         resetRuntimeConfig();
         RuntimeConfig.setExportRunning(true);
@@ -381,26 +352,11 @@ class ProxyWebSocketIndexReporterTest {
                 List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null));
-        CountDownLatch historyCallStarted = new CountDownLatch(1);
-        CountDownLatch releaseHistoryCall = new CountDownLatch(1);
-        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
-        ProxyWebSocketMessage existing = mock(ProxyWebSocketMessage.class);
-        when(existing.webSocketId()).thenReturn(21);
-        when(existing.id()).thenReturn(84);
-        when(api.proxy().webSocketHistory()).thenAnswer(invocation -> {
-            historyCallStarted.countDown();
-            releaseHistoryCall.await(2, TimeUnit.SECONDS);
-            return List.of(existing);
-        });
-        MontoyaApiProvider.set(api);
+        assertThat(schedulerField().isStarted()).isFalse();
 
         ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
 
-        assertThat(historyCallStarted.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(schedulerField().isStarted()).isFalse();
-        releaseHistoryCall.countDown();
         assertEventuallySchedulerStarted();
-        assertEventuallyPushedKey("21:84");
     }
 
     @Test
@@ -423,12 +379,17 @@ class ProxyWebSocketIndexReporterTest {
         ProxyWebSocketMessage rotated = webSocketMessage(7, 2);
         when(api.proxy().webSocketHistory()).thenReturn(List.of(existing)).thenReturn(List.of(rotated));
         MontoyaApiProvider.set(api);
+        TrafficExportQueue.clearPendingWork();
 
-        ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
-        ProxyWebSocketIndexReporter.pushNewItemsOnly();
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            ProxyWebSocketIndexReporter.pushNewItemsOnly();
+            assertThat(liveHistoryCursor()).isEqualTo(1);
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
 
-        assertThat(pushedKeys().contains("7:1")).isTrue();
-        assertThat(pushedKeys().contains("7:2")).isTrue();
+            ProxyWebSocketIndexReporter.pushNewItemsOnly();
+            assertThat(liveHistoryCursor()).isEqualTo(1);
+            assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(2);
+        });
     }
 
     @Test
@@ -453,7 +414,6 @@ class ProxyWebSocketIndexReporterTest {
 
         ProxyWebSocketIndexReporter.pushNewItemsOnly();
 
-        assertThat(pushedKeys()).doesNotContain("5:9");
         assertThat(liveHistoryCursor()).isZero();
         TrafficExportQueue.stopWorker();
         assertThat(TrafficExportQueue.getCurrentSize()).isZero();
@@ -469,7 +429,7 @@ class ProxyWebSocketIndexReporterTest {
                 null));
         TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
             ProxyWebSocketIndexReporter.pushNewItemsOnly();
-            assertThat(pushedKeys()).contains("5:9");
+            assertThat(liveHistoryCursor()).isEqualTo(1);
             assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
         });
     }
@@ -492,14 +452,13 @@ class ProxyWebSocketIndexReporterTest {
         MontoyaApiProvider.set(api);
         setLiveHistoryCursor(10);
         setLiveHistoryTailKey("1:10");
-        rememberPushedKeyForTest("1:10");
         List<ProxyWebSocketMessage> shrunk = List.of(webSocketMessage(2, 1), webSocketMessage(2, 2));
         when(api.proxy().webSocketHistory()).thenReturn(shrunk);
         TrafficExportQueue.clearPendingWork();
 
         TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
             ProxyWebSocketIndexReporter.pushNewItemsOnly();
-            assertThat(pushedKeys()).contains("2:1", "2:2");
+            assertThat(liveHistoryCursor()).isEqualTo(2);
             assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(2);
         });
     }
@@ -528,55 +487,18 @@ class ProxyWebSocketIndexReporterTest {
 
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
         when(api.scope().isInScope(anyString())).thenReturn(true);
-        when(api.proxy().webSocketHistory()).thenReturn(history).thenReturn(extended);
+        when(api.proxy().webSocketHistory()).thenReturn(extended);
         MontoyaApiProvider.set(api);
 
-        ProxyWebSocketIndexReporter.seedPushedKeysFromCurrentHistory();
+        setLiveHistoryCursor(100);
+        setLiveHistoryTailKey("1:100");
         assertThat(liveHistoryCursor()).isEqualTo(100);
-        assertThat(pushedKeys()).contains("1:100");
 
         TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
             ProxyWebSocketIndexReporter.pushNewItemsOnly();
-            assertThat(pushedKeys()).contains("1:101");
             assertThat(liveHistoryCursor()).isEqualTo(101);
             assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
         });
-    }
-
-    @Test
-    void trimPushedKeysIfNeeded_skipsKeysStillPresentInProxyWebSocketHistory() throws Exception {
-        ProxyWebSocketIndexReporter.stop();
-        rememberPushedKeyForTest("1:1");
-        rememberPushedKeyForTest("1:2");
-        rememberPushedKeyForTest("1:3");
-
-        ProxyWebSocketMessage retained = webSocketMessage(1, 1);
-        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
-        when(api.proxy().webSocketHistory()).thenReturn(List.of(retained));
-        MontoyaApiProvider.set(api);
-
-        ProxyWebSocketIndexReporter.trimPushedKeysIfNeeded(2);
-
-        assertThat(pushedKeys()).contains("1:1", "1:3").doesNotContain("1:2");
-    }
-
-    @Test
-    void trimPushedKeysIfNeeded_retainsAllKeysWhenEveryCandidateStillInHistory() throws Exception {
-        ProxyWebSocketIndexReporter.stop();
-        rememberPushedKeyForTest("1:1");
-        rememberPushedKeyForTest("1:2");
-        rememberPushedKeyForTest("1:3");
-
-        ProxyWebSocketMessage first = webSocketMessage(1, 1);
-        ProxyWebSocketMessage second = webSocketMessage(1, 2);
-        ProxyWebSocketMessage third = webSocketMessage(1, 3);
-        MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
-        when(api.proxy().webSocketHistory()).thenReturn(List.of(first, second, third));
-        MontoyaApiProvider.set(api);
-
-        ProxyWebSocketIndexReporter.trimPushedKeysIfNeeded(2);
-
-        assertThat(pushedKeys()).contains("1:1", "1:2", "1:3");
     }
 
     @Test
@@ -610,20 +532,6 @@ class ProxyWebSocketIndexReporterTest {
         return (LazyScheduler) field.get(null);
     }
 
-    private static Set<String> pushedKeys() throws Exception {
-        Set<?> raw = Reflect.getStatic(ProxyWebSocketIndexReporter.class, "pushedKeys", Set.class);
-        if (!(raw instanceof Set<?> set)) {
-            return Set.of();
-        }
-        Set<String> keys = new java.util.LinkedHashSet<>();
-        for (Object element : set) {
-            if (element instanceof String key) {
-                keys.add(key);
-            }
-        }
-        return keys;
-    }
-
     private static int liveHistoryCursor() throws Exception {
         var field = ProxyWebSocketIndexReporter.class.getDeclaredField("liveHistoryCursor");
         field.setAccessible(true);
@@ -642,12 +550,6 @@ class ProxyWebSocketIndexReporterTest {
         field.set(null, value);
     }
 
-    private static void rememberPushedKeyForTest(String key) throws Exception {
-        var method = ProxyWebSocketIndexReporter.class.getDeclaredMethod("rememberPushedKey", String.class);
-        method.setAccessible(true);
-        method.invoke(null, key);
-    }
-
     private static void assertEventuallySchedulerStarted() throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (System.nanoTime() < deadline) {
@@ -657,17 +559,6 @@ class ProxyWebSocketIndexReporterTest {
             Thread.sleep(10);
         }
         assertThat(schedulerField().isStarted()).isTrue();
-    }
-
-    private static void assertEventuallyPushedKey(String key) throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-        while (System.nanoTime() < deadline) {
-            if (pushedKeys().contains(key)) {
-                return;
-            }
-            Thread.sleep(10);
-        }
-        assertThat(pushedKeys().contains(key)).isTrue();
     }
 
     static ProxyWebSocketMessage webSocketMessage(int webSocketId, int messageId) {

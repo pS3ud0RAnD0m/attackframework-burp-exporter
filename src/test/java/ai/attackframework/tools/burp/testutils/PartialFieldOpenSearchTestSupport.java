@@ -9,6 +9,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch._types.FieldValue;
+import org.opensearch.client.opensearch._types.query_dsl.Query;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
@@ -22,6 +24,7 @@ import ai.attackframework.tools.burp.sinks.OpenSearchSink;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.BulkPushOutcome;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
@@ -33,8 +36,15 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 public final class PartialFieldOpenSearchTestSupport {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Object TRAFFIC_INDEX_IT_LOCK = new Object();
+    private static final int AWAIT_INDEX_ATTEMPTS = 120;
+    private static final long AWAIT_INDEX_SLEEP_MS = 250L;
 
     private PartialFieldOpenSearchTestSupport() {}
+
+    private static Object lockFor(String indexShortName) {
+        return "traffic".equals(indexShortName) ? TRAFFIC_INDEX_IT_LOCK : indexShortName.intern();
+    }
 
     /** Configured cluster base URL ({@link OpenSearchTestConfig#get()}). */
     public static String baseUrl() {
@@ -49,10 +59,14 @@ public final class PartialFieldOpenSearchTestSupport {
 
     /**
      * Creates the OpenSearch index for {@code indexShortName} using mapping resources.
-     *
-     * @param indexShortName index short name (for example {@code "traffic"})
      */
     public static void createIndex(String indexShortName) {
+        synchronized (lockFor(indexShortName)) {
+            createIndexLocked(indexShortName);
+        }
+    }
+
+    private static void createIndexLocked(String indexShortName) {
         List<OpenSearchSink.IndexResult> results =
                 OpenSearchReachable.createSelectedIndexes(List.of(indexShortName));
         assertThat(results).isNotEmpty();
@@ -63,12 +77,14 @@ public final class PartialFieldOpenSearchTestSupport {
         assertThat(created).as(indexShortName + " index created or exists").isTrue();
     }
 
-    /**
-     * Deletes the test index for {@code indexShortName}; ignores missing-index errors.
-     *
-     * @param indexShortName index short name
-     */
+    /** Deletes the test index for {@code indexShortName}; ignores missing-index errors. */
     public static void deleteIndex(String indexShortName) {
+        synchronized (lockFor(indexShortName)) {
+            deleteIndexLocked(indexShortName);
+        }
+    }
+
+    private static void deleteIndexLocked(String indexShortName) {
         String indexName = IndexNaming.indexNameForShortName(indexShortName);
         try {
             OpenSearchReachable.getClient().indices().delete(
@@ -80,13 +96,35 @@ public final class PartialFieldOpenSearchTestSupport {
 
     /**
      * Applies {@code runtimeState}, pushes one filtered document, and returns the prepared export.
-     *
-     * @param indexShortName index short name
-     * @param built unfiltered document map (filtered during push)
-     * @param runtimeState export configuration including enabled field paths
-     * @return prepared export identity for search assertions
      */
     public static PreparedExportDocument pushOneDocument(
+            String indexShortName,
+            Map<String, Object> built,
+            ConfigState.State runtimeState) {
+        synchronized (lockFor(indexShortName)) {
+            return pushOneDocumentLocked(indexShortName, built, runtimeState);
+        }
+    }
+
+    /**
+     * Pushes one document and polls until the matching indexed document is visible, atomically
+     * for {@code indexShortName} so parallel integration tests cannot delete the index mid-flight.
+     */
+    public static Map<String, Object> pushAndAwaitIndexedDocument(
+            String indexShortName,
+            Map<String, Object> built,
+            ConfigState.State runtimeState,
+            String matchField,
+            Object matchValue) {
+        synchronized (lockFor(indexShortName)) {
+            deleteIndexLocked(indexShortName);
+            createIndexLocked(indexShortName);
+            pushOneDocumentLocked(indexShortName, built, runtimeState);
+            return awaitIndexedDocumentLocked(indexShortName, matchField, matchValue);
+        }
+    }
+
+    private static PreparedExportDocument pushOneDocumentLocked(
             String indexShortName,
             Map<String, Object> built,
             ConfigState.State runtimeState) {
@@ -96,27 +134,60 @@ public final class PartialFieldOpenSearchTestSupport {
         String indexName = IndexNaming.indexNameForShortName(indexShortName);
         PreparedExportDocument prepared =
                 ExportDocumentIdentity.prepare(indexName, indexShortName, built);
-        int pushed = OpenSearchClientWrapper.pushBulk(
-                baseUrl(), indexName, indexShortName, List.of(built));
-        assertThat(pushed).as("bulk push to " + indexShortName).isEqualTo(1);
+        BulkPushOutcome outcome = OpenSearchClientWrapper.pushPreparedBulk(
+                baseUrl(), indexName, indexShortName, List.of(prepared));
+        assertThat(outcome.exportedCount())
+                .as("OpenSearch exported docs for " + indexShortName)
+                .isEqualTo(1);
+        refreshIndexForSearch(indexShortName);
         return prepared;
     }
 
+    private static void refreshIndexForSearch(String indexShortName) {
+        String indexName = IndexNaming.indexNameForShortName(indexShortName);
+        try {
+            OpenSearchReachable.getClient().indices().refresh(
+                    new RefreshRequest.Builder().index(indexName).build());
+        } catch (IOException | RuntimeException ignored) {
+            // Best-effort; polling loop retries refresh.
+        }
+    }
+
     /**
-     * Polls OpenSearch until the document with {@code exportId} is visible, or fails the test.
+     * Polls OpenSearch until at least one document is visible in {@code indexShortName}.
      *
-     * @param indexShortName index short name
-     * @param exportId {@code meta.export_id} value
-     * @return stored document source map
+     * <p>Prefer {@link #awaitIndexedDocument(String, String, Object)} when parallel integration
+     * tests share an index.</p>
      */
-    public static Map<String, Object> awaitDocumentByExportId(String indexShortName, String exportId) {
+    public static Map<String, Object> awaitSingleIndexedDocument(String indexShortName) {
+        return awaitIndexedDocument(indexShortName, null, null);
+    }
+
+    /**
+     * Polls OpenSearch until a document matching {@code matchField}={@code matchValue} is visible.
+     */
+    public static Map<String, Object> awaitIndexedDocument(
+            String indexShortName, String matchField, Object matchValue) {
+        synchronized (lockFor(indexShortName)) {
+            return awaitIndexedDocumentLocked(indexShortName, matchField, matchValue);
+        }
+    }
+
+    private static Map<String, Object> awaitIndexedDocumentLocked(
+            String indexShortName, String matchField, Object matchValue) {
         String indexName = IndexNaming.indexNameForShortName(indexShortName);
         OpenSearchClient client = OpenSearchReachable.getClient();
-        SearchRequest request = new SearchRequest.Builder()
+        SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                 .index(indexName)
-                .size(5)
-                .build();
-        for (int attempt = 0; attempt < 80; attempt++) {
+                .size(1);
+        if (matchField != null && matchValue != null) {
+            Query termQuery = Query.of(q -> q.term(t -> t
+                    .field(matchField)
+                    .value(toFieldValue(matchValue))));
+            requestBuilder.query(termQuery);
+        }
+        SearchRequest request = requestBuilder.build();
+        for (int attempt = 0; attempt < AWAIT_INDEX_ATTEMPTS; attempt++) {
             try {
                 client.indices().refresh(new RefreshRequest.Builder().index(indexName).build());
             } catch (IOException | RuntimeException ignored) {
@@ -124,24 +195,40 @@ public final class PartialFieldOpenSearchTestSupport {
             }
             try {
                 SearchResponse<JsonNode> response = client.search(request, JsonNode.class);
-                for (var hit : response.hits().hits()) {
-                    JsonNode sourceNode = hit.source();
-                    if (sourceNode == null) {
-                        continue;
-                    }
-                    Map<String, Object> source =
-                            JSON.convertValue(sourceNode, new TypeReference<Map<String, Object>>() { });
-                    Map<?, ?> meta = nestedMap(source, "meta");
-                    if (exportId.equals(meta.get("export_id"))) {
-                        return source;
+                if (!response.hits().hits().isEmpty()) {
+                    JsonNode sourceNode = response.hits().hits().getFirst().source();
+                    if (sourceNode != null) {
+                        return JSON.convertValue(sourceNode, new TypeReference<Map<String, Object>>() { });
                     }
                 }
             } catch (IOException | RuntimeException e) {
                 throw new AssertionError("Search failed: " + e.getMessage(), e);
             }
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(250));
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(AWAIT_INDEX_SLEEP_MS));
         }
-        throw new AssertionError("No document indexed for export_id=" + exportId + " in " + indexShortName);
+        String detail = matchField == null
+                ? indexShortName
+                : indexShortName + " where " + matchField + "=" + matchValue;
+        throw new AssertionError("No document indexed in " + detail);
+    }
+
+    private static FieldValue toFieldValue(Object value) {
+        if (value instanceof String s) {
+            return FieldValue.of(s);
+        }
+        if (value instanceof Boolean b) {
+            return FieldValue.of(b);
+        }
+        if (value instanceof Integer i) {
+            return FieldValue.of(i.longValue());
+        }
+        if (value instanceof Long l) {
+            return FieldValue.of(l);
+        }
+        if (value instanceof Double d) {
+            return FieldValue.of(d);
+        }
+        return FieldValue.of(String.valueOf(value));
     }
 
     /** Asserts {@code key} is a nested map and returns it. */

@@ -5,6 +5,9 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -16,7 +19,7 @@ class RetryQueueTest {
     void bytesEstimate_returnsZeroWhenEmptyOrAbsent() {
         RetryQueue queue = new RetryQueue(10);
         assertThat(queue.bytesEstimate("never-seen")).isZero();
-        queue.offer("seen", Map.of("k", "v"));
+        queue.offer("seen", prepared("seen", Map.of("k", "v")));
         queue.pollBatch("seen", 10);
         assertThat(queue.bytesEstimate("seen")).isZero();
     }
@@ -25,12 +28,14 @@ class RetryQueueTest {
     void bytesEstimate_tracksDocumentSize() {
         RetryQueue queue = new RetryQueue(10);
         String indexName = "size-index";
-        queue.offer(indexName, Map.of("short", "x"));
+        queue.offer(indexName, prepared(indexName, Map.of("short", "x")));
         long oneDocBytes = queue.bytesEstimate(indexName);
         assertThat(oneDocBytes).isPositive();
-        queue.offer(indexName, Map.of("another", "y"));
+        assertThat(oneDocBytes).isEqualTo(queue.computeBytesEstimateByWalk(indexName));
+        queue.offer(indexName, prepared(indexName, Map.of("another", "y")));
         long twoDocsBytes = queue.bytesEstimate(indexName);
         assertThat(twoDocsBytes).isGreaterThan(oneDocBytes);
+        assertThat(twoDocsBytes).isEqualTo(queue.computeBytesEstimateByWalk(indexName));
     }
 
     @Test
@@ -38,10 +43,11 @@ class RetryQueueTest {
         RetryQueue queue = new RetryQueue(100);
         String indexName = "test-index";
         Map<String, Object> doc = Map.of("id", "1");
-        assertThat(queue.offer(indexName, doc)).isTrue();
+        PreparedExportDocument prepared = prepared(indexName, doc);
+        assertThat(queue.offer(indexName, prepared)).isTrue();
         assertThat(queue.size(indexName)).isEqualTo(1);
-        List<Map<String, Object>> batch = queue.pollBatch(indexName, 10);
-        assertThat(batch).hasSize(1).containsExactly(doc);
+        List<PreparedExportDocument> batch = queue.pollBatch(indexName, 10);
+        assertThat(batch).containsExactly(prepared);
         assertThat(queue.isEmpty(indexName)).isTrue();
     }
 
@@ -50,9 +56,9 @@ class RetryQueueTest {
         RetryQueue queue = new RetryQueue(2);
         String indexName = "test-index";
         int added = queue.offerAll(indexName, List.of(
-                Map.of("a", 1),
-                Map.of("b", 2),
-                Map.of("c", 3)));
+                prepared(indexName, Map.of("a", 1)),
+                prepared(indexName, Map.of("b", 2)),
+                prepared(indexName, Map.of("c", 3))));
         assertThat(added).isEqualTo(2);
         assertThat(queue.size(indexName)).isEqualTo(2);
     }
@@ -61,8 +67,11 @@ class RetryQueueTest {
     void pollBatch_respectsMaxSize() {
         RetryQueue queue = new RetryQueue(100);
         String indexName = "test-index";
-        queue.offerAll(indexName, List.of(Map.of("a", 1), Map.of("b", 2), Map.of("c", 3)));
-        List<Map<String, Object>> batch = queue.pollBatch(indexName, 2);
+        queue.offerAll(indexName, List.of(
+                prepared(indexName, Map.of("a", 1)),
+                prepared(indexName, Map.of("b", 2)),
+                prepared(indexName, Map.of("c", 3))));
+        List<PreparedExportDocument> batch = queue.pollBatch(indexName, 2);
         assertThat(batch).hasSize(2);
         assertThat(queue.size(indexName)).isEqualTo(1);
     }
@@ -70,7 +79,7 @@ class RetryQueueTest {
     @Test
     void pollBatch_emptyIndex_returnsEmptyList() {
         RetryQueue queue = new RetryQueue(100);
-        List<Map<String, Object>> batch = queue.pollBatch("no-such-index", 10);
+        List<PreparedExportDocument> batch = queue.pollBatch("no-such-index", 10);
         assertThat(batch).isEmpty();
     }
 
@@ -81,9 +90,9 @@ class RetryQueueTest {
         assertThat(queue.oldestEnqueuedAtMs(indexName)).isEqualTo(-1L);
 
         long before = System.currentTimeMillis();
-        queue.offer(indexName, Map.of("a", 1));
+        queue.offer(indexName, prepared(indexName, Map.of("a", 1)));
         Thread.sleep(2);
-        queue.offer(indexName, Map.of("b", 2));
+        queue.offer(indexName, prepared(indexName, Map.of("b", 2)));
         long after = System.currentTimeMillis();
 
         long head = queue.oldestEnqueuedAtMs(indexName);
@@ -95,5 +104,9 @@ class RetryQueueTest {
 
         queue.pollBatch(indexName, 10);
         assertThat(queue.oldestEnqueuedAtMs(indexName)).isEqualTo(-1L);
+    }
+
+    private static PreparedExportDocument prepared(String indexName, Map<String, Object> document) {
+        return ExportDocumentIdentity.prepare(indexName, "traffic", document);
     }
 }

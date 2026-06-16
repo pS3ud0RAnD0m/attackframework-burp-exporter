@@ -181,8 +181,8 @@ class LoggerTest {
 
             Logger.resetState();
 
-            assertThat(List.class.cast(Reflect.getStatic(Logger.class, "LISTENERS"))).isEmpty();
-            assertThat(List.class.cast(Reflect.getStatic(Logger.class, "REPLAY_BUFFER"))).isEmpty();
+            assertThat(Reflect.getStaticList(Logger.class, "LISTENERS")).isEmpty();
+            assertThat(Reflect.getStaticList(Logger.class, "REPLAY_BUFFER")).isEmpty();
             assertThat(((java.util.concurrent.atomic.AtomicLong) Reflect.getStatic(Logger.class, "REPLAY_SEQ")).get())
                     .isZero();
 

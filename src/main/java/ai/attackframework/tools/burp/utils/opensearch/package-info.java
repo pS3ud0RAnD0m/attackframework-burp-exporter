@@ -1,30 +1,31 @@
 /**
  * OpenSearch transport utilities shared by all sinks that push to OpenSearch.
  *
- * <p>Two bulk entry points serve different workloads:</p>
+ * <p>Three bulk strategies serve different workloads:</p>
  * <ul>
- *   <li>{@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper#pushBulk}
- *       — retry-coordinated bulk push used by one-shot snapshot reporters (Proxy History,
- *       Sitemap, Findings). Integrates with
- *       {@link ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator} so
- *       transient failures pause inbound work and later retry queued batches without
- *       double-counting.</li>
+ *   <li>{@link ai.attackframework.tools.burp.utils.opensearch.PreparedBulkSender} and
+ *       {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper#pushPreparedBulk}
+ *       — pre-serialized NDJSON over raw HTTP. Used by
+ *       {@link ai.attackframework.tools.burp.utils.concurrent.SnapshotExportEngine} snapshot
+ *       reporters (Proxy History, Sitemap initial, Findings backlog, Proxy WebSocket historic)
+ *       and by the {@link ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator}
+ *       drain thread after re-prepare.</li>
  *   <li>{@link ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender} — streaming
  *       drain used by the live traffic queue
- *       ({@link ai.attackframework.tools.burp.sinks.TrafficExportQueue}). Writes NDJSON
- *       incrementally to avoid holding large batches in memory for Proxy and Repeater live
- *       traffic.</li>
+ *       ({@link ai.attackframework.tools.burp.sinks.TrafficExportQueue}). Reuses
+ *       {@code bulkNdjsonBytes} from prepare when posting each chunk.</li>
+ *   <li>{@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper#doPushBulkWithDetails}
+ *       — Java-client {@code BulkRequest} fallback for callers without pre-serialized bytes.</li>
  * </ul>
  *
  * <p>Batch sizing is governed by
- * {@link ai.attackframework.tools.burp.utils.opensearch.BatchSizeController}, which adapts to
- * observed bulk latency to keep pushes within a safe size/time envelope. Both bulk paths share
- * this controller so sustained backpressure applies uniformly across reporters.</p>
+ * {@link ai.attackframework.tools.burp.utils.opensearch.BatchSizeController} for live traffic and
+ * most incremental reporters. Proxy History snapshot uses local chunk targets (100–1500) with
+ * live-queue and GC backpressure.</p>
  *
- * <p>Snapshot and live paths both converge on
- * {@link ai.attackframework.tools.burp.sinks.FileExportService} for file output and on
- * {@link ai.attackframework.tools.burp.sinks.BulkOutcomeRecorder} /
- * {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket} for counter accounting so
- * stats remain consistent regardless of which bulk strategy runs.</p>
+ * <p>All paths share
+ * {@link ai.attackframework.tools.burp.utils.opensearch.BulkNdjsonResponseParser} for per-item
+ * failure logging and converge on {@link ai.attackframework.tools.burp.sinks.FileExportService}
+ * for file output.</p>
  */
 package ai.attackframework.tools.burp.utils.opensearch;

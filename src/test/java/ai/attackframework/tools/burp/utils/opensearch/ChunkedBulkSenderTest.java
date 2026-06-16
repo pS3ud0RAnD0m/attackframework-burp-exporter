@@ -2,14 +2,19 @@ package ai.attackframework.tools.burp.utils.opensearch;
 
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import ai.attackframework.tools.burp.sinks.TrafficQueueEntry;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +68,18 @@ class ChunkedBulkSenderTest {
     }
 
     @Test
+    void parseBulkResponse_classifiesCreatedAndUpdatedInBreakdown() {
+        String body = "{\"took\":1,\"errors\":false,\"items\":["
+                + "{\"index\":{\"_index\":\"t\",\"status\":201,\"result\":\"created\"}},"
+                + "{\"index\":{\"_index\":\"t\",\"status\":200,\"result\":\"updated\"}}]}";
+        ChunkedBulkSender.Result result = ChunkedBulkSender.parseBulkResponse(body, 2);
+
+        assertThat(result.breakdown.created()).isEqualTo(1);
+        assertThat(result.breakdown.updated()).isEqualTo(1);
+        assertThat(result.successCount).isEqualTo(2);
+    }
+
+    @Test
     void parseBulkResponse_oneFailure_countsCorrectly() {
         String body = "{\"took\":1,\"errors\":true,\"items\":["
                 + "{\"index\":{\"_index\":\"t\",\"status\":201}},"
@@ -75,7 +92,7 @@ class ChunkedBulkSenderTest {
 
     @Test
     void push_emptyQueue_returnsZeroAttempted_afterShortWait() {
-        LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
+        LinkedBlockingQueue<TrafficQueueEntry> queue = new LinkedBlockingQueue<>();
         ChunkedBulkSender.Result r = ChunkedBulkSender.push(
                 "http://opensearch.url:9999", "test-index", "traffic", queue, 10, 5 * 1024 * 1024, 50);
         assertThat(r.attemptedCount).isZero();
@@ -84,45 +101,54 @@ class ChunkedBulkSenderTest {
 
     @Test
     void ndjsonQueueInputStream_stillWritesReservedFirstDoc_afterInitialDelay() throws Exception {
-        LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
-        Map<String, Object> firstDoc = new LinkedHashMap<>();
-        firstDoc.put("burp", Map.of("reporting_tool", "Repeater Tabs"));
-        firstDoc.put("meta", new LinkedHashMap<>());
+        LinkedBlockingQueue<TrafficQueueEntry> queue = new LinkedBlockingQueue<>();
+        TrafficQueueEntry firstEntry = TrafficQueueEntry.from(trafficDoc("Repeater Tabs"));
 
-        Class<?> streamClass = Class.forName(
-                "ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender$NdjsonQueueInputStream");
-        Constructor<?> constructor = streamClass.getDeclaredConstructor(
-                String.class,
-                String.class,
-                java.util.concurrent.BlockingQueue.class,
-                Map.class,
-                int.class,
-                long.class,
-                long.class,
-                AtomicInteger.class,
-                AtomicLong.class);
-        constructor.setAccessible(true);
-
-        AtomicInteger attempted = new AtomicInteger();
-        AtomicLong attemptedBytes = new AtomicLong();
-        InputStream stream = (InputStream) constructor.newInstance(
-                "attackframework-tool-burp-traffic",
-                "traffic",
+        StreamHarness harness = newStreamHarness(
                 queue,
-                firstDoc,
+                firstEntry,
                 10,
                 5 * 1024 * 1024L,
-                1L,
-                attempted,
-                attemptedBytes);
+                1L);
 
         Thread.sleep(5L);
 
-        byte[] payload = stream.readAllBytes();
+        byte[] payload = harness.stream().readAllBytes();
         assertThat(payload).isNotEmpty();
         assertThat(new String(payload, StandardCharsets.UTF_8))
                 .contains("\"burp\":{\"reporting_tool\":\"Repeater Tabs\"}");
-        assertThat(attempted.get()).isEqualTo(1);
+        assertThat(harness.attempted().get()).isEqualTo(1);
+    }
+
+    @Test
+    void ndjsonQueueInputStream_capturesAcceptedDocsForBatchFileEmit() throws Exception {
+        LinkedBlockingQueue<TrafficQueueEntry> queue = new LinkedBlockingQueue<>();
+        TrafficQueueEntry firstEntry = TrafficQueueEntry.from(trafficDoc("Repeater Tabs"));
+        StreamHarness harness = newStreamHarness(queue, firstEntry, 10, 5 * 1024 * 1024L, 1L);
+
+        harness.stream().readAllBytes();
+
+        List<?> captured = capturedDocumentsForFileEmit(harness.stream());
+        assertThat(captured).hasSize(1);
+        PreparedExportDocument capturedDocument = (PreparedExportDocument) captured.getFirst();
+        assertThat(capturedDocument.document())
+                .extractingByKey("burp")
+                .isEqualTo(Map.of("reporting_tool", "Repeater Tabs"));
+    }
+
+    @Test
+    void ndjsonQueueInputStream_doesNotCaptureSizeCappedPutBackDoc() throws Exception {
+        LinkedBlockingQueue<TrafficQueueEntry> queue = new LinkedBlockingQueue<>();
+        TrafficQueueEntry firstEntry = TrafficQueueEntry.from(trafficDoc("Repeater Tabs"));
+        TrafficQueueEntry secondEntry = TrafficQueueEntry.from(trafficDoc("Proxy"));
+        queue.offer(secondEntry);
+        long maxBytes = firstEntry.prepared().estimatedBulkBytes() + 1L;
+        StreamHarness harness = newStreamHarness(queue, firstEntry, 10, maxBytes, TimeUnit.SECONDS.toNanos(1));
+
+        harness.stream().readAllBytes();
+
+        assertThat(capturedDocumentsForFileEmit(harness.stream())).hasSize(1);
+        assertThat(queue).containsExactly(secondEntry);
     }
 
     @Test
@@ -169,5 +195,56 @@ class ChunkedBulkSenderTest {
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 null
         );
+    }
+
+    private static Map<String, Object> trafficDoc(String reportingTool) {
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("burp", Map.of("reporting_tool", reportingTool));
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("schema_version", "1");
+        doc.put("meta", meta);
+        return doc;
+    }
+
+    private static StreamHarness newStreamHarness(
+            LinkedBlockingQueue<TrafficQueueEntry> queue,
+            TrafficQueueEntry firstEntry,
+            int maxBatch,
+            long maxBytes,
+            long maxWaitNanos) throws Exception {
+        Class<?> streamClass = Class.forName(
+                "ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender$NdjsonQueueInputStream");
+        Constructor<?> constructor = streamClass.getDeclaredConstructor(
+                java.util.concurrent.BlockingQueue.class,
+                TrafficQueueEntry.class,
+                int.class,
+                long.class,
+                long.class,
+                AtomicInteger.class,
+                AtomicLong.class);
+        constructor.setAccessible(true);
+        AtomicInteger attempted = new AtomicInteger();
+        AtomicLong attemptedBytes = new AtomicLong();
+        InputStream stream = (InputStream) constructor.newInstance(
+                queue,
+                firstEntry,
+                maxBatch,
+                maxBytes,
+                maxWaitNanos,
+                attempted,
+                attemptedBytes);
+        return new StreamHarness(stream, attempted, attemptedBytes);
+    }
+
+    private static List<?> capturedDocumentsForFileEmit(InputStream stream) throws Exception {
+        Method method = stream.getClass().getDeclaredMethod("acceptedDocumentsForFileEmit");
+        method.setAccessible(true);
+        return (List<?>) method.invoke(stream);
+    }
+
+    private record StreamHarness(
+            InputStream stream,
+            AtomicInteger attempted,
+            AtomicLong attemptedBytes) {
     }
 }

@@ -8,9 +8,6 @@ import ai.attackframework.tools.burp.utils.Version;
 
 /**
  * Shared exporter metadata values written under {@code meta}.
- *
- * <p>The extension version is static for the loaded extension, so cache it once for document
- * builders. {@code indexed_at} remains per document because it records emission time.</p>
  */
 final class ExportMetaFields {
 

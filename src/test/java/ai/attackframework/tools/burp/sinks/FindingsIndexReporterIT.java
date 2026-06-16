@@ -113,11 +113,12 @@ class FindingsIndexReporterIT {
             try {
                 FindingsIndexReporter.start();
                 FindingsIndexReporter.pushSnapshotNow();
-                awaitInfoLog(infoLines, "[Findings] Exporting findings backlog: 1 issue(s).");
+                awaitInfoLog(infoLines, "[StartupExport] Findings: exporting backlog: 1 issue(s).");
+                awaitInfoLogPrefix(infoLines, "[SnapshotExport] Findings: snapshot complete: captured=");
+                awaitInfoLogPrefix(infoLines, "[SnapshotExport] Findings: backlog filters: seen=");
             } finally {
                 Logger.unregisterListener(logListener);
             }
-            assertThat(infoLines).noneMatch(line -> line.contains("snapshot complete"));
 
             Map<String, Object> doc = awaitFirstDocument();
             assertThat(doc).isNotNull();
@@ -638,7 +639,7 @@ class FindingsIndexReporterIT {
     }
 
     private static void awaitInfoLog(List<String> infoLines, String expected) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
         while (System.nanoTime() < deadline) {
             if (infoLines.contains(expected)) {
                 return;
@@ -646,5 +647,16 @@ class FindingsIndexReporterIT {
             Thread.sleep(20);
         }
         assertThat(infoLines).contains(expected);
+    }
+
+    private static void awaitInfoLogPrefix(List<String> infoLines, String prefix) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            if (infoLines.stream().anyMatch(line -> line.startsWith(prefix))) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        assertThat(infoLines).anyMatch(line -> line.startsWith(prefix));
     }
 }

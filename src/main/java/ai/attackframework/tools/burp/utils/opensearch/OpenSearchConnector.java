@@ -239,7 +239,7 @@ public final class OpenSearchConnector {
                 entry.getValue()._transport().close();
             } catch (IOException | RuntimeException e) {
                 failures.incrementAndGet();
-                Logger.logDebug("OpenSearchConnector: failed to close transport for "
+                Logger.logDebug("[OpenSearch] OpenSearchConnector failed to close transport for "
                         + redactKey(entry.getKey()) + ": "
                         + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }
@@ -252,7 +252,7 @@ public final class OpenSearchConnector {
                 entry.getValue().close();
             } catch (IOException | RuntimeException e) {
                 failures.incrementAndGet();
-                Logger.logDebug("OpenSearchConnector: failed to close classic client for "
+                Logger.logDebug("[OpenSearch] OpenSearchConnector failed to close classic client for "
                         + redactKey(entry.getKey()) + ": "
                         + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }

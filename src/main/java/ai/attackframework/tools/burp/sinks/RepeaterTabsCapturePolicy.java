@@ -4,7 +4,7 @@ package ai.attackframework.tools.burp.sinks;
  * Shared capture-policy helpers for startup Repeater-tab observations.
  *
  * <p>This collaborator centralizes the logic that decides whether a startup editor callback maps to
- * a logical historic Repeater tab, what dedupe key that observation should use, and how metadata
+ * a logical historic Repeater tab, what capture key that observation should use, and how metadata
  * should be described in trace logs.</p>
  */
 final class RepeaterTabsCapturePolicy {
@@ -64,7 +64,7 @@ final class RepeaterTabsCapturePolicy {
     /**
      * Capture-policy outcome for one observed Repeater-tab binding.
      *
-     * @param captureKey dedupe/export key for this observation
+     * @param captureKey capture key for this observation
      * @param startupSlotKey logical startup slot key when available
      * @param ignoreAnonymousStartupBinding whether this startup-only binding should be suppressed
      * @param ignoreAuxiliaryTabNameBinding whether the inferred tab name is a right-rail view label

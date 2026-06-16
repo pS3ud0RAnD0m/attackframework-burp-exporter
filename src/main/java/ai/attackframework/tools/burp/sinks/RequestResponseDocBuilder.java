@@ -723,7 +723,7 @@ public final class RequestResponseDocBuilder {
                 Logger.logDebug("[RequestResponseDocBuilder] Failed to resolve request URL: "
                         + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             } else {
-                Logger.logDebug("[" + prefix + "] Failed to resolve request URL: "
+                Logger.logDebug("[RequestResponseDocBuilder] " + prefix + ": failed to resolve request URL: "
                         + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }
             return null;

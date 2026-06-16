@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.ui;
 
 import java.util.prefs.Preferences;
 
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JTextField;
@@ -9,6 +10,7 @@ import javax.swing.JTextField;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.button;
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.check;
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.click;
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.combo;
@@ -41,8 +43,10 @@ class LogPanelPersistenceHeadlessTest {
         JComboBox<?> level = combo(a, "log.filter.level");
         level.setSelectedItem("WARN");
 
-        JCheckBox pause = check(a, "Pause autoscroll");
-        if (!pause.isSelected()) click(pause);
+        JButton pause = button(a, "log.pause");
+        if (!"Unpause".equals(pause.getText())) {
+            click(pause);
+        }
 
         JTextField filter = field(a, "log.filter.text");
         setText(filter, "persist-me");
@@ -59,8 +63,8 @@ class LogPanelPersistenceHeadlessTest {
         JComboBox<?> levelB = combo(b, "log.filter.level");
         assertThat(levelB.getSelectedItem()).isEqualTo("WARN");
 
-        JCheckBox pauseB = check(b, "Pause autoscroll");
-        assertThat(pauseB.isSelected()).isTrue();
+        JButton pauseB = button(b, "log.pause");
+        assertThat(pauseB.getText()).isEqualTo("Unpause");
 
         JTextField filterB = field(b, "log.filter.text");
         assertThat(filterB.getText()).isEqualTo("persist-me");
@@ -92,8 +96,10 @@ class LogPanelPersistenceHeadlessTest {
             JComboBox<?> level = combo(panel, "log.filter.level");
             level.setSelectedItem("ERROR");
 
-            JCheckBox pause = check(panel, "Pause autoscroll");
-            if (!pause.isSelected()) click(pause);
+            JButton pause = button(panel, "log.pause");
+            if (!"Unpause".equals(pause.getText())) {
+                click(pause);
+            }
 
             setText(field(panel, "log.filter.text"), "opensearch");
             JCheckBox filterRegex = check(panel, "log.filter.regex");

@@ -114,9 +114,9 @@ class ExportStatsTest {
     }
 
     @Test
-    void recordLastPush_setsDuration() {
-        ExportStats.recordLastPush("traffic", 150);
-        assertThat(ExportStats.getLastPushDurationMs("traffic")).isEqualTo(150);
+    void recordLastLiveBulkDurationMs_setsDuration() {
+        ExportStats.recordLastLiveBulkDurationMs("traffic", 150);
+        assertThat(ExportStats.getLastLiveBulkDurationMs("traffic")).isEqualTo(150);
     }
 
     @Test
@@ -141,7 +141,7 @@ class ExportStatsTest {
         String unknown = "unknown-index-key";
         assertThat(ExportStats.getSuccessCount(unknown)).isEqualTo(0);
         assertThat(ExportStats.getFailureCount(unknown)).isEqualTo(0);
-        assertThat(ExportStats.getLastPushDurationMs(unknown)).isEqualTo(-1);
+        assertThat(ExportStats.getLastLiveBulkDurationMs(unknown)).isEqualTo(-1);
         assertThat(ExportStats.getLastError(unknown)).isNull();
     }
 
@@ -294,15 +294,57 @@ class ExportStatsTest {
     }
 
     @Test
+    void recordSnapshotLastRun_storesPerReporterKey() {
+        ExportStats.recordSnapshotLastRun(
+                ExportStats.SNAPSHOT_SITEMAP, 50, 48, 1200, 200, 2, 1_000_000L, 400, 800, 100, 2);
+        ExportStats.SnapshotLastRunStats sitemap = ExportStats.getSnapshotLastRun(ExportStats.SNAPSHOT_SITEMAP);
+        assertThat(sitemap).isNotNull();
+        assertThat(sitemap.attempted()).isEqualTo(50);
+        assertThat(ExportStats.getSnapshotLastRun(ExportStats.SNAPSHOT_FINDINGS)).isNull();
+    }
+
+    @Test
     void recordProxyHistorySnapshot_storesLatestSnapshotStats() {
-        ExportStats.recordProxyHistorySnapshot(200, 190, 4000, 300);
-        ExportStats.ProxyHistorySnapshotStats s = ExportStats.getLastProxyHistorySnapshot();
+        ExportStats.recordProxyHistorySnapshot(200, 190, 4000, 300, 4, 8_000_000L, 900, 3200, 800, 3);
+        ExportStats.SnapshotLastRunStats s = ExportStats.getLastProxyHistorySnapshot();
         assertThat(s).isNotNull();
         assertThat(s.attempted()).isEqualTo(200);
         assertThat(s.success()).isEqualTo(190);
         assertThat(s.durationMs()).isEqualTo(4000);
         assertThat(s.finalChunkTarget()).isEqualTo(300);
+        assertThat(s.chunks()).isEqualTo(4);
+        assertThat(s.buildWallMs()).isEqualTo(900);
+        assertThat(s.buildCpuMs()).isEqualTo(3200);
+        assertThat(s.flushMs()).isEqualTo(800);
+        assertThat(s.buildWorkers()).isEqualTo(3);
+        assertThat(s.avgChunkDocs()).isEqualTo(50.0);
+        assertThat(s.avgChunkBytes()).isEqualTo(2_000_000L);
         assertThat(s.docsPerSecond()).isGreaterThan(0.0);
+        assertThat(ExportStats.getCurrentProxyHistoryChunkTarget()).isEqualTo(-1);
+    }
+
+    @Test
+    void runPeakCounters_resetOnExportStart_andTrackHighWaterMarks() {
+        ExportStats.resetForTests();
+        ExportStats.observeExportPressureSamples(12, 4_096L, 3, 2_048L, 5, 1_024L);
+        assertThat(ExportStats.getPeakTrafficQueueDocs()).isEqualTo(12);
+        assertThat(ExportStats.getPeakTrafficQueueBytes()).isEqualTo(4_096L);
+        assertThat(ExportStats.getPeakSpillDocs()).isEqualTo(3);
+        assertThat(ExportStats.getPeakRetryQueueDocs()).isEqualTo(5);
+
+        ExportStats.observeExportPressureSamples(8, 2_048L, 7, 4_096L, 2, 512L);
+        assertThat(ExportStats.getPeakTrafficQueueDocs()).isEqualTo(12);
+        assertThat(ExportStats.getPeakSpillDocs()).isEqualTo(7);
+
+        ExportStats.recordSnapshotLastRun(
+                ExportStats.SNAPSHOT_PROXY_HISTORY, 100, 100, 1_000, 400, 2, 2_000_000L, 200, 400, 900, 2);
+        assertThat(ExportStats.getPeakSnapshotChunkTarget()).isEqualTo(400);
+        assertThat(ExportStats.getPeakSnapshotFlushMs()).isEqualTo(900);
+
+        ExportStats.recordExportStartRequested();
+        assertThat(ExportStats.getPeakTrafficQueueDocs()).isZero();
+        assertThat(ExportStats.getPeakSnapshotChunkTarget()).isZero();
+        assertThat(ExportStats.getPeakSnapshotFlushMs()).isZero();
     }
 
     @Test

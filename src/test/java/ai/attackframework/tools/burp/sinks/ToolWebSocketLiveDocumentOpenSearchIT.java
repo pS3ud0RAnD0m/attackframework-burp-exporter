@@ -1,11 +1,9 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitDocumentByExportId;
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.createIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.nestedMap;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.openSearchSinks;
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.pushOneDocument;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.pushAndAwaitIndexedDocument;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -20,6 +18,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.mockito.Answers;
 
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
@@ -27,7 +26,6 @@ import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
@@ -35,6 +33,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.websocket.Direction;
 
 @Tag("integration")
+@ResourceLock("traffic-opensearch-index")
 class ToolWebSocketLiveDocumentOpenSearchIT {
 
     private final ConfigState.State previous = RuntimeConfig.getState();
@@ -50,8 +49,6 @@ class ToolWebSocketLiveDocumentOpenSearchIT {
     @Test
     void liveToolWebSocket_partialFieldSelection_indexesNestedShape() {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-        createIndex("traffic");
-
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
         when(api.scope().isInScope(anyString())).thenReturn(true);
         MontoyaApiProvider.set(api);
@@ -82,8 +79,8 @@ class ToolWebSocketLiveDocumentOpenSearchIT {
                 Direction.CLIENT_TO_SERVER);
         assertThat(built).isNotNull();
 
-        PreparedExportDocument prepared = pushOneDocument("traffic", built, state);
-        Map<String, Object> stored = awaitDocumentByExportId("traffic", prepared.exportId());
+        Map<String, Object> stored = pushAndAwaitIndexedDocument(
+                "traffic", built, state, "request.url.raw", "https://example.com/ws-live");
 
         assertThat(stored).containsKeys("meta", "burp", "request", "websocket");
         assertThat(stored).doesNotContainKey("response");

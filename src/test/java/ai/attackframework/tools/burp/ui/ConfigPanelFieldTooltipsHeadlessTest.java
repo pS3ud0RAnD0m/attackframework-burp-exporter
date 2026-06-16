@@ -158,7 +158,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
         JLabel settingsSchemaVersion = findByName(panel, "fields.settings.meta.schema_version.required", JLabel.class);
         JLabel sitemapExtensionVersion = findByName(panel, "fields.sitemap.meta.extension_version.required", JLabel.class);
         JLabel trafficIndexedAt = findByName(panel, "fields.traffic.meta.indexed_at.required", JLabel.class);
-        JLabel trafficExportId = findByName(panel, "fields.traffic.meta.export_id.required", JLabel.class);
+        JLabel trafficSchemaVersion = findByName(panel, "fields.traffic.meta.schema_version.required", JLabel.class);
 
         // Parent containers (request, response, requests_responses, meta) are intentionally
         // not surfaced as required labels - children carry the meaningful info and meta is
@@ -186,7 +186,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
             assertThat(settingsSchemaVersion).isNotNull();
             assertThat(sitemapExtensionVersion).isNotNull();
             assertThat(trafficIndexedAt).isNotNull();
-            assertThat(trafficExportId).isNotNull();
+            assertThat(trafficSchemaVersion).isNotNull();
 
             assertThat(droppedTrafficRequest).isNull();
             assertThat(droppedTrafficResponse).isNull();
@@ -209,7 +209,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
                     .isGreaterThan(0)
                     .isEqualTo(sitemapExtensionVersion.getInsets().left)
                     .isEqualTo(trafficIndexedAt.getInsets().left)
-                    .isEqualTo(trafficExportId.getInsets().left);
+                    .isEqualTo(trafficSchemaVersion.getInsets().left);
             assertThat(settingsSchemaVersion.getToolTipText())
                     .contains("<b>Note:</b> Always exported (view-only; cannot be disabled in the Fields panel)")
                     .contains("Export schema version for this document.")
@@ -229,12 +229,12 @@ class ConfigPanelFieldTooltipsHeadlessTest {
                     .contains("canonical cross-index time field")
                     .contains("Instant.now().toString()");
 
-            assertThat(trafficExportId.isEnabled()).isFalse();
-            assertThat(trafficExportId.getText()).isEqualTo("Export id");
-            assertThat(trafficExportId.getToolTipText())
+            assertThat(trafficSchemaVersion.isEnabled()).isFalse();
+            assertThat(trafficSchemaVersion.getText()).isEqualTo("Schema version");
+            assertThat(trafficSchemaVersion.getToolTipText())
                     .contains("<b>Note:</b> Always exported (view-only; cannot be disabled in the Fields panel)")
-                    .contains("Stable content-derived export ID")
-                    .contains("meta.export_id");
+                    .contains("Export schema version for this document.")
+                    .contains("meta.schema_version");
 
             assertThat(exporterEventLevel.getText()).isEqualTo("Level").doesNotContain("always included");
             assertThat(exporterEventSource.getText()).isEqualTo("Source").doesNotContain("always included");

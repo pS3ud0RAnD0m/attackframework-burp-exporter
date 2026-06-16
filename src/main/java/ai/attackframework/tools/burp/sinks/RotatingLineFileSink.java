@@ -51,6 +51,22 @@ abstract class RotatingLineFileSink implements FileSink {
 
     protected abstract List<String> linesFor(PreparedExportDocument document);
 
+    protected long appendBytes(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return 0L;
+        }
+        try {
+            initializeIfNeeded();
+            Path target = currentPath;
+            DiskSpaceGuard.ensureWritable(target, bytes.length, "file export");
+            Files.write(target, bytes, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            return bytes.length;
+        } catch (IOException e) {
+            Logger.logError("[Files] Write failed for " + indexName + extension + ": " + e.getMessage());
+            return 0L;
+        }
+    }
+
     private long appendLines(List<String> lines) {
         if (lines == null || lines.isEmpty()) {
             return 0L;
@@ -65,7 +81,7 @@ abstract class RotatingLineFileSink implements FileSink {
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             return bytes.length;
         } catch (IOException e) {
-            Logger.logError("File export write failed for " + indexName + extension + ": " + e.getMessage());
+            Logger.logError("[Files] Write failed for " + indexName + extension + ": " + e.getMessage());
             return 0L;
         }
     }

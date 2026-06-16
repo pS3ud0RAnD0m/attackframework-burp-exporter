@@ -26,7 +26,7 @@ class FileExportServiceTest {
     private final ConfigState.State previous = RuntimeConfig.getState();
 
     @Test
-    void emit_writesJsonlAndBulkNdjsonWithSharedStableId() throws Exception {
+    void emit_writesJsonlAndBulkNdjsonWithoutClientAssignedId() throws Exception {
         withCleanup(() -> {
             Path root = TestPathSupport.createDirectory("file-export-service");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
@@ -40,22 +40,10 @@ class FileExportServiceTest {
             String jsonl = Files.readString(root.resolve(indexName + ".jsonl"));
             String ndjson = Files.readString(root.resolve(indexName + ".ndjson"));
 
-            assertThat(jsonl).contains(prepared.exportId());
-            assertThat(ndjson).contains("\"_id\":\"" + prepared.exportId() + "\"");
-            assertThat(ndjson).contains("\"export_id\":\"" + prepared.exportId() + "\"");
-        });
-    }
-
-    @Test
-    void prepare_returnsSameStableIdForSameLogicalDocument() throws Exception {
-        withCleanup(() -> {
-            String indexKey = "traffic";
-            String indexName = IndexNaming.indexNameForShortName("traffic");
-
-            PreparedExportDocument first = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
-            PreparedExportDocument second = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
-
-            assertThat(first.exportId()).isEqualTo(second.exportId());
+            assertThat(jsonl).contains("https://acme.com/api");
+            assertThat(ndjson).contains("{\"index\":{}}");
+            assertThat(ndjson).doesNotContain("\"_id\"");
+            assertThat(ndjson).doesNotContain("\"export_id\"");
         });
     }
 
@@ -102,7 +90,7 @@ class FileExportServiceTest {
     }
 
     @Test
-    void emit_writesJsonlAsDocumentOnlyLineAndPreservesStableIdAcrossRepeatedExports() throws Exception {
+    void emit_writesJsonlAsDocumentOnlyLine() throws Exception {
         withCleanup(() -> {
             Path root = TestPathSupport.createDirectory("file-export-jsonl-shape");
             RuntimeConfig.updateState(fileExportState(root, true, Long.MAX_VALUE, false, 95));
@@ -119,9 +107,8 @@ class FileExportServiceTest {
             assertThat(jsonlLines).hasSize(2);
             assertThat(jsonlLines.get(0)).startsWith("{");
             assertThat(jsonlLines.get(0)).doesNotContain("\"index\"");
-            assertThat(jsonlLines.get(0)).contains("\"export_id\":\"" + first.exportId() + "\"");
-            assertThat(jsonlLines.get(1)).contains("\"export_id\":\"" + second.exportId() + "\"");
-            assertThat(first.exportId()).isEqualTo(second.exportId());
+            assertThat(jsonlLines.get(0)).doesNotContain("\"export_id\"");
+            assertThat(jsonlLines.get(1)).doesNotContain("\"export_id\"");
         });
     }
 
@@ -136,7 +123,7 @@ class FileExportServiceTest {
             Path jsonlPath = root.resolve(indexName + ".jsonl");
             Path ndjsonPath = root.resolve(indexName + ".ndjson");
             Files.writeString(jsonlPath, "{\"seed\":true}\n");
-            Files.writeString(ndjsonPath, "{\"index\":{\"_id\":\"seed\"}}\n{\"seed\":true}\n");
+            Files.writeString(ndjsonPath, "{\"index\":{}}\n{\"seed\":true}\n");
 
             PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, sampleDocument());
             FileExportService.emit(prepared);
@@ -145,12 +132,12 @@ class FileExportServiceTest {
             List<String> ndjsonLines = Files.readAllLines(ndjsonPath);
             assertThat(jsonlLines).hasSize(2);
             assertThat(jsonlLines.getFirst()).isEqualTo("{\"seed\":true}");
-            assertThat(jsonlLines.getLast()).contains("\"export_id\":\"" + prepared.exportId() + "\"");
+            assertThat(jsonlLines.getLast()).contains("https://acme.com/api");
             assertThat(ndjsonLines).hasSize(4);
-            assertThat(ndjsonLines.getFirst()).isEqualTo("{\"index\":{\"_id\":\"seed\"}}");
+            assertThat(ndjsonLines.getFirst()).isEqualTo("{\"index\":{}}");
             assertThat(ndjsonLines.get(1)).isEqualTo("{\"seed\":true}");
-            assertThat(ndjsonLines.get(2)).contains("\"_id\":\"" + prepared.exportId() + "\"");
-            assertThat(ndjsonLines.get(3)).contains("\"export_id\":\"" + prepared.exportId() + "\"");
+            assertThat(ndjsonLines.get(2)).isEqualTo("{\"index\":{}}");
+            assertThat(ndjsonLines.get(3)).contains("https://acme.com/api");
         });
     }
 

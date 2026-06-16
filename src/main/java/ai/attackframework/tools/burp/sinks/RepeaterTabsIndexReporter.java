@@ -71,9 +71,10 @@ public final class RepeaterTabsIndexReporter {
     private static final int STARTUP_TAB_WALK_SECOND_PASS_DELAY_MS = 1_600;
     private static final int STARTUP_TAB_WALK_STEP_DELAY_MS = 5;
     private static final int STARTUP_TAB_WALK_STEPS_PER_TICK = 12;
+    private static final int STARTUP_EXPORT_SUMMARY_WAIT_MS = 5_000;
     private static final int STARTUP_DUPLICATE_SLOT_TRACE_LIMIT = 3;
     private static final Map<String, CapturedRepeaterItem> CAPTURED = new ConcurrentHashMap<>();
-    private static final Set<String> EXPORTED_THIS_RUN = ConcurrentHashMap.newKeySet();
+    private static final Set<String> QUEUED_FOR_EXPORT = ConcurrentHashMap.newKeySet();
     private static final Set<String> STARTUP_TRACE_LOGGED = ConcurrentHashMap.newKeySet();
     private static final Map<String, String> STARTUP_SLOT_TO_FINGERPRINT = new ConcurrentHashMap<>();
     private static final Map<String, AtomicInteger> STARTUP_DUPLICATE_SLOT_TRACE_COUNTS = new ConcurrentHashMap<>();
@@ -120,15 +121,15 @@ public final class RepeaterTabsIndexReporter {
                 .forEach(RepeaterTabsIndexReporter::queueForCurrentRun);
     }
 
-    /** Clears per-run dedupe so the next Start can export cached history again. */
+    /** Clears per-run capture state so the next Start can export cached history again. */
     public static void clearRunState() {
         RUN_GENERATION.incrementAndGet();
         CAPTURE_WINDOW_GENERATION.set(-1);
-        EXPORTED_THIS_RUN.clear();
         STARTUP_TRACE_LOGGED.clear();
         STARTUP_METADATA_SUMMARY.clear();
         STARTUP_SLOT_TO_FINGERPRINT.clear();
         STARTUP_DUPLICATE_SLOT_TRACE_COUNTS.clear();
+        QUEUED_FOR_EXPORT.clear();
         currentStartupSelectionMetadata = null;
         currentStartupSessionId = RepeaterMetadataTraceLabels.NONE;
         startupExportStatsSnapshot = StartupExportStatsSnapshot.empty();
@@ -188,20 +189,6 @@ public final class RepeaterTabsIndexReporter {
         return CAPTURED.size();
     }
 
-    /**
-     * Marks one capture key as already queued for the current export run.
-     *
-     * <p>The key is usually the stable request/response fingerprint. During the startup walk, when
-     * a logical Repeater tab slot is known, slot-specific keys are used instead so distinct tabs
-     * with identical traffic still export as separate Repeater-tab documents.</p>
-     *
-     * @param captureKey stable per-run export dedupe key
-     * @return {@code true} when this run has not queued the capture key yet
-     */
-    static boolean markQueuedForCurrentRun(String captureKey) {
-        return captureKey != null && EXPORTED_THIS_RUN.add(captureKey);
-    }
-
     static boolean markStartupSlotForCurrentRun(String slotKey, String fingerprint) {
         return rememberStartupSlotFingerprint(slotKey, fingerprint) == null;
     }
@@ -252,7 +239,7 @@ public final class RepeaterTabsIndexReporter {
         }
         int generation = RUN_GENERATION.get();
         openCaptureWindowForCurrentRun();
-        Logger.logInfoPanelOnly("[Traffic] Repeater Tabs startup export starting startupSession="
+        Logger.logInfoPanelOnly("[StartupExport] Repeater Tabs: export starting startupSession="
                 + currentStartupSessionId() + ".");
         Logger.logDebug("[RepeaterTabs] Scheduling startup tab walk for generation "
                 + generation
@@ -441,7 +428,9 @@ public final class RepeaterTabsIndexReporter {
         if (newCapture[0] && !isStartupCaptureWindowOpen()) {
             Logger.logDebug("[RepeaterTabs] Captured Repeater tab via " + capturePath + ".");
         }
-        queueForCurrentRun(CAPTURED.get(captureKey));
+        if (newCapture[0] || metadataUpgraded[0]) {
+            queueForCurrentRun(CAPTURED.get(captureKey));
+        }
         return true;
     }
 
@@ -589,15 +578,53 @@ public final class RepeaterTabsIndexReporter {
         return RepeaterMetadataTraceLabels.historyMetadataSource(captureKey);
     }
 
-    private static void logStartupExportCompletionSummary() {
+    private static void logStartupExportCompletionSummary(String startupSession) {
         StartupExportStatsSnapshot snapshot = startupExportStatsSnapshot;
         int newCaptures = Math.max(0, CAPTURED.size() - snapshot.captureCountBefore());
         String body = SnapshotSummary.formatCompletionBody(snapshot.baseline(), true, true);
-        Logger.logInfoPanelOnly("[Traffic] Repeater Tabs startup export complete startupSession="
-                + currentStartupSessionId()
+        Logger.logInfoPanelOnly("[StartupExport] Repeater Tabs: export complete startupSession="
+                + RepeaterMetadataTraceLabels.safeValue(startupSession)
                 + " captured " + newCaptures + " tab(s)"
                 + (body.isEmpty() ? "" : "; " + body)
                 + "; " + describeStartupMetadataSummary() + ".");
+        TrafficStartupBacklogSummary.complete(
+                TrafficStartupBacklogSummary.Component.REPEATER_TABS,
+                newCaptures,
+                snapshot.baseline());
+    }
+
+    private static void logStartupExportCompletionSummary() {
+        logStartupExportCompletionSummary(currentStartupSessionId());
+    }
+
+    private static void scheduleStartupExportCompletionSummary() {
+        pushSnapshotNow();
+        int generation = RUN_GENERATION.get();
+        String startupSession = currentStartupSessionId();
+        Thread summaryThread = new Thread(() -> {
+            boolean idle = TrafficExportQueue.awaitIdle(STARTUP_EXPORT_SUMMARY_WAIT_MS);
+            if (generation != RUN_GENERATION.get()) {
+                return;
+            }
+            if (!idle && !startupExportCountersComplete()) {
+                Logger.logDebug("[RepeaterTabs] Startup export summary proceeding before traffic queue idle "
+                        + "startupSession=" + startupSession
+                        + " timeoutMs=" + STARTUP_EXPORT_SUMMARY_WAIT_MS);
+            }
+            logStartupExportCompletionSummary(startupSession);
+        }, "attackframework-repeater-startup-summary");
+        summaryThread.setDaemon(true);
+        summaryThread.start();
+    }
+
+    private static boolean startupExportCountersComplete() {
+        StartupExportStatsSnapshot snapshot = startupExportStatsSnapshot;
+        int newCaptures = Math.max(0, CAPTURED.size() - snapshot.captureCountBefore());
+        if (newCaptures <= 0) {
+            return true;
+        }
+        SnapshotSummary.CompletionDeltas deltas = SnapshotSummary.completionDeltas(snapshot.baseline());
+        return deltas.fileSuccess() >= newCaptures && deltas.openSearchSuccess() >= newCaptures;
     }
 
     private static record StartupExportStatsSnapshot(
@@ -667,7 +694,7 @@ public final class RepeaterTabsIndexReporter {
         if (completedPassNumber < 2) {
             scheduleStartupTabWalkPass(generation, completedPassNumber + 1, STARTUP_TAB_WALK_SECOND_PASS_DELAY_MS);
         } else {
-            logStartupExportCompletionSummary();
+            scheduleStartupExportCompletionSummary();
             closeCaptureWindowForCurrentRun();
         }
     }
@@ -849,27 +876,17 @@ public final class RepeaterTabsIndexReporter {
     /**
      * Queues one captured Repeater-tab item for export when runtime gates allow it.
      *
-     * <p>This helper applies per-run capture dedupe before building the traffic document so the
-     * same logical historic tab is not exported twice within one Start/Stop cycle, while still
-     * allowing distinct startup tab slots with identical request/response content to export
-     * separately.</p>
      */
     private static void queueForCurrentRun(CapturedRepeaterItem item) {
         boolean exportRunning = RuntimeConfig.isExportRunning();
         boolean anyTrafficEnabled = RuntimeConfig.isAnyTrafficExportEnabled();
         boolean repeaterTabsEnabled = RuntimeConfig.isTrafficToolTypeEnabled(TOOL_TYPE_KEY);
         if (item == null
+                || item.captureKey == null
                 || !exportRunning
                 || !anyTrafficEnabled
-                || !repeaterTabsEnabled) {
-            return;
-        }
-        if (!markQueuedForCurrentRun(item.captureKey)) {
-            Logger.logTrace("[RepeaterTabs] Skipped queueing Repeater Tabs capture already exported in this run captureKey="
-                    + safeLogValue(item.captureKey)
-                    + " metadataSource=" + historyMetadataSource(item.captureKey)
-                    + " fingerprint=" + safeLogValue(item.fingerprint)
-                    + " metadata={" + RepeaterTabsCapturePolicy.describeMetadata(item.asMetadata()) + "}");
+                || !repeaterTabsEnabled
+                || !QUEUED_FOR_EXPORT.add(item.captureKey)) {
             return;
         }
         Map<String, Object> document;
@@ -877,15 +894,14 @@ public final class RepeaterTabsIndexReporter {
             document = buildDocument(
                     item.requestResponse,
                     item.repeaterTabName,
-                    item.repeaterGroupName);
+                    item.repeaterGroupName,
+                    item.captureKey);
         } catch (RuntimeException e) {
-            EXPORTED_THIS_RUN.remove(item.captureKey);
             Logger.logErrorPanelOnly("[RepeaterTabs] Failed to build traffic document for captured tab: "
                     + summarizeThrowable(e));
             return;
         }
         if (document == null) {
-            EXPORTED_THIS_RUN.remove(item.captureKey);
             return;
         }
         Logger.logTrace("[RepeaterTabs] Queued captured tab for export captureKey="
@@ -970,7 +986,7 @@ public final class RepeaterTabsIndexReporter {
      *
      * <p>The digest includes request bytes, response bytes when present, and Burp annotations so
      * edited or annotated tabs do not collapse onto unrelated request/response pairs. Startup
-     * capture/export dedupe may layer a slot-specific key on top of this fingerprint when distinct
+     * startup capture may layer a slot-specific key on top of this fingerprint when distinct
      * Repeater tabs share identical traffic.</p>
      */
     private static String fingerprintFor(HttpRequestResponse requestResponse) {
@@ -1038,7 +1054,8 @@ public final class RepeaterTabsIndexReporter {
     private static Map<String, Object> buildDocument(
             HttpRequestResponse requestResponse,
             String repeaterTabName,
-            String repeaterGroupName) {
+            String repeaterGroupName,
+            String captureKey) {
         if (requestResponse == null) {
             return null;
         }
@@ -1246,9 +1263,9 @@ public final class RepeaterTabsIndexReporter {
             item.addActionListener(ignored -> {
                 boolean captured = captureCurrentRepeaterTab(event);
                 if (captured) {
-                    Logger.logInfoPanelOnly("[Traffic] Captured current Repeater tab for Repeater Tabs export.");
+                    Logger.logInfoPanelOnly("[RepeaterTabs] Captured current tab for export.");
                 } else {
-                    Logger.logWarnPanelOnly("[Traffic] Unable to capture the current Repeater tab from the context menu.");
+                    Logger.logWarnPanelOnly("[RepeaterTabs] Unable to capture current tab from context menu.");
                 }
             });
             return List.of(item);
@@ -1391,7 +1408,7 @@ public final class RepeaterTabsIndexReporter {
             int newCaptures = result.captureCountAfter() - result.captureCountBefore();
             String metadataSummary = describeStartupMetadataSummary();
             if (newCaptures > 0) {
-                Logger.logInfoPanelOnly("[Traffic] Repeater Tabs startup tab walk pass "
+                Logger.logInfoPanelOnly("[StartupExport] Repeater Tabs: startup tab walk pass "
                         + passNumber + " startupSession=" + currentStartupSessionId()
                         + " captured " + newCaptures + " tab(s); "
                         + metadataSummary + ".");
@@ -1405,7 +1422,7 @@ public final class RepeaterTabsIndexReporter {
                     + ", after=" + result.captureCountAfter()
                     + ", newly captured=" + newCaptures
                     + ", startup metadata summary=" + metadataSummary
-                    + ". Per-run capture dedupe prevented duplicate export documents.");
+                    + ".");
         }
     }
 

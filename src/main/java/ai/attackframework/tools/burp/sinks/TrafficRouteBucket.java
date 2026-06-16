@@ -4,6 +4,8 @@ import java.util.Locale;
 import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.export.BulkOutcomeBreakdown;
+import ai.attackframework.tools.burp.utils.export.BulkPushOutcome;
 import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
@@ -221,11 +223,38 @@ public final class TrafficRouteBucket {
             int sent,
             boolean openSearchActive,
             String logLabel) {
+        recordBulkOutcome(route, attempted, sent, openSearchActive, logLabel, null);
+    }
+
+    public static void recordBulkOutcome(
+            Route route,
+            BulkPushOutcome outcome,
+            boolean openSearchActive,
+            String logLabel) {
+        if (route == null || outcome == null) {
+            return;
+        }
+        recordBulkOutcome(
+                route,
+                outcome.attempted(),
+                outcome.successCount(),
+                openSearchActive,
+                logLabel,
+                outcome.breakdown());
+    }
+
+    public static void recordBulkOutcome(
+            Route route,
+            int attempted,
+            int sent,
+            boolean openSearchActive,
+            String logLabel,
+            BulkOutcomeBreakdown breakdown) {
         if (route == null) {
             return;
         }
         int clampedSent = BulkOutcomeRecorder.record(
-                INDEX_KEY, "Traffic", logLabel, attempted, sent, openSearchActive);
+                INDEX_KEY, logSource(route), logLabel, attempted, sent, openSearchActive, breakdown);
         if (!openSearchActive) {
             return;
         }
@@ -236,6 +265,17 @@ public final class TrafficRouteBucket {
         if (failure > 0) {
             recordOpenSearchFailure(route, failure);
         }
+    }
+
+    private static String logSource(Route route) {
+        if (route == null || route.kind() == Kind.TOOL_TYPE) {
+            return "Traffic";
+        }
+        return switch (route.key()) {
+            case SOURCE_PROXY_HISTORY_SNAPSHOT -> "ProxyHistory";
+            case SOURCE_PROXY_WEBSOCKET -> "ProxyWebSocket";
+            default -> "Traffic";
+        };
     }
 
     /** Records {@code count} successful file writes for {@code route}. */

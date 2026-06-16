@@ -59,7 +59,12 @@ class ExporterIndexStatsReporterTest {
                     .contains("\"indexes\"")
                     .contains("\"exporter\"")
                     .contains("\"traffic\"")
+                    .contains("\"spill\"")
+                    .contains("\"queue_bytes_estimate\"")
+                    .contains("\"active_drain_batches\"")
                     .contains("\"telemetry\"")
+                    .contains("\"snapshot_flush_executor\"")
+                    .contains("\"dual_sink\"")
                     .contains("\"repeater_live_metadata_sources\"")
                     .contains("request_identity");
             assertThat(jsonl)

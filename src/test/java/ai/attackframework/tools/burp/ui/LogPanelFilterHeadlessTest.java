@@ -44,7 +44,7 @@ class LogPanelFilterHeadlessTest {
         }
 
         p.onLog("INFO", "[ParameterCardinality] skipped body");
-        p.onLog("INFO", "[ProxyHistory] Exporting proxy history backlog: 10 item(s).");
+        p.onLog("INFO", "[StartupExport] ProxyHistory: exporting backlog: 10 item(s).");
 
         String text = allText(p);
         assertThat(text)

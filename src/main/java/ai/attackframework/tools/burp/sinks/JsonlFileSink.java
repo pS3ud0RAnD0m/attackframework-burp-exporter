@@ -21,7 +21,7 @@ final class JsonlFileSink extends RotatingLineFileSink {
         try {
             return List.of(ExportLineCodec.jsonDocumentLine(document.document()));
         } catch (JsonProcessingException e) {
-            Logger.logError("JSONL serialize failed for " + document.indexName() + ": " + e.getMessage());
+            Logger.logError("[Files] JSONL serialize failed for " + document.indexName() + ": " + e.getMessage());
             return List.of();
         }
     }

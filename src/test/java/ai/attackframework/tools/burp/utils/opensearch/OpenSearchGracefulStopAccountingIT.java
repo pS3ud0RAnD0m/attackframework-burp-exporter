@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import ai.attackframework.tools.burp.sinks.BulkOutcomeRecorder;
 import ai.attackframework.tools.burp.sinks.SingleDocOutcomeRecorder;
@@ -32,6 +33,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
  * Integration test: Stop does not increment OpenSearch failure stats for cancelled pushes.
  */
 @Tag("integration")
+@ResourceLock("traffic-opensearch-index")
 class OpenSearchGracefulStopAccountingIT {
 
     private final ConfigState.State previous = RuntimeConfig.getState();

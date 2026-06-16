@@ -37,11 +37,13 @@ public final class Tooltips {
     private Tooltips() {}
 
     /**
-     * Configures the shared Swing tooltip manager for consistent hover behavior.
+     * Configures the JVM-wide {@link ToolTipManager} for consistent hover behavior across every
+     * extension panel (Config, Log, Stats, About).
      *
-     * <p>Tooltips appear after {@link #TOOLTIP_SHOW_DELAY_MS} ms on first hover and when moving to
-     * another control, reducing pop-up noise during casual mouse movement. They stay visible while
-     * the cursor remains over the hover target ({@code dismissDelay} is effectively unlimited).</p>
+     * <p>Invoked once from {@link ai.attackframework.tools.burp.Exporter#initialize}. Tooltips appear
+     * after {@link #TOOLTIP_SHOW_DELAY_MS} ms on first hover and when moving to another control.
+     * They stay visible while the cursor remains over the hover target ({@code dismissDelay} is
+     * effectively unlimited).</p>
      */
     public static void configureSharedToolTipManager() {
         ToolTipManager manager = ToolTipManager.sharedInstance();
@@ -218,6 +220,22 @@ public final class Tooltips {
         component.putClientProperty(HTML_DISABLE, Boolean.FALSE);
         component.setToolTipText(tooltip);
         return component;
+    }
+
+    /**
+     * Applies one HTML tooltip to a metric row and each direct child so hover on labels and
+     * values uses the same {@link ToolTipManager} delays as {@link #configureSharedToolTipManager()}.
+     */
+    public static void applyToRow(JPanel row, String tooltip) {
+        if (row == null || tooltip == null || tooltip.isBlank()) {
+            return;
+        }
+        apply(row, tooltip);
+        for (Component child : row.getComponents()) {
+            if (child instanceof JComponent jc) {
+                apply(jc, tooltip);
+            }
+        }
     }
 
     public static JLabel label(String text, String tooltip) {

@@ -71,7 +71,8 @@ class FileExportReimportIT {
             Path ndjsonPath = root.resolve(indexName + ".ndjson");
             assertThat(ndjsonPath).exists();
             String payload = Files.readString(ndjsonPath);
-            assertThat(payload).contains("\"_id\":\"" + prepared.exportId() + "\"");
+            assertThat(payload).contains("{\"index\":{}}");
+            assertThat(payload).doesNotContain("\"_id\"");
 
             bulkImport(indexName, payload);
             long countAfterFirst = countDocuments(indexName);
@@ -80,7 +81,7 @@ class FileExportReimportIT {
             long countAfterSecond = countDocuments(indexName);
 
             assertThat(countAfterFirst).isEqualTo(1L);
-            assertThat(countAfterSecond).isEqualTo(countAfterFirst);
+            assertThat(countAfterSecond).isEqualTo(2L);
         } finally {
             restoreRuntimeState();
         }
@@ -106,7 +107,6 @@ class FileExportReimportIT {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("schema_version", "1");
         meta.put("indexed_at", "2026-03-28T00:00:00Z");
-
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("method", "GET");
 

@@ -10,6 +10,7 @@ plugins {
     id("java")
     id("jacoco")
     id("com.github.ben-manes.versions") version "0.53.0"
+    id("com.diffplug.spotless") version "7.0.4"
 }
 
 group = project.property("group").toString()
@@ -64,7 +65,17 @@ val verboseTests: Boolean =
     (project.findProperty("verboseTests")?.toString()?.toBooleanStrictOrNull()) ?: false
 
 tasks.withType<JavaCompile>().configureEach {
-    options.compilerArgs.add("-Xlint:deprecation")
+    options.compilerArgs.addAll(listOf("-Xlint:deprecation", "-Xlint:unchecked"))
+}
+
+// Standalone Step-1 lint task (java-zero-lint.mdc). Not wired to build or test.
+spotless {
+    java {
+        target("src/main/java/**/*.java", "src/test/java/**/*.java")
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
 }
 
 tasks.test {

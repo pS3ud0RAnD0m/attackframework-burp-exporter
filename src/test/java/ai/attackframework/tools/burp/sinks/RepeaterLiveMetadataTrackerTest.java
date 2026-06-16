@@ -1,6 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
+import static ai.attackframework.tools.burp.testutils.Reflect.getStaticConcurrentHashMap;
 
 import ai.attackframework.tools.burp.testutils.Reflect;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -260,11 +260,11 @@ class RepeaterLiveMetadataTrackerTest {
     }
 
     private static ConcurrentHashMap<String, ConcurrentLinkedDeque<?>> requestIndex() {
-        return ConcurrentHashMap.class.cast(getStatic(RepeaterLiveMetadataTracker.class, "BY_REQUEST_HASH"));
+        return getStaticConcurrentHashMap(RepeaterLiveMetadataTracker.class, "BY_REQUEST_HASH");
     }
 
     private static ConcurrentHashMap<String, ConcurrentLinkedDeque<?>> exchangeIndex() {
-        return ConcurrentHashMap.class.cast(getStatic(RepeaterLiveMetadataTracker.class, "BY_EXCHANGE_HASH"));
+        return getStaticConcurrentHashMap(RepeaterLiveMetadataTracker.class, "BY_EXCHANGE_HASH");
     }
 
     private static ConcurrentLinkedDeque<?> requestDequeFor(HttpRequest request) {

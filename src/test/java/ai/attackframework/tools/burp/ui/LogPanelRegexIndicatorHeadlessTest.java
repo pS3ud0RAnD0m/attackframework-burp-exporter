@@ -80,6 +80,9 @@ class LogPanelRegexIndicatorHeadlessTest {
         regex.setSelected(false);
         flushEdt();
         assertThat(indicator.isVisible()).as("indicator hides when regex mode is off").isFalse();
+        assertThat(indicator.getPreferredSize().width)
+                .as("hidden indicator collapses so Find controls stay compact")
+                .isZero();
     }
 
     /**

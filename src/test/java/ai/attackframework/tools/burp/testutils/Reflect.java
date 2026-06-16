@@ -11,6 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+
+import javax.swing.JComboBox;
 
 /**
  * Lightweight reflection helpers for tests.
@@ -79,6 +83,40 @@ public final class Reflect {
         Objects.requireNonNull(fieldName, "fieldName");
         Objects.requireNonNull(type, "type");
         return type.cast(readStaticField(owner, fieldName));
+    }
+
+    /**
+     * Reads an instance {@link JComboBox} field in tests. Centralizes the unchecked cast required
+     * by Swing combo-box type erasure so call sites stay warning-free.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> JComboBox<T> getComboBox(Object target, String fieldName) {
+        return (JComboBox<T>) get(target, fieldName, JComboBox.class);
+    }
+
+    /**
+     * Reads a static {@link List} field in tests. Centralizes the unchecked cast required by
+     * list type erasure so call sites stay warning-free.
+     */
+    @SuppressWarnings("unchecked")
+    public static <E> List<E> getStaticList(Class<?> owner, String fieldName) {
+        return (List<E>) getStatic(owner, fieldName, List.class);
+    }
+
+    /**
+     * Reads a static {@link LinkedBlockingQueue} field in tests.
+     */
+    @SuppressWarnings("unchecked")
+    public static <E> LinkedBlockingQueue<E> getStaticLinkedBlockingQueue(Class<?> owner, String fieldName) {
+        return (LinkedBlockingQueue<E>) getStatic(owner, fieldName, LinkedBlockingQueue.class);
+    }
+
+    /**
+     * Reads a static {@link ConcurrentHashMap} field in tests.
+     */
+    @SuppressWarnings("unchecked")
+    public static <K, V> ConcurrentHashMap<K, V> getStaticConcurrentHashMap(Class<?> owner, String fieldName) {
+        return (ConcurrentHashMap<K, V>) getStatic(owner, fieldName, ConcurrentHashMap.class);
     }
 
     /**

@@ -56,7 +56,7 @@ class ReporterBacklogLoggingTest {
     }
 
     @Test
-    void findings_pushSnapshotNow_logsBacklogStart_only_noSnapshotComplete() throws Exception {
+    void findings_pushSnapshotNow_logsBacklogStart_andSnapshotComplete() throws Exception {
         Logger.registerListener(listener);
         try {
             MontoyaApi api = mock(MontoyaApi.class);
@@ -76,8 +76,9 @@ class ReporterBacklogLoggingTest {
             FindingsIndexReporter.start();
             FindingsIndexReporter.pushSnapshotNow();
 
-            awaitInfoLine("[Findings] Exporting findings backlog: 2 issue(s).");
-            assertThat(infoMessages).noneMatch(line -> line.contains("snapshot complete"));
+            awaitInfoLine("[StartupExport] Findings: exporting backlog: 2 issue(s).");
+            awaitInfoLineStartingWith("[SnapshotExport] Findings: snapshot complete: captured=");
+            awaitInfoLineStartingWith("[SnapshotExport] Findings: backlog filters: seen=");
         } finally {
             Logger.unregisterListener(listener);
         }
@@ -99,8 +100,9 @@ class ReporterBacklogLoggingTest {
             SitemapIndexReporter.start();
             SitemapIndexReporter.pushSnapshotNow();
 
-            awaitInfoLine("[Sitemap] Exporting sitemap backlog: 1 item(s).");
-            awaitInfoLineStartingWith("[Sitemap] snapshot complete: captured=");
+            awaitInfoLine("[StartupExport] Sitemap: exporting backlog: 1 item(s).");
+            awaitInfoLineStartingWith("[SnapshotExport] Sitemap: snapshot complete: captured=");
+            awaitInfoLineStartingWith("[SnapshotExport] Sitemap: backlog filters: seen=");
         } finally {
             Logger.unregisterListener(listener);
         }
@@ -119,7 +121,7 @@ class ReporterBacklogLoggingTest {
             configureProxyWebSocketExport();
             ProxyWebSocketIndexReporter.pushHistoricSnapshotNow();
 
-            awaitInfoLine("[ProxyWebSocket] Exporting proxy WebSocket history backlog: 1 frame(s).");
+            awaitInfoLine("[StartupExport] ProxyWebSocket: exporting history backlog: 1 frame(s).");
             assertThat(infoMessages).noneMatch(line -> line.contains("snapshot complete"));
         } finally {
             Logger.unregisterListener(listener);
@@ -139,8 +141,8 @@ class ReporterBacklogLoggingTest {
             configureProxyHistoryExport();
             ProxyHistoryIndexReporter.pushSnapshotNow();
 
-            awaitInfoLine("[ProxyHistory] Exporting proxy history backlog: 1 item(s).");
-            awaitInfoLineStartingWith("[ProxyHistory] snapshot complete: captured=");
+            awaitInfoLine("[StartupExport] ProxyHistory: exporting backlog: 1 item(s).");
+            awaitInfoLineStartingWith("[SnapshotExport] ProxyHistory: snapshot complete: captured=");
         } finally {
             Logger.unregisterListener(listener);
         }

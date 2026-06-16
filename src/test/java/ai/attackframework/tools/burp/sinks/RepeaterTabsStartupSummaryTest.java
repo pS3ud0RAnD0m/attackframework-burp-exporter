@@ -30,7 +30,7 @@ class RepeaterTabsStartupSummaryTest {
 
     private final List<String> capturedMessages = new ArrayList<>();
     private final Logger.LogListener listener = (level, message) -> {
-        if ("INFO".equals(level) && message.startsWith("[Traffic] Repeater Tabs startup export complete")) {
+        if ("INFO".equals(level) && message.startsWith("[StartupExport] Repeater Tabs: export complete")) {
             capturedMessages.add(message);
         }
     };
@@ -55,10 +55,10 @@ class RepeaterTabsStartupSummaryTest {
 
             assertThat(capturedMessages).hasSize(1);
             String line = capturedMessages.get(0);
-            assertThat(line).startsWith("[Traffic] Repeater Tabs startup export complete startupSession=");
+            assertThat(line).startsWith("[StartupExport] Repeater Tabs: export complete startupSession=");
             assertThat(line).contains(" captured 0 tab(s)");
-            assertThat(line).contains("file={success=2, failure=0}");
-            assertThat(line).contains("openSearch={success=2, failure=0}");
+            assertThat(line).contains("file={written=2, failure=0}");
+            assertThat(line).contains("openSearch={exported=2, failure=0}");
             assertThat(line).endsWith(".");
         } finally {
             Logger.unregisterListener(listener);
@@ -76,8 +76,24 @@ class RepeaterTabsStartupSummaryTest {
             assertThat(capturedMessages).hasSize(1);
             String line = capturedMessages.get(0);
             assertThat(line).contains(" captured 0 tab(s); ");
-            assertThat(line).contains("file={success=0, failure=0}");
-            assertThat(line).contains("openSearch={success=0, failure=0}");
+            assertThat(line).contains("file={written=0, failure=0}");
+            assertThat(line).contains("openSearch={exported=0, failure=0}");
+        } finally {
+            Logger.unregisterListener(listener);
+            RepeaterTabsIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void logStartupExportCompletionSummary_usesProvidedStartupSession() throws Exception {
+        Logger.registerListener(listener);
+        try {
+            invokeStatic("logStartupExportCompletionSummary", "g1-s1");
+            drainEventDispatchThread();
+
+            assertThat(capturedMessages).hasSize(1);
+            assertThat(capturedMessages.get(0))
+                    .startsWith("[StartupExport] Repeater Tabs: export complete startupSession=g1-s1 ");
         } finally {
             Logger.unregisterListener(listener);
             RepeaterTabsIndexReporter.clearSessionState();
@@ -88,6 +104,12 @@ class RepeaterTabsStartupSummaryTest {
         Method method = RepeaterTabsIndexReporter.class.getDeclaredMethod(methodName);
         method.setAccessible(true);
         method.invoke(null);
+    }
+
+    private static void invokeStatic(String methodName, String value) throws Exception {
+        Method method = RepeaterTabsIndexReporter.class.getDeclaredMethod(methodName, String.class);
+        method.setAccessible(true);
+        method.invoke(null, value);
     }
 
     private static void drainEventDispatchThread() throws Exception {

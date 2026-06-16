@@ -238,6 +238,40 @@ final class StatsPanelFormatters {
     }
 
     /**
+     * Returns the total retry-queue doc count across all exporter indexes.
+     */
+    static int totalRetryQueueDocs() {
+        IndexingRetryCoordinator coordinator = IndexingRetryCoordinator.getInstance();
+        int total = 0;
+        for (String indexKey : ExportStats.getIndexKeys()) {
+            total += coordinator.getQueueSize(RuntimeConfig.indexNameForKey(indexKey));
+        }
+        return total;
+    }
+
+    /**
+     * Returns the total estimated retry-queue bytes across all exporter indexes.
+     */
+    static long totalRetryQueueBytes() {
+        IndexingRetryCoordinator coordinator = IndexingRetryCoordinator.getInstance();
+        long total = 0L;
+        for (String indexKey : ExportStats.getIndexKeys()) {
+            total += coordinator.getQueueBytesEstimate(RuntimeConfig.indexNameForKey(indexKey));
+        }
+        return total;
+    }
+
+    /**
+     * Formats a run peak queue depth as {@code "N docs (X.X MiB)"}, or {@code "—"} when zero.
+     */
+    static String formatPeakQueueDepth(int docs, long bytes) {
+        if (docs <= 0 && bytes <= 0) {
+            return "—";
+        }
+        return formatSpillQueue(Math.max(0, docs), Math.max(0L, bytes));
+    }
+
+    /**
      * Lists per-index oldest queued ages, omitting empty queues. Returns {@code "—"} when none
      * are queued.
      */

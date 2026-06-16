@@ -11,6 +11,7 @@ import ai.attackframework.tools.burp.utils.FileExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.SystemMetrics;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotFlushExecutor;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -140,10 +141,10 @@ public final class ExporterIndexStatsReporter {
             SingleDocOutcomeRecorder.record("exporter", ok, openSearchActive,
                     "Exporter stats snapshot push failed");
             if (!ok && openSearchActive) {
-                Logger.logWarnPanelOnly("[Exporter] Stats snapshot push failed.");
+                Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed.");
             }
         } catch (Exception e) {
-            Logger.logWarnPanelOnly("[Exporter] Stats snapshot push failed: "
+            Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: "
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
@@ -155,9 +156,13 @@ public final class ExporterIndexStatsReporter {
         data.put("indexes", buildIndexesSection());
         data.put("traffic", buildTrafficSection());
         data.put("telemetry", buildTelemetrySection());
-        ExportStats.ProxyHistorySnapshotStats proxySnapshot = ExportStats.getLastProxyHistorySnapshot();
+        Map<String, Object> snapshotLastRuns = buildSnapshotLastRunsSection();
+        if (!snapshotLastRuns.isEmpty()) {
+            data.put("snapshot_last_runs", snapshotLastRuns);
+        }
+        ExportStats.SnapshotLastRunStats proxySnapshot = ExportStats.getLastProxyHistorySnapshot();
         if (proxySnapshot != null) {
-            data.put("proxy_history_last_run", buildProxyHistoryLastRunSection(proxySnapshot));
+            data.put("proxy_history_last_run", buildSnapshotLastRunSection(proxySnapshot));
         }
 
         Map<String, Object> doc = new LinkedHashMap<>();
@@ -222,6 +227,14 @@ public final class ExporterIndexStatsReporter {
         if (startToFirstTrafficMs >= 0) {
             export.put("start_to_first_traffic_ms", startToFirstTrafficMs);
         }
+        int lastBulkTarget = ExportStats.getLastBulkTargetBatch();
+        if (lastBulkTarget >= 0) {
+            export.put("bulk_target_batch_last", lastBulkTarget);
+        }
+        int lastBulkAttempted = ExportStats.getLastBulkAttemptedDocs();
+        if (lastBulkAttempted >= 0) {
+            export.put("bulk_attempted_docs_last", lastBulkAttempted);
+        }
         return export;
     }
 
@@ -229,11 +242,19 @@ public final class ExporterIndexStatsReporter {
         Map<String, Object> indexes = new LinkedHashMap<>();
         for (String key : ExportStats.getIndexKeys()) {
             Map<String, Object> index = new LinkedHashMap<>();
-            index.put("count", ExportStats.getSuccessCount(key));
+            long exported = ExportStats.getExportedCount(key);
+            index.put("exported", exported);
+            index.put("count", exported);
             index.put("bytes", ExportStats.getExportedBytes(key));
             long failures = ExportStats.getFailureCount(key);
             if (failures > 0) {
                 index.put("failures", failures);
+            }
+            if (RuntimeConfig.isAnyFileExportEnabled()) {
+                long written = FileExportStats.getWrittenCount(key);
+                if (written > 0) {
+                    index.put("file_written", written);
+                }
             }
             indexes.put(key, index);
         }
@@ -243,20 +264,50 @@ public final class ExporterIndexStatsReporter {
     private static Map<String, Object> buildTrafficSection() {
         Map<String, Object> traffic = new LinkedHashMap<>();
         traffic.put("queue_size", TrafficExportQueue.getCurrentSize());
+        traffic.put("queue_bytes_estimate", TrafficExportQueue.getCurrentBytesEstimate());
+        traffic.put("active_drain_batches", TrafficExportQueue.getActiveDrainBatches());
         traffic.put("queue_drops", ExportStats.getTrafficQueueDrops());
+        traffic.put("spill", buildTrafficSpillSection());
         long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
         if (fallbackHits > 0) {
             traffic.put("tool_source_fallback_hits", fallbackHits);
         }
-        long lastPushMs = ExportStats.getLastPushDurationMs("traffic");
-        if (lastPushMs >= 0) {
-            traffic.put("last_push_duration_ms", lastPushMs);
+        long lastBulkMs = ExportStats.getLastLiveBulkDurationMs("traffic");
+        if (lastBulkMs >= 0) {
+            traffic.put("last_live_bulk_duration_ms", lastBulkMs);
+        }
+        Map<String, Object> lastBulkShape = buildLastLiveBulkShapeSection();
+        if (!lastBulkShape.isEmpty()) {
+            traffic.put("last_live_bulk_shape", lastBulkShape);
         }
         Map<String, Object> attribution = buildTrafficAttribution();
         if (!attribution.isEmpty()) {
             traffic.put("attribution", attribution);
         }
         return traffic;
+    }
+
+    private static Map<String, Object> buildTrafficSpillSection() {
+        Map<String, Object> spill = new LinkedHashMap<>();
+        spill.put("count", TrafficExportQueue.getCurrentSpillSize());
+        spill.put("bytes", TrafficExportQueue.getCurrentSpillBytes());
+        spill.put("oldest_age_ms", TrafficExportQueue.getCurrentSpillOldestAgeMs());
+        spill.put("recovered_count", TrafficExportQueue.getRecoveredSpillCount());
+        spill.put("recovered_bytes", TrafficExportQueue.getRecoveredSpillBytes());
+        return spill;
+    }
+
+    private static Map<String, Object> buildLastLiveBulkShapeSection() {
+        Map<String, Object> shape = new LinkedHashMap<>();
+        int targetBatch = ExportStats.getLastBulkTargetBatch();
+        if (targetBatch >= 0) {
+            shape.put("target_batch", targetBatch);
+        }
+        int attemptedDocs = ExportStats.getLastBulkAttemptedDocs();
+        if (attemptedDocs >= 0) {
+            shape.put("attempted_docs", attemptedDocs);
+        }
+        return shape;
     }
 
     private static Map<String, Object> buildTrafficAttribution() {
@@ -341,7 +392,61 @@ public final class ExporterIndexStatsReporter {
         if (!repeaterSources.isEmpty()) {
             telemetry.put("repeater_live_metadata_sources", repeaterSources);
         }
+        telemetry.put("snapshot_flush_executor", buildSnapshotFlushExecutorSection());
+        Map<String, Object> runPeaks = buildRunPeaksSection();
+        if (!runPeaks.isEmpty()) {
+            telemetry.put("run_peaks", runPeaks);
+        }
         return telemetry;
+    }
+
+    private static Map<String, Object> buildRunPeaksSection() {
+        Map<String, Object> peaks = new LinkedHashMap<>();
+        int peakTrafficDocs = ExportStats.getPeakTrafficQueueDocs();
+        long peakTrafficBytes = ExportStats.getPeakTrafficQueueBytes();
+        if (peakTrafficDocs > 0 || peakTrafficBytes > 0) {
+            peaks.put("traffic_queue_docs", peakTrafficDocs);
+            peaks.put("traffic_queue_bytes", peakTrafficBytes);
+        }
+        int peakSpillDocs = ExportStats.getPeakSpillDocs();
+        long peakSpillBytes = ExportStats.getPeakSpillBytes();
+        if (peakSpillDocs > 0 || peakSpillBytes > 0) {
+            peaks.put("spill_docs", peakSpillDocs);
+            peaks.put("spill_bytes", peakSpillBytes);
+        }
+        int peakRetryDocs = ExportStats.getPeakRetryQueueDocs();
+        long peakRetryBytes = ExportStats.getPeakRetryQueueBytes();
+        if (peakRetryDocs > 0 || peakRetryBytes > 0) {
+            peaks.put("retry_queue_docs", peakRetryDocs);
+            peaks.put("retry_queue_bytes", peakRetryBytes);
+        }
+        int peakChunkTarget = ExportStats.getPeakSnapshotChunkTarget();
+        if (peakChunkTarget > 0) {
+            peaks.put("snapshot_chunk_target", peakChunkTarget);
+        }
+        long peakFlushMs = ExportStats.getPeakSnapshotFlushMs();
+        if (peakFlushMs > 0) {
+            peaks.put("snapshot_flush_ms", peakFlushMs);
+        }
+        return peaks;
+    }
+
+    private static Map<String, Object> buildSnapshotFlushExecutorSection() {
+        SnapshotFlushExecutor.Snapshot snapshot = SnapshotFlushExecutor.stats();
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("flush", buildExecutorPoolSection(snapshot.flush()));
+        section.put("dual_sink", buildExecutorPoolSection(snapshot.dualSink()));
+        return section;
+    }
+
+    private static Map<String, Object> buildExecutorPoolSection(SnapshotFlushExecutor.PoolStats stats) {
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("pool_size", stats.poolSize());
+        section.put("active_count", stats.activeCount());
+        section.put("queue_size", stats.queueSize());
+        section.put("task_count", stats.taskCount());
+        section.put("completed_task_count", stats.completedTaskCount());
+        return section;
     }
 
     private static Map<String, Object> sparseRepeaterMetadataSources() {
@@ -355,13 +460,47 @@ public final class ExporterIndexStatsReporter {
         return sources;
     }
 
-    private static Map<String, Object> buildProxyHistoryLastRunSection(ExportStats.ProxyHistorySnapshotStats proxySnapshot) {
+    private static Map<String, Object> buildSnapshotLastRunsSection() {
+        Map<String, Object> runs = new LinkedHashMap<>();
+        for (String reporterKey : ExportStats.getSnapshotReporterKeys()) {
+            ExportStats.SnapshotLastRunStats snapshot = ExportStats.getSnapshotLastRun(reporterKey);
+            if (snapshot != null) {
+                runs.put(reporterKey, buildSnapshotLastRunSection(snapshot));
+            }
+        }
+        return runs;
+    }
+
+    private static Map<String, Object> buildSnapshotLastRunSection(ExportStats.SnapshotLastRunStats snapshot) {
         Map<String, Object> run = new LinkedHashMap<>();
-        run.put("attempted", proxySnapshot.attempted());
-        run.put("success", proxySnapshot.success());
-        run.put("duration_ms", proxySnapshot.durationMs());
-        run.put("docs_per_sec", proxySnapshot.docsPerSecond());
-        run.put("final_chunk_target", proxySnapshot.finalChunkTarget());
+        run.put("attempted", snapshot.attempted());
+        run.put("success", snapshot.success());
+        run.put("duration_ms", snapshot.durationMs());
+        run.put("docs_per_sec", snapshot.docsPerSecond());
+        run.put("final_chunk_target", snapshot.finalChunkTarget());
+        if (snapshot.chunks() > 0) {
+            run.put("chunks", snapshot.chunks());
+            run.put("avg_chunk_docs", snapshot.avgChunkDocs());
+            run.put("avg_chunk_bytes", snapshot.avgChunkBytes());
+        }
+        if (snapshot.buildWallMs() >= 0L) {
+            run.put("build_wall_ms", snapshot.buildWallMs());
+        }
+        if (snapshot.buildCpuMs() >= 0L) {
+            run.put("build_cpu_ms", snapshot.buildCpuMs());
+        }
+        if (snapshot.flushMs() >= 0L) {
+            run.put("flush_ms", snapshot.flushMs());
+        }
+        if (snapshot.fileFlushMs() >= 0L) {
+            run.put("file_flush_ms", snapshot.fileFlushMs());
+        }
+        if (snapshot.openSearchFlushMs() >= 0L) {
+            run.put("open_search_flush_ms", snapshot.openSearchFlushMs());
+        }
+        if (snapshot.buildWorkers() > 0) {
+            run.put("build_workers", snapshot.buildWorkers());
+        }
         return run;
     }
 

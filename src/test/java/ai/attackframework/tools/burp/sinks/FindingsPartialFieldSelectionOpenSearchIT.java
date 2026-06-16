@@ -1,6 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitDocumentByExportId;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitSingleIndexedDocument;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.createIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.nestedMap;
@@ -23,7 +23,6 @@ import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.scanner.audit.issues.AuditIssue;
 import burp.api.montoya.scanner.audit.issues.AuditIssueConfidence;
@@ -77,9 +76,9 @@ class FindingsPartialFieldSelectionOpenSearchIT {
         when(service.secure()).thenReturn(true);
 
         Map<String, Object> built = FindingsIndexReporter.buildFindingDoc(issue);
-        PreparedExportDocument prepared = pushOneDocument("findings", built, state);
+        pushOneDocument("findings", built, state);
 
-        Map<String, Object> stored = awaitDocumentByExportId("findings", prepared.exportId());
+        Map<String, Object> stored = awaitSingleIndexedDocument("findings");
         assertThat(stored).containsKeys("meta", "issue", "target");
         assertThat(stored).doesNotContainKeys("burp", "requests_responses", "collaborator");
         assertThat(nestedMap(stored, "issue").get("name")).isEqualTo("SQL injection");

@@ -1,8 +1,5 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,15 +8,22 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotExportEngine;
 import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotScopeCache;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.Annotations;
@@ -32,8 +36,8 @@ import burp.api.montoya.http.message.responses.HttpResponse;
 /**
  * Pushes Burp sitemap items to the sitemap index when export is running and
  * "Sitemap" is selected. Initial push on Start (background); every 30 seconds
- * pushes only items not yet sent. Does not start a new run while the previous
- * is still in progress. Respects extension scope (All / Burp / Custom).
+ * exports only new sitemap rows (in-memory seen keys). Does not start a new
+ * run while the previous is still in progress. Respects extension scope (All / Burp / Custom).
  */
 public final class SitemapIndexReporter {
 
@@ -51,8 +55,8 @@ public final class SitemapIndexReporter {
      */
     private static final LazyScheduler SCHEDULER =
             new LazyScheduler("attackframework-sitemap-reporter");
-    /** Internal URL+method keys of items already pushed this session; only push new on 30s run. */
-    private static final Set<String> pushedItemKeys = ConcurrentHashMap.newKeySet();
+    private static final PeriodicExportSeenKeys PERIODIC_EXPORT_SEEN_KEYS =
+            new PeriodicExportSeenKeys();
     private static volatile boolean runInProgress;
 
     private SitemapIndexReporter() {}
@@ -95,7 +99,7 @@ public final class SitemapIndexReporter {
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Sitemap] Snapshot push failed: " + msg);
+            Logger.logWarnPanelOnly("[SnapshotExport] Sitemap: push failed: " + msg);
         }
     }
 
@@ -118,8 +122,8 @@ public final class SitemapIndexReporter {
      */
     public static void stop() {
         SCHEDULER.stop();
-        pushedItemKeys.clear();
         runInProgress = false;
+        PERIODIC_EXPORT_SEEN_KEYS.clear();
     }
 
     static void pushNewItemsOnly() {
@@ -141,8 +145,11 @@ public final class SitemapIndexReporter {
             pushItems(api, false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Sitemap] Periodic push failed: " + msg);
+            Logger.logWarnPanelOnly("[PeriodicExport] Sitemap: push failed: " + msg);
         }
+    }
+
+    private record SitemapWorkItem(HttpRequestResponse item, boolean burpInScope) {
     }
 
     private static void pushItems(MontoyaApi api, boolean pushAll) {
@@ -155,77 +162,208 @@ public final class SitemapIndexReporter {
             if (items == null) {
                 return;
             }
-            var state = RuntimeConfig.getState();
-            int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
-            List<String> batchKeys = new ArrayList<>(batchSize);
-            List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
-            long runningBatchBytes = 0;
-            int attempted = 0;
-
-            SnapshotSummary.Baseline baseline = pushAll ? SnapshotSummary.forIndexKey("sitemap") : null;
-            boolean openSearchActive = pushAll && RuntimeConfig.isOpenSearchActive();
-            boolean fileActive = pushAll && RuntimeConfig.isAnyFileExportEnabled();
-            long startNs = pushAll ? System.nanoTime() : 0L;
             if (pushAll) {
-                Logger.logInfoPanelOnly("[Sitemap] Exporting sitemap backlog: " + items.size() + " item(s).");
-            }
-
-            int processed = 0;
-            for (HttpRequestResponse item : items) {
-                if (!RuntimeConfig.isExportRunning()) {
-                    break;
-                }
-                // Cooperative pacing: brief yield + GC duty-cycle gate every Nth iteration so a
-                // very large sitemap (tens of thousands of items) does not starve the EDT or
-                // saturate G1's concurrent threads.
-                SnapshotPacing.paceItem(processed);
-                processed++;
-                HttpRequest request = item.request();
-                if (request == null) {
-                    continue;
-                }
-                String url = RequestResponseDocBuilder.safeRequestUrl(request, "Sitemap");
-                if (url == null) {
-                    url = "";
-                }
-                boolean burpInScope = safeBurpInScope(api, url);
-                if (!ScopeFilter.shouldExport(state, url, burpInScope)) {
-                    continue;
-                }
-                String method = request.method() != null ? request.method() : "";
-                String key = requestId(url, method);
-                if (!pushAll && pushedItemKeys.contains(key)) {
-                    continue;
-                }
-                Map<String, Object> doc = buildSitemapDoc(item, burpInScope);
-                if (doc == null) {
-                    continue;
-                }
-                batchKeys.add(key);
-                batchDocs.add(doc);
-                runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
-                attempted++;
-
-                if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize() || runningBatchBytes >= BULK_MAX_BYTES) {
-                    flushBatch(batchKeys, batchDocs);
-                    batchKeys.clear();
-                    batchDocs.clear();
-                    runningBatchBytes = 0;
-                }
-            }
-            if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
-                flushBatch(batchKeys, batchDocs);
-            }
-
-            if (baseline != null) {
-                long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
-                SnapshotSummary.logInfo("Sitemap", baseline, attempted, durationMs, openSearchActive, fileActive);
+                pushAllItemsParallel(api, items);
+            } else {
+                pushIncrementalItems(api, items);
             }
         } finally {
             runInProgress = false;
         }
     }
 
+    private static void pushAllItemsParallel(MontoyaApi api, List<HttpRequestResponse> items) {
+        var state = RuntimeConfig.getState();
+        SnapshotScopeCache scopeCache = new SnapshotScopeCache(api);
+        Set<String> startupKeys = ConcurrentHashMap.newKeySet();
+        AtomicInteger processed = new AtomicInteger();
+        AtomicInteger skippedScope = new AtomicInteger();
+        AtomicInteger skippedDuplicate = new AtomicInteger();
+        boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
+        boolean fileActive = RuntimeConfig.isAnyFileExportEnabled();
+        SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("sitemap");
+        long startNs = System.nanoTime();
+        String indexName = sitemapIndexName();
+        String activeBaseUrl = RuntimeConfig.openSearchUrl();
+        int batchSize = SnapshotBatchTuning.initialTarget();
+        Logger.logInfoPanelOnly("[StartupExport] Sitemap: exporting backlog: " + items.size() + " item(s).");
+        SnapshotPacing.resetCountersForSnapshot();
+
+        SnapshotExportEngine.Result exportResult = SnapshotExportEngine.run(
+                items,
+                SnapshotExportEngine.defaultBuildWorkers(),
+                BULK_MAX_BYTES,
+                batchSize,
+                SnapshotBatchTuning::applyLiveBackpressure,
+                SnapshotBatchTuning.chunkTargetAdjuster(),
+                activeBaseUrl,
+                indexName,
+                "sitemap",
+                item -> {
+                    SitemapWorkItem work = toStartupWorkItem(
+                            item, state, scopeCache, startupKeys, processed, skippedScope, skippedDuplicate);
+                    if (work == null) {
+                        return null;
+                    }
+                    return prepareSitemapWorkItem(indexName, work);
+                },
+                (chunk, outcome, nextChunkTarget) ->
+                        BulkOutcomeRecorder.record(
+                                "sitemap", "Sitemap", "Bulk push", outcome, openSearchActive));
+
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+        ExportStats.recordSnapshotLastRun(
+                ExportStats.SNAPSHOT_SITEMAP,
+                exportResult.attempted(),
+                exportResult.success(),
+                durationMs,
+                exportResult.finalChunkTarget(),
+                exportResult.chunks(),
+                exportResult.totalChunkBytes(),
+                exportResult.buildWallMs(),
+                exportResult.buildCpuMs(),
+                exportResult.flushMs(),
+                exportResult.fileFlushMs(),
+                exportResult.openSearchFlushMs(),
+                exportResult.buildWorkers());
+        SnapshotSummary.logInfo(
+                "Sitemap",
+                baseline,
+                exportResult.attempted(),
+                durationMs,
+                exportResult.buildWallMs(),
+                exportResult.flushMs(),
+                openSearchActive,
+                fileActive);
+        Logger.logInfoPanelOnly("[SnapshotExport] Sitemap: backlog filters: seen=" + items.size()
+                + " exported=" + exportResult.attempted()
+                + " skipped_scope=" + skippedScope.get()
+                + " skipped_duplicate=" + skippedDuplicate.get()
+                + " in " + durationMs + "ms.");
+    }
+
+    private static SitemapWorkItem toStartupWorkItem(
+            HttpRequestResponse item,
+            ConfigState.State state,
+            SnapshotScopeCache scopeCache,
+            Set<String> startupKeys,
+            AtomicInteger processed,
+            AtomicInteger skippedScope,
+            AtomicInteger skippedDuplicate) {
+        SnapshotPacing.paceItem(processed.getAndIncrement());
+        if (item == null) {
+            return null;
+        }
+        HttpRequest request = item.request();
+        if (request == null) {
+            return null;
+        }
+        String url = RequestResponseDocBuilder.safeRequestUrl(request, "Sitemap");
+        if (url == null) {
+            url = "";
+        }
+        boolean burpInScope = scopeCache.isInScope(url);
+        if (!ScopeFilter.shouldExport(state, url, burpInScope)) {
+            skippedScope.incrementAndGet();
+            return null;
+        }
+        String itemKey = SnapshotExportFingerprints.sitemapItemKey(request);
+        if (!startupKeys.add(itemKey)) {
+            skippedDuplicate.incrementAndGet();
+            return null;
+        }
+        PERIODIC_EXPORT_SEEN_KEYS.recordSeen(itemKey);
+        return new SitemapWorkItem(item, burpInScope);
+    }
+
+    private static PreparedExportDocument prepareSitemapWorkItem(String indexName, SitemapWorkItem work) {
+        Map<String, Object> doc = buildSitemapDoc(work.item(), work.burpInScope());
+        if (doc == null) {
+            return null;
+        }
+        return ExportDocumentIdentity.prepare(indexName, "sitemap", doc);
+    }
+
+    private static void pushIncrementalItems(MontoyaApi api, List<HttpRequestResponse> items) {
+        var state = RuntimeConfig.getState();
+        SnapshotScopeCache scopeCache = new SnapshotScopeCache(api);
+        int batchTarget = BatchSizeController.getInstance().getCurrentBatchSize();
+        List<PreparedExportDocument> batchDocs = new ArrayList<>(batchTarget);
+        long runningBatchBytes = 0;
+        String indexName = sitemapIndexName();
+        int processed = 0;
+        int checked = 0;
+        int exported = 0;
+
+        for (HttpRequestResponse item : items) {
+            if (!RuntimeConfig.isExportRunning()) {
+                break;
+            }
+            SnapshotPacing.paceItem(processed);
+            processed++;
+            SitemapWorkItem work = toWorkItem(item, state, scopeCache);
+            if (work == null) {
+                continue;
+            }
+            checked++;
+            String itemKey = SnapshotExportFingerprints.sitemapItemKey(work.item().request());
+            if (!PERIODIC_EXPORT_SEEN_KEYS.isNew(itemKey)) {
+                continue;
+            }
+            Map<String, Object> doc = buildSitemapDoc(work.item(), work.burpInScope());
+            if (doc == null) {
+                continue;
+            }
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, "sitemap", doc);
+            if (!PERIODIC_EXPORT_SEEN_KEYS.claimNew(itemKey)) {
+                continue;
+            }
+            batchDocs.add(prepared);
+            runningBatchBytes += prepared.estimatedBulkBytes();
+            exported++;
+
+            if (batchDocs.size() >= batchTarget || runningBatchBytes >= BULK_MAX_BYTES) {
+                flushBatch(batchDocs);
+                batchDocs.clear();
+                runningBatchBytes = 0;
+            }
+        }
+        if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
+            flushBatch(batchDocs);
+        }
+        logPeriodicExportSummary(checked, exported);
+    }
+
+    private static void logPeriodicExportSummary(int checked, int exported) {
+        if (checked <= 0) {
+            return;
+        }
+        if (exported > 0) {
+            Logger.logInfoPanelOnly("[PeriodicExport] Sitemap: " + exported
+                    + " new item(s); " + checked + " in-scope checked.");
+            return;
+        }
+        Logger.logDebug("[PeriodicExport] Sitemap: no new items; " + checked + " in-scope checked.");
+    }
+
+    private static SitemapWorkItem toWorkItem(
+            HttpRequestResponse item,
+            ConfigState.State state,
+            SnapshotScopeCache scopeCache) {
+        HttpRequest request = item.request();
+        if (request == null) {
+            return null;
+        }
+        String url = RequestResponseDocBuilder.safeRequestUrl(request, "Sitemap");
+        if (url == null) {
+            url = "";
+        }
+        boolean burpInScope = scopeCache.isInScope(url);
+        if (!ScopeFilter.shouldExport(state, url, burpInScope)) {
+            return null;
+        }
+        return new SitemapWorkItem(item, burpInScope);
+    }
 
     /** Returns sitemap request/response items, tolerating transient Burp lifecycle nulls. */
     private static List<HttpRequestResponse> safeSiteMapItems(MontoyaApi api) {
@@ -243,48 +381,20 @@ public final class SitemapIndexReporter {
         }
     }
 
-    private static boolean safeBurpInScope(MontoyaApi api, String url) {
-        if (url == null) {
-            return false;
-        }
-        try {
-            if (api == null) {
-                return false;
-            }
-            var scope = api.scope();
-            return scope != null && scope.isInScope(url);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
+    private static void flushBatch(List<PreparedExportDocument> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
-        int attempted = batchDocs.size();
-        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, sitemapIndexName(), "sitemap", batchDocs);
-        BulkOutcomeRecorder.record("sitemap", "Sitemap", "Bulk push", attempted, successCount, openSearchActive);
-        if (successCount == attempted) {
-            pushedItemKeys.addAll(batchKeys);
-        }
-    }
-
-    private static String requestId(String url, String method) {
-        String raw = (url != null ? url : "") + "|" + (method != null ? method : "");
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(raw.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            return String.valueOf(raw.hashCode());
-        }
+        var outcome = OpenSearchClientWrapper.pushPreparedBulk(activeBaseUrl, sitemapIndexName(), "sitemap", batchDocs);
+        BulkOutcomeRecorder.record("sitemap", "Sitemap", "Bulk push", outcome, openSearchActive);
     }
 
     static Map<String, Object> buildSitemapDoc(HttpRequestResponse item) {
         return buildSitemapDoc(item, false);
     }
 
-    private static Map<String, Object> buildSitemapDoc(HttpRequestResponse item, boolean burpInScope) {
+    private static Map<String, Object> buildSitemapDoc(
+            HttpRequestResponse item,
+            boolean burpInScope) {
         Map<String, Object> doc = new LinkedHashMap<>();
         HttpRequest request = item.request();
         HttpService service = item.httpService();

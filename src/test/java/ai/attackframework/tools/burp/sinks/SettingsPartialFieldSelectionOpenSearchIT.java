@@ -1,6 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitDocumentByExportId;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitSingleIndexedDocument;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.createIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.nestedMap;
@@ -22,7 +22,6 @@ import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 @Tag("integration")
 class SettingsPartialFieldSelectionOpenSearchIT {
@@ -59,8 +58,8 @@ class SettingsPartialFieldSelectionOpenSearchIT {
         built.put("project", Map.of("project_options", Map.of("test_key", "project_value")));
         built.put("user", Map.of("user_options", Map.of("test_key", "user_value")));
 
-        PreparedExportDocument prepared = pushOneDocument("settings", built, state);
-        Map<String, Object> stored = awaitDocumentByExportId("settings", prepared.exportId());
+        pushOneDocument("settings", built, state);
+        Map<String, Object> stored = awaitSingleIndexedDocument("settings");
 
         assertThat(stored).containsKeys("meta", "burp", "project");
         assertThat(stored).doesNotContainKey("user");

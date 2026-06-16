@@ -22,6 +22,14 @@ class SnapshotSummaryTest {
     }
 
     @Test
+    void formatSummary_includesBuildAndFlushTimingWhenProvided() {
+        SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("sitemap");
+        String line = SnapshotSummary.formatSummary("ProxyHistory", baseline, 9, 1234L, 1000L, 234L, true, true);
+        assertThat(line).isEqualTo("[SnapshotExport] ProxyHistory: snapshot complete: captured=9; "
+                + "file={written=0, failure=0}; openSearch={exported=0, failure=0} in 1234ms (build_wall_ms=1000 flush_ms=234).");
+    }
+
+    @Test
     void snapshotRoute_capturesDeltasAcrossMutations() {
         TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
         TrafficRouteBucket.recordOpenSearchSuccess(route, 2);
@@ -35,8 +43,23 @@ class SnapshotSummaryTest {
         TrafficRouteBucket.recordFileFailure(route, 4);
 
         String line = SnapshotSummary.formatSummary("ProxyHistory", baseline, 9, 1234L, true, true);
-        assertThat(line).isEqualTo("[ProxyHistory] snapshot complete: captured=9; "
-                + "file={success=3, failure=4}; openSearch={success=5, failure=2} in 1234ms.");
+        assertThat(line).isEqualTo("[SnapshotExport] ProxyHistory: snapshot complete: captured=9; "
+                + "file={written=3, failure=4}; openSearch={exported=5, failure=2} in 1234ms.");
+    }
+
+    @Test
+    void completionDeltas_exposesRouteCountersForCallersThatComposeTheirOwnLogLine() {
+        TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
+        SnapshotSummary.Baseline baseline = SnapshotSummary.forRoute(route);
+
+        TrafficRouteBucket.recordOpenSearchSuccess(route, 5);
+        TrafficRouteBucket.recordFileSuccess(route, 3);
+
+        SnapshotSummary.CompletionDeltas deltas = SnapshotSummary.completionDeltas(baseline);
+        assertThat(deltas.fileSuccess()).isEqualTo(3);
+        assertThat(deltas.openSearchSuccess()).isEqualTo(5);
+        assertThat(deltas.fileFailure()).isZero();
+        assertThat(deltas.openSearchFailure()).isZero();
     }
 
     @Test
@@ -51,30 +74,30 @@ class SnapshotSummaryTest {
         FileExportStats.recordFailure("sitemap", 0);
 
         String line = SnapshotSummary.formatSummary("Sitemap", baseline, 5, 50L, true, true);
-        assertThat(line).isEqualTo("[Sitemap] snapshot complete: captured=5; "
-                + "file={success=3, failure=0}; openSearch={success=4, failure=1} in 50ms.");
+        assertThat(line).isEqualTo("[SnapshotExport] Sitemap: snapshot complete: captured=5; "
+                + "file={written=3, failure=0}; openSearch={exported=4, failure=1} in 50ms.");
     }
 
     @Test
     void formatSummary_omitsFileAndOpenSearchSegmentsWhenInactive() {
         SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("sitemap");
         String line = SnapshotSummary.formatSummary("Sitemap", baseline, 7, 12L, false, false);
-        assertThat(line).isEqualTo("[Sitemap] snapshot complete: captured=7 in 12ms.");
+        assertThat(line).isEqualTo("[SnapshotExport] Sitemap: snapshot complete: captured=7 in 12ms.");
     }
 
     @Test
     void formatSummary_clampsNegativesToZero() {
         SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("sitemap");
         String line = SnapshotSummary.formatSummary("Sitemap", baseline, -1, -5L, true, true);
-        assertThat(line).isEqualTo("[Sitemap] snapshot complete: captured=0; "
-                + "file={success=0, failure=0}; openSearch={success=0, failure=0} in 0ms.");
+        assertThat(line).isEqualTo("[SnapshotExport] Sitemap: snapshot complete: captured=0; "
+                + "file={written=0, failure=0}; openSearch={exported=0, failure=0} in 0ms.");
     }
 
     @Test
     void formatSummary_blankPrefixFallsBackToExport() {
         SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("sitemap");
         String line = SnapshotSummary.formatSummary("  ", baseline, 0, 0L, false, false);
-        assertThat(line).startsWith("[Export] snapshot complete: ");
+        assertThat(line).startsWith("[SnapshotExport] Export: snapshot complete: ");
     }
 
     @Test
@@ -84,8 +107,8 @@ class SnapshotSummaryTest {
         String blankKeyLine = SnapshotSummary.formatSummary(
                 "X", SnapshotSummary.forIndexKey("  "), 3, 0L, true, true);
         // No counter source means deltas stay at zero but segments still render when flags are on.
-        assertThat(nullRouteLine).isEqualTo("[X] snapshot complete: captured=3; "
-                + "file={success=0, failure=0}; openSearch={success=0, failure=0} in 0ms.");
+        assertThat(nullRouteLine).isEqualTo("[SnapshotExport] X: snapshot complete: captured=3; "
+                + "file={written=0, failure=0}; openSearch={exported=0, failure=0} in 0ms.");
         assertThat(blankKeyLine).isEqualTo(nullRouteLine);
     }
 }

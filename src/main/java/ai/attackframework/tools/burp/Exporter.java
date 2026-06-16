@@ -11,6 +11,7 @@ import ai.attackframework.tools.burp.sinks.ToolWebSocketLiveHandler;
 import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
 import ai.attackframework.tools.burp.ui.AttackFrameworkPanel;
 import ai.attackframework.tools.burp.ui.ConfigPanel;
+import ai.attackframework.tools.burp.ui.text.Tooltips;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
@@ -51,7 +52,7 @@ public class Exporter implements BurpExtension {
      */
     @Override
     public void initialize(MontoyaApi api) {
-        final String extensionName = "Attack Framework: Burp Exporter";
+        final String extensionName = "Burp Exporter";
         final String tabTitle = "Exporter";
         String version = Version.get();
 
@@ -62,9 +63,11 @@ public class Exporter implements BurpExtension {
             MontoyaApiProvider.set(api);
             BurpRuntimeMetadata.prime(api);
             Logger.initialize(api.logging());
+            Tooltips.configureSharedToolTipManager();
             logForwarder = new ExporterIndexLogForwarder();
             Logger.registerListener(logForwarder);
-            BatchSizeController.getInstance().setOnChangeListener(size -> Logger.logDebug("Batch size: " + size));
+            BatchSizeController.getInstance().setOnChangeListener(
+                    size -> Logger.logDebug("[BatchSize] Shared batch size: " + size));
             requestEditorRegistration = api.userInterface().registerHttpRequestEditorProvider(
                     RepeaterTabsIndexReporter.requestEditorProvider());
             responseEditorRegistration = api.userInterface().registerHttpResponseEditorProvider(
@@ -92,9 +95,9 @@ public class Exporter implements BurpExtension {
             webSocketCreatedRegistration =
                     api.websockets().registerWebSocketCreatedHandler(ToolWebSocketLiveHandler.instance());
 
-            Logger.logInfo("Burp Exporter v" + version + " initialized successfully.");
+            Logger.logInfo("[Export] Burp Exporter v" + version + " initialized successfully.");
         } catch (RuntimeException e) {
-            Logger.logError("Burp Exporter v" + version + " initialization failed: " + e.getMessage(), e);
+            Logger.logError("[Export] Burp Exporter v" + version + " initialization failed: " + e.getMessage(), e);
             cleanupExtensionState();
         }
     }

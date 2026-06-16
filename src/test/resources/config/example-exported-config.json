@@ -47,11 +47,11 @@
     "log" : {
       "minLevel" : "warn",
       "pauseAutoscroll" : true,
-      "filterText" : "tls",
+      "filterText" : "",
       "filterCase" : true,
       "filterRegex" : false,
       "filterNegative" : false,
-      "searchText" : "retry",
+      "searchText" : "",
       "searchCase" : false,
       "searchRegex" : true
     }

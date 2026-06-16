@@ -50,10 +50,10 @@ public final class ExporterIndexConfigReporter {
             SingleDocOutcomeRecorder.record("exporter", ok, openSearchActive,
                     "Exporter config snapshot push failed");
             if (!ok && openSearchActive) {
-                Logger.logWarnPanelOnly("[Exporter] Config snapshot push failed.");
+                Logger.logWarnPanelOnly("[SnapshotExport] Exporter config: push failed.");
             }
         } catch (Exception e) {
-            Logger.logWarnPanelOnly("[Exporter] Config snapshot push failed: "
+            Logger.logWarnPanelOnly("[SnapshotExport] Exporter config: push failed: "
                     + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }

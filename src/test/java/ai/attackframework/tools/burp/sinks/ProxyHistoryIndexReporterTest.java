@@ -129,7 +129,12 @@ class ProxyHistoryIndexReporterTest {
         when(item.annotations()).thenReturn(null);
         when(item.response()).thenReturn(null);
 
-        Map<?, ?> doc = (Map<?, ?>) callStatic(ProxyHistoryIndexReporter.class, "buildDocument", api, item);
+        Map<?, ?> doc = (Map<?, ?>) callStatic(
+                ProxyHistoryIndexReporter.class,
+                "buildDocument",
+                api,
+                item,
+                new ai.attackframework.tools.burp.utils.concurrent.SnapshotScopeCache(api));
 
         assertThat(doc).isNotNull();
         Map<?, ?> requestDoc = map(doc.get("request"));

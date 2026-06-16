@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getComboBox;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigJsonMapper;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -35,11 +36,11 @@ class ConfigPanelSinkConfigRoundTripHeadlessTest {
             JTextField fileDiskUsagePercentField = JTextField.class.cast(get(original, "fileDiskUsagePercentField"));
             JCheckBox openSearchSinkCheckbox = JCheckBox.class.cast(get(original, "openSearchSinkCheckbox"));
             JTextField openSearchUrlField = JTextField.class.cast(get(original, "openSearchUrlField"));
-            JComboBox<String> openSearchAuthTypeCombo = JComboBox.class.cast(get(original, "openSearchAuthTypeCombo"));
+            JComboBox<String> openSearchAuthTypeCombo = getComboBox(original, "openSearchAuthTypeCombo");
             JTextField openSearchUserField = JTextField.class.cast(get(original, "openSearchUserField"));
             JTextField openSearchCertPathField = JTextField.class.cast(get(original, "openSearchCertPathField"));
             JTextField openSearchCertKeyPathField = JTextField.class.cast(get(original, "openSearchCertKeyPathField"));
-            JComboBox<String> openSearchTlsModeCombo = JComboBox.class.cast(get(original, "openSearchTlsModeCombo"));
+            JComboBox<String> openSearchTlsModeCombo = getComboBox(original, "openSearchTlsModeCombo");
 
             runEdt(() -> {
                 if (!fileSinkCheckbox.isSelected()) {
@@ -93,11 +94,11 @@ class ConfigPanelSinkConfigRoundTripHeadlessTest {
             runEdt(() -> restored.onImportResult(imported));
 
             JTextField restoredFilePathField = JTextField.class.cast(get(restored, "filePathField"));
-            JComboBox<String> restoredAuthTypeCombo = JComboBox.class.cast(get(restored, "openSearchAuthTypeCombo"));
+            JComboBox<String> restoredAuthTypeCombo = getComboBox(restored, "openSearchAuthTypeCombo");
             JTextField restoredOpenSearchUserField = JTextField.class.cast(get(restored, "openSearchUserField"));
             JTextField restoredCertPathField = JTextField.class.cast(get(restored, "openSearchCertPathField"));
             JTextField restoredCertKeyPathField = JTextField.class.cast(get(restored, "openSearchCertKeyPathField"));
-            JComboBox<String> restoredTlsModeCombo = JComboBox.class.cast(get(restored, "openSearchTlsModeCombo"));
+            JComboBox<String> restoredTlsModeCombo = getComboBox(restored, "openSearchTlsModeCombo");
 
             runEdt(() -> {
                 assertThat(restoredFilePathField.getText()).isEqualTo("C:/Burp/ui-roundtrip");

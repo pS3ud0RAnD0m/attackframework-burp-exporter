@@ -6,13 +6,17 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotFlushExecutor;
 import ai.attackframework.tools.burp.sinks.FileExportService;
+import ai.attackframework.tools.burp.utils.export.BulkOutcomeBreakdown;
+import ai.attackframework.tools.burp.utils.export.BulkPushOutcome;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
@@ -183,94 +187,167 @@ public class OpenSearchClientWrapper {
         if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
             return RuntimeConfig.isAnyFileExportEnabled();
         }
-        boolean success = IndexingRetryCoordinator.getInstance().pushDocument(
-                baseUrl, indexName, prepared.document(), prepared.indexKey());
-        if (success) {
-            ExportStats.recordExportedBytes(prepared.indexKey(), BulkPayloadEstimator.estimateBytes(prepared.document()));
+        SingleDocPushResult result = IndexingRetryCoordinator.getInstance()
+                .pushPreparedDocumentWithResult(baseUrl, prepared);
+        if (result.success()) {
+            ExportStats.recordBulkBreakdown(indexKey, result.breakdown());
+            ExportStats.recordExportedBytes(indexKey, prepared.estimatedBulkBytes());
         }
-        return success;
+        return result.success();
     }
 
     /**
-     * Pushes documents in bulk. Delegates to the retry coordinator (retries with backoff, then
-     * queue failed items).
-     *
-     * <p>Documents are filtered to include only fields enabled in the Fields panel before push.</p>
-     *
-     * <h2>Bulk-path responsibilities</h2>
-     *
-     * <p>The exporter deliberately uses two distinct bulk paths with different guarantees:</p>
-     * <ul>
-     *   <li><strong>{@code OpenSearchClientWrapper.pushBulk}</strong> (this method) is the
-     *       retry-coordinated path used by one-shot <em>snapshot</em> reporters (Proxy History,
-     *       Proxy WebSocket, Sitemap, Findings). It emits to every enabled file sink via
-     *       {@link FileExportService#emitBatch(List)} and delegates the OpenSearch call to
-     *       {@link IndexingRetryCoordinator}, which retries with backoff and queues failed items
-     *       for the drain thread. Callers are expected to be small, bounded batches that can
-     *       tolerate the synchronous round-trip.</li>
-     *   <li><strong>{@link ChunkedBulkSender#push}</strong> is the streaming path used by the
-     *       live {@code TrafficExportQueue} drain loop. It writes NDJSON directly into the POST
-     *       body as the queue is drained, applies per-chunk size/byte/time caps, and tracks
-     *       per-route counts via {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket}.
-     *       It does <em>not</em> retry; when a bulk fails the caller is responsible for
-     *       re-queuing (or dropping) items.</li>
-     * </ul>
-     *
-     * <p>Snapshot reporters stay on {@code pushBulk} because losing retry + drain-queue fallback
-     * would regress reliability for one-shot waves. Live traffic stays on
-     * {@code ChunkedBulkSender} because its backpressure and streaming body are required under
-     * sustained throughput. Both paths route file-sink writes through {@link FileExportService}
-     * and attribute success/failure through {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket},
-     * so traffic accounting is consistent regardless of which path a document takes.</p>
+     * Pushes already-prepared documents in bulk without re-filtering or re-estimating payload size.
      *
      * @param baseUrl OpenSearch base URL
      * @param indexName target index name
-     * @param documents documents to index (each filtered by {@link ai.attackframework.tools.burp.utils.config.ExportFieldFilter})
+     * @param indexKey logical index key for stats and retry routing
+     * @param preparedDocuments sink-ready documents from {@link ExportDocumentIdentity#prepare}
      * @return number of documents successfully indexed
+     */
+    public static BulkPushOutcome pushPreparedBulk(
+            String baseUrl,
+            String indexName,
+            String indexKey,
+            List<PreparedExportDocument> preparedDocuments) {
+        if (preparedDocuments == null || preparedDocuments.isEmpty()) {
+            return BulkPushOutcome.empty();
+        }
+        int attempted = preparedDocuments.size();
+        boolean fileActive = RuntimeConfig.isAnyFileExportEnabled();
+        boolean openSearchActive = RuntimeConfig.isOpenSearchExportEnabled()
+                && baseUrl != null
+                && !baseUrl.isBlank();
+        if (fileActive && openSearchActive) {
+            return pushPreparedBulkDualSink(baseUrl, indexName, indexKey, preparedDocuments, attempted);
+        }
+        if (fileActive) {
+            long fileStartNs = System.nanoTime();
+            FileExportService.emitPreparedChunk(preparedDocuments);
+            long fileFlushMs = (System.nanoTime() - fileStartNs) / 1_000_000L;
+            return BulkPushOutcome.fileOnly(attempted, fileFlushMs);
+        }
+        return pushPreparedBulkOpenSearchOnly(baseUrl, indexName, indexKey, preparedDocuments, attempted);
+    }
+
+    private static BulkPushOutcome pushPreparedBulkDualSink(
+            String baseUrl,
+            String indexName,
+            String indexKey,
+            List<PreparedExportDocument> preparedDocuments,
+            int attempted) {
+        CompletableFuture<Long> fileFuture = CompletableFuture.supplyAsync(() -> {
+            long startNs = System.nanoTime();
+            FileExportService.emitPreparedChunk(preparedDocuments);
+            return (System.nanoTime() - startNs) / 1_000_000L;
+        }, SnapshotFlushExecutor.dualSinkExecutor());
+        CompletableFuture<BulkPushOutcome> openSearchFuture = CompletableFuture.supplyAsync(
+                () -> pushPreparedBulkOpenSearchOnly(baseUrl, indexName, indexKey, preparedDocuments, attempted),
+                SnapshotFlushExecutor.dualSinkExecutor());
+        try {
+            long fileFlushMs = fileFuture.get();
+            BulkPushOutcome openSearchOutcome = openSearchFuture.get();
+            return new BulkPushOutcome(
+                    openSearchOutcome.attempted(),
+                    openSearchOutcome.exportedCount(),
+                    openSearchOutcome.breakdown(),
+                    fileFlushMs,
+                    openSearchOutcome.openSearchFlushMs());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fileFuture.cancel(true);
+            openSearchFuture.cancel(true);
+            return BulkPushOutcome.empty();
+        } catch (ExecutionException e) {
+            Logger.logWarnPanelOnly("[OpenSearch] Dual-sink bulk push failed for "
+                    + indexName + ": "
+                    + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
+            return BulkPushOutcome.empty();
+        }
+    }
+
+    private static BulkPushOutcome pushPreparedBulkOpenSearchOnly(
+            String baseUrl,
+            String indexName,
+            String indexKey,
+            List<PreparedExportDocument> preparedDocuments,
+            int attempted) {
+        long totalEstimatedBytes = 0;
+        for (PreparedExportDocument preparedDoc : preparedDocuments) {
+            totalEstimatedBytes += preparedDoc.estimatedBulkBytes();
+        }
+        long osStartNs = System.nanoTime();
+        BulkResult bulkResult = IndexingRetryCoordinator.getInstance()
+                .pushPreparedBulkWithResult(baseUrl, indexName, preparedDocuments, indexKey);
+        long openSearchFlushMs = (System.nanoTime() - osStartNs) / 1_000_000L;
+        BulkOutcomeBreakdown breakdown = bulkResult.breakdown();
+        int exported = breakdown.exportedCount();
+        if (exported > 0) {
+            long estimatedSuccessBytes = Math.round(
+                    (double) totalEstimatedBytes * exported / attempted);
+            ExportStats.recordExportedBytes(indexKey, estimatedSuccessBytes);
+        }
+        return new BulkPushOutcome(attempted, exported, breakdown, -1L, openSearchFlushMs);
+    }
+
+    /**
+     * One-shot prepared bulk using pre-serialized NDJSON bytes when present. Used by the retry
+     * coordinator.
+     */
+    static BulkResult doPushPreparedBulkWithDetails(
+            String baseUrl,
+            String indexName,
+            List<PreparedExportDocument> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return new BulkResult(BulkOutcomeBreakdown.empty(), List.of());
+        }
+        for (PreparedExportDocument document : documents) {
+            byte[] bytes = document.bulkNdjsonBytes();
+            if (bytes == null || bytes.length == 0) {
+                List<Map<String, Object>> preparedDocs = new ArrayList<>(documents.size());
+                for (PreparedExportDocument preparedDoc : documents) {
+                    preparedDocs.add(preparedDoc.document());
+                }
+                return doPushBulkWithDetails(baseUrl, indexName, preparedDocs);
+            }
+        }
+        return PreparedBulkSender.push(baseUrl, indexName, documents);
+    }
+
+    /**
+     * Pushes documents in bulk after prepare. Delegates to the retry coordinator.
+     *
+     * <p>Snapshot reporters use {@link #pushPreparedBulk} directly when documents are already
+     * prepared. Live traffic uses {@link ChunkedBulkSender#push} instead.</p>
      */
     public static int pushBulk(String baseUrl, String indexName, String indexKey, List<Map<String, Object>> documents) {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
         List<PreparedExportDocument> prepared = new ArrayList<>(documents.size());
-        long totalEstimatedBytes = 0;
         for (Map<String, Object> doc : documents) {
-            PreparedExportDocument preparedDoc = ExportDocumentIdentity.prepare(indexName, indexKey, doc);
-            prepared.add(preparedDoc);
-            totalEstimatedBytes += BulkPayloadEstimator.estimateBytes(preparedDoc.document());
+            prepared.add(ExportDocumentIdentity.prepare(indexName, indexKey, doc));
         }
-        FileExportService.emitBatch(prepared);
-        if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
-            return RuntimeConfig.isAnyFileExportEnabled() ? prepared.size() : 0;
-        }
-        List<Map<String, Object>> preparedDocs = prepared.stream().map(PreparedExportDocument::document).toList();
-        int successCount = IndexingRetryCoordinator.getInstance().pushBulk(baseUrl, indexName, preparedDocs, indexKey);
-        if (successCount > 0 && !preparedDocs.isEmpty()) {
-            long estimatedSuccessBytes = Math.round((double) totalEstimatedBytes * successCount / preparedDocs.size());
-            ExportStats.recordExportedBytes(indexKey, estimatedSuccessBytes);
-        }
-        return successCount;
+        return pushPreparedBulk(baseUrl, indexName, indexKey, prepared).successCount();
     }
 
     /**
      * One-shot index (no retry, no queue). Used by coordinator and drain thread.
      */
-    static boolean doPushDocument(String baseUrl, String indexName, Map<String, Object> document) {
+    static SingleDocPushResult doPushDocument(String baseUrl, String indexName, Map<String, Object> document) {
         try {
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl,
                     RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
-            String exportId = ExportDocumentIdentity.exportIdOf(document);
             IndexRequest<Map<String, Object>> request = new IndexRequest.Builder<Map<String, Object>>()
                     .index(indexName)
-                    .id(exportId.isBlank() ? null : exportId)
                     .document(document)
                     .build();
             IndexResponse response = client.index(request);
-            String result = response.result().jsonValue();
-            return result != null && (result.equalsIgnoreCase("created") || result.equalsIgnoreCase("updated"));
+            BulkOutcomeBreakdown breakdown = breakdownFromIndexResult(response.result().jsonValue());
+            return new SingleDocPushResult(breakdown.successTotal() > 0, breakdown);
         } catch (IOException | RuntimeException e) {
             logPushOutcome(indexName, "doPushDocument", e);
-            return false;
+            return new SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
         }
     }
 
@@ -281,18 +358,20 @@ public class OpenSearchClientWrapper {
         if (documents == null || documents.isEmpty()) {
             // OpenSearch rejects empty bulk requests with "request body is required"; short-circuit
             // here so every reporter/bulk entry point shares the same guard as the chunked path.
-            return new BulkResult(0, List.of());
+            return new BulkResult(BulkOutcomeBreakdown.empty(), List.of());
         }
         try (ExportStats.BulkInFlightTicket ignored = ExportStats.openBulk()) {
             OpenSearchClient client = OpenSearchConnector.getClient(baseUrl,
                     RuntimeConfig.openSearchUser(), RuntimeConfig.openSearchPassword());
             BulkRequest.Builder builder = new BulkRequest.Builder();
             for (Map<String, Object> doc : documents) {
-                String exportId = ExportDocumentIdentity.exportIdOf(doc);
-                builder.operations(o -> o.index(i -> i.index(indexName).id(exportId.isBlank() ? null : exportId).document(doc)));
+                builder.operations(o -> o.index(i -> i.index(indexName).document(doc)));
             }
             BulkResponse response = client.bulk(builder.build());
-            int successCount = 0;
+            int created = 0;
+            int updated = 0;
+            int noop = 0;
+            int failed = 0;
             List<FailedItem> failedItems = new ArrayList<>();
             final int maxLoggedPerBulk = 3;
             int i = 0;
@@ -300,8 +379,12 @@ public class OpenSearchClientWrapper {
             for (var item : response.items()) {
                 var err = item.error();
                 if (err == null) {
-                    successCount++;
+                    BulkOutcomeBreakdown single = breakdownFromIndexResult(item.result());
+                    created += single.created();
+                    updated += single.updated();
+                    noop += single.noop();
                 } else {
+                    failed++;
                     String type = err.type() != null ? err.type() : "unknown";
                     String reason = err.reason() != null ? err.reason() : "unknown";
                     failedItems.add(new FailedItem(i, type, reason));
@@ -317,7 +400,7 @@ public class OpenSearchClientWrapper {
                         + " additional=" + (failedItems.size() - maxLoggedPerBulk)
                         + " totalFailed=" + failedItems.size());
             }
-            return new BulkResult(successCount, failedItems);
+            return new BulkResult(new BulkOutcomeBreakdown(created, updated, noop, failed), failedItems);
         } catch (IOException | RuntimeException e) {
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             logPushOutcome(indexName, "doPushBulk", e);
@@ -325,8 +408,20 @@ public class OpenSearchClientWrapper {
                 Logger.logWarnPanelOnly("[OpenSearch] Bulk request failed for "
                         + indexName + ": OpenSearch reported an empty bulk request body.");
             }
-            return new BulkResult(0, List.of());
+            return new BulkResult(BulkOutcomeBreakdown.empty(), List.of());
         }
+    }
+
+    private static BulkOutcomeBreakdown breakdownFromIndexResult(String result) {
+        if (result == null || result.isBlank()) {
+            return BulkOutcomeBreakdown.assumeExported(1);
+        }
+        return switch (result.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "created" -> new BulkOutcomeBreakdown(1, 0, 0, 0);
+            case "updated" -> new BulkOutcomeBreakdown(0, 1, 0, 0);
+            case "noop" -> new BulkOutcomeBreakdown(0, 0, 1, 0);
+            default -> BulkOutcomeBreakdown.assumeExported(1);
+        };
     }
 
     /**
@@ -368,12 +463,38 @@ public class OpenSearchClientWrapper {
     }
 
     static final class BulkResult {
-        final int successCount;
+        final BulkOutcomeBreakdown breakdown;
         final List<FailedItem> failedItems;
 
-        BulkResult(int successCount, List<FailedItem> failedItems) {
-            this.successCount = successCount;
+        BulkResult(BulkOutcomeBreakdown breakdown, List<FailedItem> failedItems) {
+            this.breakdown = breakdown != null ? breakdown : BulkOutcomeBreakdown.empty();
             this.failedItems = failedItems != null ? List.copyOf(failedItems) : List.of();
+        }
+
+        int successCount() {
+            return breakdown.successTotal();
+        }
+
+        BulkOutcomeBreakdown breakdown() {
+            return breakdown;
+        }
+    }
+
+    static final class SingleDocPushResult {
+        final boolean success;
+        final BulkOutcomeBreakdown breakdown;
+
+        SingleDocPushResult(boolean success, BulkOutcomeBreakdown breakdown) {
+            this.success = success;
+            this.breakdown = breakdown != null ? breakdown : BulkOutcomeBreakdown.empty();
+        }
+
+        boolean success() {
+            return success;
+        }
+
+        BulkOutcomeBreakdown breakdown() {
+            return breakdown;
         }
     }
 

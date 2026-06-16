@@ -13,6 +13,13 @@
  *       ai.attackframework.tools.burp.utils.concurrent.Workers} shutdown" pattern used by every
  *       reporter and by the orphan-flush path so lazy start and deterministic teardown are
  *       implemented in one place.</li>
+ *   <li>{@link ai.attackframework.tools.burp.utils.concurrent.SnapshotExportEngine} runs parallel
+ *       {@code build + prepare} on worker threads with serial bulk flush on the assembly thread.
+ *       Used by Proxy History, Sitemap initial, Findings backlog, and Proxy WebSocket historic
+ *       snapshots.</li>
+ *   <li>{@link ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing} and
+ *       {@link ai.attackframework.tools.burp.utils.concurrent.SnapshotScopeCache} throttle and
+ *       memoize scope checks during large one-shot exports.</li>
  * </ul>
  */
 package ai.attackframework.tools.burp.utils.concurrent;

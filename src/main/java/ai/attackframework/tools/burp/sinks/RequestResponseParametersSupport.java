@@ -1,37 +1,15 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.function.Supplier;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.IllegalCharsetNameException;
-import java.nio.charset.StandardCharsets;
-import java.nio.charset.UnsupportedCharsetException;
 
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.StringKeyedMaps;
-import burp.api.montoya.core.Marker;
-import burp.api.montoya.http.HttpService;
-import burp.api.montoya.http.handler.HttpResponseReceived;
-import burp.api.montoya.http.message.Cookie;
 import burp.api.montoya.http.message.HttpHeader;
-import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.StatusCodeClass;
 import burp.api.montoya.http.message.requests.HttpRequest;
-import burp.api.montoya.http.message.responses.HttpResponse;
-import burp.api.montoya.http.message.responses.analysis.Attribute;
-import burp.api.montoya.http.message.responses.analysis.AttributeType;
 import burp.api.montoya.http.message.params.HttpParameterType;
 import burp.api.montoya.http.message.params.ParsedHttpParameter;
 import burp.api.montoya.http.message.ContentType;
@@ -86,7 +64,7 @@ final class RequestResponseParametersSupport {
         return null;
     }
     static boolean shouldIncludeBodyParameters(
-            burp.api.montoya.http.message.ContentType contentType,
+            ContentType contentType,
             List<HttpHeader> headers,
             String inferredContentType) {
         if (HttpMessageDocSupport.INFERRED_CT_BINARY.equals(inferredContentType)) {
@@ -345,7 +323,7 @@ final class RequestResponseParametersSupport {
     /** Package-private for direct testing of the threshold branches. */
     static void recordParameterTelemetry(
             HttpRequest request,
-            burp.api.montoya.http.message.ContentType contentType,
+            ContentType contentType,
             int retained,
             int droppedSynthesized,
             boolean bodyEnumerationSkipped) {

@@ -27,7 +27,6 @@ import static org.mockito.Mockito.when;
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
-import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -79,6 +78,43 @@ class SitemapIndexReporterIT {
     }
 
     @Test
+    void pushNewItemsOnly_doesNotDuplicateUnchangedItemAfterBacklog() throws InterruptedException {
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        try {
+            createSitemapIndex();
+            setRuntimeConfigForSitemapExport();
+            setMockMontoyaApiWithOneSitemapItem();
+
+            List<String> infoLines = new ArrayList<>();
+            Logger.LogListener logListener = (level, message) -> {
+                if ("INFO".equals(level) || "DEBUG".equals(level)) {
+                    infoLines.add(message);
+                }
+            };
+            Logger.registerListener(logListener);
+            try {
+                SitemapIndexReporter.start();
+                SitemapIndexReporter.pushSnapshotNow();
+                awaitInfoLogStartingWith(infoLines, "[SnapshotExport] Sitemap: snapshot complete: captured=");
+                assertThat(awaitDocumentCount()).isEqualTo(1L);
+
+                SitemapIndexReporter.pushNewItemsOnly();
+                SitemapIndexReporter.pushNewItemsOnly();
+
+                assertThat(awaitDocumentCount()).isEqualTo(1L);
+                assertThat(infoLines.stream()
+                                .anyMatch(line -> line.contains("[PeriodicExport] Sitemap: no new items")))
+                        .isTrue();
+            } finally {
+                Logger.unregisterListener(logListener);
+                SitemapIndexReporter.stop();
+            }
+        } finally {
+            cleanup();
+        }
+    }
+
+    @Test
     void pushSnapshotNow_indexesDocument_withExpectedShapeAndContent() throws InterruptedException {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         try {
@@ -96,8 +132,8 @@ class SitemapIndexReporterIT {
             try {
                 SitemapIndexReporter.start();
                 SitemapIndexReporter.pushSnapshotNow();
-                awaitInfoLog(infoLines, "[Sitemap] Exporting sitemap backlog: 1 item(s).");
-                awaitInfoLogStartingWith(infoLines, "[Sitemap] snapshot complete: captured=");
+                awaitInfoLog(infoLines, "[StartupExport] Sitemap: exporting backlog: 1 item(s).");
+                awaitInfoLogStartingWith(infoLines, "[SnapshotExport] Sitemap: snapshot complete: captured=");
             } finally {
                 Logger.unregisterListener(logListener);
             }
@@ -206,6 +242,9 @@ class SitemapIndexReporterIT {
         when(request.body()).thenReturn(null);
         when(request.markers()).thenReturn(List.of());
         when(request.contentType()).thenReturn(null);
+        burp.api.montoya.core.ByteArray requestBytes = mockByteArray(
+                "GET /path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n");
+        when(request.toByteArray()).thenReturn(requestBytes);
 
         when(response.statusCode()).thenReturn(ITEM_STATUS);
         when(response.reasonPhrase()).thenReturn(ITEM_REASON);
@@ -216,12 +255,35 @@ class SitemapIndexReporterIT {
         when(response.headers()).thenReturn(List.of());
         when(response.body()).thenReturn(null);
         when(response.markers()).thenReturn(List.of());
+        burp.api.montoya.core.ByteArray responseBytes = mockByteArray(
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+        when(response.toByteArray()).thenReturn(responseBytes);
 
         when(httpService.host()).thenReturn(ITEM_HOST);
         when(httpService.port()).thenReturn(ITEM_PORT);
         when(httpService.secure()).thenReturn(true);
 
         MontoyaApiProvider.set(api);
+    }
+
+    private long awaitDocumentCount() throws InterruptedException {
+        OpenSearchClient client = OpenSearchReachable.getClient();
+        int maxAttempts = 10;
+        for (int i = 0; i < maxAttempts; i++) {
+            try {
+                client.indices().refresh(new RefreshRequest.Builder().index(sitemapIndexName()).build());
+                long count = client.count(c -> c.index(sitemapIndexName())).count();
+                if (count > 0 || i == maxAttempts - 1) {
+                    return count;
+                }
+            } catch (Exception e) {
+                if (i == maxAttempts - 1) {
+                    throw new AssertionError("Count failed: " + e.getMessage(), e);
+                }
+            }
+            Thread.sleep(300);
+        }
+        return 0L;
     }
 
     private Map<String, Object> awaitFirstDocument() {
@@ -271,6 +333,12 @@ class SitemapIndexReporterIT {
         for (String key : keys) {
             assertThat(map.containsKey(key)).isTrue();
         }
+    }
+
+    private static burp.api.montoya.core.ByteArray mockByteArray(String raw) {
+        burp.api.montoya.core.ByteArray bytes = mock(burp.api.montoya.core.ByteArray.class);
+        when(bytes.getBytes()).thenReturn(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return bytes;
     }
 
     private static void awaitInfoLog(List<String> infoLines, String expected) throws InterruptedException {

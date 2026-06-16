@@ -143,7 +143,7 @@ final class RepeaterTabMetadataHeuristics {
     }
 
     /**
-     * Returns a stable slot identity for startup dedupe, excluding auxiliary message-view tabs.
+     * Returns a stable slot identity for startup capture, excluding auxiliary message-view tabs.
      */
     static String buildSlotIdentityKey(List<SelectedTabSnapshot> selectedTabs) {
         if (selectedTabs == null || selectedTabs.isEmpty()) {

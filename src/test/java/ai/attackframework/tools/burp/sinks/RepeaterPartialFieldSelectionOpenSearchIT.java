@@ -1,11 +1,9 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitDocumentByExportId;
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.createIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.nestedMap;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.openSearchSinks;
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.pushOneDocument;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.pushAndAwaitIndexedDocument;
 import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -21,12 +19,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
@@ -34,6 +32,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 
 @Tag("integration")
+@ResourceLock("traffic-opensearch-index")
 class RepeaterPartialFieldSelectionOpenSearchIT {
 
     private final ConfigState.State previous = RuntimeConfig.getState();
@@ -49,8 +48,6 @@ class RepeaterPartialFieldSelectionOpenSearchIT {
     @Test
     void partialRepeaterFieldSelection_indexesNestedBurpRepeaterLeaves() throws Exception {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
-        createIndex("traffic");
-
         ConfigState.State state = new ConfigState.State(
                 List.of(ConfigKeys.SRC_TRAFFIC),
                 ConfigKeys.SCOPE_ALL,
@@ -68,10 +65,11 @@ class RepeaterPartialFieldSelectionOpenSearchIT {
                 "buildDocument",
                 repeaterRequestResponse(),
                 "Tab-42",
-                "Group-B"));
+                "Group-B",
+                "slot:partial-it"));
 
-        PreparedExportDocument prepared = pushOneDocument("traffic", built, state);
-        Map<String, Object> stored = awaitDocumentByExportId("traffic", prepared.exportId());
+        Map<String, Object> stored = pushAndAwaitIndexedDocument(
+                "traffic", built, state, "burp.repeater.tab_name", "Tab-42");
 
         assertThat(stored).containsKeys("meta", "burp");
         assertThat(stored).doesNotContainKeys("request", "response", "websocket");

@@ -1,19 +1,20 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
-import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.concurrent.EdtMonitor;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotExportEngine;
 import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotScopeCache;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
+import ai.attackframework.tools.burp.utils.export.BulkPushOutcome;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.requests.HttpRequest;
@@ -29,12 +30,6 @@ public final class ProxyHistoryIndexReporter {
 
     private static final String SCHEMA_VERSION = "1";
     private static final long BULK_MAX_BYTES = 5L * 1024 * 1024;
-    private static final int SNAPSHOT_BATCH_INITIAL = 250;
-    private static final int SNAPSHOT_BATCH_MIN = 100;
-    private static final int SNAPSHOT_BATCH_MAX = 1500;
-    private static final int LIVE_QUEUE_BACKPRESSURE_DOCS = 10_000;
-    private static final int LIVE_SPILL_BACKPRESSURE_DOCS = 2_000;
-    private static final long BACKPRESSURE_PAUSE_MS = 75;
 
     /**
      * Single-owner scheduler for proxy-history snapshot work.
@@ -88,7 +83,7 @@ public final class ProxyHistoryIndexReporter {
             });
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Traffic] Proxy history snapshot push failed: " + msg);
+            Logger.logWarnPanelOnly("[SnapshotExport] ProxyHistory: push failed: " + msg);
         }
     }
 
@@ -104,19 +99,24 @@ public final class ProxyHistoryIndexReporter {
      */
     private static void pushItems(MontoyaApi api, String baseUrl) {
         boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
+        TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
+        SnapshotSummary.Baseline baseline = SnapshotSummary.forRoute(route);
         List<ProxyHttpRequestResponse> history = api.proxy().history();
         if (history == null || history.isEmpty()) {
+            TrafficStartupBacklogSummary.complete(
+                    TrafficStartupBacklogSummary.Component.PROXY_HISTORY,
+                    0,
+                    baseline);
             return;
         }
 
-        TrafficRouteBucket.Route route = TrafficRouteBucket.proxyHistorySnapshot();
-        SnapshotSummary.Baseline baseline = SnapshotSummary.forRoute(route);
         long startNs = System.nanoTime();
-        int success = 0;
-        int attempted = 0;
-        int chunkTarget = initialSnapshotBatchSize();
-        long estBytes = 0;
-        List<Map<String, Object>> chunk = new ArrayList<>(chunkTarget);
+        int chunkTarget = SnapshotBatchTuning.initialTarget();
+        int buildWorkers = SnapshotExportEngine.defaultBuildWorkers();
+        ExportStats.setCurrentProxyHistoryChunkTarget(chunkTarget);
+        String trafficIndexName = TrafficRouteBucket.trafficIndexName();
+        String trafficIndexKey = TrafficRouteBucket.INDEX_KEY;
+        SnapshotScopeCache scopeCache = new SnapshotScopeCache(api);
 
         // {@link EdtMonitor} captures stack traces when the EDT misses its tick deadline during
         // large snapshots. Completion is logged once via {@link SnapshotSummary#logInfo}.
@@ -124,76 +124,76 @@ public final class ProxyHistoryIndexReporter {
         EdtMonitor.start();
         try {
         long startGcMs = totalGcCollectionTimeMs();
-        int chunkSeq = 0;
-        Logger.logInfoPanelOnly("[ProxyHistory] Exporting proxy history backlog: " + history.size() + " item(s).");
-        Logger.logDebug("[ProxyHistory.snapshot] start: wt=" + nowWallClock()
+        Logger.logInfoPanelOnly("[StartupExport] ProxyHistory: exporting backlog: " + history.size() + " item(s).");
+        Logger.logDebug("[SnapshotExport] ProxyHistory: start wt=" + nowWallClock()
                 + " items=" + history.size()
                 + " initial_chunk_target=" + chunkTarget
+                + " build_workers=" + buildWorkers
                 + " heap_used_mib=" + heapUsedMib()
                 + " gc_time_ms=" + startGcMs);
 
-        int processed = 0;
-        for (ProxyHttpRequestResponse item : history) {
-            if (!RuntimeConfig.isExportRunning()) {
-                break;
-            }
-            // Cooperative pacing: brief yield + GC duty-cycle gate every Nth iteration so the
-            // snapshot loop never starves the EDT or saturates G1's concurrent threads on
-            // multi-tens-of-thousands-of-item projects.
-            SnapshotPacing.paceItem(processed);
-            processed++;
-            Map<String, Object> doc = buildDocument(api, item);
-            if (doc == null) {
-                continue;
-            }
-            long docBytes = BulkPayloadEstimator.estimateBytes(doc);
-            boolean sizeCapReached = !chunk.isEmpty() && (estBytes + docBytes) > BULK_MAX_BYTES;
-            boolean countCapReached = !chunk.isEmpty() && chunk.size() >= chunkTarget;
-            if (sizeCapReached || countCapReached) {
-                chunkTarget = applyLiveBackpressure(chunkTarget);
-                int attemptedChunk = chunk.size();
-                int sent = OpenSearchClientWrapper.pushBulk(
-                        baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, chunk);
-                success += sent;
-                attempted += attemptedChunk;
-                recordChunkOutcome(route, openSearchActive, attemptedChunk, sent);
-                chunkTarget = adjustSnapshotBatchTarget(chunkTarget, attemptedChunk, sent);
-                chunkSeq++;
-                chunk.clear();
-                estBytes = 0;
-            }
-            chunk.add(doc);
-            estBytes += docBytes;
-        }
-        if (RuntimeConfig.isExportRunning() && !chunk.isEmpty()) {
-            chunkTarget = applyLiveBackpressure(chunkTarget);
-            int attemptedChunk = chunk.size();
-            int sent = OpenSearchClientWrapper.pushBulk(
-                    baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, chunk);
-            success += sent;
-            attempted += attemptedChunk;
-            recordChunkOutcome(route, openSearchActive, attemptedChunk, sent);
-            chunkSeq++;
-        }
+        SnapshotExportEngine.Result exportResult = SnapshotExportEngine.run(
+                history,
+                buildWorkers,
+                BULK_MAX_BYTES,
+                chunkTarget,
+                SnapshotBatchTuning::applyLiveBackpressure,
+                SnapshotBatchTuning.chunkTargetAdjuster(),
+                baseUrl,
+                trafficIndexName,
+                trafficIndexKey,
+                item -> {
+                    Map<String, Object> doc = buildDocument(api, item, scopeCache);
+                    if (doc == null) {
+                        return null;
+                    }
+                    return ExportDocumentIdentity.prepare(trafficIndexName, trafficIndexKey, doc);
+                },
+                (chunk, outcome, nextChunkTarget) -> {
+                    recordChunkOutcome(route, openSearchActive, outcome);
+                    ExportStats.setCurrentProxyHistoryChunkTarget(nextChunkTarget);
+                });
 
         long durationMs = (System.nanoTime() - startNs) / 1_000_000;
-        if (openSearchActive) {
-            ExportStats.recordLastPush(TrafficRouteBucket.INDEX_KEY, durationMs);
-        }
-        ExportStats.recordProxyHistorySnapshot(attempted, success, durationMs, chunkTarget);
+        ExportStats.recordProxyHistorySnapshot(
+                exportResult.attempted(),
+                exportResult.success(),
+                durationMs,
+                exportResult.finalChunkTarget(),
+                exportResult.chunks(),
+                exportResult.totalChunkBytes(),
+                exportResult.buildWallMs(),
+                exportResult.buildCpuMs(),
+                exportResult.flushMs(),
+                exportResult.fileFlushMs(),
+                exportResult.openSearchFlushMs(),
+                exportResult.buildWorkers());
         Logger.logDebug(SnapshotPacing.summaryLine("ProxyHistory")
                 + " wt=" + nowWallClock()
                 + " elapsed_ms=" + durationMs
-                + " chunks=" + chunkSeq);
+                + " build_wall_ms=" + exportResult.buildWallMs()
+                + " build_cpu_ms=" + exportResult.buildCpuMs()
+                + " flush_ms=" + exportResult.flushMs()
+                + " build_workers=" + exportResult.buildWorkers()
+                + " chunks=" + exportResult.chunks());
         SnapshotSummary.logInfo(
                 "ProxyHistory",
                 baseline,
-                attempted,
+                exportResult.attempted(),
                 durationMs,
+                exportResult.buildWallMs(),
+                exportResult.flushMs(),
                 openSearchActive,
                 RuntimeConfig.isAnyFileExportEnabled());
+        TrafficStartupBacklogSummary.complete(
+                TrafficStartupBacklogSummary.Component.PROXY_HISTORY,
+                exportResult.attempted(),
+                baseline);
         } finally {
             EdtMonitor.stop();
+            if (ExportStats.getCurrentProxyHistoryChunkTarget() >= 0) {
+                ExportStats.clearCurrentProxyHistoryChunkTarget();
+            }
         }
     }
 
@@ -231,79 +231,13 @@ public final class ProxyHistoryIndexReporter {
     private static void recordChunkOutcome(
             TrafficRouteBucket.Route route,
             boolean openSearchActive,
-            int attemptedChunk,
-            int sent) {
-        TrafficRouteBucket.recordBulkOutcome(route, attemptedChunk, sent, openSearchActive, "Proxy history chunk");
+            BulkPushOutcome outcome) {
+        TrafficRouteBucket.recordBulkOutcome(
+                route, outcome, openSearchActive, "Proxy history chunk");
     }
 
-    /**
-     * Chooses the initial proxy-history chunk target using shared runtime observations.
-     *
-     * <p>When the shared controller already converged above baseline, we reuse that value as a
-     * lower bound so history backfill does not start at an unnecessarily small chunk size.</p>
-     *
-     * @return initial doc-count target for history chunks
-     */
-    private static int initialSnapshotBatchSize() {
-        int shared = BatchSizeController.getInstance().getCurrentBatchSize();
-        int base = Math.max(SNAPSHOT_BATCH_INITIAL, shared);
-        return Math.min(SNAPSHOT_BATCH_MAX, Math.max(SNAPSHOT_BATCH_MIN, base));
-    }
-
-    /**
-     * Adjusts proxy-history chunk target from observed bulk outcome.
-     *
-     * <p>On full success, grows quickly to improve history-drain throughput. On partial/full
-     * failures, shrinks conservatively to reduce pressure on cluster and queueing paths.</p>
-     *
-     * @param current current target doc count
-     * @param attempted docs attempted in the last chunk
-     * @param succeeded docs acknowledged successful in the last chunk
-     * @return next target doc count
-     */
-    private static int adjustSnapshotBatchTarget(int current, int attempted, int succeeded) {
-        if (attempted <= 0) {
-            return current;
-        }
-        if (succeeded >= attempted) {
-            int grow = Math.max(25, current / 4);
-            return Math.min(SNAPSHOT_BATCH_MAX, current + grow);
-        }
-        int reduced = Math.max(SNAPSHOT_BATCH_MIN, current / 2);
-        return Math.min(reduced, Math.max(SNAPSHOT_BATCH_MIN, succeeded));
-    }
-
-    /**
-     * Engages chunk-level backpressure when either the live traffic queue is deep or the JVM is
-     * GC-saturated, halving the chunk doc-count target when either signal trips.
-     *
-     * <p>Queue-depth alone is not sufficient on large histories: synchronous bulk pushes keep the
-     * live queue near zero during a snapshot, so a 26k+-item history can thrash G1 without ever
-     * crossing the queue-depth threshold. The {@link SnapshotPacing#gcSaturated()} signal covers
-     * that case by reducing the chunk target when GC duty cycle is the dominant pressure.</p>
-     *
-     * @param currentTarget current chunk doc-count target
-     * @return possibly reduced target (halved when backpressure trips)
-     */
-    private static int applyLiveBackpressure(int currentTarget) {
-        int liveQueueDocs = TrafficExportQueue.getCurrentSize();
-        int spillDocs = TrafficExportQueue.getCurrentSpillSize();
-        boolean queuePressure = liveQueueDocs >= LIVE_QUEUE_BACKPRESSURE_DOCS
-                || spillDocs >= LIVE_SPILL_BACKPRESSURE_DOCS;
-        boolean gcPressure = SnapshotPacing.gcSaturated();
-        if (!queuePressure && !gcPressure) {
-            return currentTarget;
-        }
-        try {
-            Thread.sleep(BACKPRESSURE_PAUSE_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Math.max(SNAPSHOT_BATCH_MIN, currentTarget / 2);
-        }
-        return Math.max(SNAPSHOT_BATCH_MIN, currentTarget / 2);
-    }
-
-    private static Map<String, Object> buildDocument(MontoyaApi api, ProxyHttpRequestResponse item) {
+    private static Map<String, Object> buildDocument(
+            MontoyaApi api, ProxyHttpRequestResponse item, SnapshotScopeCache scopeCache) {
         HttpRequest request = item.finalRequest();
         if (request == null) {
             return null;
@@ -312,7 +246,7 @@ public final class ProxyHistoryIndexReporter {
         String scheme = service == null ? null : (service.secure() ? "https" : "http");
         Map<String, Object> requestDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
         String url = RequestResponseDocBuilder.buildBestEffortUrl(request, service, requestDoc, "ProxyHistory");
-        boolean burpInScope = url != null && api.scope().isInScope(url);
+        boolean burpInScope = scopeCache.isInScope(url);
         requestDoc.put("url", url);
         requestDoc.put("port", service == null ? null : service.port());
         requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
@@ -337,7 +271,8 @@ public final class ProxyHistoryIndexReporter {
         }
         document.put("websocket", WebSocketTrafficDocumentBuilder.notWebSocket());
 
-        document.put("meta", ExportMetaFields.meta(SCHEMA_VERSION));
+        document.put("meta", ExportMetaFields.meta(
+                SCHEMA_VERSION));
 
         // HTTP docs from Proxy History are not websocket messages.
         return document;

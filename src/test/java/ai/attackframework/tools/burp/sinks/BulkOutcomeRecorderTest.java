@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.BulkOutcomeBreakdown;
+import ai.attackframework.tools.burp.utils.export.BulkPushOutcome;
 
 /**
  * Unit tests for {@link BulkOutcomeRecorder}, which centralizes success/failure bookkeeping
@@ -83,7 +85,19 @@ class BulkOutcomeRecorderTest {
     void record_usesFallbackPrefixAndLabelWhenBlank() {
         RuntimeConfig.setExportRunning(true);
         BulkOutcomeRecorder.record("findings", " ", null, 2, 0, true);
-        assertThat(ExportStats.getLastError("findings")).contains("Bulk had");
+        assertThat(ExportStats.getLastError("findings")).contains("bulk push had");
+    }
+
+    @Test
+    void record_breakdownWithPartialOsFailure_recordsOnlyRealFailures() {
+        RuntimeConfig.setExportRunning(true);
+        BulkOutcomeBreakdown breakdown = new BulkOutcomeBreakdown(0, 3, 0, 1);
+        BulkPushOutcome outcome = new BulkPushOutcome(4, 3, breakdown);
+
+        BulkOutcomeRecorder.record("sitemap", "Sitemap", "Bulk push", outcome, true);
+
+        assertThat(ExportStats.getSuccessCount("sitemap")).isEqualTo(3);
+        assertThat(ExportStats.getFailureCount("sitemap")).isEqualTo(1);
     }
 
     @Test

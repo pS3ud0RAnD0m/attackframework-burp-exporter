@@ -29,12 +29,86 @@ import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.responses.HttpResponse;
 import burp.api.montoya.ui.editor.extension.EditorCreationContext;
+import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 class RepeaterTabsIndexReporterTest {
+
+    @Test
+    void captureFromEditorContext_queuesOncePerCaptureKey_evenWhenPushSnapshotNowRuns() throws Exception {
+        ConfigState.State previousState = RuntimeConfig.getState();
+        boolean previousRunning = RuntimeConfig.isExportRunning();
+        Field startupSelectionField = RepeaterTabsIndexReporter.class.getDeclaredField("currentStartupSelectionMetadata");
+        startupSelectionField.setAccessible(true);
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    java.util.List.of(ConfigKeys.SRC_TRAFFIC),
+                    ConfigKeys.SCOPE_ALL,
+                    java.util.List.of(),
+                    new ConfigState.Sinks(
+                            false,
+                            "",
+                            false,
+                            false,
+                            false,
+                            0,
+                            false,
+                            0,
+                            true,
+                            "https://opensearch.url:9200",
+                            "",
+                            "",
+                            "insecure",
+                            null),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    java.util.List.of("repeater_tabs"),
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(true);
+            RepeaterTabsIndexReporter.openCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, repeaterTabMetadata("GetGateway", "Concurrent", "startup-slot-7"));
+
+            EditorCreationContext context = mock(EditorCreationContext.class);
+            ToolSource toolSource = mock(ToolSource.class);
+            when(context.toolSource()).thenReturn(toolSource);
+            when(toolSource.toolType()).thenReturn(ToolType.REPEATER);
+
+            HttpRequestResponse requestResponse = repeaterRequestResponseWithResponse(
+                    "GET /repeat HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+
+            TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+                SwingUtilities.invokeAndWait(() ->
+                        RepeaterTabsIndexReporter.captureFromEditorContext(
+                                context, requestResponse, "request_editor", null));
+                assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+
+                RepeaterTabsIndexReporter.pushSnapshotNow();
+                assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+
+                SwingUtilities.invokeAndWait(() ->
+                        RepeaterTabsIndexReporter.captureFromEditorContext(
+                                context, requestResponse, "response_editor", null));
+                assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+
+                RepeaterTabsIndexReporter.pushSnapshotNow();
+                assertThat(TrafficExportQueue.getCurrentSize()).isEqualTo(1);
+            });
+        } finally {
+            RepeaterTabsIndexReporter.closeCaptureWindowForCurrentRun();
+            startupSelectionField.set(null, null);
+            RuntimeConfig.updateState(previousState);
+            RuntimeConfig.setExportRunning(previousRunning);
+            RepeaterTabsIndexReporter.clearSessionState();
+        }
+    }
 
     @Test
     void captureFromEditorContext_dedupesRepeatedRepeaterBindings() {
@@ -94,20 +168,6 @@ class RepeaterTabsIndexReporterTest {
                     null);
 
             assertThat(RepeaterTabsIndexReporter.capturedItemCount()).isZero();
-        } finally {
-            RepeaterTabsIndexReporter.clearSessionState();
-        }
-    }
-
-    @Test
-    void markQueuedForCurrentRun_dedupesWithinRun_andResetsAcrossRuns() {
-        try {
-            assertThat(RepeaterTabsIndexReporter.markQueuedForCurrentRun("fingerprint-1")).isTrue();
-            assertThat(RepeaterTabsIndexReporter.markQueuedForCurrentRun("fingerprint-1")).isFalse();
-
-            RepeaterTabsIndexReporter.clearRunState();
-
-            assertThat(RepeaterTabsIndexReporter.markQueuedForCurrentRun("fingerprint-1")).isTrue();
         } finally {
             RepeaterTabsIndexReporter.clearSessionState();
         }
@@ -835,10 +895,46 @@ class RepeaterTabsIndexReporterTest {
                     "buildDocument",
                     repeaterRequestResponse("GET /grouped HTTP/1.1\r\nHost: example.test\r\n\r\n"),
                     "2",
-                    "Group Alpha"));
+                    "Group Alpha",
+                    "slot:test-grouped"));
 
             assertThat(burpRepeater(document)).containsEntry("tab_name", "2");
             assertThat(burpRepeater(document)).containsEntry("tab_group", "Group Alpha");
+        } finally {
+            RepeaterTabsIndexReporter.clearSessionState();
+        }
+    }
+
+    @Test
+    void buildDocument_sameHttpDifferentCaptureKeys_produceDistinctPreparedDocuments() throws Exception {
+        try {
+            HttpRequestResponse sharedHttp = repeaterRequestResponseWithResponse(
+                    "GET /shared HTTP/1.1\r\nHost: example.test\r\n\r\n",
+                    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            Map<String, Object> tab385 = objectMap(callStatic(
+                    RepeaterTabsIndexReporter.class,
+                    "buildDocument",
+                    sharedHttp,
+                    "385",
+                    "Group A",
+                    "slot:tab-385"));
+            Map<String, Object> tab391 = objectMap(callStatic(
+                    RepeaterTabsIndexReporter.class,
+                    "buildDocument",
+                    sharedHttp,
+                    "391",
+                    "Group A",
+                    "slot:tab-391"));
+
+            String indexName = IndexNaming.indexNameForShortName("traffic");
+            PreparedExportDocument prepared385 = ExportDocumentIdentity.prepare(indexName, "traffic", tab385);
+            PreparedExportDocument prepared391 = ExportDocumentIdentity.prepare(indexName, "traffic", tab391);
+
+            assertThat(prepared385.document()).isNotSameAs(prepared391.document());
+            assertThat(metaString(tab385, "schema_version")).isEqualTo("1");
+            assertThat(metaString(tab391, "schema_version")).isEqualTo("1");
+            assertThat(objectMap(tab385.get("meta")).containsKey("export_id")).isFalse();
+            assertThat(objectMap(tab391.get("meta")).containsKey("identity_key")).isFalse();
         } finally {
             RepeaterTabsIndexReporter.clearSessionState();
         }
@@ -897,7 +993,8 @@ class RepeaterTabsIndexReporterTest {
                     "buildDocument",
                     requestResponse,
                     "FallbackTab",
-                    null));
+                    null,
+                    "slot:fallback"));
 
             assertThat(burpRepeater(document)).containsEntry("tab_name", "FallbackTab");
 
@@ -1312,5 +1409,9 @@ class RepeaterTabsIndexReporterTest {
             }
         }
         return out;
+    }
+
+    private static String metaString(Map<String, Object> doc, String key) {
+        return String.valueOf(objectMap(doc.get("meta")).get(key));
     }
 }

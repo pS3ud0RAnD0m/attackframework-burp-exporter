@@ -9,12 +9,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
-import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
 import ai.attackframework.tools.burp.utils.ControlStatusBridge;
+import ai.attackframework.tools.burp.utils.ExportPressureLogThrottler;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.concurrent.Workers;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.BulkOutcomeBreakdown;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 /**
  * Coordinates OpenSearch retries and bounded fallback queues for failed writes.
@@ -35,6 +38,8 @@ public final class IndexingRetryCoordinator {
     private static final int OUTAGE_LOG_THROTTLE_MS = 30_000;
 
     private static final long DRAIN_SHUTDOWN_TIMEOUT_MS = 1_000;
+    private static final ExportPressureLogThrottler RETRY_PRESSURE_LOGS =
+            new ExportPressureLogThrottler("OpenSearchRetry");
 
     private final RetryQueue queue;
     private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
@@ -75,45 +80,72 @@ public final class IndexingRetryCoordinator {
      * @param indexKey short index key for stats (e.g. {@code "traffic"})
      * @return {@code true} if indexed successfully, {@code false} otherwise
      */
-    public boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document, String indexKey) {
-        if (!RuntimeConfig.isExportReady()) {
-            return false;
+    public OpenSearchClientWrapper.SingleDocPushResult pushDocumentWithResult(
+            String baseUrl,
+            String indexName,
+            Map<String, Object> document,
+            String indexKey) {
+        if (document == null) {
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
         }
-        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
-            return false;
+        return pushPreparedDocumentWithResult(
+                baseUrl, ExportDocumentIdentity.prepare(indexName, indexKey, document));
+    }
+
+    /**
+     * Pushes one already-prepared document and queues the same prepared entry if retry is needed.
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param document prepared document to index
+     * @return structured single-document outcome
+     */
+    public OpenSearchClientWrapper.SingleDocPushResult pushPreparedDocumentWithResult(
+            String baseUrl,
+            PreparedExportDocument document) {
+        if (document == null) {
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+        }
+        if (!RuntimeConfig.isExportReady() || !RuntimeConfig.isOpenSearchExportEnabled()) {
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
         }
         ensureDrainThreadStarted();
         String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
 
         if (!outageMode.get()) {
-            boolean success = OpenSearchClientWrapper.doPushDocument(activeBaseUrl, indexName, document);
-            if (success) {
+            OpenSearchClientWrapper.SingleDocPushResult result =
+                    OpenSearchClientWrapper.doPushDocument(activeBaseUrl, document.indexName(), document.document());
+            if (result.success()) {
                 consecutiveFailures.set(0);
                 ExportStats.recordOpenSearchSuccess();
                 if (outageMode.get()) {
                     checkRecoveryAndLog(activeBaseUrl);
                 }
-                return true;
+                return result;
             }
             if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
                 ExportStats.recordOpenSearchFailure();
                 int fails = consecutiveFailures.incrementAndGet();
                 if (maybeEnterOutageMode(activeBaseUrl, fails)) {
-                    return false;
+                    return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
                 }
             }
         }
 
         if (!RuntimeConfig.isExportReady()) {
-            return false;
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
         }
 
-        boolean offered = queue.offer(indexName, document);
+        boolean offered = queue.offer(document.indexName(), document);
         if (!offered) {
-            ExportStats.recordRetryQueueDrop(indexKey, 1);
-            Logger.logErrorPanelOnly("[OpenSearch] Retry queue full for index " + indexName + "; dropping document.");
+            ExportStats.recordRetryQueueDrop(document.indexKey(), 1);
+            RETRY_PRESSURE_LOGS.record(
+                    "retry_queue_full." + document.indexKey(), 1, this::retryPressureContext);
         }
-        return false;
+        return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+    }
+
+    public boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document, String indexKey) {
+        return pushDocumentWithResult(baseUrl, indexName, document, indexKey).success();
     }
 
     /**
@@ -132,39 +164,66 @@ public final class IndexingRetryCoordinator {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
-        if (!RuntimeConfig.isExportReady()) {
-            return 0;
+        List<PreparedExportDocument> prepared = new ArrayList<>(documents.size());
+        for (Map<String, Object> document : documents) {
+            prepared.add(ExportDocumentIdentity.prepare(indexName, indexKey, document));
         }
-        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
-            return 0;
+        return pushPreparedBulkWithResult(baseUrl, indexName, prepared, indexKey).successCount();
+    }
+
+    /**
+     * Pushes prepared documents in bulk using pre-serialized NDJSON when available.
+     *
+     * @see #pushBulk
+     */
+    public int pushPreparedBulk(
+            String baseUrl,
+            String indexName,
+            List<PreparedExportDocument> documents,
+            String indexKey) {
+        return pushPreparedBulkWithResult(baseUrl, indexName, documents, indexKey).successCount();
+    }
+
+    public OpenSearchClientWrapper.BulkResult pushPreparedBulkWithResult(
+            String baseUrl,
+            String indexName,
+            List<PreparedExportDocument> documents,
+            String indexKey) {
+        if (documents == null || documents.isEmpty()) {
+            return new OpenSearchClientWrapper.BulkResult(BulkOutcomeBreakdown.empty(), List.of());
+        }
+        if (!RuntimeConfig.isExportReady() || !RuntimeConfig.isOpenSearchExportEnabled()) {
+            return new OpenSearchClientWrapper.BulkResult(BulkOutcomeBreakdown.empty(), List.of());
         }
         ensureDrainThreadStarted();
         String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
 
-        int successCount = 0;
-        List<Map<String, Object>> toQueue = new ArrayList<>();
+        OpenSearchClientWrapper.BulkResult lastResult =
+                new OpenSearchClientWrapper.BulkResult(BulkOutcomeBreakdown.empty(), List.of());
+        List<PreparedExportDocument> toQueue = new ArrayList<>();
         boolean inOutage = outageMode.get();
         int maxAttempts = inOutage ? 1 : BULK_RETRY_ATTEMPTS;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            OpenSearchClientWrapper.BulkResult result = OpenSearchClientWrapper.doPushBulkWithDetails(activeBaseUrl, indexName, documents);
-            if (result.successCount == documents.size()) {
+            OpenSearchClientWrapper.BulkResult result = OpenSearchClientWrapper.doPushPreparedBulkWithDetails(
+                    activeBaseUrl, indexName, documents);
+            lastResult = result;
+            if (result.successCount() == documents.size()) {
                 consecutiveFailures.set(0);
                 ExportStats.recordOpenSearchSuccess();
-                BatchSizeController.getInstance().recordSuccess(result.successCount);
+                BatchSizeController.getInstance().recordSuccess(result.successCount());
                 if (outageMode.get()) {
                     checkRecoveryAndLog(activeBaseUrl);
                 }
-                return result.successCount;
+                return result;
             }
-            if (result.successCount > 0) {
-                BatchSizeController.getInstance().recordPartialSuccess(result.successCount, documents.size());
+            if (result.successCount() > 0) {
+                BatchSizeController.getInstance().recordPartialSuccess(result.successCount(), documents.size());
                 consecutiveFailures.set(0);
                 ExportStats.recordOpenSearchSuccess();
                 if (outageMode.get()) {
                     checkRecoveryAndLog(activeBaseUrl);
                 }
                 toQueue = filterTransientFailures(documents, result.failedItems, indexName, indexKey);
-                successCount = result.successCount;
                 break;
             }
             if (attempt == maxAttempts) {
@@ -173,12 +232,10 @@ public final class IndexingRetryCoordinator {
                     ExportStats.recordOpenSearchFailure();
                 }
                 toQueue = filterTransientFailures(documents, result.failedItems, indexName, indexKey);
-                successCount = 0;
                 break;
             }
             if (!waitBackoffDelay(attempt)) {
                 toQueue = new ArrayList<>(documents);
-                successCount = 0;
                 break;
             }
         }
@@ -186,12 +243,12 @@ public final class IndexingRetryCoordinator {
         if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
             int fails = consecutiveFailures.incrementAndGet();
             if (maybeEnterOutageMode(activeBaseUrl, fails)) {
-                return successCount;
+                return lastResult;
             }
         }
 
         if (!RuntimeConfig.isExportReady()) {
-            return successCount;
+            return lastResult;
         }
 
         if (!toQueue.isEmpty()) {
@@ -200,14 +257,16 @@ public final class IndexingRetryCoordinator {
                 if (added < toQueue.size()) {
                     int dropped = toQueue.size() - added;
                     ExportStats.recordRetryQueueDrop(indexKey, dropped);
-                    Logger.logErrorPanelOnly("[OpenSearch] Retry queue full for index " + indexName + "; dropping " + dropped + " documents.");
+                    RETRY_PRESSURE_LOGS.record(
+                            "retry_queue_full." + indexKey, dropped, this::retryPressureContext);
                 }
             } else {
                 ExportStats.recordRetryQueueDrop(indexKey, toQueue.size());
-                Logger.logErrorPanelOnly("[OpenSearch] Bulk failure batch too large to queue (" + toQueue.size() + "); dropping.");
+                RETRY_PRESSURE_LOGS.record(
+                        "retry_batch_too_large." + indexKey, toQueue.size(), this::retryPressureContext);
             }
         }
-        return successCount;
+        return lastResult;
     }
 
     /**
@@ -366,15 +425,15 @@ public final class IndexingRetryCoordinator {
             for (String indexKey : ExportStats.getIndexKeys()) {
                 String indexName = indexNameFromKey(indexKey);
                 int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
-                List<Map<String, Object>> batch = queue.pollBatch(indexName, batchSize);
+                List<PreparedExportDocument> batch = queue.pollBatch(indexName, batchSize);
                 if (batch.isEmpty()) continue;
 
                 OpenSearchClientWrapper.BulkResult result =
-                        OpenSearchClientWrapper.doPushBulkWithDetails(baseUrl, indexName, batch);
-                int sent = result.successCount;
+                        OpenSearchClientWrapper.doPushPreparedBulkWithDetails(baseUrl, indexName, batch);
+                int sent = result.successCount();
                 if (sent == batch.size()) {
                     BatchSizeController.getInstance().recordSuccess(sent);
-                    ExportStats.recordSuccess(indexKey, sent);
+                    ExportStats.recordBulkBreakdown(indexKey, result.breakdown());
                     ExportStats.recordExportedBytes(indexKey, estimateSuccessfulBytes(batch, sent));
                     ExportStats.recordOpenSearchSuccess();
                     if (outageMode.get() && queue.allEmpty()) {
@@ -382,17 +441,19 @@ public final class IndexingRetryCoordinator {
                     }
                 } else if (sent > 0) {
                     BatchSizeController.getInstance().recordPartialSuccess(sent, batch.size());
-                    ExportStats.recordSuccess(indexKey, sent);
+                    ExportStats.recordBulkBreakdown(indexKey, result.breakdown());
                     ExportStats.recordExportedBytes(indexKey, estimateSuccessfulBytes(batch, sent));
                     ExportStats.recordOpenSearchSuccess();
-                    List<Map<String, Object>> reQueue = filterTransientFailures(batch, result.failedItems, indexName, indexKey);
+                    List<PreparedExportDocument> reQueue = filterTransientFailures(
+                            batch, result.failedItems, indexName, indexKey);
                     queue.offerAll(indexName, reQueue);
                 } else {
                     if (!OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {
                         BatchSizeController.getInstance().recordFailure(batch.size());
                         ExportStats.recordOpenSearchFailure();
                     }
-                    List<Map<String, Object>> reQueue = filterTransientFailures(batch, result.failedItems, indexName, indexKey);
+                    List<PreparedExportDocument> reQueue = filterTransientFailures(
+                            batch, result.failedItems, indexName, indexKey);
                     queue.offerAll(indexName, reQueue);
                 }
             }
@@ -435,6 +496,10 @@ public final class IndexingRetryCoordinator {
         }
     }
 
+    private String retryPressureContext() {
+        return "retry_queue_total=" + queue.totalSize();
+    }
+
     public int getQueueSize(String indexName) {
         return queue.size(indexName);
     }
@@ -450,7 +515,7 @@ public final class IndexingRetryCoordinator {
 
     /**
      * Returns the approximate total bytes of documents currently queued for retry on the given
-     * index. Delegates to {@link RetryQueue#bytesEstimate(String)}; intended for low-frequency
+     * index. Maintained incrementally on offer and dequeue; intended for low-frequency
      * observability callers (StatsPanel).
      */
     public long getQueueBytesEstimate(String indexName) {
@@ -490,10 +555,11 @@ public final class IndexingRetryCoordinator {
      *
      * <p>When no per-item detail is available (e.g. network error before OpenSearch responded)
      * the whole batch is treated as transient so the drain can retry on a later pass.</p>
+     *
+     * <p>Package-private for direct testing of the poison-pill branch.</p>
      */
-    /** Package-private for direct testing of the poison-pill branch. */
-    static List<Map<String, Object>> filterTransientFailures(
-            List<Map<String, Object>> batch,
+    static List<PreparedExportDocument> filterTransientFailures(
+            List<PreparedExportDocument> batch,
             List<OpenSearchClientWrapper.FailedItem> failedItems,
             String indexName,
             String indexKey) {
@@ -503,7 +569,7 @@ public final class IndexingRetryCoordinator {
         if (failedItems == null || failedItems.isEmpty()) {
             return new ArrayList<>(batch);
         }
-        List<Map<String, Object>> toRetry = new ArrayList<>();
+        List<PreparedExportDocument> toRetry = new ArrayList<>();
         int permanentCount = 0;
         for (OpenSearchClientWrapper.FailedItem item : failedItems) {
             int idx = item.index();
@@ -524,13 +590,13 @@ public final class IndexingRetryCoordinator {
         return toRetry;
     }
 
-    private static long estimateSuccessfulBytes(List<Map<String, Object>> batch, int successCount) {
+    private static long estimateSuccessfulBytes(List<PreparedExportDocument> batch, int successCount) {
         if (batch == null || batch.isEmpty() || successCount <= 0) {
             return 0;
         }
         long total = 0;
-        for (Map<String, Object> doc : batch) {
-            total += BulkPayloadEstimator.estimateBytes(doc);
+        for (PreparedExportDocument doc : batch) {
+            total += doc.estimatedBulkBytes();
         }
         return Math.round((double) total * successCount / batch.size());
     }

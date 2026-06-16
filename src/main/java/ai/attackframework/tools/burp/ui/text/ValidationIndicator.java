@@ -23,12 +23,13 @@ public final class ValidationIndicator {
         // utility
     }
 
-    /** Hides the indicator while keeping sizing and font synchronized with the reference field. */
+    /** Hides the indicator while keeping font synchronized with the reference field. */
     public static void hide(JLabel indicator, Font referenceFont) {
         prepare(indicator, referenceFont);
         indicator.setText("");
         indicator.setToolTipText(null);
         indicator.setVisible(false);
+        collapseWidth(indicator);
     }
 
     /** Shows the indicator in a valid state with the provided tooltip. */
@@ -92,6 +93,15 @@ public final class ValidationIndicator {
         if (preferred == null || preferred.width != size.width || preferred.height != size.height) {
             indicator.setMinimumSize(size);
             indicator.setPreferredSize(size);
+            indicator.setMaximumSize(new Dimension(width, height));
         }
+    }
+
+    private static void collapseWidth(JLabel indicator) {
+        int height = indicator.getFontMetrics(indicator.getFont()).getHeight();
+        Dimension collapsed = new Dimension(0, height);
+        indicator.setMinimumSize(collapsed);
+        indicator.setPreferredSize(collapsed);
+        indicator.setMaximumSize(collapsed);
     }
 }

@@ -1,13 +1,13 @@
 package ai.attackframework.tools.burp.utils.opensearch;
 
-import ai.attackframework.tools.burp.sinks.BulkPayloadEstimator;
-
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
+
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 /**
  * Per-index bounded queues for failed OpenSearch index operations.
@@ -19,11 +19,12 @@ import java.util.concurrent.LinkedBlockingQueue;
  */
 public final class RetryQueue {
 
-    /** A document waiting to be retried, tagged with the time it was enqueued. */
-    record QueuedDoc(Map<String, Object> document, long enqueuedAtMs) {}
+    /** A prepared document waiting to be retried, tagged with the time it was enqueued. */
+    record QueuedDoc(PreparedExportDocument document, long enqueuedAtMs) {}
 
     private final int maxSizePerIndex;
     private final ConcurrentHashMap<String, BlockingQueue<QueuedDoc>> queues = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AtomicLong> bytesHeld = new ConcurrentHashMap<>();
 
     public RetryQueue(int maxSizePerIndex) {
         this.maxSizePerIndex = maxSizePerIndex;
@@ -36,9 +37,13 @@ public final class RetryQueue {
      * @param document  document to retry later
      * @return true if accepted, false if queue full
      */
-    public boolean offer(String indexName, Map<String, Object> document) {
+    public boolean offer(String indexName, PreparedExportDocument document) {
         BlockingQueue<QueuedDoc> q = queueFor(indexName);
-        return q.offer(new QueuedDoc(document, System.currentTimeMillis()));
+        if (q.offer(new QueuedDoc(document, System.currentTimeMillis()))) {
+            recordQueuedBytes(indexName, document);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -49,17 +54,18 @@ public final class RetryQueue {
      * @param documents documents to retry later
      * @return number of documents actually accepted (0 to documents.size())
      */
-    public int offerAll(String indexName, List<Map<String, Object>> documents) {
+    public int offerAll(String indexName, List<PreparedExportDocument> documents) {
         if (documents == null || documents.isEmpty()) {
             return 0;
         }
         BlockingQueue<QueuedDoc> q = queueFor(indexName);
         long now = System.currentTimeMillis();
         int added = 0;
-        for (Map<String, Object> doc : documents) {
+        for (PreparedExportDocument doc : documents) {
             if (!q.offer(new QueuedDoc(doc, now))) {
                 return added;
             }
+            recordQueuedBytes(indexName, doc);
             added++;
         }
         return added;
@@ -72,16 +78,17 @@ public final class RetryQueue {
      * @param maxSize   maximum number of documents to poll
      * @return list of documents (may be empty, never null)
      */
-    public List<Map<String, Object>> pollBatch(String indexName, int maxSize) {
+    public List<PreparedExportDocument> pollBatch(String indexName, int maxSize) {
         BlockingQueue<QueuedDoc> q = queues.get(indexName);
         if (q == null) {
             return List.of();
         }
         List<QueuedDoc> wrapped = new ArrayList<>(Math.min(maxSize, q.size()));
         q.drainTo(wrapped, maxSize);
-        List<Map<String, Object>> batch = new ArrayList<>(wrapped.size());
+        List<PreparedExportDocument> batch = new ArrayList<>(wrapped.size());
         for (QueuedDoc qd : wrapped) {
             batch.add(qd.document());
+            recordDequeuedBytes(indexName, qd.document());
         }
         return batch;
     }
@@ -120,19 +127,29 @@ public final class RetryQueue {
     /**
      * Returns the approximate total bytes of documents currently queued for the given index.
      *
-     * <p>Computed on demand by iterating a snapshot of the queue and summing
-     * {@link BulkPayloadEstimator#estimateBytes(Map)}. Intended for low-frequency callers
-     * (StatsPanel refresh) because it is O(N) in queue depth.
-     * Returns {@code 0} when the queue is empty or absent.</p>
+     * <p>Maintained incrementally on offer and dequeue. Returns {@code 0} when the queue is empty
+     * or absent.</p>
      */
     public long bytesEstimate(String indexName) {
+        AtomicLong held = bytesHeld.get(indexName);
+        if (held == null) {
+            return 0L;
+        }
+        return Math.max(0L, held.get());
+    }
+
+    /**
+     * Recomputes queued bytes by walking the queue. Package-private for unit tests that verify the
+     * maintained counter matches a full iteration.
+     */
+    long computeBytesEstimateByWalk(String indexName) {
         BlockingQueue<QueuedDoc> q = queues.get(indexName);
         if (q == null || q.isEmpty()) {
             return 0L;
         }
         long total = 0L;
         for (QueuedDoc qd : q) {
-            total += BulkPayloadEstimator.estimateBytes(qd.document());
+            total += qd.document().estimatedBulkBytes();
         }
         return total;
     }
@@ -156,6 +173,23 @@ public final class RetryQueue {
      */
     public void clearAll() {
         queues.values().forEach(BlockingQueue::clear);
+        bytesHeld.clear();
+    }
+
+    private void recordQueuedBytes(String indexName, PreparedExportDocument document) {
+        if (document != null) {
+            bytesFor(indexName).addAndGet(document.estimatedBulkBytes());
+        }
+    }
+
+    private void recordDequeuedBytes(String indexName, PreparedExportDocument document) {
+        if (document != null) {
+            bytesFor(indexName).addAndGet(-document.estimatedBulkBytes());
+        }
+    }
+
+    private AtomicLong bytesFor(String indexName) {
+        return bytesHeld.computeIfAbsent(indexName, ignored -> new AtomicLong());
     }
 
     private BlockingQueue<QueuedDoc> queueFor(String indexName) {

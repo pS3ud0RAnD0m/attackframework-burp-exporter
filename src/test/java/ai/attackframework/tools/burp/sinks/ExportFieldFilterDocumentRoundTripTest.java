@@ -206,7 +206,7 @@ class ExportFieldFilterDocumentRoundTripTest {
         assertThat(prepared.document().get("websocket")).isEqualTo(filtered.get("websocket"));
         assertThat(nestedMap(prepared.document(), "meta").get("schema_version"))
                 .isEqualTo(nestedMap(filtered, "meta").get("schema_version"));
-        assertThat(nestedMap(prepared.document(), "meta").get("export_id")).isNotNull();
+        assertThat(nestedMap(prepared.document(), "meta").containsKey("export_id")).isFalse();
         assertThat(prepared.document()).doesNotContainKeys("burp", "request");
     }
 

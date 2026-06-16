@@ -47,6 +47,7 @@ import burp.api.montoya.scope.Scope;
 import burp.api.montoya.sitemap.SiteMap;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getComboBox;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -103,7 +104,7 @@ class ConfigPanelStartCreatesIndexesBeforePushIT {
             JCheckBox issuesCheckbox = JCheckBox.class.cast(get(p, "issuesCheckbox"));
             issuesCheckbox.setEnabled(true);
             if (!issuesCheckbox.isSelected()) issuesCheckbox.doClick();
-            javax.swing.JComboBox<?> authCombo = javax.swing.JComboBox.class.cast(get(p, "openSearchAuthTypeCombo"));
+            javax.swing.JComboBox<?> authCombo = getComboBox(p, "openSearchAuthTypeCombo");
             if (authCombo != null && config.username() != null && !config.username().isBlank()) {
                 authCombo.setSelectedIndex(1);
                 JTextField userField = JTextField.class.cast(get(p, "openSearchUserField"));

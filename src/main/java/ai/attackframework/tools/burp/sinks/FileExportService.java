@@ -80,11 +80,67 @@ public final class FileExportService {
 
     /** Emits a batch of prepared documents to all enabled file formats. */
     public static void emitBatch(List<PreparedExportDocument> documents) {
-        if (documents == null || documents.isEmpty()) {
+        emitPreparedChunk(documents);
+    }
+
+    /**
+     * Emits one snapshot bulk chunk with a single root disk check and batched bulk-ndjson append.
+     */
+    public static void emitPreparedChunk(List<PreparedExportDocument> documents) {
+        if (documents == null || documents.isEmpty() || !RuntimeConfig.isAnyFileExportEnabled()) {
             return;
         }
-        for (PreparedExportDocument document : documents) {
-            emit(document);
+        PreparedExportDocument first = documents.getFirst();
+        String root = RuntimeConfig.fileExportRoot();
+        Path rootPath = Path.of(root);
+        RootState rootState = rootState(rootPath);
+        if (rootState.isGloballyDisabled()) {
+            return;
+        }
+
+        FileSink jsonl = RuntimeConfig.isFileJsonlEnabled() ? jsonlSink(root, first.indexName()) : null;
+        FileSink bulk = RuntimeConfig.isFileBulkNdjsonEnabled() ? bulkSink(root, first.indexName()) : null;
+        long plannedBytes = 0L;
+        if (jsonl != null) {
+            for (PreparedExportDocument document : documents) {
+                plannedBytes += jsonl.estimateBytes(document);
+            }
+        }
+        if (bulk != null) {
+            for (PreparedExportDocument document : documents) {
+                plannedBytes += bulk.estimateBytes(document);
+            }
+        }
+        if (!rootState.allowWrite(rootPath, plannedBytes)) {
+            String reason = rootState.reason();
+            for (PreparedExportDocument document : documents) {
+                recordFailure(document, reason);
+            }
+            return;
+        }
+
+        long startedAtMs = System.currentTimeMillis();
+        long written = 0L;
+        if (jsonl != null) {
+            written += jsonl.appendBatch(documents);
+        }
+        if (bulk != null) {
+            written += bulk.appendBatch(documents);
+        }
+        if (written > 0L) {
+            rootState.recordWrite(written);
+            FileExportStats.recordSuccess(first.indexKey(), documents.size());
+            FileExportStats.recordExportedBytes(first.indexKey(), written);
+            FileExportStats.recordLastWriteDurationMs(
+                    first.indexKey(), System.currentTimeMillis() - startedAtMs);
+            FileExportStats.recordLastError(first.indexKey(), null);
+            for (PreparedExportDocument document : documents) {
+                recordTrafficSuccess(document);
+            }
+        } else {
+            for (PreparedExportDocument document : documents) {
+                recordFailure(document, "File export write produced no bytes.");
+            }
         }
     }
 
@@ -299,7 +355,7 @@ public final class FileExportService {
                     }
                 }
             } catch (IOException e) {
-                Logger.logError("File export size scan failed for " + rootPath + ": " + e.getMessage());
+                Logger.logError("[Files] Size scan failed for " + rootPath + ": " + e.getMessage());
             }
         }
 
@@ -318,7 +374,7 @@ public final class FileExportService {
                 long used = Math.max(0L, total - usable);
                 return (int) Math.min(100L, Math.round((used * 100.0d) / total));
             } catch (IOException | RuntimeException e) {
-                Logger.logError("File export disk-usage check failed for " + rootPath + ": " + e.getMessage());
+                Logger.logError("[Files] Disk-usage check failed for " + rootPath + ": " + e.getMessage());
                 return null;
             }
         }

@@ -45,7 +45,7 @@ public final class SingleDocOutcomeRecorder {
             return;
         }
         if (ok) {
-            ExportStats.recordSuccess(indexKey, 1);
+            // Index success counters are recorded by OpenSearchClientWrapper.pushDocument.
             return;
         }
         if (OpenSearchPushCancellation.shouldSuppressFailureAccounting()) {

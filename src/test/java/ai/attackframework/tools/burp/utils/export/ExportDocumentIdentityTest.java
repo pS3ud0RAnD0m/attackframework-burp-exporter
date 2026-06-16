@@ -12,30 +12,51 @@ class ExportDocumentIdentityTest {
 
     @Test
     void prepare_withBlankLogicalKey_rejectsCustomPhysicalIndexName() {
-        assertThatThrownBy(() -> ExportDocumentIdentity.prepare("custom-prefix-traffic", "", Map.of("message", "x")))
+        assertThatThrownBy(() -> ExportDocumentIdentity.prepare(
+                "custom-prefix-traffic", "", Map.of("message", "x")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("pass the logical index key explicitly");
     }
 
     @Test
-    void prepare_ignoresIndexedAt_whenBuildingStableExportId() {
-        Map<String, Object> firstMeta = new LinkedHashMap<>();
-        firstMeta.put("schema_version", "1");
-        firstMeta.put("indexed_at", "2026-01-01T00:00:00Z");
-        Map<String, Object> first = new LinkedHashMap<>();
-        first.put("meta", firstMeta);
-        first.put("message", "same");
+    void prepare_recordsEstimatedBulkBytes() {
+        Map<String, Object> doc = sampleDoc("hello");
+        PreparedExportDocument prepared = ExportDocumentIdentity.prepare("attack-traffic", "traffic", doc);
+        assertThat(prepared.estimatedBulkBytes()).isEqualTo(prepared.bulkNdjsonBytes().length);
+    }
 
-        Map<String, Object> secondMeta = new LinkedHashMap<>();
-        secondMeta.put("schema_version", "1");
-        secondMeta.put("indexed_at", "2026-01-01T00:00:01Z");
-        Map<String, Object> second = new LinkedHashMap<>();
-        second.put("meta", secondMeta);
-        second.put("message", "same");
+    @Test
+    void prepare_recordsBulkNdjsonBytesMatchingExportLineCodec() throws Exception {
+        Map<String, Object> doc = sampleDoc("hello");
+        PreparedExportDocument prepared = ExportDocumentIdentity.prepare("attack-traffic", "traffic", doc);
+        assertThat(prepared.bulkNdjsonBytes()).isEqualTo(ExportLineCodec.bulkNdjsonBytes(prepared.document()));
+    }
 
-        PreparedExportDocument firstPrepared = ExportDocumentIdentity.prepare("attack-traffic", "traffic", first);
-        PreparedExportDocument secondPrepared = ExportDocumentIdentity.prepare("attack-traffic", "traffic", second);
+    @Test
+    void prepare_doesNotWriteExportIdOrIdentityKey() {
+        PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
+                "attack-traffic", "traffic", sampleDoc("payload"));
+        Map<?, ?> meta = (Map<?, ?>) prepared.document().get("meta");
+        assertThat(meta.containsKey("export_id")).isFalse();
+        assertThat(meta.containsKey("identity_key")).isFalse();
+    }
 
-        assertThat(firstPrepared.exportId()).isEqualTo(secondPrepared.exportId());
+    @Test
+    void prepare_sameBodyTwice_producesIndependentPreparedDocuments() {
+        Map<String, Object> doc = sampleDoc("same");
+        PreparedExportDocument first = ExportDocumentIdentity.prepare("attack-traffic", "traffic", doc);
+        PreparedExportDocument second = ExportDocumentIdentity.prepare("attack-traffic", "traffic", sampleDoc("same"));
+        assertThat(first.document()).isNotSameAs(second.document());
+    }
+
+    private static Map<String, Object> sampleDoc(String message) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("schema_version", "1");
+        meta.put("indexed_at", "2026-01-01T00:00:00Z");
+
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("meta", meta);
+        doc.put("message", message);
+        return doc;
     }
 }

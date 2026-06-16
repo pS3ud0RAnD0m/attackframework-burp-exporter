@@ -108,10 +108,6 @@
           },
           "indexed_at": {
             "type": "date"
-          },
-          "export_id": {
-            "type": "keyword",
-            "ignore_above": 8191
           }
         }
       },

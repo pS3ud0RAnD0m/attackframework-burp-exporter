@@ -69,7 +69,7 @@ public final class FileExportStats {
         if (count <= 0) {
             return;
         }
-        forIndex(indexKey).successCount.addAndGet(count);
+        forIndex(indexKey).writtenCount.addAndGet(count);
     }
 
     /** Records one or more failed file-export write attempts for an index key. */
@@ -105,9 +105,13 @@ public final class FileExportStats {
         forIndex(indexKey).lastError.set(truncated);
     }
 
-    /** Returns the successful file-export document count for an index key. */
+    /** Returns documents written to file for an index key this run. */
     public static long getSuccessCount(String indexKey) {
-        return forIndex(indexKey).successCount.get();
+        return getWrittenCount(indexKey);
+    }
+
+    public static long getWrittenCount(String indexKey) {
+        return forIndex(indexKey).writtenCount.get();
     }
 
     /** Returns the failed file-export document count for an index key. */
@@ -211,6 +215,27 @@ public final class FileExportStats {
         return count == null ? 0L : count.get();
     }
 
+    /** Clears per-run file-export counters. */
+    public static void resetForRun() {
+        for (String key : INDEX_KEYS) {
+            PerIndexStats stats = forIndex(key);
+            stats.writtenCount.set(0);
+            stats.failureCount.set(0);
+            stats.successBytes.set(0);
+            stats.lastWriteDurationMs.set(-1);
+            stats.lastError.set(null);
+        }
+        for (String key : TRAFFIC_SOURCE_KEYS) {
+            TrafficSourceStats source = forTrafficSource(key);
+            source.successCount.set(0);
+            source.failureCount.set(0);
+        }
+        for (String key : TRAFFIC_TOOL_TYPE_KEYS) {
+            TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.put(key, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.put(key, new AtomicLong(0));
+        }
+    }
+
     /** Resets all file-export stats. Intended for tests and process-local lifecycle cleanup. */
     public static void resetForTests() {
         STATS.clear();
@@ -240,7 +265,7 @@ public final class FileExportStats {
     }
 
     private static final class PerIndexStats {
-        final AtomicLong successCount = new AtomicLong(0);
+        final AtomicLong writtenCount = new AtomicLong(0);
         final AtomicLong failureCount = new AtomicLong(0);
         final AtomicLong successBytes = new AtomicLong(0);
         final AtomicLong lastWriteDurationMs = new AtomicLong(-1);

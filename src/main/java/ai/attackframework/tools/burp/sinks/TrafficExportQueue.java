@@ -1,5 +1,7 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -7,10 +9,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import ai.attackframework.tools.burp.utils.ExportPressureLogThrottler;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
 import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
@@ -18,8 +20,9 @@ import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
 /**
  * Bounded queue for traffic documents so the HTTP thread can enqueue and return immediately.
  *
- * <p>A dedicated worker thread drains the queue and pushes via the OpenSearch Bulk API using
- * chunked request body (NDJSON written incrementally; no full batch list in memory). When the
+ * <p>Documents are prepared once at {@link #offer(Map)} into {@link TrafficQueueEntry}. A
+ * dedicated worker thread drains the queue and pushes via the OpenSearch Bulk API using chunked
+ * request body (NDJSON written incrementally; no full batch list in memory). When the
  * in-memory queue is full, documents are spilled to a temp-dir file queue; only when spill
  * rejects a document does this path drop the oldest queued item (for example low disk or spill
  * full). Batches are limited by count ({@link BatchSizeController}), payload size
@@ -37,11 +40,15 @@ public final class TrafficExportQueue {
     private static final int START_DRAIN_BACKLOG_DOCS = 64;
     private static final int SPILL_REFILL_TARGET_DOCS = 256;
 
-    private static final LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>(CAPACITY);
+    private static final MeteredQueue queue = new MeteredQueue(CAPACITY);
     private static final TrafficSpillFileQueue spillQueue = new TrafficSpillFileQueue();
     private static final AtomicBoolean workerStarted = new AtomicBoolean(false);
     private static final AtomicLong workerGeneration = new AtomicLong();
     private static final AtomicLong stopThroughGeneration = new AtomicLong();
+    private static final AtomicInteger activeDrainBatches = new AtomicInteger();
+    private static final AtomicLong queueBytesHeld = new AtomicLong();
+    private static final ExportPressureLogThrottler OVERFLOW_LOGS =
+            new ExportPressureLogThrottler("TrafficExportQueue");
 
     /**
      * Reference to the drain worker so shutdown can interrupt and join it deterministically.
@@ -95,20 +102,38 @@ public final class TrafficExportQueue {
     /**
      * Returns the approximate total bytes of documents currently held in the in-memory queue.
      *
-     * <p>Computed on demand by iterating a snapshot of the queue and summing
-     * {@link BulkPayloadEstimator#estimateBytes(Map)}. Intended for low-frequency callers
-     * (StatsPanel refresh). Does not include spilled documents;
-     * those are already tracked as bytes by {@link #getCurrentSpillBytes()}.</p>
+     * <p>Maintained incrementally on offer and dequeue. Does not include spilled documents;
+     * those are tracked by {@link #getCurrentSpillBytes()}.</p>
      */
     public static long getCurrentBytesEstimate() {
+        return Math.max(0L, queueBytesHeld.get());
+    }
+
+    /**
+     * Recomputes in-memory queue bytes by walking the queue. Package-private for unit tests that
+     * verify the maintained counter matches a full iteration.
+     */
+    static long computeBytesEstimateByWalk() {
         if (queue.isEmpty()) {
             return 0L;
         }
         long total = 0L;
-        for (Map<String, Object> doc : queue) {
-            total += BulkPayloadEstimator.estimateBytes(doc);
+        for (TrafficQueueEntry entry : queue) {
+            total += entry.prepared().estimatedBulkBytes();
         }
         return total;
+    }
+
+    private static void recordQueuedBytes(TrafficQueueEntry entry) {
+        if (entry != null) {
+            queueBytesHeld.addAndGet(entry.prepared().estimatedBulkBytes());
+        }
+    }
+
+    private static void recordDequeuedBytes(TrafficQueueEntry entry) {
+        if (entry != null) {
+            queueBytesHeld.addAndGet(-entry.prepared().estimatedBulkBytes());
+        }
     }
 
     /** Returns current spill queue depth for StatsPanel observability. */
@@ -131,9 +156,46 @@ public final class TrafficExportQueue {
         return spillQueue.recoveredCount();
     }
 
+    /** Returns startup-recovered spill byte count. */
+    public static long getRecoveredSpillBytes() {
+        return spillQueue.recoveredBytes();
+    }
+
+    /** Returns currently active drain batches. */
+    public static int getActiveDrainBatches() {
+        return activeDrainBatches.get();
+    }
+
     /** Returns spill directory path for diagnostics. */
     public static String getSpillDirectoryPath() {
         return spillQueue.directoryPath();
+    }
+
+    /**
+     * Waits until queued traffic work has drained or the timeout elapses.
+     *
+     * <p>Idle means the in-memory queue and spill queue are empty and no drain batch is currently
+     * applying file or OpenSearch accounting. Callers must not invoke this on the EDT.</p>
+     *
+     * @param timeoutMs maximum time to wait in milliseconds
+     * @return {@code true} if traffic export became idle before the timeout
+     */
+    public static boolean awaitIdle(long timeoutMs) {
+        long deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, timeoutMs));
+        while (true) {
+            if (isIdle()) {
+                return true;
+            }
+            if (System.nanoTime() >= deadlineNs) {
+                return false;
+            }
+            try {
+                TimeUnit.MILLISECONDS.sleep(STARTUP_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
     }
 
     /**
@@ -162,35 +224,36 @@ public final class TrafficExportQueue {
         if (!isDocumentCurrentlyEnabled(document)) {
             return false;
         }
-        if (queue.offer(document)) {
+        TrafficQueueEntry entry = TrafficQueueEntry.from(document);
+        if (entry == null) {
+            return false;
+        }
+        if (queue.offer(entry)) {
             startWorkerIfNeeded();
             return true;
         }
-        TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(document);
+        TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(entry);
         if (spillResult == TrafficSpillFileQueue.OfferResult.QUEUED) {
             ExportStats.recordTrafficSpillEnqueued(1);
+            OVERFLOW_LOGS.record("spill_queued", 1, TrafficExportQueue::overflowContext);
             startWorkerIfNeeded();
             return true;
         }
-        queue.poll();
+        TrafficQueueEntry dropped = queue.poll();
+        recordDequeuedBytes(dropped);
         ExportStats.recordTrafficQueueDrop(1);
         ExportStats.recordTrafficSpillDrop(1);
-        ExportStats.recordTrafficDropReason(
-                spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
-                        ? "spill_low_disk_drop_oldest"
-                        : "spill_rejected_drop_oldest",
-                1);
-        if (!queue.offer(document)) {
+        String dropReason = spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
+                ? "spill_low_disk_drop_oldest"
+                : "spill_rejected_drop_oldest";
+        ExportStats.recordTrafficDropReason(dropReason, 1);
+        OVERFLOW_LOGS.record(dropReason, 1, TrafficExportQueue::overflowContext);
+        if (!queue.offer(entry)) {
             ExportStats.recordTrafficQueueDrop(1);
             ExportStats.recordTrafficSpillDrop(1);
             ExportStats.recordTrafficDropReason("queue_contention_drop", 1);
-            Logger.logError("[TrafficExportQueue] Queue and spill unavailable; dropping traffic document.");
+            OVERFLOW_LOGS.record("queue_contention_drop", 1, TrafficExportQueue::overflowContext);
             return false;
-        }
-        if (spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK) {
-            Logger.logError("[TrafficExportQueue] Spill disabled by low disk space; used drop-oldest fallback.");
-        } else {
-            Logger.logError("[TrafficExportQueue] Spill full; used drop-oldest fallback.");
         }
         startWorkerIfNeeded();
         return true;
@@ -223,8 +286,9 @@ public final class TrafficExportQueue {
             return purged;
         }
         AtomicInteger purged = new AtomicInteger();
-        queue.removeIf(doc -> {
-            boolean remove = !TrafficRouteBucket.isRouteEnabled(TrafficRouteBucket.fromDocument(doc), gate);
+        queue.removeIf(entry -> {
+            boolean remove = !TrafficRouteBucket.isRouteEnabled(
+                    TrafficRouteBucket.fromDocument(entry.document()), gate);
             if (remove) {
                 purged.incrementAndGet();
             }
@@ -313,9 +377,9 @@ public final class TrafficExportQueue {
                 if (baseUrl == null || baseUrl.isBlank()) {
                     if (!RuntimeConfig.isAnyFileExportEnabled()) {
                         try {
-                            Map<String, Object> doc = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                            if (doc != null && RuntimeConfig.isExportReady()) {
-                                queue.offer(doc);
+                            TrafficQueueEntry entry = queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                            if (entry != null && RuntimeConfig.isExportReady()) {
+                                queue.offer(entry);
                             }
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
@@ -325,30 +389,40 @@ public final class TrafficExportQueue {
                     }
                     int maxBatch = batchController.getCurrentBatchSize();
                     refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
-                    FileOnlyDrainResult result = drainToFileOnly(maxBatch, BULK_MAX_BYTES);
-                    if (result.attemptedCount == 0) {
-                        continue;
+                    activeDrainBatches.incrementAndGet();
+                    try {
+                        FileOnlyDrainResult result = drainToFileOnly(maxBatch, BULK_MAX_BYTES);
+                        if (result.attemptedCount == 0) {
+                            continue;
+                        }
+                        batchController.recordSuccess(result.attemptedCount);
+                    } finally {
+                        activeDrainBatches.decrementAndGet();
                     }
-                    batchController.recordSuccess(result.attemptedCount);
                     continue;
                 }
 
                 int maxBatch = batchController.getCurrentBatchSize();
                 refillFromSpill(Math.max(SPILL_REFILL_TARGET_DOCS, maxBatch));
                 long startNs = System.nanoTime();
-                ChunkedBulkSender.Result result = ChunkedBulkSender.push(
-                        baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY,
-                        queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
-                long durationMs = (System.nanoTime() - startNs) / 1_000_000;
+                activeDrainBatches.incrementAndGet();
+                try {
+                    ChunkedBulkSender.Result result = ChunkedBulkSender.push(
+                            baseUrl, TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY,
+                            queue, maxBatch, BULK_MAX_BYTES, BATCH_MAX_WAIT_MS);
+                    long durationMs = (System.nanoTime() - startNs) / 1_000_000;
 
-                if (result.attemptedCount == 0) {
-                    continue;
-                }
-                applyBulkOutcome(result, durationMs);
-                if (result.isFullSuccess()) {
-                    batchController.recordSuccess(result.attemptedCount);
-                } else {
-                    batchController.recordFailure(result.attemptedCount);
+                    if (result.attemptedCount == 0) {
+                        continue;
+                    }
+                    applyBulkOutcome(result, durationMs, maxBatch);
+                    if (result.isFullSuccess()) {
+                        batchController.recordSuccess(result.attemptedCount);
+                    } else {
+                        batchController.recordFailure(result.attemptedCount);
+                    }
+                } finally {
+                    activeDrainBatches.decrementAndGet();
                 }
             }
         } finally {
@@ -370,6 +444,10 @@ public final class TrafficExportQueue {
 
     private static boolean isStopRequested(long generation) {
         return generation <= stopThroughGeneration.get();
+    }
+
+    private static boolean isIdle() {
+        return queue.isEmpty() && spillQueue.size() == 0 && activeDrainBatches.get() == 0;
     }
 
     private static void awaitWorker(Thread worker, long timeoutMs, boolean interrupt) {
@@ -395,11 +473,12 @@ public final class TrafficExportQueue {
      * per-route failure maps only apply when the clamped success count is below the attempted
      * total.</p>
      */
-    static void applyBulkOutcome(ChunkedBulkSender.Result result, long durationMs) {
+    static void applyBulkOutcome(ChunkedBulkSender.Result result, long durationMs, int targetBatch) {
         int clampedSent = BulkOutcomeRecorder.record(
                 TrafficRouteBucket.INDEX_KEY, "Traffic", "Bulk push",
-                result.attemptedCount, result.successCount, true);
-        ExportStats.recordLastPush(TrafficRouteBucket.INDEX_KEY, durationMs);
+                result.attemptedCount, result.successCount, true, result.breakdown);
+        ExportStats.recordLastLiveBulkDurationMs(TrafficRouteBucket.INDEX_KEY, durationMs);
+        ExportStats.recordLastLiveBulkShape(targetBatch, result.attemptedCount);
         ExportStats.recordExportedBytes(TrafficRouteBucket.INDEX_KEY, result.successBytes);
         result.trafficToolTypeSuccessCounts.forEach(
                 (toolTypeKey, count) -> ExportStats.recordTrafficToolTypeSuccess(toolTypeKey, count.longValue()));
@@ -423,24 +502,23 @@ public final class TrafficExportQueue {
      */
     private static void refillFromSpill(int targetDocs) {
         while (queue.size() < targetDocs) {
-            Map<String, Object> spilled = spillQueue.poll();
-            if (spilled == null) {
+            TrafficQueueEntry entry = spillQueue.pollEntry();
+            if (entry == null) {
                 return;
             }
-            if (!isDocumentCurrentlyEnabled(spilled)) {
+            if (!isDocumentCurrentlyEnabled(entry.document())) {
                 continue;
             }
-            if (!queue.offer(spilled)) {
-                TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(spilled);
+            if (!queue.offer(entry)) {
+                TrafficSpillFileQueue.OfferResult spillResult = spillQueue.offerDetailed(entry);
                 if (spillResult != TrafficSpillFileQueue.OfferResult.QUEUED) {
                     ExportStats.recordTrafficQueueDrop(1);
                     ExportStats.recordTrafficSpillDrop(1);
-                    ExportStats.recordTrafficDropReason(
-                            spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
-                                    ? "spill_requeue_low_disk_drop"
-                                    : "spill_requeue_failed_drop",
-                            1);
-                    Logger.logError("[TrafficExportQueue] Failed to re-queue drained spill document; dropping.");
+                    String dropReason = spillResult == TrafficSpillFileQueue.OfferResult.REJECTED_LOW_DISK
+                            ? "spill_requeue_low_disk_drop"
+                            : "spill_requeue_failed_drop";
+                    ExportStats.recordTrafficDropReason(dropReason, 1);
+                    OVERFLOW_LOGS.record(dropReason, 1, TrafficExportQueue::overflowContext);
                 }
                 return;
             }
@@ -448,36 +526,45 @@ public final class TrafficExportQueue {
         }
     }
 
+    private static String overflowContext() {
+        return "queue_depth=" + queue.size()
+                + ", queue_bytes=" + getCurrentBytesEstimate()
+                + ", spill_depth=" + spillQueue.size()
+                + ", spill_bytes=" + spillQueue.bytes()
+                + ", oldest_spill_age_ms=" + spillQueue.oldestAgeMs();
+    }
+
     private static FileOnlyDrainResult drainToFileOnly(int maxBatch, long maxBytes) {
         int attempted = 0;
         long exportedBytes = 0;
+        List<PreparedExportDocument> batch = new ArrayList<>(Math.max(1, maxBatch));
         while (attempted < maxBatch && exportedBytes < maxBytes) {
-            Map<String, Object> doc;
+            TrafficQueueEntry entry;
             try {
-                doc = attempted == 0
+                entry = attempted == 0
                         ? queue.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                         : queue.poll();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             }
-            if (doc == null) {
+            if (entry == null) {
                 break;
             }
-            if (!isDocumentCurrentlyEnabled(doc)) {
+            if (!isDocumentCurrentlyEnabled(entry.document())) {
                 continue;
             }
-            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(
-                    TrafficRouteBucket.trafficIndexName(), TrafficRouteBucket.INDEX_KEY, doc);
-            long docBytes = BulkPayloadEstimator.estimateBytes(prepared.document());
+            PreparedExportDocument prepared = entry.prepared();
+            long docBytes = prepared.estimatedBulkBytes();
             if (attempted > 0 && exportedBytes + docBytes > maxBytes) {
-                queue.offer(doc);
+                queue.offer(entry);
                 break;
             }
-            FileExportService.emit(prepared);
+            batch.add(prepared);
             attempted++;
             exportedBytes += docBytes;
         }
+        FileExportService.emitPreparedChunk(batch);
         return new FileOnlyDrainResult(attempted, exportedBytes);
     }
 
@@ -511,7 +598,7 @@ public final class TrafficExportQueue {
             }
             try {
                 long remaining = Math.max(1, deadline - System.currentTimeMillis());
-                Map<String, Object> observed = queue.poll(Math.min(STARTUP_POLL_MS, remaining), TimeUnit.MILLISECONDS);
+                TrafficQueueEntry observed = queue.poll(Math.min(STARTUP_POLL_MS, remaining), TimeUnit.MILLISECONDS);
                 if (observed != null && RuntimeConfig.isExportReady()) {
                     queue.offer(observed);
                 }
@@ -524,4 +611,55 @@ public final class TrafficExportQueue {
     }
 
     private record FileOnlyDrainResult(int attemptedCount, long exportedBytes) { }
+
+    /**
+     * In-memory traffic queue that maintains {@link #queueBytesHeld} on offer, poll, clear, and
+     * remove so {@link ChunkedBulkSender} drains stay O(1) for byte observability.
+     */
+    private static final class MeteredQueue extends LinkedBlockingQueue<TrafficQueueEntry> {
+
+        private MeteredQueue(int capacity) {
+            super(capacity);
+        }
+
+        @Override
+        public boolean offer(TrafficQueueEntry entry) {
+            if (super.offer(entry)) {
+                recordQueuedBytes(entry);
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public TrafficQueueEntry poll() {
+            TrafficQueueEntry entry = super.poll();
+            recordDequeuedBytes(entry);
+            return entry;
+        }
+
+        @Override
+        public TrafficQueueEntry poll(long timeout, TimeUnit unit) throws InterruptedException {
+            TrafficQueueEntry entry = super.poll(timeout, unit);
+            recordDequeuedBytes(entry);
+            return entry;
+        }
+
+        @Override
+        public void clear() {
+            super.clear();
+            queueBytesHeld.set(0L);
+        }
+
+        @Override
+        public boolean removeIf(java.util.function.Predicate<? super TrafficQueueEntry> filter) {
+            return super.removeIf(entry -> {
+                boolean remove = filter.test(entry);
+                if (remove) {
+                    recordDequeuedBytes(entry);
+                }
+                return remove;
+            });
+        }
+    }
 }

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getComboBox;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
@@ -40,7 +41,7 @@ class ConfigPanelAuthStorageHeadlessTest {
         withCleanSession(() -> {
             SecureCredentialStore.saveOpenSearchCredentials("alice", "secret");
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JPasswordField pass = JPasswordField.class.cast(get(panel, "openSearchPasswordField"));
 
@@ -85,7 +86,7 @@ class ConfigPanelAuthStorageHeadlessTest {
 
             ConfigPanel panel = newPanelOnEdt();
             JPanel authForm = JPanel.class.cast(get(panel, "openSearchAuthFormPanel"));
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
 
             JTextField apiKeyId = JTextField.class.cast(get(panel, "openSearchApiKeyIdField"));
             JPasswordField apiKeySecret = JPasswordField.class.cast(get(panel, "openSearchApiKeySecretField"));
@@ -144,7 +145,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void tlsMode_defaultsToVerify() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+            JComboBox<String> tlsMode = getComboBox(panel, "openSearchTlsModeCombo");
             runEdt(() -> assertThat(String.valueOf(tlsMode.getSelectedItem())).isEqualTo("Verify"));
         });
     }
@@ -153,7 +154,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void tlsMode_arrowButton_usesSameHtmlTooltipSetupAsCombo() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+            JComboBox<String> tlsMode = getComboBox(panel, "openSearchTlsModeCombo");
             JButton arrowButton = findComboArrowButton(tlsMode);
 
             runEdt(() -> {
@@ -175,7 +176,7 @@ class ConfigPanelAuthStorageHeadlessTest {
             Logger.registerListener(listener);
             try {
                 ConfigPanel panel = newPanelOnEdt();
-                JComboBox<String> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+                JComboBox<String> tlsMode = getComboBox(panel, "openSearchTlsModeCombo");
 
                 runEdt(() -> tlsMode.setSelectedItem("Trust pinned certificate"));
                 runEdt(() -> tlsMode.setSelectedItem("Trust all certificates"));
@@ -252,12 +253,12 @@ class ConfigPanelAuthStorageHeadlessTest {
                     ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                     null);
 
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JTextField apiKeyId = JTextField.class.cast(get(panel, "openSearchApiKeyIdField"));
             JTextField certPath = JTextField.class.cast(get(panel, "openSearchCertPathField"));
             JTextField certKeyPath = JTextField.class.cast(get(panel, "openSearchCertKeyPathField"));
-            JComboBox<String> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+            JComboBox<String> tlsMode = getComboBox(panel, "openSearchTlsModeCombo");
 
             runEdt(() -> panel.onImportResult(imported));
 
@@ -338,7 +339,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void authControls_have_expected_tooltips() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JPasswordField pass = JPasswordField.class.cast(get(panel, "openSearchPasswordField"));
             JTextField apiKeyId = JTextField.class.cast(get(panel, "openSearchApiKeyIdField"));
@@ -385,7 +386,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void selectingNone_doesNotEmitAuthenticationClearedStatus() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             javax.swing.JTextArea status = javax.swing.JTextArea.class.cast(get(panel, "openSearchStatus"));
 
             runEdt(() -> authType.setSelectedItem("None"));
@@ -398,7 +399,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void persistSelectedAuthSecrets_cachesBasicCredentialsForCurrentSession() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JPasswordField pass = JPasswordField.class.cast(get(panel, "openSearchPasswordField"));
 
@@ -419,7 +420,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void testConnection_appliesAndCachesSelectedBasicAuthForCurrentSession() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JPasswordField pass = JPasswordField.class.cast(get(panel, "openSearchPasswordField"));
             JButton testConnection = JButton.class.cast(get(panel, "testConnectionButton"));
@@ -443,7 +444,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void editingBasicAuthFields_updatesSessionStoreAndRuntimeImmediately() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JPasswordField pass = JPasswordField.class.cast(get(panel, "openSearchPasswordField"));
 
@@ -465,7 +466,7 @@ class ConfigPanelAuthStorageHeadlessTest {
     void enterOnBasicPasswordField_triggersTestConnectionBehavior() throws Exception {
         withCleanSession(() -> {
             ConfigPanel panel = newPanelOnEdt();
-            JComboBox<String> authType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
+            JComboBox<String> authType = getComboBox(panel, "openSearchAuthTypeCombo");
             JTextField user = JTextField.class.cast(get(panel, "openSearchUserField"));
             JPasswordField pass = JPasswordField.class.cast(get(panel, "openSearchPasswordField"));
 

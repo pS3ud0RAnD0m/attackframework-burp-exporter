@@ -50,6 +50,7 @@ public final class ExportReporterLifecycle {
         ProxyWebSocketIndexReporter.stop();
         ProxyHistoryIndexReporter.stop();
         TrafficHttpHandlerSupport.stop();
+        TrafficStartupBacklogSummary.clearRunState();
     }
 
     /**
@@ -72,6 +73,7 @@ public final class ExportReporterLifecycle {
     public static void stopAndClearPendingExportWork() {
         RuntimeConfig.setExportRunning(false);
         stopBackgroundReporters();
+        TrafficLiveAttributionSummary.clearRunState();
         clearRepeaterRunState();
         TrafficExportQueue.stopWorker();
         TrafficExportQueue.clearPendingWork();

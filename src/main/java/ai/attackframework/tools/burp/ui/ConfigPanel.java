@@ -52,6 +52,8 @@ import ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SettingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
 import ai.attackframework.tools.burp.sinks.TrafficExportQueue;
+import ai.attackframework.tools.burp.sinks.TrafficLiveAttributionSummary;
+import ai.attackframework.tools.burp.sinks.TrafficStartupBacklogSummary;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingPasswordField;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
@@ -456,6 +458,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             postStopProgress(callbacks, ExportShutdownStatus.waitingForBatchMessage());
             ExportReporterLifecycle.stopBackgroundReporters();
             TrafficExportQueue.stopWorker();
+            TrafficLiveAttributionSummary.logAndClearForCurrentRun();
             postStopProgress(callbacks, ExportShutdownStatus.clearingQueuedTrafficMessage(snapshot));
             ExportReporterLifecycle.clearRepeaterRunState();
             TrafficExportQueue.clearPendingWork();
@@ -539,6 +542,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 + summarizeSelectedDestinations(filesSelected, openSearchSelected) + ".");
         RuntimeConfig.setExportRunning(true);
         RepeaterTabsIndexReporter.clearRunState();
+        TrafficStartupBacklogSummary.startForCurrentRun();
+        TrafficLiveAttributionSummary.startForCurrentRun();
         startupExecutor.execute(() -> runStartupPipeline(
                 url, sources, uiCallbacks, startupIssues, filesSelected, openSearchSelected));
     }
@@ -718,10 +723,6 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         ProxyHistoryIndexReporter.pushSnapshotNow();
-        if (!RuntimeConfig.isExportRunning()) {
-            return;
-        }
-        RepeaterTabsIndexReporter.pushSnapshotNow();
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
@@ -1216,13 +1217,32 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         }
         ExporterIndexStatsReporter.refreshScheduleForCurrentState();
         ProxyWebSocketIndexReporter.refreshLivePollScheduleForCurrentState();
+        refreshControlStatusIfExportRunning();
+    }
+
+    /**
+     * Rebuilds the Config Control destination status lines when export is active and the operator
+     * changes sink selection or paths live in the panel.
+     *
+     * <p>Startup and Stop phases keep their own phased status text and are not overwritten.</p>
+     */
+    private void refreshControlStatusIfExportRunning() {
+        if (!RuntimeConfig.isExportRunning()
+                || RuntimeConfig.isExportStarting()
+                || RuntimeConfig.isExportStopping()) {
+            return;
+        }
+        onControlStatus(buildRunningStatusMessage(
+                List.of(),
+                fileSinkCheckbox.isSelected(),
+                openSearchSinkCheckbox.isSelected()));
     }
 
     private static void purgeQueuedTrafficForGate(RuntimeConfig.TrafficExportGate currentTrafficGate) {
         int purged = TrafficExportQueue.purgeDisabledTraffic(currentTrafficGate);
         if (purged > 0) {
-            Logger.logInfoPanelOnly("[Traffic] Cleared " + purged
-                    + " queued traffic document(s) after traffic export deselection.");
+            Logger.logInfoPanelOnly("[TrafficExportQueue] Cleared " + purged
+                    + " queued document(s) after traffic export deselection.");
         }
     }
 

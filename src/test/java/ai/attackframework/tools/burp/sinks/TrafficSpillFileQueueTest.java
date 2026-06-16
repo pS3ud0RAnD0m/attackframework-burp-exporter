@@ -110,6 +110,25 @@ class TrafficSpillFileQueueTest {
     }
 
     @Test
+    void offerDetailed_preservesPreparedEntryForRefill() throws IOException {
+        Path dir = TestPathSupport.createDirectory("traffic-spill-prepared");
+        try {
+            TrafficSpillFileQueue queue = new TrafficSpillFileQueue(dir, 10, 1024 * 1024);
+            TrafficQueueEntry entry = TrafficQueueEntry.from(Map.of("id", 77, "url", "https://prepared.example"));
+
+            assertThat(queue.offerDetailed(entry)).isEqualTo(TrafficSpillFileQueue.OfferResult.QUEUED);
+
+            TrafficQueueEntry recovered = queue.pollEntry();
+            assertThat(recovered).isNotNull();
+            assertThat(recovered.prepared().bulkNdjsonBytes()).isEqualTo(entry.prepared().bulkNdjsonBytes());
+            assertThat(recovered.prepared().estimatedBulkBytes()).isEqualTo(entry.prepared().estimatedBulkBytes());
+            assertThat(recovered.document()).isEqualTo(entry.document());
+        } finally {
+            deleteRecursively(dir);
+        }
+    }
+
+    @Test
     void constructor_doesNotCreateSpillDirectory_untilFirstWrite() throws IOException {
         Path parent = TestPathSupport.createDirectory("traffic-spill-lazy-parent");
         Path dir = parent.resolve("spill-not-created-yet");
@@ -158,4 +177,3 @@ class TrafficSpillFileQueueTest {
                 });
     }
 }
-

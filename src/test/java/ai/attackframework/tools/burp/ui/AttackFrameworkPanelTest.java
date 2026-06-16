@@ -10,10 +10,12 @@ import javax.swing.ToolTipManager;
 
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.ui.text.Tooltips;
+
 class AttackFrameworkPanelTest {
 
     @Test
-    void constructor_setsSharedTooltipShowDelay() throws Exception {
+    void extensionUi_usesSharedTooltipShowDelay() throws Exception {
         AtomicInteger previousInitialDelay = new AtomicInteger();
         AtomicInteger previousReshowDelay = new AtomicInteger();
         AtomicInteger previousDismissDelay = new AtomicInteger();
@@ -28,6 +30,7 @@ class AttackFrameworkPanelTest {
             previousDismissDelay.set(manager.getDismissDelay());
         });
         try {
+            SwingUtilities.invokeAndWait(Tooltips::configureSharedToolTipManager);
             SwingUtilities.invokeAndWait(() -> new AttackFrameworkPanel());
             SwingUtilities.invokeAndWait(() -> {
                 ToolTipManager manager = ToolTipManager.sharedInstance();

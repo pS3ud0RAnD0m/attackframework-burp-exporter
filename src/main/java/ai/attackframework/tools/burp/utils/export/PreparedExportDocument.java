@@ -5,13 +5,16 @@ import java.util.Map;
 /**
  * Prepared export document shared across sinks.
  *
- * <p>Instances contain the filtered document body, the target index naming context, and the
- * stable export ID reused across OpenSearch and file sinks for the same emitted event.</p>
- *
  * @param indexName full target index name
  * @param indexKey short index key (for example {@code traffic})
- * @param exportId stable sink-shared document ID
- * @param document filtered document body with {@code meta.export_id} populated
+ * @param document filtered document body
+ * @param estimatedBulkBytes approximate serialized bulk payload size in bytes for chunk sizing
+ * @param bulkNdjsonBytes pre-serialized bulk action+document NDJSON pair for OpenSearch flush
  */
-public record PreparedExportDocument(String indexName, String indexKey, String exportId, Map<String, Object> document) {
+public record PreparedExportDocument(
+        String indexName,
+        String indexKey,
+        Map<String, Object> document,
+        long estimatedBulkBytes,
+        byte[] bulkNdjsonBytes) {
 }

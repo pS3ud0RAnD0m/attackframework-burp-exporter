@@ -18,7 +18,6 @@ import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 
 import ai.attackframework.tools.burp.testutils.Reflect;
-import ai.attackframework.tools.burp.sinks.FileExportService;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -331,9 +330,16 @@ class ToolWebSocketLiveHandlerTest {
     private static Map<String, Object> queuedDocument() throws Exception {
         LinkedBlockingQueue<?> queue =
                 Reflect.getStatic(TrafficExportQueue.class, "queue", LinkedBlockingQueue.class);
-        Map<String, Object> doc = asStringObjectMap(queue.peek());
+        Map<String, Object> doc = queuedDocument(queue.peek());
         assertThat(doc).as("traffic export queue document").isNotNull();
         return doc;
+    }
+
+    private static Map<String, Object> queuedDocument(Object head) {
+        if (head instanceof TrafficQueueEntry entry) {
+            return entry.document();
+        }
+        return asStringObjectMap(head);
     }
 
     private static Map<String, Object> asStringObjectMap(Object head) {

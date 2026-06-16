@@ -36,7 +36,7 @@ class AboutPanelVersionHeadlessTest {
             List<JLabel> labels = findLabels(p);
 
             assertThat(txt)
-                    .contains("Attack Framework: Burp Exporter")
+                    .contains("Burp Exporter v1.2.3-test")
                     .contains("v1.2.3-test")
                     .contains("This Burp Suite extension continuously exports settings, sitemap, issues, and traffic")
                     .contains("Burp Exporter:")

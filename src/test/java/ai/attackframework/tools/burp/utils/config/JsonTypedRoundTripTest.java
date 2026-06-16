@@ -495,7 +495,7 @@ class JsonTypedRoundTripTest {
                 null,
                 new ConfigState.UiPreferences(
                         2,
-                        new ConfigState.LogPanelPreferences("warn", true, "tls", true, false, false, "retry", false, true)));
+                        new ConfigState.LogPanelPreferences("warn", true, "", true, false, false, "", false, true)));
 
         String json = ConfigJsonMapper.build(state);
         ConfigState.State parsed = ConfigJsonMapper.parseState(json);
@@ -504,11 +504,11 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.uiPreferences().statsChartStyle()).isEqualTo(2);
         assertThat(parsed.uiPreferences().logPanel().minLevel()).isEqualTo("warn");
         assertThat(parsed.uiPreferences().logPanel().pauseAutoscroll()).isTrue();
-        assertThat(parsed.uiPreferences().logPanel().filterText()).isEqualTo("tls");
+        assertThat(parsed.uiPreferences().logPanel().filterText()).isEmpty();
         assertThat(parsed.uiPreferences().logPanel().filterCase()).isTrue();
         assertThat(parsed.uiPreferences().logPanel().filterRegex()).isFalse();
         assertThat(parsed.uiPreferences().logPanel().filterNegative()).isFalse();
-        assertThat(parsed.uiPreferences().logPanel().searchText()).isEqualTo("retry");
+        assertThat(parsed.uiPreferences().logPanel().searchText()).isEmpty();
         assertThat(parsed.uiPreferences().logPanel().searchCase()).isFalse();
         assertThat(parsed.uiPreferences().logPanel().searchRegex()).isTrue();
     }

@@ -7,7 +7,6 @@ import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 
 import ai.attackframework.tools.burp.ui.primitives.ScrollPanes;
-import ai.attackframework.tools.burp.ui.text.Tooltips;
 
 /**
  * Top-level tabbed UI for the Attack Framework extension.
@@ -22,13 +21,12 @@ public class AttackFrameworkPanel extends JPanel {
     /**
      * Constructs the top-level tab container for the extension.
      * <p>
-     * Caller must invoke on the EDT. Configures hover-friendly tooltip timing and mounts all major
-     * panels inside a {@link JTabbedPane} wrapped with scroll panes.</p>
+     * Caller must invoke on the EDT. Tooltip hover timing is configured once in
+     * {@link ai.attackframework.tools.burp.Exporter#initialize}. Mounts all major panels inside a
+     * {@link JTabbedPane} wrapped with scroll panes.</p>
      */
     public AttackFrameworkPanel() {
         setLayout(new BorderLayout());
-
-        Tooltips.configureSharedToolTipManager();
 
         JTabbedPane tabbedPane = new JTabbedPane();
 

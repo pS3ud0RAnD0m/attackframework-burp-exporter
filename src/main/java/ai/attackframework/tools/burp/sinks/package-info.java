@@ -25,13 +25,13 @@
  *       {@link ai.attackframework.tools.burp.sinks.SnapshotSummary} one-shot run summaries.</li>
  * </ul>
  *
- * <p>OpenSearch bulk exports use two deliberate paths: retry-coordinated snapshot pushes via
- * {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper#pushBulk} and
- * streaming drains via
- * {@link ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender}. Both converge on
- * {@link ai.attackframework.tools.burp.sinks.FileExportService} for file output and on
- * {@link ai.attackframework.tools.burp.sinks.TrafficRouteBucket} /
- * {@link ai.attackframework.tools.burp.sinks.BulkOutcomeRecorder} for counter accounting so
- * stats remain consistent across the two bulk strategies.</p>
+ * <p>One-shot snapshot backlogs (Proxy History, Sitemap initial, Findings backlog, Proxy WebSocket
+ * historic) use {@link ai.attackframework.tools.burp.utils.concurrent.SnapshotExportEngine} with
+ * {@link ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper#pushPreparedBulk}
+ * (pre-serialized NDJSON). Live traffic uses
+ * {@link ai.attackframework.tools.burp.sinks.TrafficExportQueue} and
+ * {@link ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender}. Incremental reporters
+ * (Sitemap 30s, Findings 30s) batch prepared documents directly. All paths converge on
+ * {@link ai.attackframework.tools.burp.sinks.FileExportService} for file output.</p>
  */
 package ai.attackframework.tools.burp.sinks;

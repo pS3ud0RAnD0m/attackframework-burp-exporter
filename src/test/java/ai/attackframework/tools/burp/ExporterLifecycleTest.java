@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp;
 
 import static ai.attackframework.tools.burp.testutils.LazySchedulers.peek;
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
+import static ai.attackframework.tools.burp.testutils.Reflect.getStaticList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
@@ -12,7 +13,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.awt.Component;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -73,7 +73,7 @@ class ExporterLifecycleTest {
             assertThat(peek(SitemapIndexReporter.class, "SCHEDULER")).isNull();
             assertThat(peek(ProxyWebSocketIndexReporter.class, "SCHEDULER")).isNull();
 
-            verify(fixture.extension).setName("Attack Framework: Burp Exporter");
+            verify(fixture.extension).setName("Burp Exporter");
             verify(fixture.extension).registerUnloadingHandler(any(ExtensionUnloadingHandler.class));
             verify(fixture.userInterface).registerSuiteTab(eq("Exporter"), any(Component.class));
             verify(fixture.http).registerHttpHandler(any());
@@ -97,7 +97,8 @@ class ExporterLifecycleTest {
             SitemapIndexReporter.start();
             ProxyWebSocketIndexReporter.startLivePoll();
 
-            ExecutorService startupExecutorBeforeUnload = ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor"));
+            ExecutorService startupExecutorBeforeUnload =
+                    getStatic(ConfigPanel.class, "startupExecutor", ExecutorService.class);
             fixture.unloadHandler.get().extensionUnloaded();
 
             assertThat(RuntimeConfig.isExportRunning()).isFalse();
@@ -105,7 +106,7 @@ class ExporterLifecycleTest {
             assertThat(BurpRuntimeMetadata.burpVersion()).isNull();
             assertThat(BurpRuntimeMetadata.projectId()).isNull();
             assertAllWorkersTerminated(startupExecutorBeforeUnload);
-            assertThat(List.class.cast(getStatic(Logger.class, "LISTENERS"))).isEmpty();
+            assertThat(getStaticList(Logger.class, "LISTENERS")).isEmpty();
 
             verify(fixture.httpRegistration).deregister();
             verify(fixture.suiteTabRegistration).deregister();
@@ -122,7 +123,8 @@ class ExporterLifecycleTest {
             ApiFixture fixture = new ApiFixture();
             new Exporter().initialize(fixture.api);
 
-            ExecutorService startupExecutorBeforeUnload = ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor"));
+            ExecutorService startupExecutorBeforeUnload =
+                    getStatic(ConfigPanel.class, "startupExecutor", ExecutorService.class);
             assertThatCode(() -> {
                 fixture.unloadHandler.get().extensionUnloaded();
                 fixture.unloadHandler.get().extensionUnloaded();
@@ -155,10 +157,10 @@ class ExporterLifecycleTest {
         assertThat(peek(ProxyWebSocketIndexReporter.class, "SCHEDULER")).isNull();
         assertThat(peek(ProxyHistoryIndexReporter.class, "SCHEDULER")).isNull();
         assertThat(peek(TRAFFIC_HTTP_HANDLER_SUPPORT, "ORPHAN_SCHEDULER")).isNull();
-        assertThat(Thread.class.cast(getStatic(TrafficExportQueue.class, "drainWorker"))).isNull();
+        assertThat(getStatic(TrafficExportQueue.class, "drainWorker", Thread.class)).isNull();
         assertThat(IndexingRetryCoordinator.getInstance().isDrainThreadAlive()).isFalse();
         assertThat(startupExecutorBeforeUnload.isShutdown()).isTrue();
-        assertThat(ExecutorService.class.cast(getStatic(ConfigPanel.class, "startupExecutor")))
+        assertThat(getStatic(ConfigPanel.class, "startupExecutor", ExecutorService.class))
                 .isNotSameAs(startupExecutorBeforeUnload);
     }
 

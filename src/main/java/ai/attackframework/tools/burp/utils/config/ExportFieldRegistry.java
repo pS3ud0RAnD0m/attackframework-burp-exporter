@@ -27,8 +27,7 @@ public final class ExportFieldRegistry {
     public static final List<String> META_LEAF_PATHS = List.of(
             "meta.schema_version",
             "meta.extension_version",
-            "meta.indexed_at",
-            "meta.export_id");
+            "meta.indexed_at");
 
     static {
         for (String index : List.of("exporter", "traffic", "settings", "sitemap", "findings")) {

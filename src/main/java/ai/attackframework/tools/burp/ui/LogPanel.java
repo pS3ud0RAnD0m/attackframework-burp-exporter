@@ -4,7 +4,9 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.HeadlessException;
+import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -33,10 +35,8 @@ import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
-import javax.swing.JSeparator;
 import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
-import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.event.DocumentListener;
@@ -80,18 +80,20 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private static final long serialVersionUID = 1L;
 
     // Toolbar layout snippets for consistency across rebuilds.
-    private static final String MIG_TOOLBAR_INSETS = "insets 6 8 6 8, fillx, novisualpadding, gapx 6";
-    private static final String MIG_SEP            = "h 18!, gapx 8";
+    private static final String MIG_TOOLBAR_INSETS = "insets 6 8 6 8, fillx, novisualpadding, gapx 0";
+    private static final String MIG_TOOLBAR_SECTION = "insets 0, gapx 6, novisualpadding";
+    private static final String MIG_SECTION_GAP = "pushx, growx";
     private static final String GAP0               = "gapx 0";
     private static final String GAP4               = "gapx 4";
     private static final String GAP6               = "gapx 6";
-    private static final String GAP8               = "gapx 8";
-    private static final String SECTION_SPACER     = "pushx, growx, wmin 20";
 
     // Actions / defaults
     private static final String ACTION_SEARCH_NEXT = "log.search.next";
     /** Label for the exclude (invert) filter toggle. */
     private static final String FILTER_NEGATIVE_TOGGLE_LABEL = "!";
+    private static final String PAUSE_BTN_LABEL = "Pause";
+    private static final String UNPAUSE_BTN_LABEL = "Unpause";
+    private static final String GAP2               = "gapx 2";
     private static final String DEFAULT_MIN_LEVEL  = "trace";
     private static final String[] LEVEL_LABELS = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR"};
     private static final int MAX_MODEL_ENTRIES     = 5000;
@@ -105,7 +107,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
 
     // Controls
     private final JComboBox<String> levelCombo;
-    private final JCheckBox pauseAutoscroll;
+    private final JButton pauseAutoscrollBtn;
+    private boolean autoscrollPaused;
 
     // Filter controls
     private final AutoSizingTextField filterField;
@@ -213,9 +216,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         levelCombo.setName("log.filter.level");
         levelCombo.setSelectedItem(displayLogMinLevel(ConfigState.normalizeLogMinLevel(PREFS.get(PREF_MIN_LEVEL, DEFAULT_MIN_LEVEL))));
 
-        pauseAutoscroll = new Tooltips.HtmlCheckBox("Pause autoscroll");
-        pauseAutoscroll.setName("log.pause");
-        pauseAutoscroll.setSelected(PREFS.getBoolean(PREF_PAUSE, false));
+        autoscrollPaused = PREFS.getBoolean(PREF_PAUSE, false);
+        pauseAutoscrollBtn = new Tooltips.HtmlButton(autoscrollPaused ? UNPAUSE_BTN_LABEL : PAUSE_BTN_LABEL);
+        pauseAutoscrollBtn.setName("log.pause");
 
         // Filter group (restore persisted)
         filterField = new AutoSizingTextField(PREFS.get(PREF_FILTER_TEXT, ""));
@@ -261,53 +264,65 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         ButtonStyles.normalize(clearBtn);
         ButtonStyles.normalize(copyBtn);
         ButtonStyles.normalize(saveBtn);
+        ButtonStyles.normalize(pauseAutoscrollBtn);
+        pinPauseButtonWidth();
 
         assignToolTips(
                 searchPrevBtn,
                 searchNextBtn,
+                pauseAutoscrollBtn,
                 clearBtn,
                 copyBtn,
                 saveBtn
         );
 
-        // Build toolbar
+        // Build toolbar: five compact sections with equal flex gaps between them.
         JLabel minLevelLabel = Tooltips.label("Min level:",
                 Tooltips.html("Choose the minimum log level shown in the pane."));
-        toolbar.add(minLevelLabel);
-        toolbar.add(levelCombo, "w 110!");
-        toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
-        toolbar.add(new JLabel(), SECTION_SPACER);
+        JPanel minLevelSection = new JPanel(new MigLayout(MIG_TOOLBAR_SECTION, "", "[]"));
+        minLevelSection.add(minLevelLabel);
+        minLevelSection.add(levelCombo, "w 110!");
 
         JLabel filterLabel = Tooltips.label("Filter:",
                 Tooltips.html("Filter visible log entries by plain text or regex."));
-        toolbar.add(filterLabel, GAP0);
-        toolbar.add(filterField, GAP0);
-        toolbar.add(filterCaseToggle, GAP4);
-        toolbar.add(filterRegexToggle, GAP4);
-        toolbar.add(filterNegativeToggle, GAP4);
-        toolbar.add(filterRegexIndicator, GAP6);
-
-        toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
-        toolbar.add(new JLabel(), SECTION_SPACER);
+        JPanel filterSection = new JPanel(new MigLayout(MIG_TOOLBAR_SECTION, "", "[]"));
+        filterSection.add(filterLabel, GAP0);
+        filterSection.add(filterField, GAP0);
+        filterSection.add(filterCaseToggle, GAP4);
+        filterSection.add(filterRegexToggle, GAP4);
+        filterSection.add(filterNegativeToggle, GAP4);
+        filterSection.add(filterRegexIndicator, GAP6);
 
         JLabel findLabel = Tooltips.label("Find:",
                 Tooltips.html("Search within the visible log entries."));
-        toolbar.add(findLabel, GAP0);
-        toolbar.add(searchField, GAP0);
-        toolbar.add(searchCaseToggle, GAP4);
-        toolbar.add(searchRegexToggle, GAP4);
-        toolbar.add(searchRegexIndicator, GAP6);
-        toolbar.add(searchPrevBtn, GAP4);
-        toolbar.add(searchNextBtn, GAP4);
-        toolbar.add(searchCountLabel, GAP6);
+        JPanel findSection = new JPanel(new MigLayout(MIG_TOOLBAR_SECTION, "", "[]"));
+        findSection.add(findLabel, GAP0);
+        findSection.add(searchField, GAP0);
+        findSection.add(searchCaseToggle, GAP4);
+        findSection.add(searchRegexToggle, GAP4);
+        findSection.add(searchRegexIndicator, GAP4);
+        findSection.add(searchPrevBtn, GAP2);
+        findSection.add(searchNextBtn, GAP4);
+        findSection.add(searchCountLabel, GAP6);
 
-        toolbar.add(new JLabel(), SECTION_SPACER);
+        JPanel actionSection = new JPanel(new MigLayout(MIG_TOOLBAR_SECTION, "", "[]"));
+        actionSection.add(copyBtn);
+        actionSection.add(saveBtn, GAP4);
 
-        toolbar.add(new JSeparator(SwingConstants.VERTICAL), MIG_SEP);
-        toolbar.add(pauseAutoscroll);
-        toolbar.add(clearBtn, GAP8);
-        toolbar.add(copyBtn, GAP4);
-        toolbar.add(saveBtn, GAP4);
+        JPanel trailingSection = new JPanel(new MigLayout(MIG_TOOLBAR_SECTION + ", fillx", "", "[]"));
+        trailingSection.add(pauseAutoscrollBtn);
+        trailingSection.add(new JLabel(), "pushx, growx");
+        trailingSection.add(clearBtn, GAP0);
+
+        toolbar.add(minLevelSection);
+        toolbar.add(new JLabel(), MIG_SECTION_GAP);
+        toolbar.add(filterSection);
+        toolbar.add(new JLabel(), MIG_SECTION_GAP);
+        toolbar.add(findSection);
+        toolbar.add(new JLabel(), MIG_SECTION_GAP);
+        toolbar.add(actionSection);
+        toolbar.add(new JLabel(), MIG_SECTION_GAP);
+        toolbar.add(trailingSection, "growx");
 
         add(toolbar, BorderLayout.NORTH);
 
@@ -333,11 +348,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             syncRuntimePreferencesFromUi();
         });
 
-        pauseAutoscroll.addActionListener(e -> {
-            PREFS.putBoolean(PREF_PAUSE, pauseAutoscroll.isSelected());
-            if (!pauseAutoscroll.isSelected()) renderer.autoscrollIfNeeded(false);
-            syncRuntimePreferencesFromUi();
-        });
+        pauseAutoscrollBtn.addActionListener(e -> setAutoscrollPaused(!autoscrollPaused));
 
         DocumentListener filterChange = Doc.onChange(() -> {
             PREFS.put(PREF_FILTER_TEXT, filterField.getText());
@@ -455,10 +466,44 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     }
 
     /**
+     * Updates pause state, button label, persistence, and runtime config.
+     *
+     * @param paused {@code true} when autoscroll should stay at the current viewport position
+     */
+    private void setAutoscrollPaused(boolean paused) {
+        autoscrollPaused = paused;
+        updatePauseButtonLabel();
+        PREFS.putBoolean(PREF_PAUSE, paused);
+        if (!paused) {
+            renderer.autoscrollIfNeeded(false);
+        }
+        syncRuntimePreferencesFromUi();
+    }
+
+    /** Syncs the pause button label with {@link #autoscrollPaused}. */
+    private void updatePauseButtonLabel() {
+        pauseAutoscrollBtn.setText(autoscrollPaused ? UNPAUSE_BTN_LABEL : PAUSE_BTN_LABEL);
+    }
+
+    /**
+     * Pins pause-button width to the wider toggle label so trailing toolbar layout does not shift.
+     */
+    private void pinPauseButtonWidth() {
+        FontMetrics fm = pauseAutoscrollBtn.getFontMetrics(pauseAutoscrollBtn.getFont());
+        int textWidth = Math.max(fm.stringWidth(PAUSE_BTN_LABEL), fm.stringWidth(UNPAUSE_BTN_LABEL));
+        Insets insets = pauseAutoscrollBtn.getInsets();
+        int width = textWidth + insets.left + insets.right;
+        Dimension fixed = new Dimension(width, pauseAutoscrollBtn.getPreferredSize().height);
+        pauseAutoscrollBtn.setMinimumSize(fixed);
+        pauseAutoscrollBtn.setPreferredSize(fixed);
+    }
+
+    /**
      * Assigns tooltips for all toolbar controls in one place.
      *
      * @param searchPrevBtn jump-to-previous button
      * @param searchNextBtn jump-to-next button
+     * @param pauseAutoscrollBtn pause/unpause autoscroll button
      * @param clearBtn      clear action button
      * @param copyBtn       copy action button
      * @param saveBtn       save action button
@@ -466,12 +511,14 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private void assignToolTips(
             JButton searchPrevBtn,
             JButton searchNextBtn,
+            JButton pauseAutoscrollBtn,
             JButton clearBtn,
             JButton copyBtn,
             JButton saveBtn
     ) {
         Tooltips.apply(levelCombo, Tooltips.html("Minimum level to display."));
-        Tooltips.apply(pauseAutoscroll, Tooltips.html("Stop auto-scrolling when new entries arrive."));
+        Tooltips.apply(pauseAutoscrollBtn, Tooltips.html(
+                "Pause autoscroll while reviewing the log. Click again (Unpause) to follow new entries."));
 
         Tooltips.apply(filterField, Tooltips.html("Filter by string or regex."));
         Tooltips.apply(filterCaseToggle, Tooltips.html("Case-sensitive filter."));
@@ -549,7 +596,8 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         applyingUiPreferences = true;
         try {
             levelCombo.setSelectedItem(displayLogMinLevel(preferences.minLevel()));
-            pauseAutoscroll.setSelected(preferences.pauseAutoscroll());
+            autoscrollPaused = preferences.pauseAutoscroll();
+            updatePauseButtonLabel();
             filterField.setText(preferences.filterText());
             filterCaseToggle.setSelected(preferences.filterCase());
             filterRegexToggle.setSelected(preferences.filterRegex());
@@ -574,7 +622,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private ConfigState.LogPanelPreferences currentUiPreferences() {
         return new ConfigState.LogPanelPreferences(
                 selectedLogMinLevel(),
-                pauseAutoscroll.isSelected(),
+                autoscrollPaused,
                 filterField.getText(),
                 filterCaseToggle.isSelected(),
                 filterRegexToggle.isSelected(),
@@ -660,7 +708,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
                 renderer.append(line, e.level);
                 renderedAggregates.add(new LogStore.Aggregate(e.ts, e.level, e.message, e.repeats()));
                 if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=APPEND");
-                renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
+                renderer.autoscrollIfNeeded(autoscrollPaused);
                 recomputeMatchesAfterDocChange();
             }
             case REPLACE -> {
@@ -673,7 +721,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
                             new LogStore.Aggregate(e.ts, e.level, e.message, prev.count() + 1));
                 }
                 if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=REPLACE");
-                renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
+                renderer.autoscrollIfNeeded(autoscrollPaused);
                 recomputeMatchesAfterDocChange();
             }
             default -> {
@@ -831,7 +879,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             renderer.append(line, a.level());
         }
         renderedAggregates = new ArrayList<>(visible);
-        renderer.autoscrollIfNeeded(pauseAutoscroll.isSelected());
+        renderer.autoscrollIfNeeded(autoscrollPaused);
         recomputeMatchesAfterDocChange();
         if (Logger.isInternalTraceEnabled()) {
             Logger.internalTrace("LogPanel rebuild done, lines=" + visible.size());
@@ -1041,9 +1089,9 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             String text = logTextPane.getDocument().getText(0, logTextPane.getDocument().getLength());
             FileUtil.writeStringCreateDirs(out.toPath(), text);
         } catch (DiskSpaceGuard.LowDiskSpaceException ex) {
-            Logger.logError("Save failed: " + ex.userMessage());
+            Logger.logError("[LogPanel] Save failed: " + ex.userMessage());
         } catch (IOException | javax.swing.text.BadLocationException ex) {
-            Logger.logError("Save failed: " + ex.getMessage());
+            Logger.logError("[LogPanel] Save failed: " + ex.getMessage());
         }
     }
 

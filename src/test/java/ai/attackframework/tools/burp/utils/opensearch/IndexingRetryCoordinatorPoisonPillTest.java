@@ -2,6 +2,8 @@ package ai.attackframework.tools.burp.utils.opensearch;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,11 +44,13 @@ class IndexingRetryCoordinatorPoisonPillTest {
 
     @Test
     void permanentFailures_areDropped_andTransientFailuresReturnedForRetry() throws Exception {
-        List<Map<String, Object>> batch = List.of(
-                docFor("permanent-1"),
-                docFor("transient-1"),
-                docFor("permanent-2"),
-                docFor("transient-2"));
+        List<PreparedExportDocument> batch = preparedBatch(
+                "traffic-index", "traffic",
+                List.of(
+                        docFor("permanent-1"),
+                        docFor("transient-1"),
+                        docFor("permanent-2"),
+                        docFor("transient-2")));
 
         List<OpenSearchClientWrapper.FailedItem> failed = List.of(
                 new OpenSearchClientWrapper.FailedItem(0, "mapper_parsing_exception", "immense term"),
@@ -54,9 +58,9 @@ class IndexingRetryCoordinatorPoisonPillTest {
                 new OpenSearchClientWrapper.FailedItem(2, "illegal_argument_exception", "nested limit exceeded"),
                 new OpenSearchClientWrapper.FailedItem(3, "unavailable_shards_exception", "red"));
 
-        List<Map<String, Object>> retryList = filterOnEdt(batch, failed, "test-index", "traffic");
+        List<PreparedExportDocument> retryList = filterOnEdt(batch, failed, "test-index", "traffic");
 
-        assertThat(retryList).extracting("marker").containsExactly("transient-1", "transient-2");
+        assertThat(retryList).containsExactly(batch.get(1), batch.get(3));
         assertThat(ExportStats.getPermanentDrops("traffic")).isEqualTo(2);
         assertThat(ExportStats.getTotalPermanentDrops()).isEqualTo(2);
         assertThat(events)
@@ -66,12 +70,13 @@ class IndexingRetryCoordinatorPoisonPillTest {
 
     @Test
     void allPermanentFailures_returnsEmptyRetryList() throws Exception {
-        List<Map<String, Object>> batch = List.of(docFor("a"), docFor("b"));
+        List<PreparedExportDocument> batch = preparedBatch(
+                "sitemap-index", "sitemap", List.of(docFor("a"), docFor("b")));
         List<OpenSearchClientWrapper.FailedItem> failed = List.of(
                 new OpenSearchClientWrapper.FailedItem(0, "mapper_parsing_exception", "bad"),
                 new OpenSearchClientWrapper.FailedItem(1, "strict_dynamic_mapping_exception", "bad"));
 
-        List<Map<String, Object>> retryList = filterOnEdt(batch, failed, "sitemap-index", "sitemap");
+        List<PreparedExportDocument> retryList = filterOnEdt(batch, failed, "sitemap-index", "sitemap");
 
         assertThat(retryList).isEmpty();
         assertThat(ExportStats.getPermanentDrops("sitemap")).isEqualTo(2);
@@ -79,9 +84,10 @@ class IndexingRetryCoordinatorPoisonPillTest {
 
     @Test
     void missingFailureDetails_treatsEntireBatchAsTransient() throws Exception {
-        List<Map<String, Object>> batch = List.of(docFor("a"), docFor("b"));
+        List<PreparedExportDocument> batch = preparedBatch(
+                "findings-index", "findings", List.of(docFor("a"), docFor("b")));
 
-        List<Map<String, Object>> retryList = filterOnEdt(batch, List.of(), "findings-index", "findings");
+        List<PreparedExportDocument> retryList = filterOnEdt(batch, List.of(), "findings-index", "findings");
 
         assertThat(retryList).containsExactlyElementsOf(batch);
         assertThat(ExportStats.getPermanentDrops("findings")).isZero();
@@ -89,13 +95,13 @@ class IndexingRetryCoordinatorPoisonPillTest {
 
     @Test
     void outOfRangeIndices_areSkippedWithoutCrashing() throws Exception {
-        List<Map<String, Object>> batch = List.of(docFor("a"));
+        List<PreparedExportDocument> batch = preparedBatch("traffic-index", "traffic", List.of(docFor("a")));
         List<OpenSearchClientWrapper.FailedItem> failed = List.of(
                 new OpenSearchClientWrapper.FailedItem(0, "mapper_parsing_exception", "bad"),
                 new OpenSearchClientWrapper.FailedItem(5, "mapper_parsing_exception", "phantom"),
                 new OpenSearchClientWrapper.FailedItem(-1, "mapper_parsing_exception", "phantom"));
 
-        List<Map<String, Object>> retryList = filterOnEdt(batch, failed, "traffic-index", "traffic");
+        List<PreparedExportDocument> retryList = filterOnEdt(batch, failed, "traffic-index", "traffic");
 
         assertThat(retryList).isEmpty();
         assertThat(ExportStats.getPermanentDrops("traffic")).isEqualTo(1);
@@ -105,12 +111,12 @@ class IndexingRetryCoordinatorPoisonPillTest {
      * Runs {@link IndexingRetryCoordinator#filterTransientFailures} on the EDT so that any
      * listener dispatch from {@code logErrorPanelOnly} happens synchronously before assertions.
      */
-    private static List<Map<String, Object>> filterOnEdt(
-            List<Map<String, Object>> batch,
+    private static List<PreparedExportDocument> filterOnEdt(
+            List<PreparedExportDocument> batch,
             List<OpenSearchClientWrapper.FailedItem> failed,
             String indexName,
             String indexKey) throws Exception {
-        AtomicReference<List<Map<String, Object>>> ref = new AtomicReference<>();
+        AtomicReference<List<PreparedExportDocument>> ref = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() ->
                 ref.set(IndexingRetryCoordinator.filterTransientFailures(batch, failed, indexName, indexKey)));
         return ref.get();
@@ -120,5 +126,14 @@ class IndexingRetryCoordinatorPoisonPillTest {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("marker", marker);
         return doc;
+    }
+
+    private static List<PreparedExportDocument> preparedBatch(
+            String indexName,
+            String indexKey,
+            List<Map<String, Object>> documents) {
+        return documents.stream()
+                .map(document -> ExportDocumentIdentity.prepare(indexName, indexKey, document))
+                .toList();
     }
 }

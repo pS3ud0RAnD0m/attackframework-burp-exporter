@@ -35,12 +35,13 @@ class TrafficExportQueueTest {
     }
 
     @Test
-    void getCurrentBytesEstimate_returnsNonNegativeAndTracksOffers() {
+    void getCurrentBytesEstimate_matchesWalkAfterOffer() {
         long before = TrafficExportQueue.getCurrentBytesEstimate();
         assertThat(before).isGreaterThanOrEqualTo(0);
         TrafficExportQueue.offer(Map.of("url", "https://example.com/bytes-probe", "status", 200));
         long after = TrafficExportQueue.getCurrentBytesEstimate();
         assertThat(after).isGreaterThanOrEqualTo(before);
+        assertThat(after).isEqualTo(TrafficExportQueue.computeBytesEstimateByWalk());
     }
 
     @Test
@@ -57,6 +58,30 @@ class TrafficExportQueueTest {
     @Test
     void getCurrentSize_returnsNonNegative() {
         assertThat(TrafficExportQueue.getCurrentSize()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void awaitIdle_returnsTrueWhenNoQueuedWorkExists() {
+        assertThat(TrafficExportQueue.awaitIdle(0)).isTrue();
+    }
+
+    @Test
+    void awaitIdle_returnsFalseWhenQueuedWorkIsNotDrained() throws Exception {
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of(ConfigKeys.SRC_TRAFFIC),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(true, "C:\\temp", true, false, false, "", "", "", false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                null));
+        RuntimeConfig.setExportRunning(true);
+
+        TrafficExportQueueTestSupport.withDrainWorkerDisabled(() -> {
+            assertThat(TrafficExportQueue.offerAccepted(trafficDoc("Proxy"))).isTrue();
+            assertThat(TrafficExportQueue.awaitIdle(0)).isFalse();
+        });
     }
 
     @Test

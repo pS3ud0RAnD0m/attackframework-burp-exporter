@@ -88,7 +88,8 @@ class FileExportWebSocketReimportIT {
             Path ndjsonPath = root.resolve(indexName + ".ndjson");
             assertThat(ndjsonPath).exists();
             String payload = Files.readString(ndjsonPath);
-            assertThat(payload).contains("\"_id\":\"" + prepared.exportId() + "\"");
+            assertThat(payload).contains("{\"index\":{}}");
+            assertThat(payload).doesNotContain("\"_id\"");
             assertThat(payload).contains("\"is_websocket\":true");
 
             bulkImport(indexName, payload);
@@ -98,7 +99,7 @@ class FileExportWebSocketReimportIT {
             long countAfterSecond = countDocuments(indexName);
 
             assertThat(countAfterFirst).isEqualTo(1L);
-            assertThat(countAfterSecond).isEqualTo(countAfterFirst);
+            assertThat(countAfterSecond).isEqualTo(2L);
         } finally {
             MontoyaApiProvider.set(null);
             restoreRuntimeState();

@@ -1,9 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
 import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -11,18 +8,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.ScopeFilter;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.concurrent.LazyScheduler;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotExportEngine;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotPacing;
+import ai.attackframework.tools.burp.utils.concurrent.SnapshotScopeCache;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.ExportDocumentIdentity;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.collaborator.DnsDetails;
@@ -43,8 +47,8 @@ import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity;
 /**
  * Pushes Burp audit issues (findings) to the findings index when export is
  * running and "Issues" is selected. Initial push on Start; every 30 seconds
- * pushes only issues not yet sent. Does not start a new run while the previous
- * is still in progress.
+ * exports only new issues (in-memory seen keys). Does not start a new run while
+ * the previous is still in progress.
  */
 public final class FindingsIndexReporter {
 
@@ -63,8 +67,8 @@ public final class FindingsIndexReporter {
      */
     private static final LazyScheduler SCHEDULER =
             new LazyScheduler("attackframework-findings-reporter");
-    /** Keys of issues already pushed this session; only push new on 30s run. */
-    private static final Set<String> pushedIssueKeys = ConcurrentHashMap.newKeySet();
+    private static final PeriodicExportSeenKeys PERIODIC_EXPORT_SEEN_KEYS =
+            new PeriodicExportSeenKeys();
     private static final AtomicBoolean issuesAccessFailureLogged = new AtomicBoolean();
     private static volatile boolean runInProgress;
 
@@ -100,7 +104,7 @@ public final class FindingsIndexReporter {
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Findings] Snapshot push failed: " + msg);
+            Logger.logWarnPanelOnly("[SnapshotExport] Findings: push failed: " + msg);
         }
     }
 
@@ -123,9 +127,9 @@ public final class FindingsIndexReporter {
      */
     public static void stop() {
         SCHEDULER.stop();
-        pushedIssueKeys.clear();
         issuesAccessFailureLogged.set(false);
         runInProgress = false;
+        PERIODIC_EXPORT_SEEN_KEYS.clear();
     }
 
     static void pushNewIssuesOnly() {
@@ -146,7 +150,7 @@ public final class FindingsIndexReporter {
             pushIssues(api, false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[Findings] Periodic push failed: " + msg);
+            Logger.logWarnPanelOnly("[PeriodicExport] Findings: push failed: " + msg);
         }
     }
 
@@ -161,59 +165,203 @@ public final class FindingsIndexReporter {
                 return;
             }
             var state = RuntimeConfig.getState();
-            int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
-            List<String> batchKeys = new ArrayList<>(batchSize);
-            List<Map<String, Object>> batchDocs = new ArrayList<>(batchSize);
-            long runningBatchBytes = 0;
-
             var severities = state.findingsSeverities();
             boolean filterBySeverity = severities != null && !severities.isEmpty();
             Set<String> selectedSeverities = filterBySeverity ? Set.copyOf(severities) : Set.of();
-
             if (pushAll) {
-                Logger.logInfoPanelOnly("[Findings] Exporting findings backlog: " + issues.size() + " issue(s).");
-            }
-
-            for (AuditIssue issue : issues) {
-                if (!RuntimeConfig.isExportRunning()) {
-                    break;
-                }
-                if (filterBySeverity) {
-                    AuditIssueSeverity sev = issue.severity();
-                    if (sev == null || !selectedSeverities.contains(sev.name().toLowerCase(java.util.Locale.ROOT))) {
-                        continue;
-                    }
-                }
-                String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
-                boolean burpInScope = safeBurpInScope(api, issueUrl);
-                if (!ScopeFilter.shouldExport(state, issueUrl, burpInScope)) {
-                    continue;
-                }
-                String key = issueKey(issue);
-                if (!pushAll && pushedIssueKeys.contains(key)) {
-                    continue;
-                }
-                Map<String, Object> doc = buildFindingDoc(issue, burpInScope);
-                if (doc == null) {
-                    continue;
-                }
-                batchKeys.add(key);
-                batchDocs.add(doc);
-                runningBatchBytes += BulkPayloadEstimator.estimateBytes(doc);
-
-                if (batchDocs.size() >= BatchSizeController.getInstance().getCurrentBatchSize() || runningBatchBytes >= BULK_MAX_BYTES) {
-                    flushBatch(batchKeys, batchDocs);
-                    batchKeys.clear();
-                    batchDocs.clear();
-                    runningBatchBytes = 0;
-                }
-            }
-            if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
-                flushBatch(batchKeys, batchDocs);
+                pushAllIssuesParallel(api, issues, state, filterBySeverity, selectedSeverities);
+            } else {
+                pushIncrementalIssues(api, issues, state, filterBySeverity, selectedSeverities);
             }
         } finally {
             runInProgress = false;
         }
+    }
+
+    private record FindingWorkItem(AuditIssue issue, boolean burpInScope) {
+    }
+
+    private static void pushAllIssuesParallel(
+            MontoyaApi api,
+            List<AuditIssue> issues,
+            ConfigState.State state,
+            boolean filterBySeverity,
+            Set<String> selectedSeverities) {
+        SnapshotScopeCache scopeCache = new SnapshotScopeCache(api);
+        AtomicInteger processed = new AtomicInteger();
+        AtomicInteger skippedSeverity = new AtomicInteger();
+        AtomicInteger skippedScope = new AtomicInteger();
+        SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("findings");
+        boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
+        boolean fileActive = RuntimeConfig.isAnyFileExportEnabled();
+        long startNs = System.nanoTime();
+        String indexName = findingsIndexName();
+        String activeBaseUrl = RuntimeConfig.openSearchUrl();
+        int batchSize = SnapshotBatchTuning.initialTarget();
+        int buildWorkers = SnapshotExportEngine.defaultBuildWorkers();
+        Logger.logInfoPanelOnly("[StartupExport] Findings: exporting backlog: " + issues.size() + " issue(s).");
+        SnapshotPacing.resetCountersForSnapshot();
+
+        SnapshotExportEngine.Result exportResult = SnapshotExportEngine.run(
+                issues,
+                buildWorkers,
+                BULK_MAX_BYTES,
+                batchSize,
+                SnapshotBatchTuning::applyLiveBackpressure,
+                SnapshotBatchTuning.chunkTargetAdjuster(),
+                activeBaseUrl,
+                indexName,
+                "findings",
+                issue -> {
+                    FindingWorkItem work = toStartupWorkItem(
+                            issue,
+                            state,
+                            scopeCache,
+                            filterBySeverity,
+                            selectedSeverities,
+                            processed,
+                            skippedSeverity,
+                            skippedScope);
+                    if (work == null) {
+                        return null;
+                    }
+                    Map<String, Object> doc = buildFindingDoc(work.issue(), work.burpInScope());
+                    if (doc == null) {
+                        return null;
+                    }
+                    return ExportDocumentIdentity.prepare(indexName, "findings", doc);
+                },
+                (chunk, outcome, nextChunkTarget) ->
+                        BulkOutcomeRecorder.record(
+                                "findings", "Findings", "Bulk push", outcome, openSearchActive));
+
+        long durationMs = (System.nanoTime() - startNs) / 1_000_000L;
+        ExportStats.recordSnapshotLastRun(
+                ExportStats.SNAPSHOT_FINDINGS,
+                exportResult.attempted(),
+                exportResult.success(),
+                durationMs,
+                exportResult.finalChunkTarget(),
+                exportResult.chunks(),
+                exportResult.totalChunkBytes(),
+                exportResult.buildWallMs(),
+                exportResult.buildCpuMs(),
+                exportResult.flushMs(),
+                exportResult.fileFlushMs(),
+                exportResult.openSearchFlushMs(),
+                exportResult.buildWorkers());
+        SnapshotSummary.logInfo(
+                "Findings",
+                baseline,
+                exportResult.attempted(),
+                durationMs,
+                exportResult.buildWallMs(),
+                exportResult.flushMs(),
+                openSearchActive,
+                fileActive);
+        Logger.logInfoPanelOnly("[SnapshotExport] Findings: backlog filters: seen=" + issues.size()
+                + " exported=" + exportResult.attempted()
+                + " skipped_scope=" + skippedScope.get()
+                + " skipped_severity=" + skippedSeverity.get()
+                + " in " + durationMs + "ms.");
+    }
+
+    private static FindingWorkItem toStartupWorkItem(
+            AuditIssue issue,
+            ConfigState.State state,
+            SnapshotScopeCache scopeCache,
+            boolean filterBySeverity,
+            Set<String> selectedSeverities,
+            AtomicInteger processed,
+            AtomicInteger skippedSeverity,
+            AtomicInteger skippedScope) {
+        SnapshotPacing.paceItem(processed.getAndIncrement());
+        if (issue == null) {
+            return null;
+        }
+        if (filterBySeverity) {
+            AuditIssueSeverity sev = issue.severity();
+            if (sev == null || !selectedSeverities.contains(sev.name().toLowerCase(java.util.Locale.ROOT))) {
+                skippedSeverity.incrementAndGet();
+                return null;
+            }
+        }
+        String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
+        boolean burpInScope = scopeCache.isInScope(issueUrl);
+        if (!ScopeFilter.shouldExport(state, issueUrl, burpInScope)) {
+            skippedScope.incrementAndGet();
+            return null;
+        }
+        PERIODIC_EXPORT_SEEN_KEYS.recordSeen(SnapshotExportFingerprints.findingItemKey(issue));
+        return new FindingWorkItem(issue, burpInScope);
+    }
+
+    private static void pushIncrementalIssues(
+            MontoyaApi api,
+            List<AuditIssue> issues,
+            ConfigState.State state,
+            boolean filterBySeverity,
+            Set<String> selectedSeverities) {
+        int batchSize = BatchSizeController.getInstance().getCurrentBatchSize();
+        List<PreparedExportDocument> batchDocs = new ArrayList<>(batchSize);
+        long runningBatchBytes = 0;
+        int checked = 0;
+        int exported = 0;
+
+        for (AuditIssue issue : issues) {
+            if (!RuntimeConfig.isExportRunning()) {
+                break;
+            }
+            if (filterBySeverity) {
+                AuditIssueSeverity sev = issue.severity();
+                if (sev == null || !selectedSeverities.contains(sev.name().toLowerCase(java.util.Locale.ROOT))) {
+                    continue;
+                }
+            }
+            String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
+            boolean burpInScope = safeBurpInScope(api, issueUrl);
+            if (!ScopeFilter.shouldExport(state, issueUrl, burpInScope)) {
+                continue;
+            }
+            checked++;
+            String itemKey = SnapshotExportFingerprints.findingItemKey(issue);
+            if (!PERIODIC_EXPORT_SEEN_KEYS.isNew(itemKey)) {
+                continue;
+            }
+            Map<String, Object> doc = buildFindingDoc(issue, burpInScope);
+            if (doc == null) {
+                continue;
+            }
+            PreparedExportDocument prepared = ExportDocumentIdentity.prepare(findingsIndexName(), "findings", doc);
+            if (!PERIODIC_EXPORT_SEEN_KEYS.claimNew(itemKey)) {
+                continue;
+            }
+            batchDocs.add(prepared);
+            runningBatchBytes += prepared.estimatedBulkBytes();
+            exported++;
+
+            if (batchDocs.size() >= batchSize || runningBatchBytes >= BULK_MAX_BYTES) {
+                flushPreparedBatch(batchDocs);
+                batchDocs.clear();
+                runningBatchBytes = 0;
+            }
+        }
+        if (RuntimeConfig.isExportRunning() && !batchDocs.isEmpty()) {
+            flushPreparedBatch(batchDocs);
+        }
+        logPeriodicExportSummary(checked, exported);
+    }
+
+    private static void logPeriodicExportSummary(int checked, int exported) {
+        if (checked <= 0) {
+            return;
+        }
+        if (exported > 0) {
+            Logger.logInfoPanelOnly("[PeriodicExport] Findings: " + exported
+                    + " new issue(s); " + checked + " in-scope checked.");
+            return;
+        }
+        Logger.logDebug("[PeriodicExport] Findings: no new issues; " + checked + " in-scope checked.");
     }
 
     /** Returns current Burp issues, tolerating transient lifecycle nulls. */
@@ -238,7 +386,8 @@ public final class FindingsIndexReporter {
             return;
         }
         String msg = t != null && t.getMessage() != null ? t.getMessage() : t != null ? t.getClass().getSimpleName() : "unknown error";
-        Logger.logDebug("[Findings] siteMap().issues() unavailable; skipping findings export until access succeeds: " + msg);
+        Logger.logDebug("[SnapshotExport] Findings: siteMap().issues() unavailable; skipping export until access succeeds: "
+                + msg);
     }
 
     private static boolean safeBurpInScope(MontoyaApi api, String url) {
@@ -256,41 +405,21 @@ public final class FindingsIndexReporter {
         }
     }
 
-    private static void flushBatch(List<String> batchKeys, List<Map<String, Object>> batchDocs) {
+    private static void flushPreparedBatch(List<PreparedExportDocument> batchDocs) {
         String activeBaseUrl = RuntimeConfig.openSearchUrl();
         boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
-        int attempted = batchDocs.size();
-        int successCount = OpenSearchClientWrapper.pushBulk(activeBaseUrl, findingsIndexName(), "findings", batchDocs);
-        BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", attempted, successCount, openSearchActive);
-        if (successCount == attempted) {
-            pushedIssueKeys.addAll(batchKeys);
-        }
-    }
-
-    private static String issueKey(AuditIssue issue) {
-        String name = issue.name() != null ? issue.name() : "";
-        String baseUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
-        HttpService svc = issue.httpService();
-        String host = svc != null ? svc.host() : "";
-        int port = svc != null ? svc.port() : 0;
-        AuditIssueSeverity sev = issue.severity();
-        String severity = sev != null ? sev.name() : "";
-        String detail = issue.detail() != null ? issue.detail() : "";
-        String raw = name + "|" + baseUrl + "|" + host + "|" + port + "|" + severity + "|" + detail;
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(raw.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            return String.valueOf(raw.hashCode());
-        }
+        String indexName = findingsIndexName();
+        var outcome = OpenSearchClientWrapper.pushPreparedBulk(activeBaseUrl, indexName, "findings", batchDocs);
+        BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", outcome, openSearchActive);
     }
 
     static Map<String, Object> buildFindingDoc(AuditIssue issue) {
         return buildFindingDoc(issue, false);
     }
 
-    private static Map<String, Object> buildFindingDoc(AuditIssue issue, boolean burpInScope) {
+    private static Map<String, Object> buildFindingDoc(
+            AuditIssue issue,
+            boolean burpInScope) {
         Map<String, Object> doc = new LinkedHashMap<>();
         HttpService svc = issue.httpService();
         doc.put("burp", buildRootBurpDoc(burpInScope));

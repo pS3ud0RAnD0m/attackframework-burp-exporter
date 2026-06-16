@@ -1,6 +1,6 @@
 package ai.attackframework.tools.burp.sinks;
 
-import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitDocumentByExportId;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitSingleIndexedDocument;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.createIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.nestedMap;
@@ -24,7 +24,6 @@ import ai.attackframework.tools.burp.testutils.OpenSearchReachable;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
-import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.http.message.requests.HttpRequest;
@@ -62,8 +61,8 @@ class SitemapPartialFieldSelectionOpenSearchIT {
                 Map.of("sitemap", Set.of("request.url", "burp.is_in_scope")));
 
         Map<String, Object> built = SitemapIndexReporter.buildSitemapDoc(mockSitemapItem());
-        PreparedExportDocument prepared = pushOneDocument("sitemap", built, state);
-        Map<String, Object> stored = awaitDocumentByExportId("sitemap", prepared.exportId());
+        pushOneDocument("sitemap", built, state);
+        Map<String, Object> stored = awaitSingleIndexedDocument("sitemap");
 
         assertThat(stored).containsKeys("meta", "request", "burp");
         assertThat(stored).doesNotContainKey("response");

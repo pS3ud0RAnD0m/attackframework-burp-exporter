@@ -74,7 +74,6 @@ class ExportFieldRegistryTest {
 
     @Test
     void is_meta_leaf_path_matches_meta_prefix_only() {
-        assertThat(ExportFieldRegistry.isMetaLeafPath("meta.export_id")).isTrue();
         assertThat(ExportFieldRegistry.isMetaLeafPath("meta.schema_version")).isTrue();
         assertThat(ExportFieldRegistry.isMetaLeafPath("meta")).isFalse();
         assertThat(ExportFieldRegistry.isMetaLeafPath("burp.reporting_tool")).isFalse();

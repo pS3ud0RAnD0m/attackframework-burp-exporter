@@ -349,12 +349,13 @@ public class LogPanelTestHarness {
     }
 
     /**
-     * Toggles pause via the checkbox (firing listeners) and aligns the caret update policy,
+     * Toggles pause via the toolbar button (firing listeners) and aligns the caret update policy,
      * so headless behavior matches the interactive UI.
      */
     public static void setPaused(LogPanel p, boolean paused) {
-        JCheckBox pause = check(p, "log.pause");
-        if (pause.isSelected() != paused) {
+        JButton pause = button(p, "log.pause");
+        boolean currentlyPaused = "Unpause".equals(pause.getText());
+        if (currentlyPaused != paused) {
             click(pause);
         }
         onEdt(() -> {

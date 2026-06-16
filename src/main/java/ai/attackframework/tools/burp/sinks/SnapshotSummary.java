@@ -73,7 +73,7 @@ public final class SnapshotSummary {
     /**
      * Logs a completion summary comparing current counters to {@code baseline}.
      *
-     * @param prefix logger bracket prefix (for example {@code "ProxyHistory"}, {@code "Sitemap"})
+     * @param prefix source label appended after the {@code [SnapshotExport]} function prefix
      * @param baseline snapshot captured before the run started
      * @param attempted total documents attempted in the run (including those that produced no doc)
      * @param durationMs wall-clock run duration in milliseconds
@@ -87,7 +87,25 @@ public final class SnapshotSummary {
             long durationMs,
             boolean openSearchActive,
             boolean fileActive) {
-        Logger.logInfoPanelOnly(formatSummary(prefix, baseline, attempted, durationMs, openSearchActive, fileActive));
+        logInfo(prefix, baseline, attempted, durationMs, -1L, -1L, openSearchActive, fileActive);
+    }
+
+    /**
+     * Logs a completion summary with optional build/flush timing split for snapshot attribution.
+     *
+     * @param buildWallMs wall-clock build span ({@code -1} to omit timing suffix)
+     */
+    public static void logInfo(
+            String prefix,
+            Baseline baseline,
+            int attempted,
+            long durationMs,
+            long buildWallMs,
+            long flushMs,
+            boolean openSearchActive,
+            boolean fileActive) {
+        Logger.logInfoPanelOnly(formatSummary(
+                prefix, baseline, attempted, durationMs, buildWallMs, flushMs, openSearchActive, fileActive));
     }
 
     /**
@@ -102,15 +120,32 @@ public final class SnapshotSummary {
             long durationMs,
             boolean openSearchActive,
             boolean fileActive) {
+        return formatSummary(prefix, baseline, attempted, durationMs, -1L, -1L, openSearchActive, fileActive);
+    }
+
+    static String formatSummary(
+            String prefix,
+            Baseline baseline,
+            int attempted,
+            long durationMs,
+            long buildWallMs,
+            long flushMs,
+            boolean openSearchActive,
+            boolean fileActive) {
         String label = (prefix == null || prefix.isBlank()) ? "Export" : prefix.trim();
         StringBuilder sb = new StringBuilder(128);
-        sb.append('[').append(label).append("] snapshot complete: captured=")
+        sb.append("[SnapshotExport] ").append(label).append(": snapshot complete: captured=")
                 .append(Math.max(0, attempted));
         String body = formatCompletionBody(baseline, openSearchActive, fileActive);
         if (!body.isEmpty()) {
             sb.append("; ").append(body);
         }
-        sb.append(" in ").append(Math.max(0L, durationMs)).append("ms.");
+        sb.append(" in ").append(Math.max(0L, durationMs)).append("ms");
+        if (buildWallMs >= 0L && flushMs >= 0L) {
+            sb.append(" (build_wall_ms=").append(Math.max(0L, buildWallMs))
+                    .append(" flush_ms=").append(Math.max(0L, flushMs)).append(')');
+        }
+        sb.append('.');
         return sb.toString();
     }
 
@@ -132,31 +167,57 @@ public final class SnapshotSummary {
             Baseline baseline,
             boolean openSearchActive,
             boolean fileActive) {
-        long fileSuccessDelta = 0;
-        long fileFailureDelta = 0;
-        long openSearchSuccessDelta = 0;
-        long openSearchFailureDelta = 0;
-        if (baseline != null && baseline.hasSource()) {
-            fileSuccessDelta = Math.max(0, baseline.fileSuccessNow.getAsLong() - baseline.fileSuccessBefore);
-            fileFailureDelta = Math.max(0, baseline.fileFailureNow.getAsLong() - baseline.fileFailureBefore);
-            openSearchSuccessDelta = Math.max(0,
-                    baseline.openSearchSuccessNow.getAsLong() - baseline.openSearchSuccessBefore);
-            openSearchFailureDelta = Math.max(0,
-                    baseline.openSearchFailureNow.getAsLong() - baseline.openSearchFailureBefore);
-        }
+        CompletionDeltas deltas = completionDeltas(baseline);
         StringBuilder sb = new StringBuilder(64);
         if (fileActive) {
-            sb.append("file={success=").append(fileSuccessDelta)
-                    .append(", failure=").append(fileFailureDelta).append('}');
+            sb.append("file={written=").append(deltas.fileSuccess())
+                    .append(", failure=").append(deltas.fileFailure()).append('}');
         }
         if (openSearchActive) {
             if (sb.length() > 0) {
                 sb.append("; ");
             }
-            sb.append("openSearch={success=").append(openSearchSuccessDelta)
-                    .append(", failure=").append(openSearchFailureDelta).append('}');
+            sb.append("openSearch={exported=").append(deltas.openSearchSuccess())
+                    .append(", failure=").append(deltas.openSearchFailure()).append('}');
         }
         return sb.toString();
+    }
+
+    /**
+     * Returns current completion deltas relative to the supplied baseline.
+     *
+     * @param baseline snapshot captured before the run; {@code null} yields zeroed deltas
+     * @return non-negative file/OpenSearch success and failure deltas
+     */
+    public static CompletionDeltas completionDeltas(Baseline baseline) {
+        if (baseline == null || !baseline.hasSource()) {
+            return CompletionDeltas.empty();
+        }
+        return new CompletionDeltas(
+                Math.max(0, baseline.fileSuccessNow.getAsLong() - baseline.fileSuccessBefore),
+                Math.max(0, baseline.fileFailureNow.getAsLong() - baseline.fileFailureBefore),
+                Math.max(0, baseline.openSearchSuccessNow.getAsLong() - baseline.openSearchSuccessBefore),
+                Math.max(0, baseline.openSearchFailureNow.getAsLong() - baseline.openSearchFailureBefore));
+    }
+
+    /**
+     * Non-negative file and OpenSearch deltas for a one-shot export wave.
+     *
+     * @param fileSuccess file writes completed since the baseline
+     * @param fileFailure file write failures since the baseline
+     * @param openSearchSuccess OpenSearch writes completed since the baseline
+     * @param openSearchFailure OpenSearch write failures since the baseline
+     */
+    public record CompletionDeltas(
+            long fileSuccess,
+            long fileFailure,
+            long openSearchSuccess,
+            long openSearchFailure) {
+
+        /** Returns a zero-valued delta set. */
+        public static CompletionDeltas empty() {
+            return new CompletionDeltas(0L, 0L, 0L, 0L);
+        }
     }
 
     /** Baseline counters for a counter source captured before a one-shot run. */

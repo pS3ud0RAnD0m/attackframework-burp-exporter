@@ -115,9 +115,6 @@ public final class ExportFieldTooltips {
             case "meta.indexed_at" -> Tooltips.textWithSource(
                     "Exporter indexing timestamp used as the canonical cross-index time field.",
                     "Each reporter writes Instant.now().toString() into meta.indexed_at before export.");
-            case "meta.export_id" -> Tooltips.textWithSource(
-                    "Stable content-derived export ID shared by files and OpenSearch.",
-                    "ExportDocumentIdentity writes meta.export_id after field filtering; OpenSearch also uses it as _id.");
             default -> genericLeafTooltip(fieldKey);
         };
     }

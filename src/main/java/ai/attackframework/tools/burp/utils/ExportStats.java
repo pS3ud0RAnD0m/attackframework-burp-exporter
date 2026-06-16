@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
+import ai.attackframework.tools.burp.utils.export.BulkOutcomeBreakdown;
 import ai.attackframework.tools.burp.utils.opensearch.IndexingRetryCoordinator;
 
 /**
@@ -63,8 +64,30 @@ public final class ExportStats {
     private static final Map<String, AtomicLong> REPEATER_METADATA_SOURCE_COUNTS = new ConcurrentHashMap<>();
     private static final AtomicLong exportStartRequestedAtMs = new AtomicLong(-1);
     private static final AtomicLong firstTrafficSuccessAtMs = new AtomicLong(-1);
-    private static final AtomicReference<ProxyHistorySnapshotStats> lastProxyHistorySnapshot =
-            new AtomicReference<>(null);
+    public static final String SNAPSHOT_PROXY_HISTORY = "proxy_history";
+    public static final String SNAPSHOT_SITEMAP = "sitemap";
+    public static final String SNAPSHOT_FINDINGS = "findings";
+    public static final String SNAPSHOT_PROXY_WEBSOCKET = "proxy_websocket";
+
+    private static final List<String> SNAPSHOT_REPORTER_KEYS = List.of(
+            SNAPSHOT_PROXY_HISTORY,
+            SNAPSHOT_SITEMAP,
+            SNAPSHOT_FINDINGS,
+            SNAPSHOT_PROXY_WEBSOCKET);
+
+    private static final Map<String, AtomicReference<SnapshotLastRunStats>> lastSnapshotRuns =
+            new ConcurrentHashMap<>();
+    private static final AtomicInteger currentProxyHistoryChunkTarget = new AtomicInteger(-1);
+    private static final AtomicInteger lastBulkTargetBatch = new AtomicInteger(-1);
+    private static final AtomicInteger lastBulkAttemptedDocs = new AtomicInteger(-1);
+    private static final AtomicInteger peakTrafficQueueDocs = new AtomicInteger();
+    private static final AtomicLong peakTrafficQueueBytes = new AtomicLong();
+    private static final AtomicInteger peakSpillDocs = new AtomicInteger();
+    private static final AtomicLong peakSpillBytes = new AtomicLong();
+    private static final AtomicInteger peakRetryQueueDocs = new AtomicInteger();
+    private static final AtomicLong peakRetryQueueBytes = new AtomicLong();
+    private static final AtomicInteger peakSnapshotChunkTarget = new AtomicInteger();
+    private static final AtomicLong peakSnapshotFlushMs = new AtomicLong();
 
     static {
         for (String key : INDEX_KEYS) {
@@ -79,6 +102,9 @@ public final class ExportStats {
         }
         for (String metadataSource : REPEATER_METADATA_SOURCE_KEYS) {
             REPEATER_METADATA_SOURCE_COUNTS.put(metadataSource, new AtomicLong(0));
+        }
+        for (String reporterKey : SNAPSHOT_REPORTER_KEYS) {
+            lastSnapshotRuns.put(reporterKey, new AtomicReference<>(null));
         }
     }
 
@@ -121,8 +147,39 @@ public final class ExportStats {
      * @param count number of documents; ignored if &lt;= 0
      */
     public static void recordSuccess(String indexKey, long count) {
-        if (count <= 0) return;
-        forIndex(indexKey).successCount.addAndGet(count);
+        recordExported(indexKey, count);
+    }
+
+    /** Records documents successfully indexed to OpenSearch for an index key this run. */
+    public static void recordExported(String indexKey, long count) {
+        if (count <= 0) {
+            return;
+        }
+        forIndex(indexKey).exportedCount.addAndGet(count);
+        noteTrafficSuccess(indexKey, count);
+    }
+
+    /** Records successful OpenSearch {@code noop} bulk results for an index key. */
+    public static void recordNoop(String indexKey, long count) {
+        if (count <= 0) {
+            return;
+        }
+        forIndex(indexKey).noopCount.addAndGet(count);
+    }
+
+    /** Applies a classified bulk outcome to per-index counters. */
+    public static void recordBulkBreakdown(String indexKey, BulkOutcomeBreakdown breakdown) {
+        if (breakdown == null) {
+            return;
+        }
+        recordExported(indexKey, breakdown.exportedCount());
+        recordNoop(indexKey, breakdown.noop());
+        if (breakdown.failed() > 0) {
+            recordFailure(indexKey, breakdown.failed());
+        }
+    }
+
+    private static void noteTrafficSuccess(String indexKey, long count) {
         long now = System.currentTimeMillis();
         if ("traffic".equals(indexKey)) {
             long startMs = exportStartRequestedAtMs.get();
@@ -181,13 +238,15 @@ public final class ExportStats {
     }
 
     /**
-     * Records the duration in ms of the last push for the given index.
+     * Records the duration in ms of the most recent live-drain HTTP bulk for the given index.
      *
-     * @param indexKey index key
+     * <p>Proxy-history snapshot wall time belongs in {@link #recordProxyHistorySnapshot}, not here.</p>
+     *
+     * @param indexKey index key (today only {@code traffic} uses this)
      * @param durationMs duration in milliseconds, or -1 if unknown
      */
-    public static void recordLastPush(String indexKey, long durationMs) {
-        forIndex(indexKey).lastPushDurationMs.set(durationMs);
+    public static void recordLastLiveBulkDurationMs(String indexKey, long durationMs) {
+        forIndex(indexKey).lastLiveBulkDurationMs.set(durationMs);
     }
 
     /**
@@ -207,9 +266,18 @@ public final class ExportStats {
         forIndex(indexKey).lastError.set(truncated);
     }
 
-    /** Returns the session total of documents successfully pushed for the given index. */
+    /** Returns documents exported to OpenSearch for the index key this run. */
     public static long getSuccessCount(String indexKey) {
-        return forIndex(indexKey).successCount.get();
+        return getExportedCount(indexKey);
+    }
+
+    /** Returns documents exported to OpenSearch for the index key this run. */
+    public static long getExportedCount(String indexKey) {
+        return forIndex(indexKey).exportedCount.get();
+    }
+
+    public static long getNoopCount(String indexKey) {
+        return forIndex(indexKey).noopCount.get();
     }
 
     /** Returns the session total of failed push attempts for the given index. */
@@ -305,9 +373,157 @@ public final class ExportStats {
                 + " ambig=" + getRepeaterMetadataSourceCount("ambiguous_null");
     }
 
-    /** Returns last push duration in ms, or -1 if not set. */
-    public static long getLastPushDurationMs(String indexKey) {
-        return forIndex(indexKey).lastPushDurationMs.get();
+    /** Returns last live-drain bulk duration in ms for the index, or -1 if not set. */
+    public static long getLastLiveBulkDurationMs(String indexKey) {
+        return forIndex(indexKey).lastLiveBulkDurationMs.get();
+    }
+
+    /** Updates the in-flight proxy-history chunk doc-count target for Misc Stats (observability only). */
+    public static void setCurrentProxyHistoryChunkTarget(int chunkTarget) {
+        currentProxyHistoryChunkTarget.set(chunkTarget);
+    }
+
+    /** Clears the in-flight proxy-history chunk target after snapshot completion. */
+    public static void clearCurrentProxyHistoryChunkTarget() {
+        currentProxyHistoryChunkTarget.set(-1);
+    }
+
+    /**
+     * Returns the current proxy-history chunk doc-count target while a snapshot runs,
+     * or {@code -1} when idle.
+     */
+    public static int getCurrentProxyHistoryChunkTarget() {
+        return currentProxyHistoryChunkTarget.get();
+    }
+
+    /** Records the most recent live-drain bulk shape for {@code stats_snapshot} export section. */
+    public static void recordLastLiveBulkShape(int targetBatch, int attemptedDocs) {
+        lastBulkTargetBatch.set(targetBatch);
+        lastBulkAttemptedDocs.set(attemptedDocs);
+    }
+
+    /** Returns the shared batch target from the most recent live-drain bulk, or {@code -1}. */
+    public static int getLastBulkTargetBatch() {
+        return lastBulkTargetBatch.get();
+    }
+
+    /** Returns attempted docs from the most recent live-drain bulk, or {@code -1}. */
+    public static int getLastBulkAttemptedDocs() {
+        return lastBulkAttemptedDocs.get();
+    }
+
+    /**
+     * Records high-water marks for live traffic queue depth during the current export run.
+     */
+    public static void noteTrafficQueuePeak(int queueDocs, long queueBytes) {
+        if (queueDocs > 0) {
+            peakTrafficQueueDocs.updateAndGet(prev -> Math.max(prev, queueDocs));
+        }
+        if (queueBytes > 0) {
+            peakTrafficQueueBytes.updateAndGet(prev -> Math.max(prev, queueBytes));
+        }
+    }
+
+    /**
+     * Records high-water marks for traffic spill depth during the current export run.
+     */
+    public static void noteSpillPeak(int spillDocs, long spillBytes) {
+        if (spillDocs > 0) {
+            peakSpillDocs.updateAndGet(prev -> Math.max(prev, spillDocs));
+        }
+        if (spillBytes > 0) {
+            peakSpillBytes.updateAndGet(prev -> Math.max(prev, spillBytes));
+        }
+    }
+
+    /**
+     * Records high-water marks for OpenSearch retry queue depth during the current export run.
+     */
+    public static void noteRetryQueuePeak(int retryDocs, long retryBytes) {
+        if (retryDocs > 0) {
+            peakRetryQueueDocs.updateAndGet(prev -> Math.max(prev, retryDocs));
+        }
+        if (retryBytes > 0) {
+            peakRetryQueueBytes.updateAndGet(prev -> Math.max(prev, retryBytes));
+        }
+    }
+
+    /**
+     * Samples current queue/spill/retry pressure for run-high-water telemetry.
+     *
+     * <p>Called from {@code StatsPanel} refresh so peaks are captured even when depth spikes
+     * between individual queue mutations.</p>
+     */
+    public static void observeExportPressureSamples(
+            int trafficQueueDocs,
+            long trafficQueueBytes,
+            int spillDocs,
+            long spillBytes,
+            int retryDocs,
+            long retryBytes) {
+        noteTrafficQueuePeak(trafficQueueDocs, trafficQueueBytes);
+        noteSpillPeak(spillDocs, spillBytes);
+        noteRetryQueuePeak(retryDocs, retryBytes);
+    }
+
+    /** Peak live traffic queue docs observed this export run. */
+    public static int getPeakTrafficQueueDocs() {
+        return peakTrafficQueueDocs.get();
+    }
+
+    /** Peak live traffic queue bytes observed this export run. */
+    public static long getPeakTrafficQueueBytes() {
+        return peakTrafficQueueBytes.get();
+    }
+
+    /** Peak traffic spill docs observed this export run. */
+    public static int getPeakSpillDocs() {
+        return peakSpillDocs.get();
+    }
+
+    /** Peak traffic spill bytes observed this export run. */
+    public static long getPeakSpillBytes() {
+        return peakSpillBytes.get();
+    }
+
+    /** Peak total retry-queue docs observed this export run. */
+    public static int getPeakRetryQueueDocs() {
+        return peakRetryQueueDocs.get();
+    }
+
+    /** Peak total retry-queue bytes observed this export run. */
+    public static long getPeakRetryQueueBytes() {
+        return peakRetryQueueBytes.get();
+    }
+
+    /** Peak snapshot chunk doc-count target observed this export run. */
+    public static int getPeakSnapshotChunkTarget() {
+        return peakSnapshotChunkTarget.get();
+    }
+
+    /** Peak snapshot flush wall time (ms) observed this export run. */
+    public static long getPeakSnapshotFlushMs() {
+        return peakSnapshotFlushMs.get();
+    }
+
+    private static void resetRunPeaks() {
+        peakTrafficQueueDocs.set(0);
+        peakTrafficQueueBytes.set(0);
+        peakSpillDocs.set(0);
+        peakSpillBytes.set(0);
+        peakRetryQueueDocs.set(0);
+        peakRetryQueueBytes.set(0);
+        peakSnapshotChunkTarget.set(0);
+        peakSnapshotFlushMs.set(0);
+    }
+
+    private static void noteSnapshotRunPeak(int chunkTarget, long flushMs) {
+        if (chunkTarget > 0) {
+            peakSnapshotChunkTarget.updateAndGet(prev -> Math.max(prev, chunkTarget));
+        }
+        if (flushMs > 0) {
+            peakSnapshotFlushMs.updateAndGet(prev -> Math.max(prev, flushMs));
+        }
     }
 
     /** Returns the last recorded error message for the given index, or {@code null} if none. */
@@ -359,8 +575,8 @@ public final class ExportStats {
     /**
      * Live count of bulk requests currently being serialized or awaiting a response.
      *
-     * <p>Incremented by every bulk entry point ({@code ChunkedBulkSender} streaming path and the
-     * single-shot {@code doPushBulkWithDetails} retry path) and decremented in the matching
+     * <p>Incremented by every bulk entry point ({@code ChunkedBulkSender}, {@code PreparedBulkSender},
+     * and the Java-client {@code doPushBulkWithDetails} fallback) and decremented in the matching
      * {@code finally}, so the panel always reads a non-negative live value even when a call
      * throws. Surfaced in the Misc Stats {@code Bulk Requests In-Flight} row.</p>
      */
@@ -681,11 +897,11 @@ public final class ExportStats {
         return age < 0 ? 0 : age;
     }
 
-    /** Session total: sum of docs pushed across all indexes. */
+    /** Run total: sum of documents exported to OpenSearch across all indexes. */
     public static long getTotalSuccessCount() {
         long sum = 0;
         for (String key : INDEX_KEYS) {
-            sum += forIndex(key).successCount.get();
+            sum += getExportedCount(key);
         }
         return sum;
     }
@@ -798,7 +1014,38 @@ public final class ExportStats {
      * an updated start-to-first-traffic metric.</p>
      */
     public static void recordExportStartRequested() {
+        resetForRun();
+        resetRunPeaks();
         exportStartRequestedAtMs.set(System.currentTimeMillis());
+        firstTrafficSuccessAtMs.set(-1);
+    }
+
+    /** Clears per-run export counters while preserving snapshot-last-run telemetry. */
+    public static void resetForRun() {
+        FileExportStats.resetForRun();
+        for (String key : INDEX_KEYS) {
+            PerIndexStats stats = forIndex(key);
+            stats.exportedCount.set(0);
+            stats.noopCount.set(0);
+            stats.failureCount.set(0);
+            stats.successBytes.set(0);
+            stats.lastLiveBulkDurationMs.set(-1);
+            stats.lastError.set(null);
+            stats.retryQueueDrops.set(0);
+            stats.permanentDrops.set(0);
+        }
+        for (String sourceKey : TRAFFIC_SOURCE_KEYS) {
+            TrafficSourceStats source = forTrafficSource(sourceKey);
+            source.successCount.set(0);
+            source.failureCount.set(0);
+        }
+        for (String toolType : TRAFFIC_TOOL_TYPE_KEYS) {
+            TRAFFIC_TOOL_TYPE_SUCCESS_COUNTS.put(toolType, new AtomicLong(0));
+            TRAFFIC_TOOL_TYPE_FAILURE_COUNTS.put(toolType, new AtomicLong(0));
+        }
+        synchronized (recentSuccesses) {
+            recentSuccesses.clear();
+        }
         firstTrafficSuccessAtMs.set(-1);
     }
 
@@ -842,7 +1089,13 @@ public final class ExportStats {
         }
         exportStartRequestedAtMs.set(-1);
         firstTrafficSuccessAtMs.set(-1);
-        lastProxyHistorySnapshot.set(null);
+        for (AtomicReference<SnapshotLastRunStats> snapshotRef : lastSnapshotRuns.values()) {
+            snapshotRef.set(null);
+        }
+        currentProxyHistoryChunkTarget.set(-1);
+        lastBulkTargetBatch.set(-1);
+        lastBulkAttemptedDocs.set(-1);
+        resetRunPeaks();
         synchronized (recentSuccesses) {
             recentSuccesses.clear();
         }
@@ -863,35 +1116,167 @@ public final class ExportStats {
         bulkInFlight.set(0);
     }
 
+    /** Snapshot reporter keys that receive structured last-run stats. */
+    public static List<String> getSnapshotReporterKeys() {
+        return SNAPSHOT_REPORTER_KEYS;
+    }
+
     /**
-     * Records summary metrics for the latest proxy-history snapshot push.
-     *
-     * @param attempted attempted document count
-     * @param success successful document count
-     * @param durationMs wall-clock duration in milliseconds
-     * @param finalChunkTarget final chunk target doc count at end of run
+     * Records structured metrics for the latest snapshot run of one reporter.
      */
-    public static void recordProxyHistorySnapshot(
-            int attempted, int success, long durationMs, int finalChunkTarget) {
-        lastProxyHistorySnapshot.set(new ProxyHistorySnapshotStats(
-                attempted,
-                success,
-                durationMs,
-                finalChunkTarget,
-                System.currentTimeMillis()));
-    }
-
-    /** Returns the latest proxy-history snapshot stats, or {@code null} when none recorded. */
-    public static ProxyHistorySnapshotStats getLastProxyHistorySnapshot() {
-        return lastProxyHistorySnapshot.get();
-    }
-
-    /** Immutable proxy-history snapshot performance summary. */
-    public record ProxyHistorySnapshotStats(
+    public static void recordSnapshotLastRun(
+            String reporterKey,
             int attempted,
             int success,
             long durationMs,
             int finalChunkTarget,
+            int chunks,
+            long totalChunkBytes,
+            long buildWallMs,
+            long buildCpuMs,
+            long flushMs,
+            int buildWorkers) {
+        recordSnapshotLastRun(
+                reporterKey,
+                attempted,
+                success,
+                durationMs,
+                finalChunkTarget,
+                chunks,
+                totalChunkBytes,
+                buildWallMs,
+                buildCpuMs,
+                flushMs,
+                -1L,
+                -1L,
+                buildWorkers);
+    }
+
+    public static void recordSnapshotLastRun(
+            String reporterKey,
+            int attempted,
+            int success,
+            long durationMs,
+            int finalChunkTarget,
+            int chunks,
+            long totalChunkBytes,
+            long buildWallMs,
+            long buildCpuMs,
+            long flushMs,
+            long fileFlushMs,
+            long openSearchFlushMs,
+            int buildWorkers) {
+        if (reporterKey == null || reporterKey.isBlank()) {
+            return;
+        }
+        AtomicReference<SnapshotLastRunStats> slot = lastSnapshotRuns.computeIfAbsent(
+                reporterKey.trim(), unused -> new AtomicReference<>(null));
+        slot.set(new SnapshotLastRunStats(
+                attempted,
+                success,
+                durationMs,
+                finalChunkTarget,
+                chunks,
+                totalChunkBytes,
+                buildWallMs,
+                buildCpuMs,
+                flushMs,
+                fileFlushMs,
+                openSearchFlushMs,
+                buildWorkers,
+                System.currentTimeMillis()));
+        noteSnapshotRunPeak(finalChunkTarget, flushMs);
+        if (SNAPSHOT_PROXY_HISTORY.equals(reporterKey)) {
+            clearCurrentProxyHistoryChunkTarget();
+        }
+    }
+
+    /**
+     * Records summary metrics for the latest proxy-history snapshot push.
+     */
+    public static void recordProxyHistorySnapshot(
+            int attempted,
+            int success,
+            long durationMs,
+            int finalChunkTarget,
+            int chunks,
+            long totalChunkBytes,
+            long buildWallMs,
+            long buildCpuMs,
+            long flushMs,
+            int buildWorkers) {
+        recordProxyHistorySnapshot(
+                attempted,
+                success,
+                durationMs,
+                finalChunkTarget,
+                chunks,
+                totalChunkBytes,
+                buildWallMs,
+                buildCpuMs,
+                flushMs,
+                -1L,
+                -1L,
+                buildWorkers);
+    }
+
+    public static void recordProxyHistorySnapshot(
+            int attempted,
+            int success,
+            long durationMs,
+            int finalChunkTarget,
+            int chunks,
+            long totalChunkBytes,
+            long buildWallMs,
+            long buildCpuMs,
+            long flushMs,
+            long fileFlushMs,
+            long openSearchFlushMs,
+            int buildWorkers) {
+        recordSnapshotLastRun(
+                SNAPSHOT_PROXY_HISTORY,
+                attempted,
+                success,
+                durationMs,
+                finalChunkTarget,
+                chunks,
+                totalChunkBytes,
+                buildWallMs,
+                buildCpuMs,
+                flushMs,
+                fileFlushMs,
+                openSearchFlushMs,
+                buildWorkers);
+    }
+
+    /** Returns the latest snapshot stats for a reporter, or {@code null} when none recorded. */
+    public static SnapshotLastRunStats getSnapshotLastRun(String reporterKey) {
+        if (reporterKey == null || reporterKey.isBlank()) {
+            return null;
+        }
+        AtomicReference<SnapshotLastRunStats> slot = lastSnapshotRuns.get(reporterKey.trim());
+        return slot == null ? null : slot.get();
+    }
+
+    /** Returns the latest proxy-history snapshot stats, or {@code null} when none recorded. */
+    public static SnapshotLastRunStats getLastProxyHistorySnapshot() {
+        return getSnapshotLastRun(SNAPSHOT_PROXY_HISTORY);
+    }
+
+    /** Immutable snapshot run performance summary. */
+    public record SnapshotLastRunStats(
+            int attempted,
+            int success,
+            long durationMs,
+            int finalChunkTarget,
+            int chunks,
+            long totalChunkBytes,
+            long buildWallMs,
+            long buildCpuMs,
+            long flushMs,
+            long fileFlushMs,
+            long openSearchFlushMs,
+            int buildWorkers,
             long recordedAtMs
     ) {
         /** Returns effective throughput in docs/sec for this snapshot, or 0 when unavailable. */
@@ -901,6 +1286,22 @@ public final class ExportStats {
             }
             return attempted / (durationMs / 1000.0);
         }
+
+        /** Average docs per chunk when {@code chunks > 0}, else 0. */
+        public double avgChunkDocs() {
+            if (chunks <= 0) {
+                return 0.0;
+            }
+            return (double) attempted / chunks;
+        }
+
+        /** Average estimated bytes per chunk when {@code chunks > 0}, else 0. */
+        public long avgChunkBytes() {
+            if (chunks <= 0) {
+                return 0L;
+            }
+            return totalChunkBytes / chunks;
+        }
     }
 
     private static String normalizeTrafficToolType(String toolTypeKey) {
@@ -908,10 +1309,11 @@ public final class ExportStats {
     }
 
     private static final class PerIndexStats {
-        final AtomicLong successCount = new AtomicLong(0);
+        final AtomicLong exportedCount = new AtomicLong(0);
+        final AtomicLong noopCount = new AtomicLong(0);
         final AtomicLong failureCount = new AtomicLong(0);
         final AtomicLong successBytes = new AtomicLong(0);
-        final AtomicLong lastPushDurationMs = new AtomicLong(-1);
+        final AtomicLong lastLiveBulkDurationMs = new AtomicLong(-1);
         final AtomicReference<String> lastError = new AtomicReference<>(null);
         final AtomicLong retryQueueDrops = new AtomicLong(0);
         final AtomicLong permanentDrops = new AtomicLong(0);

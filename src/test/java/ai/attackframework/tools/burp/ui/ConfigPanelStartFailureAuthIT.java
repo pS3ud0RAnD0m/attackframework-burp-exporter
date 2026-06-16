@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getComboBox;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.awt.Component;
@@ -58,7 +59,7 @@ class ConfigPanelStartFailureAuthIT {
                 JTextField openSearchUrlField = JTextField.class.cast(get(p, "openSearchUrlField"));
                 openSearchUrlField.setText(OpenSearchReachable.BASE_URL);
 
-                JComboBox<String> authCombo = JComboBox.class.cast(get(p, "openSearchAuthTypeCombo"));
+                JComboBox<String> authCombo = getComboBox(p, "openSearchAuthTypeCombo");
                 authCombo.setSelectedItem("Basic");
 
                 JTextField userField = JTextField.class.cast(get(p, "openSearchUserField"));
@@ -133,7 +134,7 @@ class ConfigPanelStartFailureAuthIT {
                 JTextField openSearchUrlField = JTextField.class.cast(get(p, "openSearchUrlField"));
                 openSearchUrlField.setText(config.baseUrl());
 
-                JComboBox<String> authCombo = JComboBox.class.cast(get(p, "openSearchAuthTypeCombo"));
+                JComboBox<String> authCombo = getComboBox(p, "openSearchAuthTypeCombo");
                 JTextField userField = JTextField.class.cast(get(p, "openSearchUserField"));
                 JPasswordField passwordField = JPasswordField.class.cast(get(p, "openSearchPasswordField"));
                 if (config.hasCredentials()) {

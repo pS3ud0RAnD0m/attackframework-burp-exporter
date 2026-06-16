@@ -90,15 +90,16 @@ public final class SettingsIndexReporter {
             SingleDocOutcomeRecorder.record("settings", ok, openSearchActive, "Settings index push failed");
             if (ok) {
                 lastPushedHash = hashSettingsForEnabled(state, projectJson, userJson);
-                Logger.logInfoPanelOnly("[Settings] Snapshot pushed to " + RuntimeConfig.activeSinkSummary() + ".");
+                Logger.logInfoPanelOnly("[SnapshotExport] Settings: pushed to "
+                        + RuntimeConfig.activeSinkSummary() + ".");
             } else {
-                Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
+                Logger.logWarnPanelOnly("[SnapshotExport] Settings: push failed for "
                         + RuntimeConfig.activeSinkSummary() + " (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             SingleDocOutcomeRecorder.record("settings", false, RuntimeConfig.isOpenSearchActive(), msg);
-            Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
+            Logger.logWarnPanelOnly("[SnapshotExport] Settings: push failed for "
                     + RuntimeConfig.activeSinkSummary() + ": " + msg);
         }
     }
@@ -164,16 +165,16 @@ public final class SettingsIndexReporter {
             SingleDocOutcomeRecorder.record("settings", ok, openSearchActive, "Settings index push failed");
             if (ok) {
                 lastPushedHash = currentHash;
-                Logger.logInfoPanelOnly("[Settings] Snapshot pushed to "
+                Logger.logInfoPanelOnly("[PeriodicExport] Settings: pushed to "
                         + RuntimeConfig.activeSinkSummary() + " (change detected).");
             } else {
-                Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
+                Logger.logWarnPanelOnly("[PeriodicExport] Settings: push failed for "
                         + RuntimeConfig.activeSinkSummary() + " (index request did not succeed).");
             }
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             SingleDocOutcomeRecorder.record("settings", false, RuntimeConfig.isOpenSearchActive(), msg);
-            Logger.logWarnPanelOnly("[Settings] Snapshot push failed for "
+            Logger.logWarnPanelOnly("[PeriodicExport] Settings: push failed for "
                     + RuntimeConfig.activeSinkSummary() + ": " + msg);
         }
     }

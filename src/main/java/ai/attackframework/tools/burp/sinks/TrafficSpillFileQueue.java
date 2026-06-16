@@ -27,6 +27,7 @@ import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.DiskSpaceGuard;
 import ai.attackframework.tools.burp.utils.BurpRuntimeMetadata;
 import ai.attackframework.tools.burp.utils.ManagedDiskPaths;
+import ai.attackframework.tools.burp.utils.export.PreparedExportDocument;
 
 /**
  * File-backed FIFO queue used when in-memory traffic queue is full.
@@ -136,11 +137,18 @@ final class TrafficSpillFileQueue {
         if (document == null) {
             return OfferResult.FAILED;
         }
-        byte[] payload;
-        try {
-            payload = JSON.writeValueAsBytes(buildSpillEnvelope(document));
-        } catch (IOException e) {
-            Logger.logError("Traffic spill serialize failed: " + e.getMessage());
+        return offerPayload(buildPayload(buildSpillEnvelope(document)));
+    }
+
+    OfferResult offerDetailed(TrafficQueueEntry entry) {
+        if (entry == null || entry.prepared() == null) {
+            return OfferResult.FAILED;
+        }
+        return offerPayload(buildPayload(buildSpillEnvelope(entry.prepared())));
+    }
+
+    private OfferResult offerPayload(byte[] payload) {
+        if (payload == null || payload.length == 0) {
             return OfferResult.FAILED;
         }
         lock.lock();
@@ -162,10 +170,19 @@ final class TrafficSpillFileQueue {
         } catch (DiskSpaceGuard.LowDiskSpaceException e) {
             return OfferResult.REJECTED_LOW_DISK;
         } catch (IOException e) {
-            Logger.logError("Traffic spill write failed: " + e.getMessage());
+            Logger.logError("[TrafficSpill] Write failed: " + e.getMessage());
             return OfferResult.FAILED;
         } finally {
             lock.unlock();
+        }
+    }
+
+    private byte[] buildPayload(Map<String, Object> envelope) {
+        try {
+            return JSON.writeValueAsBytes(envelope);
+        } catch (IOException e) {
+            Logger.logError("[TrafficSpill] Serialize failed: " + e.getMessage());
+            return null;
         }
     }
 
@@ -184,14 +201,40 @@ final class TrafficSpillFileQueue {
                     payload = Files.readAllBytes(file);
                     Files.deleteIfExists(file);
                 } catch (IOException e) {
-                    Logger.logError("Traffic spill read/delete failed: " + e.getMessage());
+                    Logger.logError("[TrafficSpill] Read/delete failed: " + e.getMessage());
                     continue;
                 }
                 totalBytes = Math.max(0, totalBytes - payload.length);
                 try {
                     return extractDocument(payload);
                 } catch (IOException e) {
-                    Logger.logError("Traffic spill parse failed: " + e.getMessage());
+                    Logger.logError("[TrafficSpill] Parse failed: " + e.getMessage());
+                }
+            }
+            return null;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    TrafficQueueEntry pollEntry() {
+        lock.lock();
+        try {
+            while (!files.isEmpty()) {
+                Path file = files.removeFirst();
+                byte[] payload;
+                try {
+                    payload = Files.readAllBytes(file);
+                    Files.deleteIfExists(file);
+                } catch (IOException e) {
+                    Logger.logError("[TrafficSpill] Read/delete failed: " + e.getMessage());
+                    continue;
+                }
+                totalBytes = Math.max(0, totalBytes - payload.length);
+                try {
+                    return extractEntry(payload);
+                } catch (IOException e) {
+                    Logger.logError("[TrafficSpill] Parse failed: " + e.getMessage());
                 }
             }
             return null;
@@ -349,7 +392,7 @@ final class TrafficSpillFileQueue {
             recoveredCount = files.size();
             recoveredBytes = totalBytes;
         } catch (IOException e) {
-            Logger.logError("Traffic spill init failed: " + e.getMessage());
+            Logger.logError("[TrafficSpill] Init failed: " + e.getMessage());
         } finally {
             lock.unlock();
         }
@@ -363,7 +406,7 @@ final class TrafficSpillFileQueue {
         try {
             return extractDocument(Files.readAllBytes(file));
         } catch (IOException e) {
-            Logger.logError("Traffic spill purge read failed: " + e.getMessage());
+            Logger.logError("[TrafficSpill] Purge read failed: " + e.getMessage());
             return null;
         }
     }
@@ -451,8 +494,51 @@ final class TrafficSpillFileQueue {
         return envelope;
     }
 
-    private Map<String, Object> extractDocument(byte[] payload) throws IOException {
+    private Map<String, Object> buildSpillEnvelope(PreparedExportDocument prepared) {
+        Map<String, Object> envelope = buildSpillEnvelope(prepared.document());
+        Map<String, Object> preparedFields = new HashMap<>();
+        preparedFields.put("index_name", prepared.indexName());
+        preparedFields.put("index_key", prepared.indexKey());
+        preparedFields.put("estimated_bulk_bytes", prepared.estimatedBulkBytes());
+        preparedFields.put("bulk_ndjson_bytes", prepared.bulkNdjsonBytes());
+        envelope.put("prepared", preparedFields);
+        return envelope;
+    }
+
+    private TrafficQueueEntry extractEntry(byte[] payload) throws IOException {
         JsonNode root = JSON.readTree(payload);
+        JsonNode preparedNode = root.get("prepared");
+        JsonNode docNode = root.get("document");
+        if (preparedNode != null && preparedNode.isObject() && docNode != null && docNode.isObject()) {
+            String indexName = textValue(preparedNode.get("index_name"));
+            String indexKey = textValue(preparedNode.get("index_key"));
+            JsonNode bytesNode = preparedNode.get("bulk_ndjson_bytes");
+            if (indexName != null && indexKey != null && bytesNode != null) {
+                byte[] bulkBytes = bytesNode.binaryValue();
+                if (bulkBytes != null && bulkBytes.length > 0) {
+                    long estimatedBytes = preparedNode.path("estimated_bulk_bytes").asLong(bulkBytes.length);
+                    Map<String, Object> document = JSON.convertValue(docNode, DOC_TYPE);
+                    return TrafficQueueEntry.fromPrepared(new PreparedExportDocument(
+                            indexName, indexKey, document, estimatedBytes, bulkBytes));
+                }
+            }
+        }
+        return TrafficQueueEntry.from(extractDocument(root));
+    }
+
+    private static String textValue(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String value = node.asText();
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private Map<String, Object> extractDocument(byte[] payload) throws IOException {
+        return extractDocument(JSON.readTree(payload));
+    }
+
+    private Map<String, Object> extractDocument(JsonNode root) {
         JsonNode docNode = root.get("document");
         if (docNode != null && docNode.isObject()) {
             return JSON.convertValue(docNode, DOC_TYPE);
@@ -530,4 +616,3 @@ final class TrafficSpillFileQueue {
         return true;
     }
 }
-

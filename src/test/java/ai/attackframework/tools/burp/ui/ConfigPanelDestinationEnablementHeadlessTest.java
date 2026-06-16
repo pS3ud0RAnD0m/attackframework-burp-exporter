@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.call;
 import static ai.attackframework.tools.burp.testutils.Reflect.get;
+import static ai.attackframework.tools.burp.testutils.Reflect.getComboBox;
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
@@ -71,8 +72,8 @@ class ConfigPanelDestinationEnablementHeadlessTest {
         // OpenSearch row
         JCheckBox osEnable = JCheckBox.class.cast(get(panel, "openSearchSinkCheckbox"));
         JTextField osUrl = JTextField.class.cast(get(panel, "openSearchUrlField"));
-        JComboBox<?> osAuthType = JComboBox.class.cast(get(panel, "openSearchAuthTypeCombo"));
-        JComboBox<?> osTlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+        JComboBox<?> osAuthType = getComboBox(panel, "openSearchAuthTypeCombo");
+        JComboBox<?> osTlsMode = getComboBox(panel, "openSearchTlsModeCombo");
         JButton osTest = JButton.class.cast(get(panel, "testConnectionButton"));
 
         // Ensure both destinations are enabled
@@ -193,7 +194,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
     void tls_mode_combo_binds_enter_to_test_connection_action() throws Exception {
         String actionKey = String.class.cast(getStatic(ConfigPanel.class, "TLS_MODE_ENTER_TEST_CONNECTION"));
         SwingUtilities.invokeAndWait(() -> {
-            JComboBox<?> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+            JComboBox<?> tlsMode = getComboBox(panel, "openSearchTlsModeCombo");
             Object mapped = tlsMode.getInputMap(JComponent.WHEN_FOCUSED)
                     .get(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
             assertThat(mapped).isEqualTo(actionKey);
@@ -203,7 +204,7 @@ class ConfigPanelDestinationEnablementHeadlessTest {
 
     @Test
     void pinned_tls_mode_shows_import_button_only_when_selected() {
-        JComboBox<String> tlsMode = JComboBox.class.cast(get(panel, "openSearchTlsModeCombo"));
+        JComboBox<String> tlsMode = getComboBox(panel, "openSearchTlsModeCombo");
         JButton importButton = JButton.class.cast(get(panel, "importPinnedCertificateButton"));
 
         assertThat(importButton.isVisible()).isFalse();

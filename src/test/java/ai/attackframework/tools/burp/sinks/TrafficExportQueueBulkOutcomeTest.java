@@ -11,7 +11,7 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.ChunkedBulkSender;
 
 /**
- * Unit tests for {@link TrafficExportQueue#applyBulkOutcome(ChunkedBulkSender.Result, long)},
+ * Unit tests for {@link TrafficExportQueue#applyBulkOutcome(ChunkedBulkSender.Result, long, int)},
  * covering the streaming drain's post-push accounting convergence on {@link BulkOutcomeRecorder}.
  *
  * <p>Assertions focus on index-level totals, per-tool-type and per-source counter propagation,
@@ -39,12 +39,14 @@ class TrafficExportQueueBulkOutcomeTest {
                 Map.of("proxy_live_http", 4),
                 Map.of());
 
-        TrafficExportQueue.applyBulkOutcome(result, 125L);
+        TrafficExportQueue.applyBulkOutcome(result, 125L, 100);
 
         assertThat(ExportStats.getSuccessCount("traffic")).isEqualTo(4);
         assertThat(ExportStats.getFailureCount("traffic")).isZero();
         assertThat(ExportStats.getLastError("traffic")).isNull();
-        assertThat(ExportStats.getLastPushDurationMs("traffic")).isEqualTo(125L);
+        assertThat(ExportStats.getLastLiveBulkDurationMs("traffic")).isEqualTo(125L);
+        assertThat(ExportStats.getLastBulkTargetBatch()).isEqualTo(100);
+        assertThat(ExportStats.getLastBulkAttemptedDocs()).isEqualTo(4);
         assertThat(ExportStats.getExportedBytes("traffic")).isEqualTo(800L);
         assertThat(ExportStats.getTrafficToolTypeSuccessCount("PROXY")).isEqualTo(3);
         assertThat(ExportStats.getTrafficToolTypeSuccessCount("REPEATER")).isEqualTo(1);
@@ -65,7 +67,7 @@ class TrafficExportQueueBulkOutcomeTest {
                 Map.of("proxy_live_http", 3),
                 Map.of("proxy_live_http", 2));
 
-        TrafficExportQueue.applyBulkOutcome(result, 300L);
+        TrafficExportQueue.applyBulkOutcome(result, 300L, 200);
 
         assertThat(ExportStats.getSuccessCount("traffic")).isEqualTo(3);
         assertThat(ExportStats.getFailureCount("traffic")).isEqualTo(2);
@@ -74,7 +76,7 @@ class TrafficExportQueueBulkOutcomeTest {
         assertThat(ExportStats.getTrafficToolTypeFailureCount("PROXY")).isEqualTo(1);
         assertThat(ExportStats.getTrafficToolTypeFailureCount("REPEATER")).isEqualTo(1);
         assertThat(ExportStats.getTrafficSourceFailureCount("proxy_live_http")).isEqualTo(2);
-        assertThat(ExportStats.getLastPushDurationMs("traffic")).isEqualTo(300L);
+        assertThat(ExportStats.getLastLiveBulkDurationMs("traffic")).isEqualTo(300L);
         assertThat(ExportStats.getExportedBytes("traffic")).isEqualTo(1_200L);
     }
 
@@ -90,7 +92,7 @@ class TrafficExportQueueBulkOutcomeTest {
                 Map.of(),
                 Map.of());
 
-        TrafficExportQueue.applyBulkOutcome(result, 50L);
+        TrafficExportQueue.applyBulkOutcome(result, 50L, 100);
 
         assertThat(ExportStats.getSuccessCount("traffic")).isZero();
         assertThat(ExportStats.getFailureCount("traffic")).isZero();

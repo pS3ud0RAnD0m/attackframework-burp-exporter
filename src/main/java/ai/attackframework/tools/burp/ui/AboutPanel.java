@@ -42,7 +42,7 @@ public class AboutPanel extends JPanel {
 
         Font labelFont = UIManager.getFont("Label.font");
 
-        JLabel header = new JLabel("Attack Framework: Burp Exporter v" + version);
+        JLabel header = new JLabel("Burp Exporter v" + version);
         header.setFont(labelFont.deriveFont(Font.BOLD, 18f));
         panel.add(header, "gapbottom 6");
 
