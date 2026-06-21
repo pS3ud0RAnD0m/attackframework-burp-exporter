@@ -200,9 +200,12 @@ final class HttpMessageDocSupport {
 
     /**
      * Puts body object:
-     * - body.length/body.offset: raw body metadata
-     * - body.b64: full raw bytes as base64 (always when body exists)
-     * - body.text: full decoded text when content is dynamically classified as searchable text
+     * <ul>
+     *   <li>{@code body.length}/{@code body.offset}: on-the-wire body metadata</li>
+     *   <li>{@code body.b64}: full wire bytes as base64 (always when body exists)</li>
+     *   <li>{@code body.text}: charset-decoded string after Content-Encoding removal (when applicable);
+     *       {@code null} when the payload stays binary</li>
+     * </ul>
      */
     static void putBodyFields(
             Map<String, Object> doc,
@@ -210,51 +213,161 @@ final class HttpMessageDocSupport {
             List<HttpHeader> headers,
             List<String> mediaTypeHints,
             boolean montoyaTextualHint,
-            boolean montoyaBinaryHint,
             int bodyOffset) {
-        int bodyLen = bodyBytes == null ? 0 : bodyBytes.length;
-        Map<String, Object> bodyContent = new LinkedHashMap<>(4);
+        putBodyFields(
+                doc,
+                bodyBytes,
+                headers,
+                mediaTypeHints,
+                montoyaTextualHint,
+                bodyOffset,
+                true);
+    }
+
+    /**
+     * Puts the body object, optionally allowing gzip-magic sniff for declared form/multipart bodies
+     * without a {@code Content-Encoding} header (request-only heuristic).
+     */
+    static void putBodyFields(
+            Map<String, Object> doc,
+            byte[] bodyBytes,
+            List<HttpHeader> headers,
+            List<String> mediaTypeHints,
+            boolean montoyaTextualHint,
+            int bodyOffset,
+            boolean allowDeclaredFormGzipSniff) {
+        doc.put(
+                "body",
+                buildBodyContent(
+                        bodyBytes,
+                        headers,
+                        mediaTypeHints,
+                        montoyaTextualHint,
+                        bodyOffset,
+                        allowDeclaredFormGzipSniff));
+    }
+
+    static Map<String, Object> buildBodyContent(
+            byte[] wireBytes,
+            List<HttpHeader> headers,
+            List<String> mediaTypeHints,
+            boolean montoyaTextualHint,
+            int bodyOffset,
+            boolean allowDeclaredFormGzipSniff) {
+        int bodyLen = wireBytes == null ? 0 : wireBytes.length;
+        Map<String, Object> bodyContent = new LinkedHashMap<>(8);
         bodyContent.put("length", bodyLen);
         bodyContent.put("offset", bodyOffset);
-        if (bodyBytes != null && bodyBytes.length > 0) {
-            bodyContent.put("b64", Base64.getEncoder().encodeToString(bodyBytes));
-            bodyContent.put("text", extractBodyText(bodyBytes, headers, mediaTypeHints, montoyaTextualHint, montoyaBinaryHint));
-        } else {
+        if (wireBytes == null || wireBytes.length == 0) {
             bodyContent.put("b64", null);
             bodyContent.put("text", null);
+            return bodyContent;
         }
-        doc.put("body", bodyContent);
+        bodyContent.put("b64", Base64.getEncoder().encodeToString(wireBytes));
+        String contentTypeHeader = headerValue(headers, "Content-Type");
+        String mediaType = primaryMediaType(contentTypeHeader, mediaTypeHints);
+        boolean declaredForm = isDeclaredFormMediaType(mediaType, mediaTypeHints);
+        BodyContentEncodingSupport.ResolvedBody resolved = BodyContentEncodingSupport.resolveForExport(
+                wireBytes,
+                headers,
+                mediaType,
+                declaredForm,
+                allowDeclaredFormGzipSniff);
+        bodyContent.put(
+                "text",
+                decodeHumanReadableBodyText(
+                        resolved.logicalBytes(),
+                        contentTypeHeader,
+                        mediaType,
+                        montoyaTextualHint));
+        return bodyContent;
     }
 
     static String extractBodyText(
             byte[] bodyBytes,
             List<HttpHeader> headers,
             List<String> mediaTypeHints,
-            boolean montoyaTextualHint,
-            boolean montoyaBinaryHint) {
+            boolean montoyaTextualHint) {
         if (bodyBytes == null || bodyBytes.length == 0) {
-            return null;
-        }
-        if (hasCompressedContentEncoding(headers)) {
             return null;
         }
         String contentTypeHeader = headerValue(headers, "Content-Type");
         String mediaType = primaryMediaType(contentTypeHeader, mediaTypeHints);
+        boolean declaredForm = isDeclaredFormMediaType(mediaType, mediaTypeHints);
+        byte[] logicalBytes = BodyContentEncodingSupport.resolveForExport(
+                        bodyBytes, headers, mediaType, declaredForm, true)
+                .logicalBytes();
+        return decodeHumanReadableBodyText(
+                logicalBytes, contentTypeHeader, mediaType, montoyaTextualHint);
+    }
+
+    private static String decodeHumanReadableBodyText(
+            byte[] logicalBytes,
+            String contentTypeHeader,
+            String mediaType,
+            boolean montoyaTextualHint) {
+        if (logicalBytes == null || logicalBytes.length == 0) {
+            return null;
+        }
         Charset charset = charsetFromContentType(contentTypeHeader);
 
-        if (isExplicitlyBinaryMediaType(mediaType) || montoyaBinaryHint) {
+        if (isNeverAgentTextMediaType(mediaType)) {
             return null;
         }
 
-        if (isTextualMediaType(mediaType) || montoyaTextualHint) {
-            return decodeTextWithFallback(bodyBytes, charset);
+        if (isTextualMediaType(mediaType)
+                || (montoyaTextualHint && !isExplicitlyBinaryMediaType(mediaType))) {
+            return decodeTextWithFallback(logicalBytes, charset);
         }
 
-        // Unknown/rare custom media types: fall back to byte-level text sniffing.
-        if (looksLikeTextPayload(bodyBytes, charset)) {
-            return decodeTextWithFallback(bodyBytes, charset);
+        if (isMultipartMediaType(mediaType)) {
+            return decodeTextWithFallback(logicalBytes, charset);
+        }
+
+        if (looksLikeTextPayload(logicalBytes, charset)) {
+            return decodeTextWithFallback(logicalBytes, charset);
         }
         return null;
+    }
+
+    static boolean isMultipartMediaType(String mediaType) {
+        return mediaType != null && mediaType.startsWith("multipart/");
+    }
+
+    /**
+     * Media families that are not exported as {@code body.text} even when bytes sniff as text.
+     */
+    static boolean isNeverAgentTextMediaType(String mediaType) {
+        if (mediaType == null || mediaType.isBlank()) {
+            return false;
+        }
+        return mediaType.startsWith("image/")
+                || mediaType.startsWith("audio/")
+                || mediaType.startsWith("video/")
+                || mediaType.startsWith("font/")
+                || mediaType.startsWith("model/");
+    }
+
+    private static boolean isDeclaredFormMediaType(String mediaType, List<String> mediaTypeHints) {
+        if (mediaType != null) {
+            if (mediaType.contains("urlencoded")
+                    || mediaType.contains("www-form-urlencoded")
+                    || mediaType.startsWith("multipart/")) {
+                return true;
+            }
+        }
+        if (mediaTypeHints == null || mediaTypeHints.isEmpty()) {
+            return false;
+        }
+        for (String hint : mediaTypeHints) {
+            if (hint == null) {
+                continue;
+            }
+            if ("URL_ENCODED".equals(hint) || "MULTIPART".equals(hint)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static String primaryMediaType(String contentTypeHeader, List<String> mediaTypeHints) {
@@ -386,8 +499,7 @@ final class HttpMessageDocSupport {
                 || mediaType.startsWith("audio/")
                 || mediaType.startsWith("video/")
                 || mediaType.startsWith("font/")
-                || mediaType.startsWith("model/")
-                || mediaType.startsWith("multipart/")) {
+                || mediaType.startsWith("model/")) {
             return true;
         }
         if (mediaType.startsWith("application/")) {

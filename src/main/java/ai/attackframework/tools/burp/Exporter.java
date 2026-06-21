@@ -6,6 +6,8 @@ import javax.swing.SwingUtilities;
 
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ExporterIndexLogForwarder;
+import ai.attackframework.tools.burp.sinks.ExporterIndexStatsReporter;
+import ai.attackframework.tools.burp.sinks.ParameterIntegritySessionLog;
 import ai.attackframework.tools.burp.sinks.RepeaterTabsIndexReporter;
 import ai.attackframework.tools.burp.sinks.ToolWebSocketLiveHandler;
 import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
@@ -95,9 +97,10 @@ public class Exporter implements BurpExtension {
             webSocketCreatedRegistration =
                     api.websockets().registerWebSocketCreatedHandler(ToolWebSocketLiveHandler.instance());
 
-            Logger.logInfo("[Export] Burp Exporter v" + version + " initialized successfully.");
+            String initLine = "Burp Exporter v" + version + " initialized successfully.";
+            Logger.logInfoPanelAndBurp("[Exporter] " + initLine, initLine);
         } catch (RuntimeException e) {
-            Logger.logError("[Export] Burp Exporter v" + version + " initialization failed: " + e.getMessage(), e);
+            Logger.logError("[Exporter] Burp Exporter v" + version + " initialization failed: " + e.getMessage(), e);
             cleanupExtensionState();
         }
     }
@@ -124,6 +127,10 @@ public class Exporter implements BurpExtension {
         suiteTabRegistration = null;
 
         BatchSizeController.getInstance().setOnChangeListener(null);
+        if (ExporterIndexStatsReporter.shouldAttemptFinalPushOnUnload()) {
+            ParameterIntegritySessionLog.logFinalExporterStatsPush(
+                    ExporterIndexStatsReporter.pushFinalSnapshotNow());
+        }
         ExportReporterLifecycle.stopAndClearSessionState();
         // Unload is the last chance to release pooled connections, TLS session caches, and the
         // HTTP/2 reactor/scheduler threads owned by the cached OpenSearch transports. Run

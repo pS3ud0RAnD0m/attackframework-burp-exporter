@@ -49,7 +49,7 @@ public final class ExportFieldRegistry {
      * Returns whether {@code path} is a required meta leaf (always exported, not user-toggleable).
      */
     public static boolean isMetaLeafPath(String path) {
-        return path != null && path.startsWith("meta.");
+        return path != null && META_LEAF_PATHS.contains(path);
     }
 
     /**

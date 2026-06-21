@@ -6,6 +6,7 @@ import static ai.attackframework.tools.burp.testutils.Reflect.getStaticList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -78,6 +79,8 @@ class ExporterLifecycleTest {
             verify(fixture.userInterface).registerSuiteTab(eq("Exporter"), any(Component.class));
             verify(fixture.http).registerHttpHandler(any());
             verify(fixture.webSockets).registerWebSocketCreatedHandler(any());
+            verify(fixture.logging).logToOutput(argThat(msg ->
+                    msg.contains("initialized successfully") && !msg.startsWith("[")));
         } finally {
             ExportReporterLifecycle.resetForTests();
             Logger.resetState();

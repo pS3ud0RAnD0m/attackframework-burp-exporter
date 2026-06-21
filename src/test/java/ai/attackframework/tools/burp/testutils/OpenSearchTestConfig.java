@@ -1,8 +1,9 @@
 package ai.attackframework.tools.burp.testutils;
 
 /**
- * OpenSearch URL and credentials for integration tests. Values are read from system
- * properties ({@code -DOPENSEARCH_USER=admin} etc.) or environment variables only.
+ * OpenSearch URL and credentials for integration tests. Values are read from JVM system
+ * properties (forwarded from Gradle {@code -POPENSEARCH_USER=admin} etc. or environment
+ * variables by {@code build.gradle.kts}) or environment variables in the test process.
  *
  * <ul>
  *   <li>{@code OPENSEARCH_URL} – base URL (default https://opensearch.url:9200)</li>
@@ -10,8 +11,8 @@ package ai.attackframework.tools.burp.testutils;
  *   <li>{@code OPENSEARCH_PASSWORD} – password for basic auth</li>
  * </ul>
  *
- * <p>When {@code OPENSEARCH_USER} and {@code OPENSEARCH_PASSWORD} are set (env or -D),
- * integration tests use basic auth. When not set, tests connect without auth (e.g. for a
+ * <p>When {@code OPENSEARCH_USER} and {@code OPENSEARCH_PASSWORD} are set ({@code -P}, env, or
+ * both), integration tests use basic auth. When not set, tests connect without auth (e.g. for a
  * dev cluster with security disabled).
  */
 public final class OpenSearchTestConfig {

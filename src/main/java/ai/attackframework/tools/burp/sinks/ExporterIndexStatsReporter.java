@@ -40,6 +40,9 @@ public final class ExporterIndexStatsReporter {
     /** When false, no scheduler is started and no documents are pushed. */
     public static final boolean ENABLED = true;
 
+    /** OpenSearch field path for {@code event.data.export.running} on stats snapshots. */
+    public static final String EXPORTER_FINAL_RUNNING_FIELD = "event.data.export.running";
+
     private static final String SCHEMA_VERSION = "1";
     private static final String EVENT_TYPE = "stats_snapshot";
 
@@ -57,14 +60,60 @@ public final class ExporterIndexStatsReporter {
     private ExporterIndexStatsReporter() {}
 
     /**
-     * Pushes one stats snapshot immediately.
+     * Pushes one stats snapshot immediately while export is running.
      *
      * <p>Safe to call from any thread. Returns immediately when export is stopped, the exporter
      * stats sub-option is disabled, or no sink is enabled.</p>
      */
     public static void pushSnapshotNow() {
-        if (!ENABLED) return;
-        pushSnapshot();
+        if (!ENABLED) {
+            return;
+        }
+        pushSnapshotInternal(true, false);
+    }
+
+    /**
+     * Pushes a final stats snapshot at export Stop with {@code event.data.export.running=false}.
+     *
+     * <p>Bypasses the export-running gate and the retry coordinator {@code isExportReady} check
+     * via {@link OpenSearchClientWrapper#pushDocumentDuringShutdown}. Returns a skip outcome when
+     * exporter stats are disabled or no sink is enabled.</p>
+     *
+     * @return push outcome for logging at Stop or unload
+     */
+    public static ExporterStatsPushOutcome pushFinalSnapshotNow() {
+        if (!ENABLED) {
+            return ExporterStatsPushOutcome.skippedDisabled();
+        }
+        return pushSnapshotInternal(false, true);
+    }
+
+    /**
+     * Returns whether a final stats snapshot should be attempted on extension unload.
+     *
+     * <p>True when exporter stats are enabled, the exporter source is selected, a sink is active,
+     * and at least one document was exported this session.</p>
+     *
+     * @return {@code true} when {@link #pushFinalSnapshotNow()} is worth attempting before pool close
+     */
+    public static boolean shouldAttemptFinalPushOnUnload() {
+        if (!ENABLED || !RuntimeConfig.isExporterStatsEnabled()) {
+            return false;
+        }
+        if (!RuntimeConfig.isDataSourceEnabled(ConfigKeys.SRC_EXPORTER)) {
+            return false;
+        }
+        if (!RuntimeConfig.isAnySinkEnabled()) {
+            return false;
+        }
+        for (String key : ExportStats.getIndexKeys()) {
+            if (ExportStats.getExportedCount(key) > 0) {
+                return true;
+            }
+        }
+        return ExportStats.getDocsBodyEnumerationMisgateSuspect() > 0
+                || ExportStats.getDocsWireBodyParamsReplaced() > 0
+                || ExportStats.getDocsSupplementalBodyParamsUsed() > 0;
     }
 
     /**
@@ -124,35 +173,55 @@ public final class ExporterIndexStatsReporter {
     }
 
     private static void pushSnapshot() {
+        pushSnapshotInternal(true, false);
+    }
+
+    private static ExporterStatsPushOutcome pushSnapshotInternal(boolean requireExportRunning, boolean finalSnapshot) {
         try {
-            if (!RuntimeConfig.isExportRunning()) {
-                return;
+            if (requireExportRunning && !RuntimeConfig.isExportRunning()) {
+                return ExporterStatsPushOutcome.skippedDisabled();
             }
             if (!RuntimeConfig.isDataSourceEnabled(ConfigKeys.SRC_EXPORTER) || !RuntimeConfig.isExporterStatsEnabled()) {
-                return;
+                return ExporterStatsPushOutcome.skippedDisabled();
             }
             if (!RuntimeConfig.isAnySinkEnabled()) {
-                return;
+                return ExporterStatsPushOutcome.skippedNoSink();
             }
             String baseUrl = RuntimeConfig.openSearchUrl();
             boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
-            Map<String, Object> doc = buildSnapshotDoc();
-            boolean ok = OpenSearchClientWrapper.pushDocument(baseUrl, RuntimeConfig.indexNameForKey("exporter"), "exporter", doc);
+            Map<String, Object> doc = buildSnapshotDoc(finalSnapshot);
+            OpenSearchClientWrapper.ShutdownDocumentPushResult pushResult;
+            if (finalSnapshot) {
+                pushResult = OpenSearchClientWrapper.pushDocumentDuringShutdown(
+                        baseUrl, RuntimeConfig.indexNameForKey("exporter"), "exporter", doc, true);
+            } else {
+                boolean ok = OpenSearchClientWrapper.pushDocument(
+                        baseUrl, RuntimeConfig.indexNameForKey("exporter"), "exporter", doc);
+                pushResult = new OpenSearchClientWrapper.ShutdownDocumentPushResult(
+                        ok, ok ? null : (openSearchActive ? "OpenSearch push returned false" : "file sink write failed"));
+            }
+            boolean ok = pushResult.success();
             SingleDocOutcomeRecorder.record("exporter", ok, openSearchActive,
                     "Exporter stats snapshot push failed");
-            if (!ok && openSearchActive) {
-                Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed.");
+            if (!ok) {
+                String reason = pushResult.resolvedFailureDetail();
+                if (finalSnapshot || openSearchActive) {
+                    Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: " + reason);
+                }
+                return ExporterStatsPushOutcome.failed(reason);
             }
-        } catch (Exception e) {
-            Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: "
-                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            return ExporterStatsPushOutcome.success();
+        } catch (RuntimeException e) {
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: " + msg);
+            return ExporterStatsPushOutcome.failed(msg);
         }
     }
 
-    private static Map<String, Object> buildSnapshotDoc() {
+    private static Map<String, Object> buildSnapshotDoc(boolean finalSnapshot) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("jvm", buildJvmSection(SystemMetrics.snapshot()));
-        data.put("export", buildExportSection());
+        data.put("export", buildExportSection(finalSnapshot));
         data.put("indexes", buildIndexesSection());
         data.put("traffic", buildTrafficSection());
         data.put("telemetry", buildTelemetrySection());
@@ -217,9 +286,9 @@ public final class ExporterIndexStatsReporter {
         return jvm;
     }
 
-    private static Map<String, Object> buildExportSection() {
+    private static Map<String, Object> buildExportSection(boolean finalSnapshot) {
         Map<String, Object> export = new LinkedHashMap<>();
-        export.put("running", RuntimeConfig.isExportRunning());
+        export.put("running", finalSnapshot ? Boolean.FALSE : RuntimeConfig.isExportRunning());
         export.put("batch_size", ai.attackframework.tools.burp.utils.opensearch.BatchSizeController.getInstance()
                 .getCurrentBatchSize());
         export.put("throughput_docs_per_sec_60", ExportStats.getThroughputDocsPerSecLast60s());
@@ -380,13 +449,53 @@ public final class ExporterIndexStatsReporter {
         if (synthesizedDropped > 0) {
             telemetry.put("synthesized_body_params_dropped_total", synthesizedDropped);
         }
-        long docsOverThreshold = ExportStats.getDocsOverParamsThreshold();
-        if (docsOverThreshold > 0) {
-            telemetry.put("docs_over_params_threshold_total", docsOverThreshold);
+        long bodyParamsDropped = ExportStats.getBodyParamsDroppedTotal();
+        if (bodyParamsDropped > 0) {
+            telemetry.put("body_params_dropped_total", bodyParamsDropped);
+        }
+        long docsBodyTruncated = ExportStats.getDocsBodyParamsTruncated();
+        if (docsBodyTruncated > 0) {
+            telemetry.put("docs_with_body_params_truncated_total", docsBodyTruncated);
+        }
+        long misgateSuspects = ExportStats.getDocsBodyEnumerationMisgateSuspect();
+        if (misgateSuspects > 0) {
+            telemetry.put("docs_body_enumeration_misgate_suspect_total", misgateSuspects);
         }
         long skippedBodyEnumeration = ExportStats.getDocsWithSkippedBodyEnumeration();
         if (skippedBodyEnumeration > 0) {
             telemetry.put("docs_with_skipped_body_enumeration_total", skippedBodyEnumeration);
+        }
+        long wireReplaced = ExportStats.getDocsWireBodyParamsReplaced();
+        if (wireReplaced > 0) {
+            telemetry.put("docs_wire_body_params_replaced_total", wireReplaced);
+        }
+        long wireDropped = ExportStats.getWireBodyParamsDroppedTotal();
+        if (wireDropped > 0) {
+            telemetry.put("wire_body_params_dropped_total", wireDropped);
+        }
+        long supplementalUsed = ExportStats.getDocsSupplementalBodyParamsUsed();
+        if (supplementalUsed > 0) {
+            telemetry.put("docs_supplemental_body_params_used_total", supplementalUsed);
+        }
+        long supplementalRejected = ExportStats.getDocsSupplementalRejectedNonForm();
+        if (supplementalRejected > 0) {
+            telemetry.put("docs_supplemental_rejected_non_form_total", supplementalRejected);
+        }
+        long skipRescued = ExportStats.getDocsSkipPathBodyRescued();
+        if (skipRescued > 0) {
+            telemetry.put("docs_skip_path_body_rescued_total", skipRescued);
+        }
+        Map<String, Object> bodyParamsSourceCounts = sparseLongCounts(ExportStats.getBodyParamsSourceCounts());
+        if (!bodyParamsSourceCounts.isEmpty()) {
+            telemetry.put("body_params_source_counts", bodyParamsSourceCounts);
+        }
+        Map<String, Object> bodyParamsSkipReasonCounts = sparseLongCounts(ExportStats.getBodyParamsSkipReasonCounts());
+        if (!bodyParamsSkipReasonCounts.isEmpty()) {
+            telemetry.put("body_params_skip_reason_counts", bodyParamsSkipReasonCounts);
+        }
+        Map<String, Object> bodyParamsEncodingCounts = sparseLongCounts(ExportStats.getBodyParamsEncodingCounts());
+        if (!bodyParamsEncodingCounts.isEmpty()) {
+            telemetry.put("body_params_encodings_counts", bodyParamsEncodingCounts);
         }
         Map<String, Object> repeaterSources = sparseRepeaterMetadataSources();
         if (!repeaterSources.isEmpty()) {
@@ -513,6 +622,19 @@ public final class ExporterIndexStatsReporter {
             }
         }
         return counts;
+    }
+
+    private static Map<String, Object> sparseLongCounts(Map<String, Long> counts) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (counts == null || counts.isEmpty()) {
+            return out;
+        }
+        for (Map.Entry<String, Long> entry : counts.entrySet()) {
+            if (entry.getValue() != null && entry.getValue() > 0) {
+                out.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return out;
     }
 
 }

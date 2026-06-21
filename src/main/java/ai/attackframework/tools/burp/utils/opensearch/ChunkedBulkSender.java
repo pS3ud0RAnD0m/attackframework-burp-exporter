@@ -70,6 +70,8 @@ public final class ChunkedBulkSender {
         public final Map<String, Integer> trafficSourceFailureCounts;
         /** Classified OpenSearch bulk outcome when available. */
         public final BulkOutcomeBreakdown breakdown;
+        /** OpenSearch bulk item failures aligned with the attempted document order. */
+        public final List<OpenSearchClientWrapper.FailedItem> failedItems;
 
         public Result(int successCount, int attemptedCount, long attemptedBytes, long successBytes) {
             this(
@@ -81,7 +83,8 @@ public final class ChunkedBulkSender {
                     Map.of(),
                     Map.of(),
                     Map.of(),
-                    BulkOutcomeBreakdown.classified(successCount, attemptedCount));
+                    BulkOutcomeBreakdown.classified(successCount, attemptedCount),
+                    List.of());
         }
 
         public Result(
@@ -102,7 +105,8 @@ public final class ChunkedBulkSender {
                     trafficToolTypeFailureCounts,
                     trafficSourceSuccessCounts,
                     trafficSourceFailureCounts,
-                    BulkOutcomeBreakdown.classified(successCount, attemptedCount));
+                    BulkOutcomeBreakdown.classified(successCount, attemptedCount),
+                    List.of());
         }
 
         public Result(
@@ -115,6 +119,30 @@ public final class ChunkedBulkSender {
                 Map<String, Integer> trafficSourceSuccessCounts,
                 Map<String, Integer> trafficSourceFailureCounts,
                 BulkOutcomeBreakdown breakdown) {
+            this(
+                    successCount,
+                    attemptedCount,
+                    attemptedBytes,
+                    successBytes,
+                    trafficToolTypeSuccessCounts,
+                    trafficToolTypeFailureCounts,
+                    trafficSourceSuccessCounts,
+                    trafficSourceFailureCounts,
+                    breakdown,
+                    List.of());
+        }
+
+        public Result(
+                int successCount,
+                int attemptedCount,
+                long attemptedBytes,
+                long successBytes,
+                Map<String, Integer> trafficToolTypeSuccessCounts,
+                Map<String, Integer> trafficToolTypeFailureCounts,
+                Map<String, Integer> trafficSourceSuccessCounts,
+                Map<String, Integer> trafficSourceFailureCounts,
+                BulkOutcomeBreakdown breakdown,
+                List<OpenSearchClientWrapper.FailedItem> failedItems) {
             this.successCount = successCount;
             this.attemptedCount = attemptedCount;
             this.attemptedBytes = attemptedBytes;
@@ -124,6 +152,7 @@ public final class ChunkedBulkSender {
             this.trafficSourceSuccessCounts = immutableCopy(trafficSourceSuccessCounts);
             this.trafficSourceFailureCounts = immutableCopy(trafficSourceFailureCounts);
             this.breakdown = breakdown != null ? breakdown : BulkOutcomeBreakdown.empty();
+            this.failedItems = failedItems != null ? List.copyOf(failedItems) : List.of();
         }
         public boolean isFullSuccess() { return attemptedCount > 0 && successCount == attemptedCount; }
 
@@ -176,18 +205,22 @@ public final class ChunkedBulkSender {
         post.setEntity(new InputStreamEntity(ndjsonStream, -1, ContentType.create("application/x-ndjson")));
         addPreemptiveBasicAuthHeader(post);
         List<TrafficRouteBucket.Route> attemptedTrafficRoutes = ndjsonStream.attemptedTrafficRoutes();
-
+        Result result;
         try (ExportStats.BulkInFlightTicket ignored = ExportStats.openBulk()) {
-            return executeRequest(baseUrl, post, attemptedRef, attemptedBytesRef, indexName, attemptedTrafficRoutes);
-        } catch (IOException | RuntimeException e) {
-            long attemptedBytes = attemptedBytesRef.get();
-            Logger.logDebug("[OpenSearch] ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
-            Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk push failed for " + indexName + ": "
-                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            return failedResult(attemptedRef.get(), attemptedBytes, attemptedTrafficRoutes);
-        } finally {
-            FileExportService.emitPreparedChunk(ndjsonStream.acceptedDocumentsForFileEmit());
+            try {
+                result = executeRequest(
+                        baseUrl, post, attemptedRef, attemptedBytesRef, indexName, attemptedTrafficRoutes);
+            } catch (IOException | RuntimeException e) {
+                long attemptedBytes = attemptedBytesRef.get();
+                Logger.logDebug("[OpenSearch] ChunkedBulkSender push failed for " + indexName + ": " + e.getMessage());
+                Logger.logWarnPanelOnly("[OpenSearch] Chunked bulk push failed for " + indexName + ": "
+                        + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                result = failedResult(attemptedRef.get(), attemptedBytes, attemptedTrafficRoutes);
+            } finally {
+                FileExportService.emitPreparedChunk(ndjsonStream.acceptedDocumentsForFileEmit());
+            }
         }
+        return result;
     }
 
     private static Result executeRequest(
@@ -231,7 +264,8 @@ public final class ChunkedBulkSender {
                     parsed.trafficToolTypeFailureCounts,
                     parsed.trafficSourceSuccessCounts,
                     parsed.trafficSourceFailureCounts,
-                    parsed.breakdown);
+                    parsed.breakdown,
+                    parsed.failedItems);
         });
     }
 
@@ -321,7 +355,8 @@ public final class ChunkedBulkSender {
                 toolTypeFailureCounts,
                 sourceSuccessCounts,
                 sourceFailureCounts,
-                breakdown);
+                breakdown,
+                List.copyOf(failedItems));
     }
 
     private static Result failedResult(

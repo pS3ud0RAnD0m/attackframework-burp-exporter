@@ -78,6 +78,40 @@ class SitemapIndexReporterIT {
     }
 
     @Test
+    void pushNewItemsOnly_exportsNewRowWhenFingerprintDiffersAfterBacklog() throws Exception {
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        try {
+            createSitemapIndex();
+            setRuntimeConfigForSitemapExport();
+
+            MontoyaApi api = mock(MontoyaApi.class);
+            SiteMap siteMap = mock(SiteMap.class);
+            Scope scope = mock(Scope.class);
+            when(api.siteMap()).thenReturn(siteMap);
+            when(api.scope()).thenReturn(scope);
+            when(scope.isInScope(anyString())).thenReturn(true);
+            HttpRequestResponse first = mockSitemapItemWithBody("GET", "https://example.com/a", "body-a");
+            when(siteMap.requestResponses()).thenReturn(List.of(first));
+            MontoyaApiProvider.set(api);
+
+            SitemapIndexReporter.start();
+            SitemapIndexReporter.pushSnapshotNow();
+            awaitDocumentCountAtLeast(1);
+            assertThat(awaitDocumentCount()).isEqualTo(1);
+
+            HttpRequestResponse second = mockSitemapItemWithBody("GET", "https://example.com/a", "body-b");
+            when(siteMap.requestResponses()).thenReturn(List.of(first, second));
+
+            SitemapIndexReporter.pushNewItemsOnly();
+            awaitDocumentCountAtLeast(2);
+            assertThat(awaitDocumentCount()).isEqualTo(2);
+        } finally {
+            SitemapIndexReporter.stop();
+            cleanup();
+        }
+    }
+
+    @Test
     void pushNewItemsOnly_doesNotDuplicateUnchangedItemAfterBacklog() throws InterruptedException {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         try {
@@ -228,6 +262,7 @@ class SitemapIndexReporterIT {
         when(item.hasResponse()).thenReturn(true);
         when(item.httpService()).thenReturn(httpService);
         when(item.timingData()).thenReturn(Optional.empty());
+        when(item.annotations()).thenReturn(null);
 
         when(request.url()).thenReturn(ITEM_URL);
         when(request.method()).thenReturn(ITEM_METHOD);
@@ -361,5 +396,63 @@ class SitemapIndexReporterIT {
             Thread.sleep(20);
         }
         assertThat(infoLines).anyMatch(line -> line.startsWith(prefix));
+    }
+
+    private static HttpRequestResponse mockSitemapItemWithBody(String method, String url, String body) {
+        HttpRequestResponse item = mock(HttpRequestResponse.class);
+        HttpRequest request = mock(HttpRequest.class);
+        HttpResponse response = mock(HttpResponse.class);
+        HttpService httpService = mock(HttpService.class);
+        burp.api.montoya.core.ByteArray requestBytes = mockByteArray(body);
+
+        when(item.request()).thenReturn(request);
+        when(item.response()).thenReturn(response);
+        when(item.hasResponse()).thenReturn(true);
+        when(item.httpService()).thenReturn(httpService);
+        when(item.timingData()).thenReturn(Optional.empty());
+        when(item.annotations()).thenReturn(null);
+
+        when(request.method()).thenReturn(method);
+        when(request.url()).thenReturn(url);
+        when(request.path()).thenReturn("/a");
+        when(request.pathWithoutQuery()).thenReturn("/a");
+        when(request.query()).thenReturn("");
+        when(request.fileExtension()).thenReturn("");
+        when(request.httpVersion()).thenReturn("HTTP/1.1");
+        when(request.headers()).thenReturn(List.of());
+        when(request.parameters()).thenReturn(List.of());
+        when(request.parameters(HttpParameterType.URL)).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.contentType()).thenReturn(null);
+        when(request.toByteArray()).thenReturn(requestBytes);
+
+        when(response.statusCode()).thenReturn((short) 200);
+        when(response.reasonPhrase()).thenReturn("OK");
+        when(response.mimeType()).thenReturn(burp.api.montoya.http.message.MimeType.HTML);
+        when(response.statedMimeType()).thenReturn(burp.api.montoya.http.message.MimeType.HTML);
+        when(response.inferredMimeType()).thenReturn(burp.api.montoya.http.message.MimeType.HTML);
+        when(response.httpVersion()).thenReturn("HTTP/1.1");
+        when(response.headers()).thenReturn(List.of());
+        when(response.body()).thenReturn(null);
+        when(response.markers()).thenReturn(List.of());
+        burp.api.montoya.core.ByteArray responseBytes = mockByteArray("HTTP/1.1 200 OK\r\n\r\n");
+        when(response.toByteArray()).thenReturn(responseBytes);
+
+        when(httpService.host()).thenReturn("example.com");
+        when(httpService.port()).thenReturn(443);
+        when(httpService.secure()).thenReturn(true);
+        return item;
+    }
+
+    private void awaitDocumentCountAtLeast(long expected) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (awaitDocumentCount() >= expected) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        assertThat(awaitDocumentCount()).isGreaterThanOrEqualTo(expected);
     }
 }

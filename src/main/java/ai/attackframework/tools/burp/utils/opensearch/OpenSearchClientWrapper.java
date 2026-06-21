@@ -182,18 +182,72 @@ public class OpenSearchClientWrapper {
      * @return {@code true} if indexed successfully, {@code false} otherwise
      */
     public static boolean pushDocument(String baseUrl, String indexName, String indexKey, Map<String, Object> document) {
+        return pushDocumentDuringShutdown(baseUrl, indexName, indexKey, document, false).success();
+    }
+
+    /**
+     * Pushes one document during export Stop or unload when {@code exportRunning} is already false.
+     *
+     * <p>Uses a one-shot OpenSearch index attempt (no retry queue) so final exporter stats can be
+     * written after the UI sets export stopped but before connectors close.</p>
+     *
+     * @param baseUrl OpenSearch base URL
+     * @param indexName target index name
+     * @param indexKey logical index key for stats
+     * @param document document to index
+     * @param duringShutdown when {@code true}, bypasses {@link RuntimeConfig#isExportReady()}
+     * @return structured outcome including failure detail when available
+     */
+    public static ShutdownDocumentPushResult pushDocumentDuringShutdown(
+            String baseUrl,
+            String indexName,
+            String indexKey,
+            Map<String, Object> document,
+            boolean duringShutdown) {
         PreparedExportDocument prepared = ExportDocumentIdentity.prepare(indexName, indexKey, document);
         FileExportService.emit(prepared);
         if (!RuntimeConfig.isOpenSearchExportEnabled() || baseUrl == null || baseUrl.isBlank()) {
-            return RuntimeConfig.isAnyFileExportEnabled();
+            boolean ok = RuntimeConfig.isAnyFileExportEnabled();
+            return new ShutdownDocumentPushResult(ok, ok ? null : "file sink write failed");
         }
-        SingleDocPushResult result = IndexingRetryCoordinator.getInstance()
-                .pushPreparedDocumentWithResult(baseUrl, prepared);
+        SingleDocPushResult result = duringShutdown
+                ? IndexingRetryCoordinator.getInstance().pushPreparedDocumentDuringShutdown(baseUrl, prepared)
+                : IndexingRetryCoordinator.getInstance().pushPreparedDocumentWithResult(baseUrl, prepared);
         if (result.success()) {
             ExportStats.recordBulkBreakdown(indexKey, result.breakdown());
             ExportStats.recordExportedBytes(indexKey, prepared.estimatedBulkBytes());
         }
-        return result.success();
+        return new ShutdownDocumentPushResult(result.success(), result.failureDetail());
+    }
+
+    /**
+     * Outcome of a shutdown-tolerant single-document push.
+     *
+     * @param success whether the document reached the configured sink
+     * @param failureDetail root failure message when {@code success} is false; may be {@code null}
+     */
+    public record ShutdownDocumentPushResult(boolean success, String failureDetail) {
+
+        /**
+         * Returns whether the push succeeded.
+         *
+         * @return {@code true} when indexed or written to file sink
+         */
+        public boolean succeeded() {
+            return success;
+        }
+
+        /**
+         * Returns a log-safe failure reason.
+         *
+         * @return detail string or a generic fallback when blank
+         */
+        public String resolvedFailureDetail() {
+            if (failureDetail == null || failureDetail.isBlank()) {
+                return "OpenSearch push returned false";
+            }
+            return failureDetail;
+        }
     }
 
     /**
@@ -308,10 +362,12 @@ public class OpenSearchClientWrapper {
                 for (PreparedExportDocument preparedDoc : documents) {
                     preparedDocs.add(preparedDoc.document());
                 }
-                return doPushBulkWithDetails(baseUrl, indexName, preparedDocs);
+                BulkResult result = doPushBulkWithDetails(baseUrl, indexName, preparedDocs);
+                return result;
             }
         }
-        return PreparedBulkSender.push(baseUrl, indexName, documents);
+        BulkResult result = PreparedBulkSender.push(baseUrl, indexName, documents);
+        return result;
     }
 
     /**
@@ -344,10 +400,11 @@ public class OpenSearchClientWrapper {
                     .build();
             IndexResponse response = client.index(request);
             BulkOutcomeBreakdown breakdown = breakdownFromIndexResult(response.result().jsonValue());
-            return new SingleDocPushResult(breakdown.successTotal() > 0, breakdown);
+            return new SingleDocPushResult(breakdown.successTotal() > 0, breakdown, null);
         } catch (IOException | RuntimeException e) {
             logPushOutcome(indexName, "doPushDocument", e);
-            return new SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+            String detail = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            return new SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), detail);
         }
     }
 
@@ -455,8 +512,8 @@ public class OpenSearchClientWrapper {
     }
 
     /** Single failed bulk item: zero-based request index, OpenSearch error type, and reason. */
-    record FailedItem(int index, String type, String reason) {
-        FailedItem {
+    public record FailedItem(int index, String type, String reason) {
+        public FailedItem {
             type = type == null ? "unknown" : type;
             reason = reason == null ? "unknown" : reason;
         }
@@ -483,10 +540,12 @@ public class OpenSearchClientWrapper {
     static final class SingleDocPushResult {
         final boolean success;
         final BulkOutcomeBreakdown breakdown;
+        final String failureDetail;
 
-        SingleDocPushResult(boolean success, BulkOutcomeBreakdown breakdown) {
+        SingleDocPushResult(boolean success, BulkOutcomeBreakdown breakdown, String failureDetail) {
             this.success = success;
             this.breakdown = breakdown != null ? breakdown : BulkOutcomeBreakdown.empty();
+            this.failureDetail = failureDetail;
         }
 
         boolean success() {
@@ -495,6 +554,10 @@ public class OpenSearchClientWrapper {
 
         BulkOutcomeBreakdown breakdown() {
             return breakdown;
+        }
+
+        String failureDetail() {
+            return failureDetail;
         }
     }
 

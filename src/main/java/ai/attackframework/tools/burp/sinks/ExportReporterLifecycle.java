@@ -51,6 +51,10 @@ public final class ExportReporterLifecycle {
         ProxyHistoryIndexReporter.stop();
         TrafficHttpHandlerSupport.stop();
         TrafficStartupBacklogSummary.clearRunState();
+        UrlParameterTruncationLog.clearRunState();
+        BodyParameterTruncationLog.clearRunState();
+        BodyEnumerationSkippedLog.stopPeriodicFlusher();
+        CompressedWireBodyParamsLog.stopPeriodicFlusher();
     }
 
     /**

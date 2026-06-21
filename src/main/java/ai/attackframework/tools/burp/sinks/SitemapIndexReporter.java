@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,9 +33,9 @@ import burp.api.montoya.http.message.responses.HttpResponse;
 
 /**
  * Pushes Burp sitemap items to the sitemap index when export is running and
- * "Sitemap" is selected. Initial push on Start (background); every 30 seconds
- * exports only new sitemap rows (in-memory seen keys). Does not start a new
- * run while the previous is still in progress. Respects extension scope (All / Burp / Custom).
+ * "Sitemap" is selected. Initial push on Start exports every site-map row returned
+ * by Montoya (background); every 30 seconds exports only in-scope rows whose
+ * {@link SnapshotExportFingerprints#sitemapEntryFingerprint} was not yet seen this run.
  */
 public final class SitemapIndexReporter {
 
@@ -92,12 +90,13 @@ public final class SitemapIndexReporter {
                 exec.submit(() -> {
                     try {
                         pushItems(api, true);
-                    } catch (Throwable ignored) {
-                        // Startup/lifecycle races in Burp can transiently null sub-APIs.
+                    } catch (RuntimeException e) {
+                        String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                        Logger.logWarnPanelOnly("[SnapshotExport] Sitemap: push failed: " + msg);
                     }
                 });
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logWarnPanelOnly("[SnapshotExport] Sitemap: push failed: " + msg);
         }
@@ -143,7 +142,7 @@ public final class SitemapIndexReporter {
                 return;
             }
             pushItems(api, false);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logWarnPanelOnly("[PeriodicExport] Sitemap: push failed: " + msg);
         }
@@ -175,10 +174,8 @@ public final class SitemapIndexReporter {
     private static void pushAllItemsParallel(MontoyaApi api, List<HttpRequestResponse> items) {
         var state = RuntimeConfig.getState();
         SnapshotScopeCache scopeCache = new SnapshotScopeCache(api);
-        Set<String> startupKeys = ConcurrentHashMap.newKeySet();
         AtomicInteger processed = new AtomicInteger();
         AtomicInteger skippedScope = new AtomicInteger();
-        AtomicInteger skippedDuplicate = new AtomicInteger();
         boolean openSearchActive = RuntimeConfig.isOpenSearchActive();
         boolean fileActive = RuntimeConfig.isAnyFileExportEnabled();
         SnapshotSummary.Baseline baseline = SnapshotSummary.forIndexKey("sitemap");
@@ -201,7 +198,7 @@ public final class SitemapIndexReporter {
                 "sitemap",
                 item -> {
                     SitemapWorkItem work = toStartupWorkItem(
-                            item, state, scopeCache, startupKeys, processed, skippedScope, skippedDuplicate);
+                            item, state, scopeCache, processed, skippedScope);
                     if (work == null) {
                         return null;
                     }
@@ -238,7 +235,6 @@ public final class SitemapIndexReporter {
         Logger.logInfoPanelOnly("[SnapshotExport] Sitemap: backlog filters: seen=" + items.size()
                 + " exported=" + exportResult.attempted()
                 + " skipped_scope=" + skippedScope.get()
-                + " skipped_duplicate=" + skippedDuplicate.get()
                 + " in " + durationMs + "ms.");
     }
 
@@ -246,10 +242,8 @@ public final class SitemapIndexReporter {
             HttpRequestResponse item,
             ConfigState.State state,
             SnapshotScopeCache scopeCache,
-            Set<String> startupKeys,
             AtomicInteger processed,
-            AtomicInteger skippedScope,
-            AtomicInteger skippedDuplicate) {
+            AtomicInteger skippedScope) {
         SnapshotPacing.paceItem(processed.getAndIncrement());
         if (item == null) {
             return null;
@@ -267,12 +261,7 @@ public final class SitemapIndexReporter {
             skippedScope.incrementAndGet();
             return null;
         }
-        String itemKey = SnapshotExportFingerprints.sitemapItemKey(request);
-        if (!startupKeys.add(itemKey)) {
-            skippedDuplicate.incrementAndGet();
-            return null;
-        }
-        PERIODIC_EXPORT_SEEN_KEYS.recordSeen(itemKey);
+        PERIODIC_EXPORT_SEEN_KEYS.recordSeen(SnapshotExportFingerprints.sitemapEntryFingerprint(item));
         return new SitemapWorkItem(item, burpInScope);
     }
 
@@ -306,7 +295,7 @@ public final class SitemapIndexReporter {
                 continue;
             }
             checked++;
-            String itemKey = SnapshotExportFingerprints.sitemapItemKey(work.item().request());
+            String itemKey = SnapshotExportFingerprints.sitemapEntryFingerprint(work.item());
             if (!PERIODIC_EXPORT_SEEN_KEYS.isNew(itemKey)) {
                 continue;
             }

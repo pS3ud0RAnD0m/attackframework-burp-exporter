@@ -256,6 +256,7 @@ class StatsPanelTest {
             }
         };
         Logger.registerListener(listener);
+        RuntimeConfig.setExportRunning(true);
         try {
             onEdt(() -> call(panel, "refreshVisibleStats"));
             seenFallbackErrors.clear();
@@ -273,6 +274,7 @@ class StatsPanelTest {
             assertThat(seenFallbackErrors).hasSize(afterIncrease + 1);
         } finally {
             Logger.unregisterListener(listener);
+            RuntimeConfig.setExportRunning(false);
         }
     }
 
@@ -451,20 +453,19 @@ class StatsPanelTest {
     }
 
     @Test
-    void mergedSinkCards_eachExposeOneCopyButtonForTheWholeTable() {
+    void lowerPanel_exposesSingleCopyButtonForAllStatsCards() {
         StatsPanel panel = onEdt(StatsPanel::new);
-        JPanel openSearchSinkCard = JPanel.class.cast(get(panel, "openSearchSinkCard"));
-        JPanel fileSinkCard = JPanel.class.cast(get(panel, "fileSinkCard"));
+        JPanel lowerPanel = JPanel.class.cast(get(panel, "lowerPanel"));
 
-        // One Copy button per merged card; the user already has full-table TSV from a single
-        // click, no need for a separate per-section button now that traffic + index counts
-        // share one model.
-        assertThat(findByName(openSearchSinkCard, "copy.OpenSearch Counts", JButton.class))
-                .as("OpenSearch Counts copy button")
+        assertThat(findByName(lowerPanel, "copy.All Stats", JButton.class))
+                .as("shared Stats copy button")
                 .isNotNull();
-        assertThat(findByName(fileSinkCard, "copy.File Counts", JButton.class))
-                .as("File Counts copy button")
-                .isNotNull();
+        assertThat(findByName(JPanel.class.cast(get(panel, "openSearchSinkCard")),
+                "copy.OpenSearch Counts", JButton.class)).isNull();
+        assertThat(findByName(JPanel.class.cast(get(panel, "fileSinkCard")),
+                "copy.File Counts", JButton.class)).isNull();
+        assertThat(findByName(JPanel.class.cast(get(panel, "miscStatsCard")),
+                "copy.Misc Stats", JButton.class)).isNull();
     }
 
     @Test

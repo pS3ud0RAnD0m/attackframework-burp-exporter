@@ -45,7 +45,8 @@ public final class ExportFieldSectionTooltips {
                             + "individual meta leaves are shown for visibility only and cannot be disabled.";
             case "request" ->
                     "HTTP request URL, method, path, service, headers, body, parameters, markers, and protocol facets.";
-            case "request.body" -> "Request entity body exported as text and/or Base64.";
+            case "request.body" ->
+                    "Request body on the wire (body.b64) and searchable text (body.text) when Content-Encoding is removed and bytes classify as text.";
             case "request.headers" -> "Parsed request header names and values.";
             case "request.header" -> "Actual request headers and inferred request header facets exported as lower-case dynamic fields.";
             case "request.headers.full" -> "Full raw request header block as exported.";
@@ -56,7 +57,8 @@ public final class ExportFieldSectionTooltips {
             case "response" ->
                     "HTTP status, headers, body, MIME classification, and response markers.";
             case "response.status" -> "HTTP status code, status family, and reason phrase from the response.";
-            case "response.body" -> "Response entity body as text and/or Base64.";
+            case "response.body" ->
+                    "Response body on the wire (body.b64) and searchable text (body.text) when Content-Encoding is removed and bytes classify as text.";
             case "response.body.html" -> "HTML parser attributes derived from the response body.";
             case "response.body.html.dom" -> "HTML tag, id, and CSS-class facets parsed from the response body.";
             case "response.body.html.forms" -> "HTML form controls and submit-label facets parsed from the response body.";

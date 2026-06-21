@@ -58,6 +58,26 @@ public class AboutPanel extends JPanel {
         area.setForeground(UIManager.getColor("Label.foreground"));
         panel.add(area, "growx, wrap");
 
+        JLabel featuresHeader = new JLabel("Body export");
+        featuresHeader.setFont(labelFont.deriveFont(Font.BOLD));
+        panel.add(featuresHeader, "gaptop 8, gapbottom 4");
+
+        JTextArea features = new JTextArea("""
+                HTTP bodies export in two layers: body.b64 preserves wire bytes as Burp captured them; body.text is an optional agent-readable string after Content-Encoding decompression (when applicable) and charset decoding.
+
+                Supported Content-Encoding tokens: gzip, x-gzip, deflate, br, zstd, compress, x-compress (identity is ignored). Stacked encodings unwind innermost-first with an 8 MiB expanded cap per step.
+
+                Decompression is insight-gated (skipped for image/audio/video/font/model types). Requests with declared form or multipart bodies may also sniff-decompress gzip magic when no Content-Encoding header is present.
+                """);
+        features.setEditable(false);
+        features.setFocusable(false);
+        features.setLineWrap(true);
+        features.setWrapStyleWord(true);
+        features.setOpaque(false);
+        features.setFont(labelFont);
+        features.setForeground(UIManager.getColor("Label.foreground"));
+        panel.add(features, "growx, wrap");
+
         panel.add(buildLinkRow("Burp Exporter:", "https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter"), "growx, wrap");
         panel.add(buildLinkRow("Attack Framework:", "https://github.com/attackframework/attackframework"), "growx");
         return panel;

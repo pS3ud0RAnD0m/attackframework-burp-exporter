@@ -12,8 +12,14 @@
  *   <li><b>Non-traffic reporters</b> —
  *       {@link ai.attackframework.tools.burp.sinks.SitemapIndexReporter},
  *       {@link ai.attackframework.tools.burp.sinks.FindingsIndexReporter},
- *       {@link ai.attackframework.tools.burp.sinks.ExporterIndexConfigReporter} — that write
+ *       {@link ai.attackframework.tools.burp.sinks.ExporterIndexConfigReporter},
+ *       {@link ai.attackframework.tools.burp.sinks.ExporterIndexStatsReporter} — that write
  *       their own domain indices.</li>
+ *   <li><b>Parameter integrity</b> — {@link ai.attackframework.tools.burp.sinks.BodyContentEncodingSupport},
+ *       session-boundary rollups ({@link ai.attackframework.tools.burp.sinks.ParameterIntegritySessionLog},
+ *       {@link ai.attackframework.tools.burp.sinks.BodyEnumerationSkippedLog},
+ *       {@link ai.attackframework.tools.burp.sinks.CompressedWireBodyParamsLog}), and Stats /
+ *       exporter {@code stats_snapshot} telemetry for operator reconciliation.</li>
  *   <li><b>Shared infrastructure</b> —
  *       {@link ai.attackframework.tools.burp.sinks.TrafficExportQueue} bounded queue and spill,
  *       {@link ai.attackframework.tools.burp.sinks.FileExportService} file-sink writer,

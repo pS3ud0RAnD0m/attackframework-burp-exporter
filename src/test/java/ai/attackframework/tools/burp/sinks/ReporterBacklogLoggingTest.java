@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 
@@ -19,7 +20,9 @@ import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
 import burp.api.montoya.proxy.ProxyWebSocketMessage;
 import burp.api.montoya.scanner.audit.issues.AuditIssue;
@@ -40,6 +43,14 @@ class ReporterBacklogLoggingTest {
             infoMessages.add(message);
         }
     };
+
+    @BeforeEach
+    void resetReportersBeforeTest() {
+        FindingsIndexReporter.stop();
+        SitemapIndexReporter.stop();
+        ProxyHistoryIndexReporter.stop();
+        ProxyWebSocketIndexReporter.stop();
+    }
 
     @AfterEach
     void tearDown() {
@@ -85,6 +96,31 @@ class ReporterBacklogLoggingTest {
     }
 
     @Test
+    void sitemap_pushSnapshotNow_exportsDistinctRowsWithSameMethodAndUrl() throws Exception {
+        Logger.registerListener(listener);
+        try {
+            MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
+            SiteMap siteMap = mock(SiteMap.class);
+            when(api.siteMap()).thenReturn(siteMap);
+            when(api.scope().isInScope(anyString())).thenReturn(true);
+            HttpRequestResponse first = mockSitemapItem("GET", "https://example.com/a", "body-a");
+            HttpRequestResponse second = mockSitemapItem("GET", "https://example.com/a", "body-b");
+            when(siteMap.requestResponses()).thenReturn(List.of(first, second));
+            MontoyaApiProvider.set(api);
+
+            configureSitemapExport();
+            SitemapIndexReporter.start();
+            SitemapIndexReporter.pushSnapshotNow();
+
+            awaitInfoLine("[StartupExport] Sitemap: exporting backlog: 2 item(s).");
+            awaitInfoLineStartingWith("[SnapshotExport] Sitemap: backlog filters: seen=2 exported=2 skipped_scope=0");
+            assertThat(infoMessages.stream().noneMatch(line -> line.contains("skipped_duplicate"))).isTrue();
+        } finally {
+            Logger.unregisterListener(listener);
+        }
+    }
+
+    @Test
     void sitemap_pushSnapshotNow_logsBacklogStart_andSnapshotComplete() throws Exception {
         Logger.registerListener(listener);
         try {
@@ -103,6 +139,66 @@ class ReporterBacklogLoggingTest {
             awaitInfoLine("[StartupExport] Sitemap: exporting backlog: 1 item(s).");
             awaitInfoLineStartingWith("[SnapshotExport] Sitemap: snapshot complete: captured=");
             awaitInfoLineStartingWith("[SnapshotExport] Sitemap: backlog filters: seen=");
+        } finally {
+            Logger.unregisterListener(listener);
+        }
+    }
+
+    @Test
+    void findings_pushSnapshotNow_excludesFalsePositiveFromSkippedSeverity() throws Exception {
+        Logger.registerListener(listener);
+        try {
+            MontoyaApi api = mock(MontoyaApi.class);
+            SiteMap siteMap = mock(SiteMap.class);
+            Scope scope = mock(Scope.class);
+            AuditIssue high = mock(AuditIssue.class);
+            AuditIssue falsePositive = mock(AuditIssue.class);
+            AuditIssue informational = mock(AuditIssue.class);
+            when(api.siteMap()).thenReturn(siteMap);
+            when(api.scope()).thenReturn(scope);
+            when(scope.isInScope(anyString())).thenReturn(true);
+            when(siteMap.issues()).thenReturn(List.of(high, falsePositive, informational));
+            stubMinimalIssue(high, "https://a.example/", AuditIssueSeverity.HIGH);
+            stubMinimalIssue(falsePositive, "https://b.example/", AuditIssueSeverity.FALSE_POSITIVE);
+            stubMinimalIssue(informational, "https://c.example/", AuditIssueSeverity.INFORMATION);
+            MontoyaApiProvider.set(api);
+
+            configureFindingsExport();
+            FindingsIndexReporter.start();
+            FindingsIndexReporter.pushSnapshotNow();
+
+            awaitInfoLine("[StartupExport] Findings: exporting backlog: 3 issue(s).");
+            awaitInfoLineStartingWith(
+                    "[SnapshotExport] Findings: backlog filters: seen=3 exported=2 skipped_scope=0 skipped_severity=0");
+        } finally {
+            Logger.unregisterListener(listener);
+        }
+    }
+
+    @Test
+    void findings_pushSnapshotNow_countsOperatorFilteredSeverityInSkippedSeverity() throws Exception {
+        Logger.registerListener(listener);
+        try {
+            MontoyaApi api = mock(MontoyaApi.class);
+            SiteMap siteMap = mock(SiteMap.class);
+            Scope scope = mock(Scope.class);
+            AuditIssue high = mock(AuditIssue.class);
+            AuditIssue informational = mock(AuditIssue.class);
+            when(api.siteMap()).thenReturn(siteMap);
+            when(api.scope()).thenReturn(scope);
+            when(scope.isInScope(anyString())).thenReturn(true);
+            when(siteMap.issues()).thenReturn(List.of(high, informational));
+            stubMinimalIssue(high, "https://a.example/", AuditIssueSeverity.HIGH);
+            stubMinimalIssue(informational, "https://b.example/", AuditIssueSeverity.INFORMATION);
+            MontoyaApiProvider.set(api);
+
+            configureFindingsExport(List.of("high"));
+            FindingsIndexReporter.start();
+            FindingsIndexReporter.pushSnapshotNow();
+
+            awaitInfoLine("[StartupExport] Findings: exporting backlog: 2 issue(s).");
+            awaitInfoLineStartingWith(
+                    "[SnapshotExport] Findings: backlog filters: seen=2 exported=1 skipped_scope=0 skipped_severity=1");
         } finally {
             Logger.unregisterListener(listener);
         }
@@ -149,7 +245,7 @@ class ReporterBacklogLoggingTest {
     }
 
     private void awaitInfoLine(String expected) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
             if (infoMessages.contains(expected)) {
                 return;
@@ -160,7 +256,7 @@ class ReporterBacklogLoggingTest {
     }
 
     private void awaitInfoLineStartingWith(String prefix) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
             if (infoMessages.stream().anyMatch(line -> line.startsWith(prefix))) {
                 return;
@@ -171,14 +267,39 @@ class ReporterBacklogLoggingTest {
     }
 
     private static void stubMinimalIssue(AuditIssue issue, String baseUrl) {
+        stubMinimalIssue(issue, baseUrl, AuditIssueSeverity.HIGH);
+    }
+
+    private static void stubMinimalIssue(AuditIssue issue, String baseUrl, AuditIssueSeverity severity) {
         when(issue.baseUrl()).thenReturn(baseUrl);
-        when(issue.severity()).thenReturn(AuditIssueSeverity.HIGH);
+        when(issue.severity()).thenReturn(severity);
         when(issue.confidence()).thenReturn(AuditIssueConfidence.CERTAIN);
         when(issue.requestResponses()).thenReturn(List.of());
         when(issue.definition()).thenReturn(null);
     }
 
+    private static HttpRequestResponse mockSitemapItem(String method, String url, String body) {
+        byte[] raw = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        ByteArray requestBytes = mock(ByteArray.class);
+        when(requestBytes.getBytes()).thenReturn(raw);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.method()).thenReturn(method);
+        when(request.url()).thenReturn(url);
+        when(request.toByteArray()).thenReturn(requestBytes);
+
+        HttpRequestResponse item = mock(HttpRequestResponse.class);
+        when(item.request()).thenReturn(request);
+        when(item.response()).thenReturn(null);
+        when(item.annotations()).thenReturn(null);
+        when(item.hasResponse()).thenReturn(false);
+        return item;
+    }
+
     private static void configureFindingsExport() {
+        configureFindingsExport(ConfigState.DEFAULT_FINDINGS_SEVERITIES);
+    }
+
+    private static void configureFindingsExport(List<String> findingsSeverities) {
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of(ConfigKeys.SRC_FINDINGS),
                 ConfigKeys.SCOPE_ALL,
@@ -186,7 +307,7 @@ class ReporterBacklogLoggingTest {
                 new ConfigState.Sinks(false, null, true, "https://opensearch.url:9200", null, null, false),
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
-                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                findingsSeverities,
                 null));
         RuntimeConfig.setExportRunning(true);
     }

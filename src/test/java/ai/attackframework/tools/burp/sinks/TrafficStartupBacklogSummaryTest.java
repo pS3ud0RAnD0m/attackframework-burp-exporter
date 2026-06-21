@@ -18,6 +18,13 @@ class TrafficStartupBacklogSummaryTest {
     }
 
     @Test
+    void hasExpectedStartupComponents_falseAfterClearRunState() {
+        TrafficStartupBacklogSummary.startForCurrentRun();
+        TrafficStartupBacklogSummary.clearRunState();
+        assertThat(TrafficStartupBacklogSummary.hasExpectedStartupComponents()).isFalse();
+    }
+
+    @Test
     void complete_afterClearRunState_isIgnored() {
         TrafficStartupBacklogSummary.startForCurrentRun();
         TrafficStartupBacklogSummary.clearRunState();

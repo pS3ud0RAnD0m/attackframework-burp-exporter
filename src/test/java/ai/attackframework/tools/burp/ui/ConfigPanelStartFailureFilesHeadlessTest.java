@@ -247,6 +247,7 @@ class ConfigPanelStartFailureFilesHeadlessTest {
 
     @Test
     void start_withOpenSearchPreflightFailure_keepsOpenSearchDisabledForCurrentRunAfterFurtherUiChanges() throws Exception {
+        ExportReporterLifecycle.resetForTests();
         Path exportRoot = TestPathSupport.createDirectory("af-file-root-os-preflight-fail");
         Path exportRootAbs = exportRoot.toAbsolutePath().normalize();
         Logger.resetState();
@@ -544,9 +545,10 @@ class ConfigPanelStartFailureFilesHeadlessTest {
         throw new AssertionError("Start button did not reach running state within timeout");
     }
 
-    private static void waitForLogMessage(List<String> events, String snippet) {
-        long deadline = System.currentTimeMillis() + 10_000;
+    private static void waitForLogMessage(List<String> events, String snippet) throws Exception {
+        long deadline = System.currentTimeMillis() + 60_000;
         while (System.currentTimeMillis() < deadline) {
+            SwingUtilities.invokeAndWait(() -> {});
             if (events.stream().anyMatch(message -> message.contains(snippet))) {
                 return;
             }

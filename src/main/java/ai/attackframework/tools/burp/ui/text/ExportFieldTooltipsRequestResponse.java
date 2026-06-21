@@ -144,17 +144,20 @@ final class ExportFieldTooltipsRequestResponse {
     static String requestBodyFieldTooltip(String leaf) {
         return switch (leaf) {
             case "b64" -> Tooltips.textWithSource(
-                    "Raw request body bytes as Base64 for exact replay.",
-                    "RequestResponseDocBuilder.putBodyFields() Base64-encodes HttpRequest.body().getBytes() when the body is non-empty.");
+                    "On-the-wire body bytes as Base64 — exactly what Burp captured (still compressed when Content-Encoding is set). "
+                            + "Use for exact replay; use body.text for searchable text after Content-Encoding removal when applicable.",
+                    "HttpMessageDocSupport.buildBodyContent() Base64-encodes the raw body bytes.");
             case "length" -> Tooltips.textWithSource(
-                    "Request body length in bytes.",
-                    "RequestResponseDocBuilder.putBodyFields() uses HttpRequest.body().getBytes().length (0 when absent).");
+                    "On-the-wire body length in bytes (compressed size when Content-Encoding is set).",
+                    "HttpMessageDocSupport.buildBodyContent() uses HttpRequest.body().getBytes().length.");
             case "offset" -> Tooltips.textWithSource(
                     "Byte offset of the request body within the raw HTTP message.",
-                    "RequestResponseDocBuilder.putBodyFields() uses HttpRequest.bodyOffset().");
+                    "HttpMessageDocSupport.buildBodyContent() uses HttpRequest.bodyOffset().");
             case "text" -> Tooltips.textWithSource(
-                    "Decoded request body text when the exporter classifies the payload as searchable text.",
-                    "RequestResponseDocBuilder.extractBodyText() decodes bytes using Content-Type, Burp MIME hints, and byte sniffing; null for binary or compressed bodies.");
+                    "UTF-8 or charset-decoded body string after Content-Encoding removal (when applicable) and text classification. "
+                            + "Indexed as OpenSearch text for full-text search. "
+                            + "Null when the payload remains binary after decompress (e.g. protobuf inside gzip) or is not textual.",
+                    "HttpMessageDocSupport.decodeHumanReadableBodyText() on logical bytes from BodyContentEncodingSupport.resolveForExport().");
             case "markers" -> Tooltips.textWithSource(
                     "Burp request highlight marker ranges.",
                     "RequestResponseDocBuilder.markersToList() copies HttpRequest.markers() into request.body.markers.");
@@ -165,17 +168,20 @@ final class ExportFieldTooltipsRequestResponse {
     static String responseBodyFieldTooltip(String leaf) {
         return switch (leaf) {
             case "b64" -> Tooltips.textWithSource(
-                    "Raw response body bytes as Base64 for exact replay.",
-                    "RequestResponseDocBuilder.putBodyFields() Base64-encodes HttpResponse.body().getBytes() when the body is non-empty.");
+                    "On-the-wire body bytes as Base64 — exactly what Burp captured (still compressed when Content-Encoding is set). "
+                            + "Use for exact replay; use body.text for searchable text after Content-Encoding removal when applicable.",
+                    "HttpMessageDocSupport.buildBodyContent() Base64-encodes the raw body bytes.");
             case "length" -> Tooltips.textWithSource(
-                    "Response body length in bytes.",
-                    "RequestResponseDocBuilder.putBodyFields() uses HttpResponse.body().getBytes().length (0 when absent).");
+                    "On-the-wire body length in bytes (compressed size when Content-Encoding is set).",
+                    "HttpMessageDocSupport.buildBodyContent() uses HttpResponse.body().getBytes().length.");
             case "offset" -> Tooltips.textWithSource(
                     "Byte offset of the response body within the raw HTTP message.",
-                    "RequestResponseDocBuilder.putBodyFields() uses HttpResponse.bodyOffset().");
+                    "HttpMessageDocSupport.buildBodyContent() uses HttpResponse.bodyOffset().");
             case "text" -> Tooltips.textWithSource(
-                    "Decoded response body text when classified as searchable text.",
-                    "RequestResponseDocBuilder.extractBodyText() decodes bytes using Content-Type and Burp MIME hints; null for binary or compressed bodies.");
+                    "UTF-8 or charset-decoded body string after Content-Encoding removal (when applicable) and text classification. "
+                            + "Indexed as OpenSearch text for full-text search. "
+                            + "Null when the payload remains binary after decompress or is not textual.",
+                    "HttpMessageDocSupport.decodeHumanReadableBodyText() on logical bytes from BodyContentEncodingSupport.resolveForExport().");
             case "page_title" -> Tooltips.textWithSource(
                     "HTML page title parsed from the response.",
                     "RequestResponseDocBuilder.putResponseAttributes() reads HttpResponseReceived.attributes(AttributeType.PAGE_TITLE) into response.body.page_title.");

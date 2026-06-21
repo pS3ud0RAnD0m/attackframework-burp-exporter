@@ -57,6 +57,18 @@ public final class TrafficStartupBacklogSummary {
         }
     }
 
+    /**
+     * Returns whether the current run expects traffic startup backlog components.
+     *
+     * <p>When {@code false}, {@link UrlParameterTruncationLog#flushStartupSummary()} should run at
+     * the end of the Start pipeline because no backlog completion line will fire.</p>
+     */
+    public static boolean hasExpectedStartupComponents() {
+        synchronized (LOCK) {
+            return !expected.isEmpty();
+        }
+    }
+
     /** Clears the aggregate without emitting a completion line. */
     public static void clearRunState() {
         synchronized (LOCK) {
@@ -97,6 +109,10 @@ public final class TrafficStartupBacklogSummary {
         }
         if (line != null) {
             Logger.logInfoPanelOnly(line);
+            UrlParameterTruncationLog.flushStartupSummary();
+            BodyParameterTruncationLog.flushStartupSummary();
+            BodyEnumerationSkippedLog.flushStartupSummary();
+            CompressedWireBodyParamsLog.flushStartupSummary();
         }
     }
 

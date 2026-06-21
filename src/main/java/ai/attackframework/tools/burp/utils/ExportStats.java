@@ -559,13 +559,37 @@ public final class ExportStats {
     /** Running total of synthesized BODY parameters dropped on binary request bodies. */
     private static final AtomicLong synthesizedBodyParamsDropped = new AtomicLong(0);
     /** Running count of documents whose retained or dropped-synthesized parameter count crossed the WARN threshold. */
-    private static final AtomicLong docsOverParamsThreshold = new AtomicLong(0);
+    private static final AtomicLong docsBodyParamsTruncated = new AtomicLong(0);
+    /** Running total of BODY parameter entries dropped by the BODY cap across all documents. */
+    private static final AtomicLong bodyParamsDroppedTotal = new AtomicLong(0);
+    /** Running count of documents flagged as mis-gate suspects (declared form, inferred binary, BODY skipped). */
+    private static final AtomicLong docsBodyEnumerationMisgateSuspect = new AtomicLong(0);
+    /** Running count of documents whose URL parameter list was truncated at {@link ai.attackframework.tools.burp.sinks.RequestResponseParametersSupport#URL_PARAMETERS_CAP}. */
+    private static final AtomicLong docsUrlParamsTruncated = new AtomicLong(0);
+    /** Running total of URL parameter entries dropped by the URL cap across all documents. */
+    private static final AtomicLong urlParamsDroppedTotal = new AtomicLong(0);
     /**
      * Running count of documents that took the heap-safety typed-accessor fast path, where Burp's
      * unfiltered {@code parameters()} call was skipped to avoid materializing synthetic BODY
      * entries from Content-Type-spoofed binary bodies. Tracks how often the E3 protection fired.
      */
     private static final AtomicLong docsWithSkippedBodyEnumeration = new AtomicLong(0);
+    /** Documents where Burp wire BODY rows were replaced by supplemental logical parse. */
+    private static final AtomicLong docsWireBodyParamsReplaced = new AtomicLong(0);
+    /** Burp BODY row entries dropped after wire transform when supplemental parse was empty. */
+    private static final AtomicLong wireBodyParamsDroppedTotal = new AtomicLong(0);
+    /** Documents that exported supplemental BODY parameters from logical bytes. */
+    private static final AtomicLong docsSupplementalBodyParamsUsed = new AtomicLong(0);
+    /** Documents where skip-path BODY enumeration was overridden by supplemental parse. */
+    private static final AtomicLong docsSkipPathBodyRescued = new AtomicLong(0);
+    /** Documents where supplemental parse rejected a non-form logical body. */
+    private static final AtomicLong docsSupplementalRejectedNonForm = new AtomicLong(0);
+    /** Session counts by body_params_source label. */
+    private static final ReasonCounterSet bodyParamsSourceCounts = new ReasonCounterSet();
+    /** Session counts by body_params_skip_reason label. */
+    private static final ReasonCounterSet bodyParamsSkipReasonCounts = new ReasonCounterSet();
+    /** Per-document counts by Content-Encoding token applied during BODY supplemental parse. */
+    private static final ReasonCounterSet bodyParamsEncodingCounts = new ReasonCounterSet();
     /** OpenSearch connection-health: epoch ms of the most recent successful push, or -1 when none yet. */
     private static final AtomicLong openSearchLastSuccessAtMs = new AtomicLong(-1L);
     /** OpenSearch connection-health: consecutive push failures since the last success. */
@@ -735,16 +759,59 @@ public final class ExportStats {
     }
 
     /**
-     * Records one document whose retained or dropped-synthesized parameter count tripped
-     * the high-cardinality WARN threshold.
+     * Records one document whose BODY parameters were truncated to
+     * {@link ai.attackframework.tools.burp.sinks.RequestResponseParametersSupport#BODY_PARAMETERS_CAP}.
+     *
+     * @param droppedBodyParamEntries number of BODY parameter entries dropped on that document
      */
-    public static void recordDocsOverParamsThreshold() {
-        docsOverParamsThreshold.incrementAndGet();
+    public static void recordBodyParamsTruncated(int droppedBodyParamEntries) {
+        if (droppedBodyParamEntries > 0) {
+            docsBodyParamsTruncated.incrementAndGet();
+            bodyParamsDroppedTotal.addAndGet(droppedBodyParamEntries);
+        }
     }
 
-    /** Returns the session total of documents that tripped the parameter-cardinality threshold. */
-    public static long getDocsOverParamsThreshold() {
-        return docsOverParamsThreshold.get();
+    /** Returns the session total of documents whose BODY parameters were truncated. */
+    public static long getDocsBodyParamsTruncated() {
+        return docsBodyParamsTruncated.get();
+    }
+
+    /** Returns the session total of BODY parameter entries dropped by the BODY cap. */
+    public static long getBodyParamsDroppedTotal() {
+        return bodyParamsDroppedTotal.get();
+    }
+
+    /** Records one document flagged as a mis-gate suspect during BODY enumeration skip. */
+    public static void recordBodyEnumerationMisgateSuspect() {
+        docsBodyEnumerationMisgateSuspect.incrementAndGet();
+    }
+
+    /** Returns the session total of mis-gate suspect documents. */
+    public static long getDocsBodyEnumerationMisgateSuspect() {
+        return docsBodyEnumerationMisgateSuspect.get();
+    }
+
+    /**
+     * Records one document whose URL parameters were truncated to
+     * {@link ai.attackframework.tools.burp.sinks.RequestResponseParametersSupport#URL_PARAMETERS_CAP}.
+     *
+     * @param droppedUrlParamEntries number of URL parameter entries dropped on that document
+     */
+    public static void recordUrlParamsTruncated(int droppedUrlParamEntries) {
+        if (droppedUrlParamEntries > 0) {
+            docsUrlParamsTruncated.incrementAndGet();
+            urlParamsDroppedTotal.addAndGet(droppedUrlParamEntries);
+        }
+    }
+
+    /** Returns the session total of documents whose URL parameters were truncated. */
+    public static long getDocsUrlParamsTruncated() {
+        return docsUrlParamsTruncated.get();
+    }
+
+    /** Returns the session total of URL parameter entries dropped by the URL cap. */
+    public static long getUrlParamsDroppedTotal() {
+        return urlParamsDroppedTotal.get();
     }
 
     /**
@@ -759,6 +826,92 @@ public final class ExportStats {
     /** Returns the session total of documents that took the typed-accessor parameter fast path. */
     public static long getDocsWithSkippedBodyEnumeration() {
         return docsWithSkippedBodyEnumeration.get();
+    }
+
+    /** Records one document where compressed-wire Burp BODY rows were replaced by supplemental parse. */
+    public static void recordWireBodyParamsReplaced() {
+        docsWireBodyParamsReplaced.incrementAndGet();
+    }
+
+    /** Returns documents with wire BODY rows replaced this session. */
+    public static long getDocsWireBodyParamsReplaced() {
+        return docsWireBodyParamsReplaced.get();
+    }
+
+    /**
+     * Records Burp BODY parameter entries dropped after wire transform when supplemental was empty.
+     *
+     * @param droppedBodyParamEntries number of BODY entries dropped on that document
+     */
+    public static void recordWireBodyParamsDropped(int droppedBodyParamEntries) {
+        if (droppedBodyParamEntries > 0) {
+            wireBodyParamsDroppedTotal.addAndGet(droppedBodyParamEntries);
+        }
+    }
+
+    /** Returns total Burp BODY entries dropped on compressed-wire transform paths. */
+    public static long getWireBodyParamsDroppedTotal() {
+        return wireBodyParamsDroppedTotal.get();
+    }
+
+    /** Records one document that exported supplemental BODY parameters. */
+    public static void recordSupplementalBodyParamsUsed() {
+        docsSupplementalBodyParamsUsed.incrementAndGet();
+    }
+
+    /** Returns documents that used supplemental BODY parameters this session. */
+    public static long getDocsSupplementalBodyParamsUsed() {
+        return docsSupplementalBodyParamsUsed.get();
+    }
+
+    /** Records one document where skip-path enumeration was rescued by supplemental parse. */
+    public static void recordSkipPathBodyRescued() {
+        docsSkipPathBodyRescued.incrementAndGet();
+    }
+
+    /** Returns skip-path BODY rescues this session. */
+    public static long getDocsSkipPathBodyRescued() {
+        return docsSkipPathBodyRescued.get();
+    }
+
+    /** Records one document's body_params_source for session Stats. */
+    public static void recordBodyParamsSource(String source) {
+        bodyParamsSourceCounts.record(source, 1);
+    }
+
+    /** Returns per-source document counts for session Stats. */
+    public static Map<String, Long> getBodyParamsSourceCounts() {
+        return bodyParamsSourceCounts.snapshot();
+    }
+
+    /** Records one document's body_params_skip_reason for session Stats. */
+    public static void recordBodyParamsSkipReason(String reason) {
+        bodyParamsSkipReasonCounts.record(reason, 1);
+    }
+
+    /** Returns per-reason document counts for session Stats. */
+    public static Map<String, Long> getBodyParamsSkipReasonCounts() {
+        return bodyParamsSkipReasonCounts.snapshot();
+    }
+
+    /** Records one document where supplemental urlencoded parse rejected a non-form logical body. */
+    public static void recordSupplementalRejectedNonForm() {
+        docsSupplementalRejectedNonForm.incrementAndGet();
+    }
+
+    /** Returns supplemental non-form rejections this session. */
+    public static long getDocsSupplementalRejectedNonForm() {
+        return docsSupplementalRejectedNonForm.get();
+    }
+
+    /** Records a Content-Encoding token applied on a supplemental BODY parse path. */
+    public static void recordBodyParamsEncoding(String encoding) {
+        bodyParamsEncodingCounts.record(encoding, 1);
+    }
+
+    /** Returns per-encoding document counts for supplemental BODY paths. */
+    public static Map<String, Long> getBodyParamsEncodingCounts() {
+        return bodyParamsEncodingCounts.snapshot();
     }
 
     /**
@@ -1108,8 +1261,20 @@ public final class ExportStats {
         trafficDropReasons.clear();
         trafficToolSourceFallbacks.set(0);
         synthesizedBodyParamsDropped.set(0);
-        docsOverParamsThreshold.set(0);
+        docsBodyParamsTruncated.set(0);
+        bodyParamsDroppedTotal.set(0);
+        docsBodyEnumerationMisgateSuspect.set(0);
+        docsUrlParamsTruncated.set(0);
+        urlParamsDroppedTotal.set(0);
         docsWithSkippedBodyEnumeration.set(0);
+        docsWireBodyParamsReplaced.set(0);
+        wireBodyParamsDroppedTotal.set(0);
+        docsSupplementalBodyParamsUsed.set(0);
+        docsSkipPathBodyRescued.set(0);
+        docsSupplementalRejectedNonForm.set(0);
+        bodyParamsSourceCounts.clear();
+        bodyParamsSkipReasonCounts.clear();
+        bodyParamsEncodingCounts.clear();
         openSearchLastSuccessAtMs.set(-1L);
         openSearchConsecutiveFailures.set(0L);
         skipReasonCounts.clear();

@@ -45,10 +45,16 @@ import burp.api.montoya.scanner.audit.issues.AuditIssueConfidence;
 import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity;
 
 /**
- * Pushes Burp audit issues (findings) to the findings index when export is
- * running and "Issues" is selected. Initial push on Start; every 30 seconds
- * exports only new issues (in-memory seen keys). Does not start a new run while
- * the previous is still in progress.
+ * Pushes Burp audit issues (findings) to the findings index when export is running and
+ * {@code findings} is selected.
+ *
+ * <p>Initial push on Start exports the backlog in parallel; every 30 seconds exports only issues
+ * whose {@link SnapshotExportFingerprints#findingItemKey} was not yet seen this run. Severity
+ * filtering uses {@link FindingsSeverityFilter}: {@code FALSE_POSITIVE} and {@code null}
+ * severities never export; configured tokens (for example {@code informational}) gate the rest.
+ * {@link AuditIssueSeverity#FALSE_POSITIVE} does not increment backlog {@code skipped_severity}.</p>
+ *
+ * <p>Does not start a new run while the previous push is still in progress.</p>
  */
 public final class FindingsIndexReporter {
 
@@ -79,9 +85,11 @@ public final class FindingsIndexReporter {
     }
 
     /**
-     * Pushes all current issues once (e.g. initial push on Start). Safe to call
-     * from any thread. No-op if export is not running, no sink is enabled,
-     * or Issues is not in the selected data sources.
+     * Pushes all current issues once (for example on Start).
+     *
+     * <p>Safe to call from any thread. No-op when export is stopped, no sink is enabled, or
+     * findings is not selected. Applies {@link FindingsSeverityFilter} and records backlog
+     * {@code skipped_severity} when operator severity selection excludes an issue.</p>
      */
     public static void pushSnapshotNow() {
         try {
@@ -100,9 +108,16 @@ public final class FindingsIndexReporter {
             }
             ScheduledExecutorService exec = SCHEDULER.peek();
             if (exec != null) {
-                exec.submit(() -> pushIssues(api, true));
+                exec.submit(() -> {
+                    try {
+                        pushIssues(api, true);
+                    } catch (RuntimeException e) {
+                        String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                        Logger.logWarnPanelOnly("[SnapshotExport] Findings: push failed: " + msg);
+                    }
+                });
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logWarnPanelOnly("[SnapshotExport] Findings: push failed: " + msg);
         }
@@ -148,7 +163,7 @@ public final class FindingsIndexReporter {
                 return;
             }
             pushIssues(api, false);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logWarnPanelOnly("[PeriodicExport] Findings: push failed: " + msg);
         }
@@ -279,12 +294,13 @@ public final class FindingsIndexReporter {
         if (issue == null) {
             return null;
         }
-        if (filterBySeverity) {
-            AuditIssueSeverity sev = issue.severity();
-            if (sev == null || !selectedSeverities.contains(sev.name().toLowerCase(java.util.Locale.ROOT))) {
-                skippedSeverity.incrementAndGet();
-                return null;
-            }
+        AuditIssueSeverity sev = issue.severity();
+        if (FindingsSeverityFilter.countsTowardSkippedSeverity(sev, filterBySeverity, selectedSeverities)) {
+            skippedSeverity.incrementAndGet();
+            return null;
+        }
+        if (!FindingsSeverityFilter.shouldExport(sev, filterBySeverity, selectedSeverities)) {
+            return null;
         }
         String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
         boolean burpInScope = scopeCache.isInScope(issueUrl);
@@ -312,11 +328,9 @@ public final class FindingsIndexReporter {
             if (!RuntimeConfig.isExportRunning()) {
                 break;
             }
-            if (filterBySeverity) {
-                AuditIssueSeverity sev = issue.severity();
-                if (sev == null || !selectedSeverities.contains(sev.name().toLowerCase(java.util.Locale.ROOT))) {
-                    continue;
-                }
+            AuditIssueSeverity sev = issue.severity();
+            if (!FindingsSeverityFilter.shouldExport(sev, filterBySeverity, selectedSeverities)) {
+                continue;
             }
             String issueUrl = issue.baseUrl() != null ? issue.baseUrl() : "";
             boolean burpInScope = safeBurpInScope(api, issueUrl);
@@ -413,6 +427,14 @@ public final class FindingsIndexReporter {
         BulkOutcomeRecorder.record("findings", "Findings", "Bulk push", outcome, openSearchActive);
     }
 
+    /**
+     * Builds a findings document for {@code issue} with {@code burp.in_scope=false}.
+     *
+     * <p>Package-visible for integration tests and partial-field OpenSearch ITs.</p>
+     *
+     * @param issue Montoya audit issue
+     * @return document map before field filtering and bulk prepare
+     */
     static Map<String, Object> buildFindingDoc(AuditIssue issue) {
         return buildFindingDoc(issue, false);
     }

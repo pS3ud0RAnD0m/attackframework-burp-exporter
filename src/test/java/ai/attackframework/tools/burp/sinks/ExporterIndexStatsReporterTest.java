@@ -30,6 +30,93 @@ class ExporterIndexStatsReporterTest {
     }
 
     @Test
+    void pushFinalSnapshotNow_writesExporterStats_whenExportStopped() throws Exception {
+        try {
+            Path root = TestPathSupport.createDirectory("exporter-stats-final-stop");
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_EXPORTER),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, root.toString(), true, false,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(false);
+            ExportStats.recordBodyEnumerationMisgateSuspect();
+
+            ExporterStatsPushOutcome outcome = ExporterIndexStatsReporter.pushFinalSnapshotNow();
+
+            assertThat(outcome.succeeded()).isTrue();
+            Path jsonlPath = root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl");
+            assertThat(jsonlPath).exists();
+            String jsonl = Files.readString(jsonlPath);
+            assertThat(jsonl).contains("stats_snapshot");
+            assertThat(jsonl).contains("\"running\":false");
+            assertThat(jsonl).contains("docs_body_enumeration_misgate_suspect_total");
+        } finally {
+            tearDown();
+        }
+    }
+
+    @Test
+    void pushFinalSnapshotNow_succeedsWithFileSinkOnlyWhenOpenSearchDisabled() throws Exception {
+        try {
+            Path root = TestPathSupport.createDirectory("exporter-stats-file-only-final");
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_EXPORTER),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, root.toString(), true, false,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(false);
+
+            assertThat(RuntimeConfig.isOpenSearchActive()).isFalse();
+
+            ExporterStatsPushOutcome outcome = ExporterIndexStatsReporter.pushFinalSnapshotNow();
+
+            assertThat(outcome.succeeded()).isTrue();
+            assertThat(root.resolve(IndexNaming.indexNameForShortName("exporter") + ".jsonl")).exists();
+        } finally {
+            tearDown();
+        }
+    }
+
+    @Test
+    void pushFinalSnapshotNow_returnsSkippedDisabled_whenStatsSubOptionOff() {
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_EXPORTER),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(true, "", true, false,
+                            false, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    List.of(ConfigKeys.SRC_EXPORTER_INFO, ConfigKeys.SRC_EXPORTER_CONFIG),
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            RuntimeConfig.setExportRunning(false);
+
+            ExporterStatsPushOutcome outcome = ExporterIndexStatsReporter.pushFinalSnapshotNow();
+
+            assertThat(outcome.kind()).isEqualTo(ExporterStatsPushOutcome.Kind.SKIPPED_DISABLED);
+        } finally {
+            tearDown();
+        }
+    }
+
+    @Test
     void pushSnapshotNow_writesExporterStats_whenExporterStatsEnabled() throws Exception {
         try {
             Path root = TestPathSupport.createDirectory("exporter-stats-file-only");

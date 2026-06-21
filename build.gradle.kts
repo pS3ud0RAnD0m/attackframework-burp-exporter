@@ -41,6 +41,9 @@ dependencies {
     implementation(libs.opensearchJava)
     implementation(libs.slf4jApi)
     implementation(libs.jfreechart)
+    implementation(libs.brotliDec)
+    implementation(libs.commonsCompress)
+    implementation(libs.zstdJni)
 
     // testImplementation
     testImplementation(platform(libs.junitBom))
@@ -49,12 +52,15 @@ dependencies {
     testImplementation(libs.mockitoCore)
     testImplementation(libs.mockitoJunitJupiter)
     testImplementation(libs.assertjCore)
+    testImplementation(libs.brotli4j)
     testImplementation(libs.montoya)
 
     // testRuntimeOnly
     testRuntimeOnly(libs.junitJupiterEngine)
     testRuntimeOnly(libs.junitPlatformLauncher)
     testRuntimeOnly(libs.junitPlatformSuiteEngine)
+    testRuntimeOnly(libs.brotli4jNativeWindows)
+    testRuntimeOnly(libs.brotli4jNativeLinux)
 
     // runtimeOnly
     runtimeOnly(libs.logbackClassic)
@@ -68,7 +74,6 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:deprecation", "-Xlint:unchecked"))
 }
 
-// Standalone Step-1 lint task (java-zero-lint.mdc). Not wired to build or test.
 spotless {
     java {
         target("src/main/java/**/*.java", "src/test/java/**/*.java")
@@ -88,9 +93,10 @@ tasks.test {
     workingDir = project.projectDir
     systemProperty("java.awt.headless", "true")
     systemProperty("attackframework.version", project.version.toString())
-    // Forward OpenSearch URL/creds from -D or env into the test JVM (forked test process does not inherit Gradle's -D)
+    // Forward OpenSearch URL/creds from Gradle -P or env into the test JVM (forked process does not inherit -P)
     listOf("OPENSEARCH_URL", "OPENSEARCH_USER", "OPENSEARCH_PASSWORD").forEach { key ->
-        val value = System.getenv(key)?.takeIf { it.isNotBlank() } ?: System.getProperty(key)?.takeIf { it.isNotBlank() }
+        val value = project.findProperty(key)?.toString()?.takeIf { it.isNotBlank() }
+            ?: System.getenv(key)?.takeIf { it.isNotBlank() }
         if (value != null) systemProperty(key, value)
     }
     // Allow HTTPS to local/test OpenSearch with self-signed cert (same as curl -k)

@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
  * <table border="1" summary="Logger API levels and destinations">
  *   <tr><th>Method</th><th>SLF4J</th><th>Log tab</th><th>Burp console</th><th>Typical use</th></tr>
  *   <tr><td>{@link #logInfoPanelOnly}</td><td>INFO</td><td>yes</td><td>no</td><td>Start/Stop, index create, backlog export start, one-shot snapshot complete, connection recovered</td></tr>
+ *   <tr><td>{@link #logInfoPanelAndBurp}</td><td>INFO</td><td>yes (panel text)</td><td>yes (burp text)</td><td>Extension load banner: clean Burp Extensions Output, prefixed Log tab line</td></tr>
  *   <tr><td>{@link #logDebug}</td><td>DEBUG</td><td>yes</td><td>no</td><td>Snapshot pacing summaries, OpenSearch push detail</td></tr>
  *   <tr><td>{@link #logWarnPanelOnly}</td><td>WARN</td><td>yes</td><td>no</td><td>Recoverable sink degradation (push failed, retry pressure)</td></tr>
  *   <tr><td>{@link #logErrorPanelOnly}</td><td>ERROR</td><td>yes</td><td>no</td><td>Start aborted, index init failed, retry queue full</td></tr>
@@ -155,6 +156,24 @@ public final class Logger {
         final String m = safe(msg);
         LOG.info(m);
         notifyListeners("INFO", m);
+    }
+
+    /**
+     * Logs at INFO with separate text for the Log tab and Burp Extensions Output.
+     *
+     * <p>SLF4J and the Log tab receive {@code panelMessage}; Burp's Output console receives
+     * {@code burpMessage} only. Use when the Extensions tab should show a clean operator-facing
+     * line while the Log tab keeps a {@code [Component]} prefix for grep support.</p>
+     *
+     * @param panelMessage message for SLF4J and Log tab listeners
+     * @param burpMessage message for Burp Extensions Output only
+     */
+    public static void logInfoPanelAndBurp(String panelMessage, String burpMessage) {
+        final String panel = safe(panelMessage);
+        final String burp = safe(burpMessage);
+        LOG.info(panel);
+        toBurpOut(burp);
+        notifyListeners("INFO", panel);
     }
 
     /**

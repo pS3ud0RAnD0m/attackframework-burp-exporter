@@ -414,9 +414,33 @@ class TrafficHttpHandlerDocumentTest {
     }
 
     @Test
-    void buildDocument_responseBodyText_null_whenCompressed() {
+    void buildDocument_responseBodyText_populated_whenTextHtmlDespiteBinaryMimeHints() {
         ByteArray body = mock(ByteArray.class);
-        when(body.getBytes()).thenReturn("<html>ok</html>".getBytes(StandardCharsets.UTF_8));
+        when(body.getBytes()).thenReturn("<html>agent-visible</html>".getBytes(StandardCharsets.UTF_8));
+        when(response.body()).thenReturn(body);
+        HttpHeader ct = mock(HttpHeader.class);
+        when(ct.name()).thenReturn("Content-Type");
+        when(ct.value()).thenReturn("text/html; charset=UTF-8");
+        when(response.headers()).thenReturn(List.of(ct));
+        MimeType imageMime = mock(MimeType.class);
+        when(imageMime.name()).thenReturn("IMAGE_PNG");
+        MimeType binaryMime = mock(MimeType.class);
+        when(binaryMime.name()).thenReturn("BINARY");
+        when(response.mimeType()).thenReturn(imageMime);
+        when(response.statedMimeType()).thenReturn(imageMime);
+        when(response.inferredMimeType()).thenReturn(binaryMime);
+
+        Map<String, Object> doc = handler.buildDocument(response, request, true);
+        Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
+        assertThat(respBody.get("text")).isEqualTo("<html>agent-visible</html>");
+    }
+
+    @Test
+    void buildDocument_responseBodyText_populated_whenGzipCompressedHtml() throws Exception {
+        byte[] plain = "<html>ok</html>".getBytes(StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        ByteArray body = mock(ByteArray.class);
+        when(body.getBytes()).thenReturn(gzip);
         when(response.body()).thenReturn(body);
         HttpHeader ct = mock(HttpHeader.class);
         when(ct.name()).thenReturn("Content-Type");
@@ -428,7 +452,17 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
         Map<?, ?> respBody = nestedMap(nestedMap(doc, "response"), "body");
-        assertThat(respBody.get("text")).isNull();
+        assertThat(respBody.get("text")).isEqualTo("<html>ok</html>");
+        assertThat(respBody.get("b64")).isNotNull();
+        assertThat(respBody.containsKey("decoded")).isFalse();
+    }
+
+    private static byte[] gzipBytes(byte[] input) throws Exception {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.GZIPOutputStream gzip = new java.util.zip.GZIPOutputStream(out)) {
+            gzip.write(input);
+        }
+        return out.toByteArray();
     }
 
     @Test

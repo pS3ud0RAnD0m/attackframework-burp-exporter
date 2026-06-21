@@ -1,6 +1,7 @@
 package ai.attackframework.tools.burp.ui;
 
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -21,6 +22,8 @@ import java.awt.LayoutManager;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -40,6 +43,34 @@ final class CardCopySupport {
     private static final String COPY_LABEL = "Copy";
 
     private CardCopySupport() {}
+
+    /**
+     * Builds a right-aligned copy toolbar for a multi-card panel (for example all Stats cards).
+     *
+     * @param tooltip copy-button tooltip
+     * @param textSupplier clipboard payload supplier
+     * @return header row for placement above stacked stats cards
+     */
+    static JPanel buildCopyOnlyToolbar(String tooltip, Supplier<String> textSupplier) {
+        JPanel header = new JPanel(new BorderLayout(8, 0));
+        header.setName("statsCopyToolbar");
+        header.setOpaque(false);
+
+        JButton copyButton = buildCopyButton("Stats", textSupplier);
+        copyButton.setName("copy.All Stats");
+        copyButton.setToolTipText(tooltip);
+
+        JPanel eastBox = new JPanel();
+        eastBox.setOpaque(false);
+        eastBox.setLayout(new BoxLayout(eastBox, BoxLayout.X_AXIS));
+        eastBox.add(Box.createHorizontalGlue());
+        eastBox.add(copyButton);
+        header.add(eastBox, BorderLayout.EAST);
+
+        Dimension headerPref = header.getPreferredSize();
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerPref.height));
+        return header;
+    }
 
     /**
      * Inserts a compact "Copy" header row at the top of an existing card without disturbing the
@@ -142,11 +173,15 @@ final class CardCopySupport {
             StringSelection selection = new StringSelection(payload);
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             clipboard.setContents(selection, selection);
-            Logger.logInfoPanelOnly("[StatsPanel] Copied " + title + " to clipboard ("
-                    + payload.length() + " chars).");
+            if (RuntimeConfig.isExportRunning()) {
+                Logger.logInfoPanelOnly("[StatsPanel] Copied " + title + " to clipboard ("
+                        + payload.length() + " chars).");
+            }
         } catch (RuntimeException ex) {
-            Logger.logWarnPanelOnly("[StatsPanel] Copy failed for " + title + ": "
-                    + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+            if (RuntimeConfig.isExportRunning()) {
+                Logger.logWarnPanelOnly("[StatsPanel] Copy failed for " + title + ": "
+                        + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+            }
         }
     }
 
@@ -156,20 +191,52 @@ final class CardCopySupport {
             return "";
         }
         TableModel model = table.getModel();
+        String[] headers = new String[model.getColumnCount()];
+        for (int c = 0; c < headers.length; c++) {
+            headers[c] = model.getColumnName(c);
+        }
+        List<String[]> rows = new ArrayList<>(model.getRowCount());
+        for (int r = 0; r < model.getRowCount(); r++) {
+            String[] row = new String[headers.length];
+            for (int c = 0; c < headers.length; c++) {
+                Object value = model.getValueAt(r, c);
+                row[c] = value == null ? "" : value.toString();
+            }
+            rows.add(row);
+        }
+        return rowsToTsv(headers, rows);
+    }
+
+    /**
+     * Renders column headers and body rows as TSV without a Swing table.
+     *
+     * @param columnNames header labels in column order
+     * @param rows body rows aligned with {@code columnNames}
+     * @return tab-separated text with a trailing newline after each row
+     */
+    static String rowsToTsv(String[] columnNames, List<String[]> rows) {
+        if (columnNames == null || columnNames.length == 0) {
+            return "";
+        }
         StringBuilder sb = new StringBuilder(256);
-        int columnCount = model.getColumnCount();
-        for (int c = 0; c < columnCount; c++) {
-            if (c > 0) sb.append('\t');
-            sb.append(safe(model.getColumnName(c)));
+        for (int c = 0; c < columnNames.length; c++) {
+            if (c > 0) {
+                sb.append('\t');
+            }
+            sb.append(safe(columnNames[c]));
         }
         sb.append('\n');
-        for (int r = 0; r < model.getRowCount(); r++) {
-            for (int c = 0; c < columnCount; c++) {
-                if (c > 0) sb.append('\t');
-                Object value = model.getValueAt(r, c);
-                sb.append(safe(value == null ? "" : value.toString()));
+        if (rows != null) {
+            for (String[] row : rows) {
+                for (int c = 0; c < columnNames.length; c++) {
+                    if (c > 0) {
+                        sb.append('\t');
+                    }
+                    String cell = row != null && c < row.length && row[c] != null ? row[c] : "";
+                    sb.append(safe(cell));
+                }
+                sb.append('\n');
             }
-            sb.append('\n');
         }
         return sb.toString();
     }

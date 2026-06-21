@@ -8,7 +8,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import ai.attackframework.tools.burp.testutils.Reflect;
+import burp.api.montoya.logging.Logging;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class LoggerTest {
 
@@ -46,6 +49,25 @@ class LoggerTest {
 
             assertThat(seen).hasSize(1);
             assertThat(seen.getFirst()).startsWith("WARN:").contains("recoverable-warning");
+        } finally {
+            Logger.resetState();
+        }
+    }
+
+    @Test
+    void logInfoPanelAndBurp_usesSeparateTextForBurpOutputAndLogTab() throws Exception {
+        try {
+            Logging burpLogging = mock(Logging.class);
+            Logger.initialize(burpLogging);
+            List<String> panel = new ArrayList<>();
+            Logger.registerListener((level, msg) -> panel.add(msg));
+
+            String burpLine = "Burp Exporter v1 initialized successfully.";
+            String panelLine = "[Exporter] " + burpLine;
+            SwingUtilities.invokeAndWait(() -> Logger.logInfoPanelAndBurp(panelLine, burpLine));
+
+            verify(burpLogging).logToOutput(burpLine);
+            assertThat(panel).containsExactly(panelLine);
         } finally {
             Logger.resetState();
         }

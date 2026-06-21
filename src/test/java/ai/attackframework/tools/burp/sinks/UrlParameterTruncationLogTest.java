@@ -1,0 +1,123 @@
+package ai.attackframework.tools.burp.sinks;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import javax.swing.SwingUtilities;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import ai.attackframework.tools.burp.utils.ExportStats;
+import ai.attackframework.tools.burp.utils.Logger;
+import burp.api.montoya.http.message.requests.HttpRequest;
+
+/** Unit tests for {@link UrlParameterTruncationLog}. */
+class UrlParameterTruncationLogTest {
+
+    private final List<String> infoMessages = new CopyOnWriteArrayList<>();
+    private final List<String> warnMessages = new CopyOnWriteArrayList<>();
+    private final Logger.LogListener listener = (level, message) -> {
+        if ("INFO".equals(level)) {
+            infoMessages.add(message);
+        } else if ("WARN".equals(level)) {
+            warnMessages.add(message);
+        }
+    };
+
+    @BeforeEach
+    void setUp() {
+        ExportStats.resetForTests();
+        Logger.resetState();
+        Logger.registerListener(listener);
+        UrlParameterTruncationLog.startForCurrentRun();
+    }
+
+    @AfterEach
+    void tearDown() {
+        Logger.unregisterListener(listener);
+        Logger.resetState();
+        ExportStats.resetForTests();
+        UrlParameterTruncationLog.clearRunState();
+    }
+
+    @Test
+    void flushStartupSummary_dedupesByRequestUrl() throws Exception {
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenReturn("https://example.test/fuzz?many=1");
+        Map<String, Object> requestDoc = Map.of("path", Map.of("query", "a=1"));
+
+        UrlParameterTruncationLog.record(request, null, requestDoc, 5);
+        UrlParameterTruncationLog.record(request, null, requestDoc, 7);
+        UrlParameterTruncationLog.flushStartupSummary();
+        flushLogListeners();
+
+        assertThat(infoMessages).hasSize(1);
+        assertThat(infoMessages.get(0))
+                .contains("1 unique request.url")
+                .contains("dropped_url_params=12")
+                .contains("https://example.test/fuzz?many=1");
+        assertThat(warnMessages).isEmpty();
+        assertThat(ExportStats.getDocsUrlParamsTruncated()).isEqualTo(2);
+        assertThat(ExportStats.getUrlParamsDroppedTotal()).isEqualTo(12);
+    }
+
+    @Test
+    void flushStartupSummary_onlyEmitsOnce() throws Exception {
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenReturn("https://example.test/one");
+        Map<String, Object> requestDoc = Map.of();
+
+        UrlParameterTruncationLog.record(request, null, requestDoc, 1);
+        UrlParameterTruncationLog.flushStartupSummary();
+        UrlParameterTruncationLog.flushStartupSummary();
+        flushLogListeners();
+
+        assertThat(infoMessages).hasSize(1);
+    }
+
+    @Test
+    void afterStartupFlush_liveTruncationsWarnImmediately() throws Exception {
+        HttpRequest first = mock(HttpRequest.class);
+        when(first.url()).thenReturn("https://example.test/live-a");
+        HttpRequest second = mock(HttpRequest.class);
+        when(second.url()).thenReturn("https://example.test/live-b");
+        Map<String, Object> requestDoc = Map.of();
+
+        UrlParameterTruncationLog.flushStartupSummary();
+        UrlParameterTruncationLog.record(first, null, requestDoc, 2);
+        UrlParameterTruncationLog.record(second, null, requestDoc, 3);
+        flushLogListeners();
+
+        assertThat(infoMessages).isEmpty();
+        assertThat(warnMessages).hasSize(2);
+        assertThat(warnMessages.get(0)).contains("live-a");
+        assertThat(warnMessages.get(1)).contains("live-b");
+    }
+
+    @Test
+    void formatStartupSummaryForTests_listsSampleUrls() {
+        Map<String, Integer> totals = new LinkedHashMap<>();
+        totals.put("https://example.test/a", 4);
+        totals.put("https://example.test/b", 6);
+
+        String line = UrlParameterTruncationLog.formatStartupSummaryForTests(totals);
+
+        assertThat(line)
+                .contains("2 unique request.url")
+                .contains("dropped_url_params=10")
+                .contains("https://example.test/a")
+                .contains("https://example.test/b");
+    }
+
+    private static void flushLogListeners() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {});
+    }
+}

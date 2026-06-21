@@ -110,6 +110,7 @@ class MappingsContractTest {
             JsonNode requestProps = props.path("request").path("properties");
             assertThat(requestProps.has("headers")).isFalse();
             assertThat(requestProps.path("header").path("type").asText()).isEqualTo("object");
+            assertThat(props.path("meta").path("properties").has("export")).isFalse();
             assertThat(props.path("request").path("properties").has("content_type")).isFalse();
             assertThat(props.path("request").path("properties").has("content_type_enum")).isFalse();
             assertThat(props.path("request").path("properties").has("inferred_content_type")).isFalse();
@@ -776,6 +777,7 @@ class MappingsContractTest {
             JsonNode requestBody = requestProps.path("body").path("properties");
             assertThat(requestBody.has("length")).isTrue();
             assertThat(requestBody.has("offset")).isTrue();
+            assertThat(requestBody.has("decoded")).isFalse();
             assertThat(requestProps.has("body_length")).isFalse();
             assertThat(requestProps.has("body_offset")).isFalse();
 
@@ -783,6 +785,7 @@ class MappingsContractTest {
             JsonNode responseBody = responseProps.path("body").path("properties");
             assertThat(responseBody.has("length")).isTrue();
             assertThat(responseBody.has("offset")).isTrue();
+            assertThat(responseBody.has("decoded")).isFalse();
             assertThat(responseProps.has("body_length")).isFalse();
             assertThat(responseProps.has("body_offset")).isFalse();
         }

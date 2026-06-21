@@ -43,6 +43,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import ai.attackframework.tools.burp.sinks.ExportReporterLifecycle;
 import ai.attackframework.tools.burp.sinks.ExporterIndexConfigReporter;
 import ai.attackframework.tools.burp.sinks.ExporterIndexStatsReporter;
+import ai.attackframework.tools.burp.sinks.ExporterStatsPushOutcome;
 import ai.attackframework.tools.burp.sinks.FileExportService;
 import ai.attackframework.tools.burp.sinks.FindingsIndexReporter;
 import ai.attackframework.tools.burp.sinks.OpenSearchSink;
@@ -54,6 +55,11 @@ import ai.attackframework.tools.burp.sinks.SitemapIndexReporter;
 import ai.attackframework.tools.burp.sinks.TrafficExportQueue;
 import ai.attackframework.tools.burp.sinks.TrafficLiveAttributionSummary;
 import ai.attackframework.tools.burp.sinks.TrafficStartupBacklogSummary;
+import ai.attackframework.tools.burp.sinks.BodyEnumerationSkippedLog;
+import ai.attackframework.tools.burp.sinks.CompressedWireBodyParamsLog;
+import ai.attackframework.tools.burp.sinks.ParameterIntegritySessionLog;
+import ai.attackframework.tools.burp.sinks.BodyParameterTruncationLog;
+import ai.attackframework.tools.burp.sinks.UrlParameterTruncationLog;
 import ai.attackframework.tools.burp.ui.controller.ConfigController;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingPasswordField;
 import ai.attackframework.tools.burp.ui.primitives.AutoSizingTextField;
@@ -456,15 +462,20 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         ExportShutdownStatus.Snapshot snapshot = callbacks.snapshot();
         startupExecutor.execute(() -> {
             postStopProgress(callbacks, ExportShutdownStatus.waitingForBatchMessage());
+            ParameterIntegritySessionLog.flushStopDebugValidation();
             ExportReporterLifecycle.stopBackgroundReporters();
             TrafficExportQueue.stopWorker();
             TrafficLiveAttributionSummary.logAndClearForCurrentRun();
             postStopProgress(callbacks, ExportShutdownStatus.clearingQueuedTrafficMessage(snapshot));
             ExportReporterLifecycle.clearRepeaterRunState();
             TrafficExportQueue.clearPendingWork();
+            FileExportService.resetForRuntime();
+            postStopProgress(callbacks, ExportShutdownStatus.pushingFinalStatsMessage());
+            ExporterStatsPushOutcome finalPush = ExporterIndexStatsReporter.pushFinalSnapshotNow();
+            ParameterIntegritySessionLog.logFinalExporterStatsPush(finalPush);
+            StatsClipboardSnapshot.logSessionStopSummary();
             IndexingRetryCoordinator.getInstance().clearPendingWork();
             IndexingRetryCoordinator.getInstance().stopDrainThread();
-            FileExportService.resetForRuntime();
             postStopProgress(callbacks, ExportShutdownStatus.closingConnectionsMessage());
             ExportReporterLifecycle.releaseRunResourcesAsync();
             ExportReporterLifecycle.awaitStopReclaim(ExportReporterLifecycle.STOP_UI_RECLAIM_TIMEOUT_MS);
@@ -543,6 +554,10 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         RuntimeConfig.setExportRunning(true);
         RepeaterTabsIndexReporter.clearRunState();
         TrafficStartupBacklogSummary.startForCurrentRun();
+        UrlParameterTruncationLog.startForCurrentRun();
+        BodyParameterTruncationLog.startForCurrentRun();
+        BodyEnumerationSkippedLog.startForCurrentRun();
+        CompressedWireBodyParamsLog.startForCurrentRun();
         TrafficLiveAttributionSummary.startForCurrentRun();
         startupExecutor.execute(() -> runStartupPipeline(
                 url, sources, uiCallbacks, startupIssues, filesSelected, openSearchSelected));
@@ -681,6 +696,12 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             return;
         }
         postStartProgress(uiCallbacks, ExportStartupStatus.startingBackgroundReportersMessage());
+        if (!TrafficStartupBacklogSummary.hasExpectedStartupComponents()) {
+            UrlParameterTruncationLog.flushStartupSummary();
+            BodyParameterTruncationLog.flushStartupSummary();
+            BodyEnumerationSkippedLog.flushStartupSummary();
+            CompressedWireBodyParamsLog.flushStartupSummary();
+        }
         RuntimeConfig.setExportStarting(false);
         String runningStatus = buildRunningStatusMessage(runtimeStartIssues, filesSelected, openSearchSelected);
         SwingUtilities.invokeLater(() -> {
@@ -694,6 +715,8 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
                 return;
             }
             ExporterIndexStatsReporter.start();
+            BodyEnumerationSkippedLog.startPeriodicFlusher();
+            CompressedWireBodyParamsLog.startPeriodicFlusher();
         }
         if (!RuntimeConfig.isExportRunning()) {
             return;
@@ -780,6 +803,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void abortStartOnEdt(String reason, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
         Logger.logErrorPanelOnly("[Export] Start aborted: " + reason);
+        UrlParameterTruncationLog.flushStartupSummary();
+        BodyParameterTruncationLog.flushStartupSummary();
+        BodyEnumerationSkippedLog.flushStartupSummary();
         RuntimeConfig.setExportStarting(false);
         onControlStatus("Start aborted: " + reason);
         uiCallbacks.onStartFailure().run();
@@ -787,6 +813,9 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
 
     private void abortStartFromWorker(String reason, ConfigControlPanel.StartUiCallbacks uiCallbacks) {
         Logger.logErrorPanelOnly("[Export] Start aborted: " + reason);
+        UrlParameterTruncationLog.flushStartupSummary();
+        BodyParameterTruncationLog.flushStartupSummary();
+        BodyEnumerationSkippedLog.flushStartupSummary();
         RuntimeConfig.setExportStarting(false);
         SwingUtilities.invokeLater(() -> {
             onControlStatus("Start aborted: " + reason);

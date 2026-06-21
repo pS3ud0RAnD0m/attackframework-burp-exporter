@@ -102,7 +102,8 @@ class ConfigPanelFieldTooltipsHeadlessTest {
             assertThat(findingsSeverity.getToolTipText()).contains("Field:</b> issue.severity");
             assertThat(findingsSeverity.getToolTipText())
                     .contains("Field:</b> issue.severity")
-                    .contains("Issue severity.")
+                    .contains("Issue severity")
+                    .contains("informational maps to INFORMATION")
                     .contains("AuditIssue.severity()");
             assertThat(trafficUrl.getText()).isEqualTo("Url");
             assertThat(trafficUrl.getToolTipText())

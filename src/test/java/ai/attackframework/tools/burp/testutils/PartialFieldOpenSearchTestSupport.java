@@ -11,6 +11,8 @@ import java.util.concurrent.locks.LockSupport;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.opensearch._types.FieldValue;
 import org.opensearch.client.opensearch._types.query_dsl.Query;
+import org.opensearch.client.opensearch.core.CountRequest;
+import org.opensearch.client.opensearch.core.CountResponse;
 import org.opensearch.client.opensearch.core.SearchRequest;
 import org.opensearch.client.opensearch.core.SearchResponse;
 import org.opensearch.client.opensearch.indices.DeleteIndexRequest;
@@ -109,6 +111,14 @@ public final class PartialFieldOpenSearchTestSupport {
     /**
      * Pushes one document and polls until the matching indexed document is visible, atomically
      * for {@code indexShortName} so parallel integration tests cannot delete the index mid-flight.
+     *
+     * @param indexShortName index short name (for example {@code "traffic"})
+     * @param built full document before field filtering
+     * @param runtimeState config applied before push
+     * @param matchField OpenSearch term field (for example {@code issue.name.raw}); use keyword subfields
+     *     for analyzed text paths
+     * @param matchValue term value to await
+     * @return indexed document source map
      */
     public static Map<String, Object> pushAndAwaitIndexedDocument(
             String indexShortName,
@@ -163,8 +173,7 @@ public final class PartialFieldOpenSearchTestSupport {
         return awaitIndexedDocument(indexShortName, null, null);
     }
 
-    /**
-     * Polls OpenSearch until a document matching {@code matchField}={@code matchValue} is visible.
+    /** Polls OpenSearch until a document matching {@code matchField}={@code matchValue} is visible.
      */
     public static Map<String, Object> awaitIndexedDocument(
             String indexShortName, String matchField, Object matchValue) {
@@ -173,6 +182,33 @@ public final class PartialFieldOpenSearchTestSupport {
         }
     }
 
+    /**
+     * Returns the document count for {@code indexShortName}, refreshing the index first.
+     *
+     * @param indexShortName index short name
+     * @return number of documents in the index
+     */
+    public static long documentCount(String indexShortName) {
+        synchronized (lockFor(indexShortName)) {
+            return documentCountLocked(indexShortName);
+        }
+    }
+
+    private static long documentCountLocked(String indexShortName) {
+        String indexName = IndexNaming.indexNameForShortName(indexShortName);
+        refreshIndexForSearch(indexShortName);
+        try {
+            CountResponse response = OpenSearchReachable.getClient().count(
+                    CountRequest.of(c -> c.index(indexName)));
+            return response.count();
+        } catch (IOException e) {
+            throw new AssertionError("Count failed for " + indexShortName + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Polls OpenSearch until a document matching {@code matchField}={@code matchValue} is visible.
+     */
     private static Map<String, Object> awaitIndexedDocumentLocked(
             String indexShortName, String matchField, Object matchValue) {
         String indexName = IndexNaming.indexNameForShortName(indexShortName);

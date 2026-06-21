@@ -22,7 +22,6 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -125,7 +124,8 @@ public class StatsPanel extends JPanel {
     private static final int IDLE_REFRESH_SKIP_FACTOR = 5;
     /** Misc Stats groups toggled with the OpenSearch destination section. */
     private static final List<String> MISC_OPEN_SEARCH_SECTIONS = List.of(
-            "OpenSearch Session", "OpenSearch Traffic", "OpenSearch Spill", "OpenSearch Retry",
+            "OpenSearch Session", "Parameter Integrity", "OpenSearch Traffic", "OpenSearch Spill",
+            "OpenSearch Retry",
             "OpenSearch Run Peaks");
     private static final int ERROR_COL_MAX = 50;
     private static final long CHART_WINDOW_MAX_MS = 60L * 60L * 1000L;
@@ -144,13 +144,6 @@ public class StatsPanel extends JPanel {
      * clipboard output as well.
      */
     private static final String SUBROW_INDENT = "    ";
-    /**
-     * Vertical pixels reserved per table card for the Copy button row that
-     * {@link CardCopySupport#attachCopyButton} stacks above the column header. Empirically the
-     * compact Copy button (plain-weight body font, height-4 of preferred) renders at roughly
-     * 18-22px on Windows LAF, so 24px is a safe non-clipping budget.
-     */
-    private static final int COPY_HEADER_RESERVED_HEIGHT = 24;
     private static final double DEFAULT_RATE_RANGE_MAX = 10.0;
     private static final String DOMAIN_TIME_PATTERN = "HH:mm:ss";
     private static final int DOMAIN_TARGET_LABELS = 14;
@@ -406,6 +399,13 @@ public class StatsPanel extends JPanel {
     private final JLabel peakSnapshotFlushMsValue;
     private final JLabel pendingOrphansValue;
     private final JLabel bulkInFlightValue;
+    private final JLabel misgateSuspectsValue;
+    private final JLabel skippedBodyEnumerationValue;
+    private final JLabel wireBodyReplacedValue;
+    private final JLabel skipPathRescuedValue;
+    private final JLabel supplementalBodyUsedValue;
+    private final JLabel supplementalRejectedValue;
+    private final JLabel wireBodyDroppedEntriesValue;
     private final DefaultTableModel byIndexModel;
     private final DefaultTableModel fileByIndexModel;
     private final JTable byIndexTable;
@@ -414,6 +414,7 @@ public class StatsPanel extends JPanel {
     private final JPanel fileSinkCard;
     private final JPanel openSearchSinkRow;
     private final JPanel fileSinkRow;
+    private Map<String, JLabel> miscMetricValues;
     private final JPanel cardsRow;
     private final JPanel lowerPanel;
     private final JPanel miscStatsCard;
@@ -513,6 +514,15 @@ public class StatsPanel extends JPanel {
                         "Throughput (10s)", "Exported Docs", "Exported Size", "Exported Failures",
                         "Last Success", "Consecutive Failures", "Permanent Drops"
                 }),
+                new MetricSection("Parameter Integrity", new String[] {
+                        "Mis-gate Suspects",
+                        "Skipped BODY Enumeration",
+                        "Wire BODY Replaced",
+                        "Skip-path Rescued",
+                        "Supplemental BODY Used",
+                        "Supplemental Rejected (non-form)",
+                        "Wire BODY Dropped (entries)"
+                }),
                 new MetricSection("OpenSearch Traffic", new String[] {
                         "Bulk In-Flight",
                         "Shared Batch Size", "Proxy History Chunk Target",
@@ -534,10 +544,10 @@ public class StatsPanel extends JPanel {
                 })
         ));
         miscStatsCard = miscState.card();
+        miscStatsCard.setName("miscStatsCard");
         miscSectionComponents = miscState.sections();
         final Map<String, JLabel> miscValues = miscState.values();
-        CardCopySupport.attachCopyButton(miscStatsCard, "Misc Stats",
-                () -> renderMiscStatsForClipboard(miscValues));
+        miscMetricValues = miscValues;
         exportRunningValue = miscValues.get("Export Running");
         sharedBatchSizeValue = miscValues.get("Shared Batch Size");
         proxyHistoryChunkTargetValue = miscValues.get("Proxy History Chunk Target");
@@ -577,6 +587,13 @@ public class StatsPanel extends JPanel {
         peakSnapshotFlushMsValue = miscValues.get("Peak Snapshot Flush (ms)");
         pendingOrphansValue = miscValues.get("Pending Orphans");
         bulkInFlightValue = miscValues.get("Bulk In-Flight");
+        misgateSuspectsValue = miscValues.get("Mis-gate Suspects");
+        skippedBodyEnumerationValue = miscValues.get("Skipped BODY Enumeration");
+        wireBodyReplacedValue = miscValues.get("Wire BODY Replaced");
+        skipPathRescuedValue = miscValues.get("Skip-path Rescued");
+        supplementalBodyUsedValue = miscValues.get("Supplemental BODY Used");
+        supplementalRejectedValue = miscValues.get("Supplemental Rejected (non-form)");
+        wireBodyDroppedEntriesValue = miscValues.get("Wire BODY Dropped (entries)");
 
         // Merged sink-counts model: index rows on top, traffic-source sub-rows nested directly
         // under the Traffic index row (visually distinguished by SUBROW_INDENT on column 0),
@@ -605,8 +622,14 @@ public class StatsPanel extends JPanel {
         openSearchSinkRow = wrapSinkCardInFullWidthRow(openSearchSinkCard, "openSearchSinkRow");
 
         lowerPanel = new JPanel();
+        lowerPanel.setName("lowerPanel");
         lowerPanel.setLayout(new javax.swing.BoxLayout(lowerPanel, javax.swing.BoxLayout.Y_AXIS));
         lowerPanel.setOpaque(false);
+        JPanel statsCopyToolbar = CardCopySupport.buildCopyOnlyToolbar(
+                "Copy File Counts, OpenSearch Counts, and Misc Stats to the clipboard",
+                this::renderAllStatsForClipboard);
+        lowerPanel.add(statsCopyToolbar);
+        lowerPanel.add(javax.swing.Box.createVerticalStrut(4));
         lowerPanel.add(fileSinkRow);
         lowerPanel.add(javax.swing.Box.createVerticalStrut(10));
         lowerPanel.add(openSearchSinkRow);
@@ -702,7 +725,9 @@ public class StatsPanel extends JPanel {
         exportedFailuresValue.setText(formatWhole(totalFailure) + " failures");
         fileTotalExportedValue.setText(formatHumanReadableBytes(FileExportStats.getTotalExportedBytes()));
         long fallbackHits = ExportStats.getTrafficToolSourceFallbacks();
-        if (fallbackHits > 0 && fallbackHits != lastLoggedToolSourceFallbacks) {
+        if (RuntimeConfig.isExportRunning()
+                && fallbackHits > 0
+                && fallbackHits != lastLoggedToolSourceFallbacks) {
             Logger.logError("[StatsPanel] Traffic tool/source fallback hits observed: " + fallbackHits);
             lastLoggedToolSourceFallbacks = fallbackHits;
         }
@@ -728,6 +753,13 @@ public class StatsPanel extends JPanel {
         pendingOrphansValue.setText(formatWhole(
                 ai.attackframework.tools.burp.sinks.TrafficHttpHandler.pendingOrphansSize()));
         bulkInFlightValue.setText(formatWhole(ExportStats.getBulkInFlight()));
+        misgateSuspectsValue.setText(formatWhole(ExportStats.getDocsBodyEnumerationMisgateSuspect()));
+        skippedBodyEnumerationValue.setText(formatWhole(ExportStats.getDocsWithSkippedBodyEnumeration()));
+        wireBodyReplacedValue.setText(formatWhole(ExportStats.getDocsWireBodyParamsReplaced()));
+        skipPathRescuedValue.setText(formatWhole(ExportStats.getDocsSkipPathBodyRescued()));
+        supplementalBodyUsedValue.setText(formatWhole(ExportStats.getDocsSupplementalBodyParamsUsed()));
+        supplementalRejectedValue.setText(formatWhole(ExportStats.getDocsSupplementalRejectedNonForm()));
+        wireBodyDroppedEntriesValue.setText(formatWhole(ExportStats.getWireBodyParamsDroppedTotal()));
         applySystemMetrics(SystemMetrics.snapshot());
         applyAllChartFonts();
 
@@ -872,9 +904,14 @@ public class StatsPanel extends JPanel {
         tableContainer.add(table.getTableHeader(), BorderLayout.NORTH);
         tableContainer.add(table, BorderLayout.CENTER);
         card.add(tableContainer, BorderLayout.CENTER);
-
-        CardCopySupport.attachCopyButton(card, cardTitle, () -> CardCopySupport.tableToTsv(table));
         return card;
+    }
+
+    /**
+     * Renders all lower-panel stats cards for the shared Copy toolbar.
+     */
+    private String renderAllStatsForClipboard() {
+        return StatsClipboardSnapshot.buildClipboardText();
     }
 
     /**
@@ -964,50 +1001,6 @@ public class StatsPanel extends JPanel {
         section.add(memoryLegendPanel);
         section.add(memoryChartPanel);
         return section;
-    }
-
-    /**
-     * Renders the current Misc Stats values grouped by section for the clipboard. Reads each
-     * section's rows from {@link MetricSection} keys and pulls the live label text from
-     * {@code miscValues} so the copy reflects whatever is on screen right now.
-     */
-    private String renderMiscStatsForClipboard(Map<String, JLabel> miscValues) {
-        LinkedHashMap<String, LinkedHashMap<String, String>> grouped = new LinkedHashMap<>();
-        for (Map.Entry<String, List<Component>> sectionEntry : miscSectionComponents.entrySet()) {
-            LinkedHashMap<String, String> rows = new LinkedHashMap<>();
-            for (Component c : sectionEntry.getValue()) {
-                if (c instanceof JPanel row) {
-                    String keyText = null;
-                    String valueText = null;
-                    for (Component child : row.getComponents()) {
-                        if (child instanceof JLabel lbl) {
-                            if (keyText == null) {
-                                keyText = lbl.getText();
-                            } else {
-                                valueText = lbl.getText();
-                            }
-                        }
-                    }
-                    if (keyText != null) {
-                        rows.put(keyText, valueText == null ? "" : valueText);
-                    }
-                }
-            }
-            if (!rows.isEmpty()) {
-                grouped.put(sectionEntry.getKey(), rows);
-            }
-        }
-        // Fallback used only if section iteration produced no rows (defensive: section components
-        // never observed empty in practice). Iterate the raw label map so operators still get a
-        // snapshot of what is on screen.
-        if (grouped.isEmpty() && miscValues != null) {
-            LinkedHashMap<String, String> rows = new LinkedHashMap<>();
-            for (Map.Entry<String, JLabel> entry : miscValues.entrySet()) {
-                rows.put(entry.getKey(), entry.getValue() == null ? "" : entry.getValue().getText());
-            }
-            grouped.put("Misc Stats", rows);
-        }
-        return CardCopySupport.sectionsToText("Misc Stats", Collections.unmodifiableMap(grouped));
     }
 
     private static JTable createStatsTable(DefaultTableModel model) {
@@ -1265,17 +1258,14 @@ public class StatsPanel extends JPanel {
     }
 
     private void updateDashboardSectionSizing() {
-        // Each per-sink card now hosts a single merged counts table, so the height budget is
-        // the outer titled-border padding + the Copy-header allowance + the table column
-        // header + the table body's preferred height. {@link #updateTablePreferredHeight}
-        // keeps the body height in sync with the row count.
-        int copyHeaderHeight = COPY_HEADER_RESERVED_HEIGHT;
+        // Each per-sink card hosts a single merged counts table. A shared Copy toolbar sits above
+        // the cards; {@link #updateTablePreferredHeight} keeps table body height in sync with rows.
         int sinkOuterPadding = 28;
 
         int openSearchHeight = sinkOuterPadding
-                + sinkCardBodyHeight(byIndexTable, copyHeaderHeight);
+                + sinkCardBodyHeight(byIndexTable);
         int fileHeight = sinkOuterPadding
-                + sinkCardBodyHeight(fileByIndexTable, copyHeaderHeight);
+                + sinkCardBodyHeight(fileByIndexTable);
 
         openSearchSinkCard.setPreferredSize(new Dimension(PANEL_BASE_WIDTH, openSearchHeight));
         openSearchSinkCard.setMinimumSize(new Dimension(800, openSearchHeight));
@@ -1326,16 +1316,16 @@ public class StatsPanel extends JPanel {
     }
 
     /**
-     * Returns the vertical pixels needed by one merged sink card body: Copy-header allowance
-     * + JTable's column-header row + the JTable's preferred body height.
+     * Returns the vertical pixels needed by one merged sink card body: the JTable column-header row
+     * plus the JTable preferred body height.
      * {@link #updateTablePreferredHeight} keeps the table's preferred size aligned with row
      * count, so this stays accurate across rebuilds (sub-rows added under the Traffic index
      * row are counted just like any other row).
      */
-    private static int sinkCardBodyHeight(JTable table, int copyHeaderHeight) {
+    private static int sinkCardBodyHeight(JTable table) {
         int header = table.getTableHeader() != null ? table.getTableHeader().getPreferredSize().height : 24;
         int body = Math.max(table.getRowHeight(), table.getPreferredSize().height);
-        return copyHeaderHeight + header + body + 6;
+        return header + body + 6;
     }
 
     /**
@@ -1839,6 +1829,61 @@ public class StatsPanel extends JPanel {
         tooltips.put("Consecutive Failures", Tooltips.htmlRaw(
                 "OpenSearch push failures since the most recent success.",
                 "Resets to zero on any successful push."));
+        tooltips.put("Mis-gate Suspects", Tooltips.htmlRaw(
+                "Requests whose <code>Content-Type</code> declares a web form",
+                "(<code>application/x-www-form-urlencoded</code> or <code>multipart/*</code>) but the exporter",
+                "skipped Burp BODY parameter enumeration because the logical body (after",
+                "<code>Content-Encoding</code> decompress when applicable) sniffed as binary.",
+                "<p>Wire evidence is still exported (<code>body.b64</code>; <code>body.text</code> when",
+                "insight rules allow). <code>request.parameters</code> may omit form fields on purpose.",
+                "Common on analytics and measurement posts (for example GA4",
+                "<code>app-measurement.com</code>). This is <b>not</b> an export failure.</p>",
+                "<p>When non-zero, an INFO line lists sample <code>request.url</code> values at backlog",
+                "complete and during live export. DEBUG adds more samples.</p>"));
+        tooltips.put("Skipped BODY Enumeration", Tooltips.htmlRaw(
+                "All requests where BODY parameter enumeration was not applied to",
+                "<code>request.parameters</code> for this session.",
+                "<p>Includes mis-gate suspects (declared form/multipart + binary sniff), declared",
+                "binary/protobuf/grpc types, empty bodies, and other BODY-skip fast paths.",
+                "<b>Mis-gate Suspects</b> is the narrower subset where the declared type looked like a",
+                "form but inference said binary.</p>"));
+        tooltips.put("Wire BODY Replaced", Tooltips.htmlRaw(
+                "Documents where the on-the-wire body was compressed (or otherwise transformed), Burp",
+                "returned unusable or missing BODY parameter rows, and the exporter decompressed the",
+                "payload and replaced <code>request.parameters</code> BODY rows from parseable",
+                "urlencoded logical bytes.",
+                "<p>Typical on gzip-wrapped form posts (for example Fiserv ThreatMetrix",
+                "<code>clear.png</code>, <code>httpbin.org/post</code>). Distinct from",
+                "<b>Supplemental BODY Used</b>, which covers uncompressed wire paths where Burp",
+                "enumerated no BODY rows.</p>"));
+        tooltips.put("Skip-path Rescued", Tooltips.htmlRaw(
+                "Documents where BODY enumeration was skipped (the BODY-skip fast path) but the",
+                "declared urlencoded body still contained parseable form fields in logical bytes;",
+                "the exporter added supplemental BODY rows to <code>request.parameters</code> anyway.",
+                "<p><b>0</b> is normal when every skip-path body is truly non-form binary.",
+                "Non-zero triggers a live WARN on first sighting per <code>request.url</code>.</p>"));
+        tooltips.put("Supplemental BODY Used", Tooltips.htmlRaw(
+                "Documents where the exporter added at least one BODY row to",
+                "<code>request.parameters</code> from logical urlencoded bytes when Burp did not",
+                "supply usable BODY parameters (uncompressed wire, no wire replace).",
+                "<p>This counter uses session skip-reason accounting. The startup INFO rollup",
+                "<code>supplemental_added=</code> in <code>[ParameterIntegrity]</code> logs can be",
+                "higher because it also counts a broader log category for the same family of",
+                "fixes.</p>"));
+        tooltips.put("Supplemental Rejected (non-form)", Tooltips.htmlRaw(
+                "Documents where the exporter refused to invent BODY parameter rows because the",
+                "logical body after decompress looked like JSON, protobuf, or another non-form",
+                "shape—not a urlencoded field list.",
+                "<p>Prevents false-positive <code>request.parameters</code> on compressed JSON APIs",
+                "declared as forms. Raw body export is unchanged.</p>"));
+        tooltips.put("Wire BODY Dropped (entries)", Tooltips.htmlRaw(
+                "Count of individual <code>request.parameters</code> BODY <b>entries</b> removed,",
+                "not failed documents.",
+                "<p>Sources include garbage BODY rows on compressed wire (control characters,",
+                "bracket-prefixed names) and the 1,000 BODY parameter cap. Pair with",
+                "<b>Wire BODY Replaced</b> / <b>Supplemental BODY Used</b> for document-level",
+                "fixes. BODY cap hits also log <code>[ParameterIntegrity] BODY parameters truncated",
+                "to 1000</code> (live WARN) or a startup INFO summary.</p>"));
         tooltips.put("Bulk In-Flight", Tooltips.htmlRaw(
                 "OpenSearch bulk HTTP requests currently executing.",
                 "Incremented at bulk start and decremented when the request completes."));
@@ -2541,9 +2586,7 @@ public class StatsPanel extends JPanel {
         long[] domainMs = chartDomainMillis(chart);
         double max = StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, domainMs[0], domainMs[1]);
         if (max <= 0.0) {
-            axis.setAutoRange(false);
-            axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
-            axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            resetThroughputAxisToIdleRange(axis, "Docs per second");
             return;
         }
         double rangeUpper = StatsPanelFormatters.nicePositiveUpperBound(max * rangeHeadroomMultiplier());
@@ -2558,10 +2601,7 @@ public class StatsPanel extends JPanel {
         double max = StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, domainMs[0], domainMs[1]);
         double headroom = rangeHeadroomMultiplier();
         if (max <= 0.0) {
-            axis.setAutoRange(false);
-            axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
-            axis.setLabel("KiB per second");
-            axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            resetThroughputAxisToIdleRange(axis, "KiB per second");
             return;
         }
         StatsPanelFormatters.ChartAxisScale scale = StatsPanelFormatters.chooseByteRateAxisScale(max, headroom);
@@ -2574,14 +2614,26 @@ public class StatsPanel extends JPanel {
         double max = StatsPanelFormatters.maxTimeSeriesValueInDomain(dataset, domainMs[0], domainMs[1]);
         double headroom = rangeHeadroomMultiplier();
         if (max <= 0.0) {
-            axis.setAutoRange(false);
-            axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
-            axis.setLabel("MiB");
-            axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+            resetThroughputAxisToIdleRange(axis, "MiB");
             return;
         }
         StatsPanelFormatters.ChartAxisScale scale = StatsPanelFormatters.chooseMemoryAxisScale(max, headroom);
         applyScaledPositiveRange(axis, max, headroom, scale);
+    }
+
+    /**
+     * Restores a throughput chart Y-axis after rates return to zero.
+     *
+     * <p>Byte-rate charts set an explicit {@link NumberTickUnit} while active; without clearing it,
+     * idle refresh keeps a step-1 unit and labels every integer on the 0–10 default range.</p>
+     */
+    private static void resetThroughputAxisToIdleRange(NumberAxis axis, String yLabel) {
+        axis.setLabel(yLabel);
+        axis.setNumberFormatOverride(null);
+        axis.setAutoTickUnitSelection(true);
+        axis.setAutoRange(false);
+        axis.setRange(0.0, DEFAULT_RATE_RANGE_MAX);
+        axis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
     }
 
     private static void applyScaledPositiveRange(
@@ -2794,8 +2846,28 @@ public class StatsPanel extends JPanel {
         sb.append("  permanent drops: ").append(ExportStats.getTotalPermanentDrops()).append("\n");
         sb.append("  synthesized body params dropped: ")
                 .append(ExportStats.getSynthesizedBodyParamsDropped()).append("\n");
-        sb.append("  docs over params threshold: ")
-                .append(ExportStats.getDocsOverParamsThreshold()).append("\n\n");
+        sb.append("  docs with BODY enumeration mis-gate suspect: ")
+                .append(ExportStats.getDocsBodyEnumerationMisgateSuspect()).append("\n");
+        sb.append("  docs with skipped body enumeration: ")
+                .append(ExportStats.getDocsWithSkippedBodyEnumeration()).append("\n");
+        sb.append("  wire BODY params replaced (docs): ")
+                .append(ExportStats.getDocsWireBodyParamsReplaced()).append("\n");
+        sb.append("  wire BODY params dropped (entries): ")
+                .append(ExportStats.getWireBodyParamsDroppedTotal()).append("\n");
+        sb.append("  supplemental BODY params used (docs): ")
+                .append(ExportStats.getDocsSupplementalBodyParamsUsed()).append("\n");
+        sb.append("  supplemental rejected non-form (docs): ")
+                .append(ExportStats.getDocsSupplementalRejectedNonForm()).append("\n");
+        sb.append("  skip-path BODY params rescued (docs): ")
+                .append(ExportStats.getDocsSkipPathBodyRescued()).append("\n");
+        sb.append("  docs with URL params truncated: ")
+                .append(ExportStats.getDocsUrlParamsTruncated()).append("\n");
+        sb.append("  URL params dropped (cap): ")
+                .append(ExportStats.getUrlParamsDroppedTotal()).append("\n");
+        sb.append("  docs with BODY params truncated: ")
+                .append(ExportStats.getDocsBodyParamsTruncated()).append("\n");
+        sb.append("  BODY params dropped (cap): ")
+                .append(ExportStats.getBodyParamsDroppedTotal()).append("\n\n");
 
         // Process metrics (JVM + OS)
         SystemMetrics.Snapshot sys = SystemMetrics.snapshot();

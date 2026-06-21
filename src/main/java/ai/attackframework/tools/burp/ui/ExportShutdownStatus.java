@@ -69,6 +69,11 @@ public final class ExportShutdownStatus {
         return PREFIX + "clearing queued traffic …";
     }
 
+    /** Status while the final exporter stats snapshot is pushed before connection teardown. */
+    public static String pushingFinalStatsMessage() {
+        return PREFIX + "pushing final exporter stats …";
+    }
+
     /** Status while OpenSearch client pools are closed. */
     public static String closingConnectionsMessage() {
         return PREFIX + "closing OpenSearch connections …";

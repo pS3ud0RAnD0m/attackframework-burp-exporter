@@ -86,7 +86,7 @@ public final class IndexingRetryCoordinator {
             Map<String, Object> document,
             String indexKey) {
         if (document == null) {
-            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), null);
         }
         return pushPreparedDocumentWithResult(
                 baseUrl, ExportDocumentIdentity.prepare(indexName, indexKey, document));
@@ -103,10 +103,10 @@ public final class IndexingRetryCoordinator {
             String baseUrl,
             PreparedExportDocument document) {
         if (document == null) {
-            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), null);
         }
         if (!RuntimeConfig.isExportReady() || !RuntimeConfig.isOpenSearchExportEnabled()) {
-            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), null);
         }
         ensureDrainThreadStarted();
         String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
@@ -126,13 +126,13 @@ public final class IndexingRetryCoordinator {
                 ExportStats.recordOpenSearchFailure();
                 int fails = consecutiveFailures.incrementAndGet();
                 if (maybeEnterOutageMode(activeBaseUrl, fails)) {
-                    return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+                    return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), null);
                 }
             }
         }
 
         if (!RuntimeConfig.isExportReady()) {
-            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+            return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), null);
         }
 
         boolean offered = queue.offer(document.indexName(), document);
@@ -141,7 +141,42 @@ public final class IndexingRetryCoordinator {
             RETRY_PRESSURE_LOGS.record(
                     "retry_queue_full." + document.indexKey(), 1, this::retryPressureContext);
         }
-        return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty());
+        return new OpenSearchClientWrapper.SingleDocPushResult(false, BulkOutcomeBreakdown.empty(), null);
+    }
+
+    /**
+     * One-shot push for Stop/unload final documents when {@link RuntimeConfig#isExportReady()} is false.
+     *
+     * <p>Does not enqueue retries; callers must run before {@link #stopDrainThread()} and
+     * {@link OpenSearchConnector#closeAll()}.</p>
+     *
+     * @param baseUrl OpenSearch base URL passed by the caller
+     * @param document prepared document to index
+     * @return push outcome with optional root failure detail
+     */
+    public OpenSearchClientWrapper.SingleDocPushResult pushPreparedDocumentDuringShutdown(
+            String baseUrl,
+            PreparedExportDocument document) {
+        if (document == null) {
+            return new OpenSearchClientWrapper.SingleDocPushResult(
+                    false, BulkOutcomeBreakdown.empty(), "document is null");
+        }
+        if (!RuntimeConfig.isOpenSearchExportEnabled()) {
+            return new OpenSearchClientWrapper.SingleDocPushResult(
+                    false, BulkOutcomeBreakdown.empty(), "OpenSearch export disabled");
+        }
+        String activeBaseUrl = resolveBaseUrlForOperation(baseUrl);
+        if (activeBaseUrl == null || activeBaseUrl.isBlank()) {
+            return new OpenSearchClientWrapper.SingleDocPushResult(
+                    false, BulkOutcomeBreakdown.empty(), "OpenSearch URL not configured");
+        }
+        OpenSearchClientWrapper.SingleDocPushResult result = OpenSearchClientWrapper.doPushDocument(
+                activeBaseUrl, document.indexName(), document.document());
+        if (result.success()) {
+            consecutiveFailures.set(0);
+            ExportStats.recordOpenSearchSuccess();
+        }
+        return result;
     }
 
     public boolean pushDocument(String baseUrl, String indexName, Map<String, Object> document, String indexKey) {

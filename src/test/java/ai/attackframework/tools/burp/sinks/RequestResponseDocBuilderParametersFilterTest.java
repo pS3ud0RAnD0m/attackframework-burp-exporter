@@ -12,7 +12,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,9 +24,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Covers the synthesized-BODY-parameter filter and the high-cardinality WARN
- * threshold. Tests target the package-private helpers directly so they exercise the same
- * code paths the production builder uses without needing the full request-doc wiring.
+ * Covers the synthesized-BODY-parameter filter, BODY/URL caps, and content-type gate behavior.
  */
 class RequestResponseDocBuilderParametersFilterTest {
 
@@ -43,6 +43,10 @@ class RequestResponseDocBuilderParametersFilterTest {
         Logger.unregisterListener(listener);
         Logger.resetState();
         ExportStats.resetForTests();
+        UrlParameterTruncationLog.clearRunState();
+        BodyParameterTruncationLog.clearRunState();
+        BodyEnumerationSkippedLog.clearRunState();
+        CompressedWireBodyParamsLog.clearRunState();
         events.clear();
     }
 
@@ -87,9 +91,9 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void parametersToList_hardCap_dropsAllBodyWhenBodyCountExceedsCap() {
-        int cap = RequestResponseParametersSupport.PARAMETERS_HARD_CAP;
-        List<ParsedHttpParameter> input = new java.util.ArrayList<>(cap + 50);
+    void parametersToList_hardCap_truncatesBodyToCap() {
+        int cap = RequestResponseParametersSupport.BODY_PARAMETERS_CAP;
+        List<ParsedHttpParameter> input = new ArrayList<>();
         input.add(param("u", "1", HttpParameterType.URL));
         input.add(param("c", "2", HttpParameterType.COOKIE));
         for (int i = 0; i < cap + 10; i++) {
@@ -99,15 +103,15 @@ class RequestResponseDocBuilderParametersFilterTest {
         RequestResponseDocBuilder.ParametersResult result =
                 RequestResponseDocBuilder.parametersToList(input, true);
 
-        assertThat(result.entries())
-                .extracting(e -> e.get("type"))
-                .containsExactly("URL", "COOKIE");
-        assertThat(result.droppedSynthesized()).isEqualTo(cap + 10);
+        assertThat(result.entries()).hasSize(cap + 2);
+        assertThat(result.droppedBodyParams()).isEqualTo(10);
+        assertThat(result.droppedSynthesized()).isZero();
+        assertThat(result.bodyParamsTruncated()).isTrue();
     }
 
     @Test
-    void parametersToList_hardCap_truncatesWhenNonBodyExceedsCap() {
-        int cap = RequestResponseParametersSupport.PARAMETERS_HARD_CAP;
+    void parametersToList_urlCap_truncatesUrlParamsOnly() {
+        int cap = RequestResponseParametersSupport.URL_PARAMETERS_CAP;
         List<ParsedHttpParameter> input = new java.util.ArrayList<>(cap + 5);
         for (int i = 0; i < cap + 5; i++) {
             input.add(param("u" + i, "v", HttpParameterType.URL));
@@ -117,12 +121,15 @@ class RequestResponseDocBuilderParametersFilterTest {
                 RequestResponseDocBuilder.parametersToList(input, true);
 
         assertThat(result.entries()).hasSize(cap);
-        assertThat(result.droppedSynthesized()).isEqualTo(5);
+        assertThat(result.droppedUrlParams()).isEqualTo(5);
+        assertThat(result.droppedSynthesized()).isZero();
+        assertThat(result.adjustedQuery()).isNotEmpty();
+        assertThat(result.urlParamsTruncated()).isTrue();
     }
 
     @Test
-    void parametersToList_hardCap_keepsBodyWhenBodyCountUnderCap() {
-        int cap = RequestResponseParametersSupport.PARAMETERS_HARD_CAP;
+    void parametersToList_urlCap_doesNotTruncateBodyParams() {
+        int cap = RequestResponseParametersSupport.URL_PARAMETERS_CAP;
         List<ParsedHttpParameter> input = new java.util.ArrayList<>(cap + 1);
         for (int i = 0; i < cap - 1; i++) {
             input.add(param("u" + i, "v", HttpParameterType.URL));
@@ -133,8 +140,9 @@ class RequestResponseDocBuilderParametersFilterTest {
         RequestResponseDocBuilder.ParametersResult result =
                 RequestResponseDocBuilder.parametersToList(input, true);
 
-        assertThat(result.entries()).hasSize(cap);
-        assertThat(result.droppedSynthesized()).isEqualTo(1);
+        assertThat(result.entries()).hasSize(cap + 1);
+        assertThat(result.droppedUrlParams()).isZero();
+        assertThat(result.droppedSynthesized()).isZero();
     }
 
     @Test
@@ -143,6 +151,16 @@ class RequestResponseDocBuilderParametersFilterTest {
                 ContentType.URL_ENCODED, List.of(), HttpMessageDocSupport.INFERRED_CT_TEXT)).isTrue();
         assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
                 ContentType.MULTIPART, List.of(), HttpMessageDocSupport.INFERRED_CT_MULTIPART)).isTrue();
+    }
+
+    @Test
+    void shouldIncludeBodyParameters_declaredFormInferredBinaryWithTextBody_returnsTrue() {
+        byte[] body = "name=value&other=thing".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(RequestResponseDocBuilder.shouldIncludeBodyParameters(
+                ContentType.URL_ENCODED,
+                List.of(),
+                HttpMessageDocSupport.INFERRED_CT_BINARY,
+                body)).isTrue();
     }
 
     @Test
@@ -188,7 +206,11 @@ class RequestResponseDocBuilderParametersFilterTest {
         assertBinaryHeaderFiltered("image/png");
         assertBinaryHeaderFiltered("application/zip");
         assertBinaryHeaderFiltered("application/gzip");
-        assertBinaryHeaderFiltered("multipart/form-data; boundary=abc");
+    }
+
+    @Test
+    void shouldIncludeBodyParameters_headerFallback_multipartReturnsTrue() {
+        assertTextualHeaderKept("multipart/form-data; boundary=abc");
     }
 
     @Test
@@ -260,116 +282,39 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_belowThreshold_doesNotEmitWarn_butDropsStillCounted() throws Exception {
+    void recordParameterTelemetry_droppedSynthesized_statsOnlyNoLog() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/api");
 
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
                         request, ContentType.JSON, 10, 4_999, false));
 
-        assertThat(events).noneMatch(e -> e.message().contains("[ParameterCardinality]"));
+        assertThat(events).isEmpty();
         assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isEqualTo(4_999);
-        assertThat(ExportStats.getDocsOverParamsThreshold()).isZero();
     }
 
     @Test
-    void recordParameterTelemetry_droppedAtThreshold_emitsDebugExplainingCause() throws Exception {
+    void recordParameterTelemetry_highDroppedSynthesized_statsOnlyNoLog() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/upload");
 
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
-                        request, ContentType.URL_ENCODED,
-                        /* retained */ 2, /* dropped */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD,
-                        /* bodyEnumerationSkipped */ false));
+                        request, ContentType.URL_ENCODED, 2, 5_000, false));
 
-        assertThat(events).anySatisfy(e -> {
-            assertThat(e.level()).isEqualToIgnoringCase("debug");
-            assertThat(e.message())
-                    .contains("[ParameterCardinality][synthesized_dropped]")
-                    .contains("Content-Type mismatch")
-                    .contains("mis-infer")
-                    .contains("binary body")
-                    .contains("All dropped")
-                    .contains("protobuf/gRPC")
-                    .contains("method=POST")
-                    .contains("url=https://example.test/upload")
-                    .contains("content_type=URL_ENCODED")
-                    .contains("retained=2")
-                    .contains("dropped_synthesized=" + RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD);
-        });
-        assertThat(events).noneMatch(e -> "warn".equalsIgnoreCase(e.level())
-                && e.message().contains("[ParameterCardinality]"));
-        assertThat(ExportStats.getSynthesizedBodyParamsDropped())
-                .isEqualTo(RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD);
-        assertThat(ExportStats.getDocsOverParamsThreshold()).isEqualTo(1);
+        assertThat(events).isEmpty();
+        assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isEqualTo(5_000);
     }
 
     @Test
-    void recordParameterTelemetry_retainedAtThreshold_emitsWarnTaggedRetained() throws Exception {
+    void recordParameterTelemetry_highRetained_statsOnlyNoLog() throws Exception {
         HttpRequest request = mockRequest("GET", "https://example.test/search");
 
         SwingUtilities.invokeAndWait(() ->
                 RequestResponseDocBuilder.recordParameterTelemetry(
-                        request, ContentType.JSON,
-                        /* retained */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD, /* dropped */ 0,
-                        /* bodyEnumerationSkipped */ false));
+                        request, ContentType.JSON, 5_000, 0, false));
 
-        assertThat(events).anySatisfy(e -> {
-            assertThat(e.level()).isEqualToIgnoringCase("warn");
-            assertThat(e.message())
-                    .contains("[ParameterCardinality][retained]")
-                    .contains("retained=" + RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD);
-        });
-        assertThat(ExportStats.getDocsOverParamsThreshold()).isEqualTo(1);
+        assertThat(events).isEmpty();
         assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isZero();
-    }
-
-    @Test
-    void recordParameterTelemetry_bothHigh_prefersRetainedWarnOverDroppedDebug() throws Exception {
-        HttpRequest request = mockRequest("POST", "https://example.test/both");
-
-        SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
-                        request, ContentType.MULTIPART,
-                        /* retained */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD,
-                        /* dropped */ RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD,
-                        /* bodyEnumerationSkipped */ false));
-
-        assertThat(events).anySatisfy(e -> {
-            assertThat(e.level()).isEqualToIgnoringCase("warn");
-            assertThat(e.message()).contains("[ParameterCardinality][retained]");
-        });
-        assertThat(events).noneMatch(e -> e.message().contains("[ParameterCardinality][synthesized_dropped]"));
-        assertThat(ExportStats.getDocsOverParamsThreshold()).isEqualTo(1);
-    }
-
-    @Test
-    void recordParameterTelemetry_longUrl_isTruncated() throws Exception {
-        String longUrl = "https://example.test/" + "a".repeat(400);
-        HttpRequest request = mockRequest("POST", longUrl);
-
-        SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
-                        request, ContentType.UNKNOWN,
-                        0, RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD, false));
-
-        assertThat(events).anySatisfy(e -> {
-            assertThat(e.message()).contains("[ParameterCardinality][synthesized_dropped]");
-            assertThat(e.message()).contains("...");
-            assertThat(e.message()).doesNotContain(longUrl);
-        });
-    }
-
-    @Test
-    void recordParameterTelemetry_nullRequest_doesNotThrow_andStillLogs() throws Exception {
-        SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
-                        null, ContentType.NONE, 0, RequestResponseParametersSupport.PARAMETERS_WARN_THRESHOLD, false));
-
-        assertThat(events).anySatisfy(e -> assertThat(e.message())
-                .contains("[ParameterCardinality][synthesized_dropped]")
-                .contains("method=unknown")
-                .contains("url=unknown"));
     }
 
     private static void assertBinaryHeaderFiltered(String contentTypeHeader) {
@@ -465,7 +410,7 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_skippedBody_underThreshold_bumpsCounterOnly() throws Exception {
+    void recordParameterTelemetry_skippedBody_underThreshold_doesNotBumpExportAckCounter() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/binary-misdeclared");
 
         SwingUtilities.invokeAndWait(() ->
@@ -473,10 +418,48 @@ class RequestResponseDocBuilderParametersFilterTest {
                         request, ContentType.URL_ENCODED, /* retained */ 3, /* dropped */ 0,
                         /* bodyEnumerationSkipped */ true));
 
-        assertThat(events).noneMatch(e -> e.message().contains("[ParameterCardinality]"));
-        assertThat(ExportStats.getDocsWithSkippedBodyEnumeration()).isEqualTo(1);
-        assertThat(ExportStats.getDocsOverParamsThreshold()).isZero();
+        assertThat(events).isEmpty();
+        assertThat(ExportStats.getDocsWithSkippedBodyEnumeration()).isZero();
         assertThat(ExportStats.getSynthesizedBodyParamsDropped()).isZero();
+    }
+
+    @Test
+    void buildTrafficRequestDoc_urlCap_alignsPathQueryWithParameters() {
+        int cap = RequestResponseParametersSupport.URL_PARAMETERS_CAP;
+        List<ParsedHttpParameter> urlParams = new ArrayList<>(cap + 3);
+        StringBuilder fullQuery = new StringBuilder();
+        for (int i = 0; i < cap + 3; i++) {
+            urlParams.add(param("p" + i, "v" + i, HttpParameterType.URL));
+            if (i > 0) {
+                fullQuery.append('&');
+            }
+            fullQuery.append("p").append(i).append("=v").append(i);
+        }
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(urlParams);
+        when(request.method()).thenReturn("GET");
+        when(request.pathWithoutQuery()).thenReturn("/fuzz");
+        when(request.path()).thenReturn("/fuzz?" + fullQuery);
+        when(request.query()).thenReturn(fullQuery.toString());
+        when(request.url()).thenReturn("https://example.test/fuzz?" + fullQuery);
+        when(request.contentType()).thenReturn(ContentType.NONE);
+        when(request.headers()).thenReturn(List.of());
+        when(request.body()).thenReturn(null);
+        when(request.markers()).thenReturn(List.of());
+        when(request.fileExtension()).thenReturn("");
+
+        Map<String, Object> doc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> parameters = (List<Map<String, Object>>) doc.get("parameters");
+        assertThat(parameters).hasSize(cap);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> path = (Map<String, Object>) doc.get("path");
+        String expectedQuery = RequestResponseParametersSupport.buildQueryStringFromUrlEntries(parameters);
+        assertThat(path.get("query")).isEqualTo(expectedQuery);
+        assertThat(path.get("with_query")).isEqualTo("/fuzz?" + expectedQuery);
+        assertThat(ExportStats.getDocsUrlParamsTruncated()).isEqualTo(1);
+        assertThat(ExportStats.getUrlParamsDroppedTotal()).isEqualTo(3);
     }
 
     private static HttpRequest mockRequest(String method, String url) {
@@ -499,6 +482,281 @@ class RequestResponseDocBuilderParametersFilterTest {
         when(h.name()).thenReturn(name);
         when(h.value()).thenReturn(value);
         return h;
+    }
+
+    @Test
+    void inferRequestContentType_gzipUrlencodedForm_returnsText() throws Exception {
+        byte[] plain = "org_id=test&ja=123".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        List<HttpHeader> headers = List.of(
+                header("Content-Type", "application/x-www-form-urlencoded"),
+                header("Content-Encoding", "gzip"));
+
+        assertThat(RequestResponseParametersSupport.inferRequestContentType(
+                gzip, headers, ContentType.URL_ENCODED))
+                .isEqualTo(HttpMessageDocSupport.INFERRED_CT_TEXT);
+    }
+
+    @Test
+    void parseUrlEncodedBodyParameters_decodesPairs() {
+        byte[] body = "a=1&b=hello%20world".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.parseUrlEncodedBodyParameters(
+                        body, List.of(header("Content-Type", "application/x-www-form-urlencoded")));
+
+        assertThat(result.entries()).hasSize(2);
+        assertThat(result.entries().get(0)).containsEntry("name", "a").containsEntry("type", "BODY");
+        assertThat(result.entries().get(1)).containsEntry("value", "hello world");
+    }
+
+    @Test
+    void collectParameters_gzipFormWithoutBurpBodyParams_supplementsBodyParameters() throws Exception {
+        byte[] plain = "org_id=abc&sid=xyz".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        ParsedHttpParameter urlParam = param("k", "v", HttpParameterType.URL);
+        List<ParsedHttpParameter> urlOnly = List.of(urlParam);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(urlOnly);
+        when(request.parameters(HttpParameterType.URL)).thenReturn(urlOnly);
+        when(request.hasParameters(HttpParameterType.COOKIE)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.JSON)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML_ATTRIBUTE)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.MULTIPART_ATTRIBUTE)).thenReturn(false);
+        List<HttpHeader> headers = List.of(
+                header("Content-Type", "application/x-www-form-urlencoded"),
+                header("Content-Encoding", "gzip"));
+
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.collectParameters(
+                        request, true, gzip, ContentType.URL_ENCODED, headers);
+
+        assertThat(result.entries())
+                .extracting(e -> e.get("type"))
+                .contains("URL", "BODY");
+        assertThat(result.entries().stream().filter(e -> "BODY".equals(e.get("type"))).count()).isEqualTo(2);
+        assertThat(result.bodyEnumerationSkipped()).isFalse();
+    }
+
+    @Test
+    void collectParameters_gzipFormWithGarbageBurpBody_replacesWithSupplemental() throws Exception {
+        byte[] plain = "org_id=abc&sid=xyz".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        ParsedHttpParameter garbageBody = param("\u001f\u008b", "", HttpParameterType.BODY);
+        ParsedHttpParameter urlParam = param("k", "v", HttpParameterType.URL);
+        List<ParsedHttpParameter> burpParams = List.of(urlParam, garbageBody);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(burpParams);
+        List<HttpHeader> headers = List.of(
+                header("Content-Type", "application/x-www-form-urlencoded"),
+                header("Content-Encoding", "gzip"));
+
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.collectParameters(
+                        request, true, gzip, ContentType.URL_ENCODED, headers);
+
+        assertThat(result.wireBodyParamsReplaced()).isTrue();
+        assertThat(result.bodyParamsSource()).isEqualTo(RequestResponseParametersSupport.BODY_PARAMS_SOURCE_MIXED);
+        assertThat(result.wireTransformed()).isTrue();
+        assertThat(result.encodingsApplied()).containsExactly("gzip");
+        assertThat(result.wireBodyParamsDropped()).isEqualTo(1);
+        assertThat(result.entries().stream().filter(e -> "BODY".equals(e.get("type"))))
+                .extracting(e -> e.get("name"))
+                .containsExactly("org_id", "sid");
+    }
+
+    @Test
+    void collectParameters_skipPathDeclaredUrlencoded_rescuesSupplementalBody() throws Exception {
+        byte[] plain = "a=1&b=2".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        ParsedHttpParameter urlParam = param("q", "x", HttpParameterType.URL);
+        List<ParsedHttpParameter> urlParams = List.of(urlParam);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.hasParameters(HttpParameterType.URL)).thenReturn(true);
+        when(request.parameters(HttpParameterType.URL)).thenReturn(urlParams);
+        when(request.hasParameters(HttpParameterType.COOKIE)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.JSON)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.XML_ATTRIBUTE)).thenReturn(false);
+        when(request.hasParameters(HttpParameterType.MULTIPART_ATTRIBUTE)).thenReturn(false);
+        List<HttpHeader> headers = List.of(
+                header("Content-Type", "application/x-www-form-urlencoded"),
+                header("Content-Encoding", "gzip"));
+
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.collectParameters(
+                        request, false, gzip, ContentType.URL_ENCODED, headers);
+
+        assertThat(result.bodyEnumerationSkipped()).isFalse();
+        assertThat(result.skipPathBodyRescued()).isTrue();
+        assertThat(result.bodyParamsSource()).isEqualTo(RequestResponseParametersSupport.BODY_PARAMS_SOURCE_MIXED);
+        assertThat(result.entries().stream().filter(e -> "BODY".equals(e.get("type"))).count()).isEqualTo(2);
+    }
+
+    @Test
+    void buildTrafficRequestDoc_gzipForm_putsRequestExportMetadata() throws Exception {
+        byte[] plain = "field=value".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(List.of());
+        when(request.method()).thenReturn("POST");
+        when(request.pathWithoutQuery()).thenReturn("/submit");
+        when(request.path()).thenReturn("/submit");
+        when(request.query()).thenReturn("");
+        when(request.url()).thenReturn("https://example.test/submit");
+        when(request.contentType()).thenReturn(ContentType.URL_ENCODED);
+        HttpHeader contentTypeHeader = header("Content-Type", "application/x-www-form-urlencoded");
+        HttpHeader encodingHeader = header("Content-Encoding", "gzip");
+        when(request.headers()).thenReturn(List.of(contentTypeHeader, encodingHeader));
+        burp.api.montoya.core.ByteArray body = mock(burp.api.montoya.core.ByteArray.class);
+        when(body.getBytes()).thenReturn(gzip);
+        when(request.body()).thenReturn(body);
+        when(request.markers()).thenReturn(List.of());
+        when(request.fileExtension()).thenReturn("");
+
+        Map<String, Object> doc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+
+        assertThat(doc).doesNotContainKey("export");
+        assertThat(ExportStats.getDocsWireBodyParamsReplaced()).isEqualTo(1);
+        assertThat(ExportStats.getBodyParamsSkipReasonCounts().get("wire_replaced")).isEqualTo(1L);
+        assertThat(ExportStats.getDocsBodyEnumerationMisgateSuspect()).isZero();
+    }
+
+    @Test
+    void buildTrafficRequestDoc_misgateBinary_recordsMisgateSessionStats() throws Exception {
+        byte[] bodyBytes = new byte[] {0x00, 0x01, 0x02, 0x03};
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(List.of());
+        when(request.method()).thenReturn("POST");
+        when(request.pathWithoutQuery()).thenReturn("/collect");
+        when(request.path()).thenReturn("/collect");
+        when(request.query()).thenReturn("");
+        when(request.url()).thenReturn("https://app-measurement.com/a/collect");
+        when(request.contentType()).thenReturn(ContentType.URL_ENCODED);
+        HttpHeader contentTypeHeader = header("Content-Type", "application/x-www-form-urlencoded");
+        when(request.headers()).thenReturn(List.of(contentTypeHeader));
+        burp.api.montoya.core.ByteArray body = mock(burp.api.montoya.core.ByteArray.class);
+        when(body.getBytes()).thenReturn(bodyBytes);
+        when(request.body()).thenReturn(body);
+        when(request.markers()).thenReturn(List.of());
+        when(request.fileExtension()).thenReturn("");
+
+        Map<String, Object> doc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+
+        assertThat(doc).doesNotContainKey("export");
+        assertThat(ExportStats.getDocsBodyEnumerationMisgateSuspect()).isEqualTo(1);
+        assertThat(ExportStats.getDocsWithSkippedBodyEnumeration()).isEqualTo(1);
+        assertThat(ExportStats.getBodyParamsSkipReasonCounts().get("misgate_binary")).isEqualTo(1L);
+    }
+
+    @Test
+    void resolveBodyParamsSkipReason_prioritizesRescueOverMisgate() {
+        RequestResponseDocBuilder.ParametersResult rescued =
+                new RequestResponseDocBuilder.ParametersResult(
+                        List.of(),
+                        0,
+                        false,
+                        0,
+                        "",
+                        0,
+                        RequestResponseParametersSupport.BODY_PARAMS_SOURCE_MIXED,
+                        false,
+                        true,
+                        false,
+                        List.of(),
+                        0,
+                        false);
+        assertThat(RequestResponseDocBuilder.resolveBodyParamsSkipReason(rescued, true))
+                .isEqualTo("skip_path_rescued");
+    }
+
+    @Test
+    void parseUrlEncodedBodyParameters_rejectsJsonArrayBody() {
+        byte[] json = "[[1,2,3]]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.parseUrlEncodedBodyParameters(json, List.of());
+
+        assertThat(result.supplementalRejectedNonForm()).isTrue();
+        assertThat(result.entries()).isEmpty();
+    }
+
+    @Test
+    void parseUrlEncodedBodyParameters_acceptsBracketInValue() {
+        byte[] body = "data=%5B%5B1%2C2%5D%5D".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.parseUrlEncodedBodyParameters(body, List.of());
+
+        assertThat(result.supplementalRejectedNonForm()).isFalse();
+        assertThat(result.entries()).hasSize(1);
+        assertThat(result.entries().get(0).get("name")).isEqualTo("data");
+        assertThat(result.entries().get(0).get("value")).isEqualTo("[[1,2]]");
+    }
+
+    @Test
+    void parseUrlEncodedBodyParameters_rejectsBracketPrefixedName() {
+        byte[] body = "%5B%5B=1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.parseUrlEncodedBodyParameters(body, List.of());
+
+        assertThat(result.supplementalRejectedNonForm()).isTrue();
+        assertThat(result.entries()).isEmpty();
+    }
+
+    @Test
+    void collectParameters_jsonDeclaredAsForm_rejectsSupplementalOnWireReplace() throws Exception {
+        byte[] plain = "[[1,2,3]]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        ParsedHttpParameter garbageBody = param("\u001f\u008b", "", HttpParameterType.BODY);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(List.of(garbageBody));
+        List<HttpHeader> headers = List.of(
+                header("Content-Type", "application/x-www-form-urlencoded"),
+                header("Content-Encoding", "gzip"));
+
+        RequestResponseParametersSupport.ParametersResult result =
+                RequestResponseParametersSupport.collectParameters(
+                        request, true, gzip, ContentType.URL_ENCODED, headers);
+
+        assertThat(result.supplementalRejectedNonForm()).isTrue();
+        assertThat(result.wireBodyParamsReplaced()).isFalse();
+        assertThat(result.entries().stream().filter(e -> "BODY".equals(e.get("type")))).isEmpty();
+    }
+
+    @Test
+    void buildTrafficRequestDoc_supplementalRejected_setsSkipReason() throws Exception {
+        byte[] plain = "[[1,2]]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] gzip = gzipBytes(plain);
+        ParsedHttpParameter garbageBody = param("\u001f\u008b", "", HttpParameterType.BODY);
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.parameters()).thenReturn(List.of(garbageBody));
+        when(request.method()).thenReturn("POST");
+        when(request.pathWithoutQuery()).thenReturn("/log");
+        when(request.path()).thenReturn("/log");
+        when(request.query()).thenReturn("");
+        when(request.url()).thenReturn("https://play.google.com/log");
+        when(request.contentType()).thenReturn(ContentType.URL_ENCODED);
+        HttpHeader contentTypeHeader = header("Content-Type", "application/x-www-form-urlencoded");
+        HttpHeader encodingHeader = header("Content-Encoding", "gzip");
+        when(request.headers()).thenReturn(List.of(contentTypeHeader, encodingHeader));
+        burp.api.montoya.core.ByteArray body = mock(burp.api.montoya.core.ByteArray.class);
+        when(body.getBytes()).thenReturn(gzip);
+        when(request.body()).thenReturn(body);
+        when(request.markers()).thenReturn(List.of());
+        when(request.fileExtension()).thenReturn("");
+
+        Map<String, Object> doc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+
+        assertThat(doc).doesNotContainKey("export");
+        assertThat(ExportStats.getDocsSupplementalRejectedNonForm()).isEqualTo(1);
+        assertThat(ExportStats.getBodyParamsSkipReasonCounts().get("supplemental_rejected_non_form")).isEqualTo(1L);
+    }
+
+    private static byte[] gzipBytes(byte[] input) throws Exception {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.GZIPOutputStream gzip = new java.util.zip.GZIPOutputStream(out)) {
+            gzip.write(input);
+        }
+        return out.toByteArray();
     }
 
     private record LoggedEvent(String level, String message) {

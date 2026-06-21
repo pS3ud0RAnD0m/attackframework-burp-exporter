@@ -38,8 +38,9 @@ final class ExportFieldTooltipsFindings {
                     "Issue name.",
                     "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.name().");
             case "issue.severity" -> Tooltips.textWithSource(
-                    "Issue severity.",
-                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.severity().");
+                    "Issue severity (Montoya enum name, e.g. INFORMATION).",
+                    "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.severity(). "
+                            + "Config/UI severity checkboxes use lowercase tokens (e.g. informational maps to INFORMATION).");
             case "issue.confidence" -> Tooltips.textWithSource(
                     "Issue confidence.",
                     "FindingsIndexReporter.buildFindingDoc() uses AuditIssue.confidence().");
@@ -253,7 +254,9 @@ final class ExportFieldTooltipsFindings {
             case "response.header" -> Tooltips.textWithSource(
                     "Parsed Collaborator HTTP response headers as lower-case dynamic fields plus Burp-inferred content-type facets.",
                     "FindingsIndexReporter.buildCollaboratorInteractionsList() uses RequestResponseDocBuilder.buildTrafficResponseDoc() for HttpDetails.requestResponse().response().");
-            default -> ExportFieldTooltips.genericLeafTooltip("collaborator.http." + leaf);
+            default -> {
+                yield ExportFieldTooltips.genericLeafTooltip("collaborator.http." + leaf);
+            }
         };
     }
 

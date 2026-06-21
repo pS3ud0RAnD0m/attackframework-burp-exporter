@@ -6,12 +6,8 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Frame;
 import java.lang.reflect.InvocationTargetException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,8 +28,6 @@ import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.MontoyaApi;
-import burp.api.montoya.core.Annotations;
-import burp.api.montoya.core.HighlightColor;
 import burp.api.montoya.core.ToolSource;
 import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
@@ -990,50 +984,7 @@ public final class RepeaterTabsIndexReporter {
      * Repeater tabs share identical traffic.</p>
      */
     private static String fingerprintFor(HttpRequestResponse requestResponse) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            updateDigestWithMessage(digest, requestResponse.request());
-            updateDigestWithMessage(digest, requestResponse.response());
-            updateDigestWithAnnotations(digest, requestResponse.annotations());
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 digest unavailable", e);
-        }
-    }
-
-    private static void updateDigestWithMessage(MessageDigest digest, HttpRequest request) {
-        if (request == null) {
-            digest.update((byte) 0);
-            return;
-        }
-        digest.update((byte) 1);
-        digest.update(request.toByteArray().getBytes());
-    }
-
-    private static void updateDigestWithMessage(MessageDigest digest, HttpResponse response) {
-        if (response == null) {
-            digest.update((byte) 0);
-            return;
-        }
-        digest.update((byte) 1);
-        digest.update(response.toByteArray().getBytes());
-    }
-
-    private static void updateDigestWithAnnotations(MessageDigest digest, Annotations annotations) {
-        if (annotations == null) {
-            digest.update((byte) 0);
-            return;
-        }
-        digest.update((byte) 1);
-        if (annotations.hasNotes()) {
-            digest.update(annotations.notes().getBytes(StandardCharsets.UTF_8));
-        }
-        if (annotations.hasHighlightColor()) {
-            HighlightColor color = annotations.highlightColor();
-            if (color != null) {
-                digest.update(color.name().getBytes(StandardCharsets.UTF_8));
-            }
-        }
+        return SnapshotExportFingerprints.sitemapEntryFingerprint(requestResponse);
     }
 
     private static boolean isRepeaterToolSource(ToolSource toolSource) {

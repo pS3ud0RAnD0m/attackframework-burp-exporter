@@ -12,9 +12,15 @@ import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.event.ActionEvent;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+
+import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -125,6 +131,33 @@ class CardCopySupportTest {
         assertThat(text).contains("  Traffic Queue Size: 0\n");
         assertThat(text).contains("\nProcess\n");
         assertThat(text).contains("  Heap Used / Max: 128 MiB / 512 MiB (25%)\n");
+    }
+
+    @Test
+    void copyToClipboard_doesNotLogWhenExportNotRunning() throws Exception {
+        List<String> infoMessages = new ArrayList<>();
+        Logger.LogListener listener = (level, message) -> {
+            if ("INFO".equals(level)) {
+                infoMessages.add(message);
+            }
+        };
+        Logger.registerListener(listener);
+        RuntimeConfig.setExportRunning(false);
+        try {
+            JPanel card = onEdt(() -> {
+                JPanel p = new JPanel();
+                p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+                return p;
+            });
+            onEdt(() -> CardCopySupport.attachCopyButton(card, "Misc Stats", () -> "payload"));
+            JButton copy = (JButton) onEdt(() -> findNamed(card, "copy.Misc Stats"));
+            onEdt(() -> copy.getActionListeners()[0].actionPerformed(new ActionEvent(copy, 0, "copy")));
+            assertThat(infoMessages).noneMatch(line -> line.contains("[StatsPanel]"));
+        } finally {
+            Logger.unregisterListener(listener);
+            Logger.resetState();
+            RuntimeConfig.setExportRunning(false);
+        }
     }
 
     private static <T> T onEdt(java.util.concurrent.Callable<T> supplier) throws Exception {

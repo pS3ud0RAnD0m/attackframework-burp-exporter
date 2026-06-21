@@ -1,18 +1,19 @@
 package ai.attackframework.tools.burp.sinks;
 
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.nio.charset.Charset;
 
-import ai.attackframework.tools.burp.utils.Logger;
+import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.HttpHeader;
 import burp.api.montoya.http.message.StatusCodeClass;
-import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.http.message.params.HttpParameterType;
 import burp.api.montoya.http.message.params.ParsedHttpParameter;
-import burp.api.montoya.http.message.ContentType;
+import burp.api.montoya.http.message.requests.HttpRequest;
 
 /** Request parameter collection, inference, and telemetry. */
 final class RequestResponseParametersSupport {
@@ -20,41 +21,41 @@ final class RequestResponseParametersSupport {
     private RequestResponseParametersSupport() {}
 
     /**
-     * High-cardinality alerting threshold for {@code request.parameters}.
+     * Hard cap on the number of parameter entries retained per request bucket.
      *
-     * <p>Two distinct signals can cross this threshold for a single request, each with its
-     * own log level:</p>
-     * <ul>
-     *   <li>{@code retained >= threshold} is a real anomaly - a legitimate request genuinely
-     *       has thousands of parameters and an operator should look at it. This emits a
-     *       {@code WARN} line.</li>
-     *   <li>{@code droppedSynthesized >= threshold} with {@code retained} below the threshold
-     *       is routine Content-Type-mismatch activity - the request declared a form-encoded
-     *       Content-Type but carried a binary body, so Burp's parameter parser fabricated
-     *       synthetic {@code BODY} entries from the raw bytes and our synthetic-BODY filter
-     *       dropped them. This is expected behaviour on every protobuf, gRPC, or other binary
-     *       request body mis-declared as form-encoded, and emits a single {@code DEBUG} line
-     *       so the logs do not confuse operators with noise that looks like a warning.</li>
-     * </ul>
-     * <p>The {@code Synthesized Body Params Dropped} and {@code Docs Over Param Threshold}
-     * counters on the Stats panel always increment regardless of log level, so dashboard
-     * visibility is preserved independently of the console/file log output.</p>
-     */
-    static final int PARAMETERS_WARN_THRESHOLD = 5_000;
-    /**
-     * Hard cap on the number of parameter entries retained per request, regardless of
-     * Content-Type classification.
-     *
-     * <p>Backstop for the case where the stated Content-Type cannot be trusted - for example a
-     * raw protobuf upload declared as {@code application/x-www-form-urlencoded}, where Burp's
-     * {@code HttpRequest.parameters()} synthesizes tens or hundreds of thousands of spurious
-     * {@link HttpParameterType#BODY} entries. When the input exceeds this cap the builder first
-     * drops all BODY entries (they are almost always the noise source and raw bytes remain in
-     * {@code body.b64}), then truncates any remaining excess. Real URL-encoded forms do not
-     * approach this cap, so legitimate traffic is unaffected.</p>
+     * <p>URL, BODY, and other non-URL parameter types each use separate caps so one bucket cannot
+     * evict another.</p>
      */
     static final int PARAMETERS_HARD_CAP = 1_000;
+    /**
+     * Maximum {@link HttpParameterType#URL} parameter entries retained per request.
+     *
+     * <p>When exceeded, structured {@code request.parameters} and aligned path/query/url string
+     * fields are rebuilt from the retained URL parameters only.</p>
+     */
+    static final int URL_PARAMETERS_CAP = PARAMETERS_HARD_CAP;
+    /** Maximum {@link HttpParameterType#BODY} parameter entries retained per request. */
+    static final int BODY_PARAMETERS_CAP = PARAMETERS_HARD_CAP;
     static final int PARAMETERS_WARN_URL_MAX_LEN = 200;
+
+    /** {@link ExportStats} body_params_source tally when BODY rows came from Burp unchanged. */
+    static final String BODY_PARAMS_SOURCE_BURP = "burp";
+    /** {@link ExportStats} body_params_source tally when all BODY rows came from supplemental parse. */
+    static final String BODY_PARAMS_SOURCE_SUPPLEMENTAL = "supplemental";
+    /** {@link ExportStats} body_params_source tally when supplemental BODY plus Burp non-BODY rows. */
+    static final String BODY_PARAMS_SOURCE_MIXED = "mixed";
+    /** {@link ExportStats} body_params_source tally when no BODY rows were exported. */
+    static final String BODY_PARAMS_SOURCE_NONE = "none";
+
+    /** Non-URL parameter types enumerated by the typed-accessor fast path. */
+    static final HttpParameterType[] NON_URL_PARAMETER_TYPES = new HttpParameterType[] {
+            HttpParameterType.COOKIE,
+            HttpParameterType.JSON,
+            HttpParameterType.XML,
+            HttpParameterType.XML_ATTRIBUTE,
+            HttpParameterType.MULTIPART_ATTRIBUTE
+    };
+
     static String statusCodeClassName(short statusCode) {
         for (StatusCodeClass c : StatusCodeClass.values()) {
             if (c.contains(statusCode)) {
@@ -63,11 +64,41 @@ final class RequestResponseParametersSupport {
         }
         return null;
     }
+
     static boolean shouldIncludeBodyParameters(
             ContentType contentType,
             List<HttpHeader> headers,
             String inferredContentType) {
+        return shouldIncludeBodyParameters(contentType, headers, inferredContentType, null);
+    }
+
+    /**
+     * Decides whether BODY parameters should be collected from Burp's unfiltered
+     * {@link HttpRequest#parameters()} path.
+     *
+     * @param bodyBytes optional raw body bytes for declared-form gate tightening; may be {@code null}
+     */
+    static boolean shouldIncludeBodyParameters(
+            ContentType contentType,
+            List<HttpHeader> headers,
+            String inferredContentType,
+            byte[] bodyBytes) {
         if (HttpMessageDocSupport.INFERRED_CT_BINARY.equals(inferredContentType)) {
+            if (bodyBytes != null && bodyBytes.length > 0) {
+                boolean declaredForm = isDeclaredFormOrMultipart(
+                        contentType, headers, resolvePrimaryMediaType(contentType, headers));
+                String primary = resolvePrimaryMediaType(contentType, headers);
+                BodyContentEncodingSupport.ResolvedBody resolved = resolveBodyForExport(
+                        bodyBytes, headers, primary, declaredForm, true);
+                byte[] logical = resolved.logicalBytes();
+                if (declaredForm
+                        && HttpMessageDocSupport.looksLikeTextPayload(
+                                logical,
+                                HttpMessageDocSupport.charsetFromContentType(
+                                        HttpMessageDocSupport.headerValue(headers, "Content-Type")))) {
+                    return true;
+                }
+            }
             return false;
         }
         String declaredName = contentType == null ? null : contentType.name();
@@ -77,6 +108,39 @@ final class RequestResponseParametersSupport {
         if ("JSON".equals(declaredName) || "XML".equals(declaredName) || "AMF".equals(declaredName)) {
             return false;
         }
+        String primary = resolvePrimaryMediaType(contentType, headers);
+        return !HttpMessageDocSupport.isExplicitlyBinaryMediaType(primary);
+    }
+
+    /**
+     * Returns whether the declared Content-Type indicates form or multipart submission.
+     *
+     * @param primary resolved primary media type; may be {@code null}
+     */
+    static boolean isDeclaredFormOrMultipart(
+            ContentType contentType,
+            List<HttpHeader> headers,
+            String primary) {
+        String declaredName = contentType == null ? null : contentType.name();
+        if ("URL_ENCODED".equals(declaredName) || "MULTIPART".equals(declaredName)) {
+            return true;
+        }
+        if (primary == null) {
+            primary = resolvePrimaryMediaType(contentType, headers);
+        }
+        if (primary == null || primary.isBlank()) {
+            return false;
+        }
+        return primary.contains("urlencoded")
+                || primary.contains("www-form-urlencoded")
+                || primary.startsWith("multipart/");
+    }
+
+    /**
+     * Resolves the primary media type from Burp's declared content type and request headers.
+     */
+    static String resolvePrimaryMediaType(ContentType contentType, List<HttpHeader> headers) {
+        String declaredName = contentType == null ? null : contentType.name();
         String header = contentType == null ? null : contentType.toString();
         String primary = HttpMessageDocSupport.primaryMediaType(header, HttpMessageDocSupport.mediaTypeHints(declaredName));
         if (primary == null) {
@@ -86,40 +150,59 @@ final class RequestResponseParametersSupport {
             for (HttpHeader h : headers) {
                 if (h != null && h.name() != null && "content-type".equalsIgnoreCase(h.name())) {
                     primary = HttpMessageDocSupport.mediaType(h.value(), null);
-                    if (primary != null) break;
+                    if (primary != null) {
+                        break;
+                    }
                 }
             }
         }
-        return !HttpMessageDocSupport.isExplicitlyBinaryMediaType(primary);
+        return primary;
+    }
+
+    private static BodyContentEncodingSupport.ResolvedBody resolveBodyForExport(
+            byte[] wireBytes,
+            List<HttpHeader> headers,
+            String primaryMediaType,
+            boolean declaredFormOrMultipart,
+            boolean allowDeclaredFormGzipSniff) {
+        return BodyContentEncodingSupport.resolveForExport(
+                wireBytes,
+                headers,
+                primaryMediaType,
+                declaredFormOrMultipart,
+                allowDeclaredFormGzipSniff);
     }
 
     /**
      * Computes the traffic {@code request.header.content-type_inferred} verdict from body bytes alone.
-     *
-     * <p>Mirrors the role of Burp's {@code response.inferredMimeType()} on the request side,
-     * where Montoya does not expose an equivalent accessor. Preserves declared
-     * {@code content_type} verbatim; consumers can compare the two to flag Content-Type
-     * spoofing. Also feeds {@link #shouldIncludeBodyParameters} as the primary override
-     * signal for binary bodies.</p>
-     *
-     * <p>Sniff ordering (first match wins):</p>
-     * <ol>
-     *   <li>Null or empty body → {@value #HttpMessageDocSupport.INFERRED_CT_EMPTY}.</li>
-     *   <li>Any NUL byte in the first {@value #HttpMessageDocSupport.TEXT_SNIFF_BYTES} scanned → {@value #HttpMessageDocSupport.INFERRED_CT_BINARY}.</li>
-     *   <li>Bytes fail UTF-8 / charset-hint decode, or post-decode control-character ratio is above
-     *       {@link HttpMessageDocSupport#MAX_CONTROL_CHAR_RATIO} → {@value #HttpMessageDocSupport.INFERRED_CT_BINARY}.</li>
-     *   <li>First non-whitespace character classifies textual content:
-     *       <ul>
-     *         <li>{@code '{'} / {@code '['} → {@value #HttpMessageDocSupport.INFERRED_CT_JSON}.</li>
-     *         <li>{@code '<'} → {@value #HttpMessageDocSupport.INFERRED_CT_XML}.</li>
-     *         <li>{@code "--"} prefix → {@value #HttpMessageDocSupport.INFERRED_CT_MULTIPART}.</li>
-     *         <li>Any other printable content → {@value #HttpMessageDocSupport.INFERRED_CT_TEXT}.</li>
-     *       </ul>
-     *   </li>
-     *   <li>Purely whitespace text → {@value #HttpMessageDocSupport.INFERRED_CT_TEXT}.</li>
-     * </ol>
      */
     static String inferRequestContentType(byte[] bodyBytes, List<HttpHeader> headers) {
+        return inferRequestContentType(bodyBytes, headers, null);
+    }
+
+    /**
+     * Computes {@code request.header.content-type_inferred} from wire body bytes, optionally
+     * decompressing when {@code Content-Encoding} or declared-form gzip magic applies.
+     *
+     * @param bodyBytes wire body bytes; {@code null} treated as empty
+     * @param headers request headers
+     * @param contentType Burp declared content type; may be {@code null}
+     */
+    static String inferRequestContentType(
+            byte[] bodyBytes,
+            List<HttpHeader> headers,
+            ContentType contentType) {
+        if (bodyBytes == null || bodyBytes.length == 0) {
+            return HttpMessageDocSupport.INFERRED_CT_EMPTY;
+        }
+        boolean declaredForm = isDeclaredFormOrMultipart(
+                contentType, headers, resolvePrimaryMediaType(contentType, headers));
+        BodyContentEncodingSupport.ResolvedBody resolved = resolveBodyForExport(
+                bodyBytes, headers, resolvePrimaryMediaType(contentType, headers), declaredForm, true);
+        return inferRequestContentTypeFromLogicalBytes(resolved.logicalBytes(), headers);
+    }
+
+    private static String inferRequestContentTypeFromLogicalBytes(byte[] bodyBytes, List<HttpHeader> headers) {
         if (bodyBytes == null || bodyBytes.length == 0) {
             return HttpMessageDocSupport.INFERRED_CT_EMPTY;
         }
@@ -163,55 +246,177 @@ final class RequestResponseParametersSupport {
     /**
      * Result of converting Burp's request parameters into the doc representation.
      *
-     * <p>Carries the retained entries, the count of synthesized {@code BODY}-typed entries
-     * filtered out because the body was binary, and a flag indicating whether the typed-accessor
-     * fast path was used (i.e. Burp's unfiltered {@code parameters()} call was skipped to avoid
-     * materializing millions of synthetic BODY entries on Content-Type-spoofed binary bodies).
-     * The {@code droppedSynthesized} count feeds the {@code ExportStats} telemetry counters; the
-     * {@code bodyEnumerationSkipped} flag drives the {@code Skipped BODY Enumeration} counter.</p>
+     * <p>{@code droppedUrlParams} and {@code adjustedQuery} are set when
+     * {@link #URL_PARAMETERS_CAP} truncated URL parameters. {@code droppedBodyParams} is set when
+     * {@link #BODY_PARAMETERS_CAP} truncated BODY parameters. Export metadata fields feed
+     * {@code session.*} and session telemetry.</p>
      */
-    record ParametersResult(List<Map<String, Object>> entries, int droppedSynthesized, boolean bodyEnumerationSkipped) {
-        static final ParametersResult EMPTY = new ParametersResult(List.of(), 0, false);
+    record ParametersResult(
+            List<Map<String, Object>> entries,
+            int droppedSynthesized,
+            boolean bodyEnumerationSkipped,
+            int droppedUrlParams,
+            String adjustedQuery,
+            int droppedBodyParams,
+            String bodyParamsSource,
+            boolean wireBodyParamsReplaced,
+            boolean skipPathBodyRescued,
+            boolean wireTransformed,
+            List<String> encodingsApplied,
+            int wireBodyParamsDropped,
+            boolean supplementalRejectedNonForm) {
+
+        static final ParametersResult EMPTY = pack(
+                List.of(),
+                0,
+                false,
+                0,
+                "",
+                0,
+                BODY_PARAMS_SOURCE_NONE,
+                false,
+                false,
+                false,
+                List.of(),
+                0,
+                false);
+
+        boolean urlParamsTruncated() {
+            return droppedUrlParams > 0;
+        }
+
+        boolean bodyParamsTruncated() {
+            return droppedBodyParams > 0;
+        }
     }
 
-    /** Non-BODY parameter types enumerated by the typed-accessor fast path. */
-    static final HttpParameterType[] NON_BODY_PARAMETER_TYPES = new HttpParameterType[] {
-            HttpParameterType.URL,
-            HttpParameterType.COOKIE,
-            HttpParameterType.JSON,
-            HttpParameterType.XML,
-            HttpParameterType.XML_ATTRIBUTE,
-            HttpParameterType.MULTIPART_ATTRIBUTE
-    };
+    static boolean isDeclaredUrlEncoded(ContentType contentType, List<HttpHeader> headers) {
+        String declaredName = contentType == null ? null : contentType.name();
+        if ("URL_ENCODED".equals(declaredName)) {
+            return true;
+        }
+        String primary = resolvePrimaryMediaType(contentType, headers);
+        if (primary == null || primary.isBlank()) {
+            return false;
+        }
+        return primary.contains("urlencoded") || primary.contains("www-form-urlencoded");
+    }
 
     /**
      * Collects request parameters for the doc representation, choosing between Burp's unfiltered
      * {@link HttpRequest#parameters()} and the typed-by-type fast path based on whether BODY
      * entries are wanted.
-     *
-     * <p>When {@code includeBody} is {@code false} the typed-accessor fast path enumerates only
-     * non-BODY parameter types. This is the heap-safety primary defence against Content-Type
-     * spoofing, where a binary request body declared as {@code application/x-www-form-urlencoded}
-     * would otherwise cause Burp's parser to synthesize tens of millions of fake BODY entries
-     * before our hard cap can drop them. By querying typed accessors directly we never trigger
-     * the synthetic enumeration in the first place and {@code droppedSynthesized} is reported as
-     * {@code 0} for that branch (with the {@code Skipped BODY Enumeration} counter incrementing
-     * instead).</p>
-     *
-     * <p>When {@code includeBody} is {@code true} the unfiltered {@code parameters()} call is
-     * used (legitimate form-encoded bodies need every type) and dropping/capping is delegated to
-     * the existing {@link #parametersToList(List, boolean)} routine.</p>
      */
     static ParametersResult collectParameters(HttpRequest request, boolean includeBody) {
+        return collectParameters(request, includeBody, null, null, null);
+    }
+
+    /**
+     * Collects request parameters, optionally supplementing Burp's BODY list from decompressed
+     * urlencoded bytes when Burp did not enumerate compressed form bodies.
+     *
+     * @param wireBodyBytes optional wire body for supplemental parsing; may be {@code null}
+     * @param contentType declared content type for supplemental parsing; may be {@code null}
+     * @param headers request headers for charset and decompression; may be {@code null}
+     */
+    static ParametersResult collectParameters(
+            HttpRequest request,
+            boolean includeBody,
+            byte[] wireBodyBytes,
+            ContentType contentType,
+            List<HttpHeader> headers) {
         if (request == null) {
             return ParametersResult.EMPTY;
         }
         if (includeBody) {
-            ParametersResult fullScan = parametersToList(request.parameters(), true);
-            return new ParametersResult(fullScan.entries(), fullScan.droppedSynthesized(), false);
+            return collectParametersIncludeBody(request, wireBodyBytes, contentType, headers);
         }
+        return collectParametersSkipBody(request, wireBodyBytes, contentType, headers);
+    }
+
+    private static ParametersResult collectParametersIncludeBody(
+            HttpRequest request,
+            byte[] wireBodyBytes,
+            ContentType contentType,
+            List<HttpHeader> headers) {
+        ParametersResult burp = parametersToList(request.parameters(), true);
+        UrlEncodedWireContext wireContext = resolveUrlEncodedWireContext(wireBodyBytes, contentType, headers);
+        if (wireContext != null && wireContext.resolved().transformed()) {
+            ParametersResult supplemental = parseUrlEncodedBodyParameters(wireContext.logicalBytes(), headers);
+            ParametersResult burpWithoutBody = withoutBodyEntries(burp);
+            int burpBodyDropped = countBodyEntries(burp.entries());
+            List<String> encodings = wireContext.resolved().encodingsApplied();
+            if (supplemental.supplementalRejectedNonForm()) {
+                return withExportMetadata(
+                        burpWithoutBody,
+                        BODY_PARAMS_SOURCE_NONE,
+                        false,
+                        false,
+                        true,
+                        encodings,
+                        burpBodyDropped,
+                        true);
+            }
+            if (!supplemental.entries().isEmpty()) {
+                ParametersResult merged = merge(burpWithoutBody, supplemental);
+                String source = hasRetainedNonBodyEntries(burpWithoutBody.entries())
+                        ? BODY_PARAMS_SOURCE_MIXED
+                        : BODY_PARAMS_SOURCE_SUPPLEMENTAL;
+                return withExportMetadata(
+                        merged,
+                        source,
+                        true,
+                        false,
+                        true,
+                        encodings,
+                        burpBodyDropped);
+            }
+            return withExportMetadata(
+                    burpWithoutBody,
+                    BODY_PARAMS_SOURCE_NONE,
+                    false,
+                    false,
+                    true,
+                    encodings,
+                    burpBodyDropped);
+        }
+        if (!hasBodyParameterEntry(burp.entries())) {
+            ParametersResult supplemental = supplementalUrlEncodedBodyParameters(
+                    wireBodyBytes, contentType, headers);
+            if (supplemental.entries().isEmpty()) {
+                return withExportMetadata(
+                        burp,
+                        inferBodyParamsSource(burp.entries()),
+                        false,
+                        false,
+                        wireContext != null && wireContext.resolved().transformed(),
+                        wireContext == null ? List.of() : wireContext.resolved().encodingsApplied(),
+                        0);
+            }
+            ParametersResult merged = merge(burp, supplemental);
+            String source = hasRetainedNonBodyEntries(burp.entries())
+                    ? BODY_PARAMS_SOURCE_MIXED
+                    : BODY_PARAMS_SOURCE_SUPPLEMENTAL;
+            return withExportMetadata(merged, source, false, false, false, List.of(), 0);
+        }
+        return withExportMetadata(
+                burp,
+                BODY_PARAMS_SOURCE_BURP,
+                false,
+                false,
+                false,
+                List.of(),
+                0);
+    }
+
+    private static ParametersResult collectParametersSkipBody(
+            HttpRequest request,
+            byte[] wireBodyBytes,
+            ContentType contentType,
+            List<HttpHeader> headers) {
+        ParametersResult urlPart = capUrlParameters(safeUrlParameters(request));
         List<ParsedHttpParameter> merged = new ArrayList<>();
-        for (HttpParameterType type : NON_BODY_PARAMETER_TYPES) {
+        for (HttpParameterType type : NON_URL_PARAMETER_TYPES) {
             try {
                 if (!request.hasParameters(type)) {
                     continue;
@@ -225,168 +430,566 @@ final class RequestResponseParametersSupport {
                     break;
                 }
             } catch (RuntimeException ignored) {
-                // Per-type accessor may throw on malformed inputs; skip that type and keep going
-                // so a single bad accessor does not lose the whole parameter list.
+                // Per-type accessor may throw on malformed inputs; skip that type and keep going.
             }
         }
-        ParametersResult capped = parametersToList(merged, true);
-        return new ParametersResult(capped.entries(), 0, true);
+        ParametersResult nonUrlPart = parametersToListNonUrl(merged, false);
+        ParametersResult base = merge(urlPart, new ParametersResult(
+                nonUrlPart.entries(),
+                nonUrlPart.droppedSynthesized(),
+                true,
+                nonUrlPart.droppedUrlParams(),
+                nonUrlPart.adjustedQuery(),
+                nonUrlPart.droppedBodyParams(),
+                BODY_PARAMS_SOURCE_NONE,
+                false,
+                false,
+                false,
+                List.of(),
+                0,
+                false));
+        if (!isDeclaredUrlEncoded(contentType, headers) || wireBodyBytes == null || wireBodyBytes.length == 0) {
+            return base;
+        }
+        ParametersResult supplemental = supplementalUrlEncodedBodyParameters(
+                wireBodyBytes, contentType, headers);
+        if (supplemental.supplementalRejectedNonForm() || supplemental.entries().isEmpty()) {
+            return base;
+        }
+        ParametersResult rescued = merge(base, supplemental);
+        String source = hasRetainedNonBodyEntries(base.entries())
+                ? BODY_PARAMS_SOURCE_MIXED
+                : BODY_PARAMS_SOURCE_SUPPLEMENTAL;
+        UrlEncodedWireContext wireContext = resolveUrlEncodedWireContext(wireBodyBytes, contentType, headers);
+        return withExportMetadata(
+                rescued,
+                source,
+                false,
+                true,
+                wireContext != null && wireContext.resolved().transformed(),
+                wireContext == null ? List.of() : wireContext.resolved().encodingsApplied(),
+                0);
+    }
+
+    static ParametersResult sitemapParameters(
+            HttpRequest request,
+            byte[] wireBodyBytes,
+            ContentType contentType,
+            List<HttpHeader> headers) {
+        ParametersResult urlPart = sitemapUrlParameters(request);
+        ParametersResult supplemental = supplementalUrlEncodedBodyParameters(
+                wireBodyBytes, contentType, headers);
+        if (supplemental.entries().isEmpty()) {
+            return urlPart;
+        }
+        ParametersResult merged = merge(urlPart, supplemental);
+        String source = hasRetainedNonBodyEntries(urlPart.entries())
+                ? BODY_PARAMS_SOURCE_MIXED
+                : BODY_PARAMS_SOURCE_SUPPLEMENTAL;
+        return withExportMetadata(merged, source, false, false, false, List.of(), 0);
+    }
+
+    static boolean hasBodyParameterEntry(List<Map<String, Object>> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return false;
+        }
+        for (Map<String, Object> entry : entries) {
+            if (entry != null && "BODY".equals(HttpMessageDocSupport.stringValue(entry.get("type")))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static ParametersResult supplementalUrlEncodedBodyParameters(
+            byte[] wireBodyBytes,
+            ContentType contentType,
+            List<HttpHeader> headers) {
+        if (wireBodyBytes == null || wireBodyBytes.length == 0) {
+            return ParametersResult.EMPTY;
+        }
+        if (!isDeclaredFormOrMultipart(contentType, headers, resolvePrimaryMediaType(contentType, headers))) {
+            return ParametersResult.EMPTY;
+        }
+        String primary = resolvePrimaryMediaType(contentType, headers);
+        BodyContentEncodingSupport.ResolvedBody resolved =
+                resolveBodyForExport(wireBodyBytes, headers, primary, true, true);
+        byte[] logical = resolved.logicalBytes();
+        if (!HttpMessageDocSupport.looksLikeTextPayload(
+                logical,
+                HttpMessageDocSupport.charsetFromContentType(
+                        HttpMessageDocSupport.headerValue(headers, "Content-Type")))) {
+            return ParametersResult.EMPTY;
+        }
+        return parseUrlEncodedBodyParameters(logical, headers);
+    }
+
+    /**
+     * Parses {@code application/x-www-form-urlencoded} body bytes into BODY parameter entries.
+     *
+     * <p>Rejects logical bodies that look like JSON/protobuf batches mis-declared as form data.
+     * Invalid parameter names are dropped; when the body shape is non-form, returns empty entries
+     * with {@link ParametersResult#supplementalRejectedNonForm()} {@code true}.</p>
+     */
+    static ParametersResult parseUrlEncodedBodyParameters(byte[] logicalBodyBytes, List<HttpHeader> headers) {
+        if (logicalBodyBytes == null || logicalBodyBytes.length == 0) {
+            return ParametersResult.EMPTY;
+        }
+        java.nio.charset.Charset charset = HttpMessageDocSupport.charsetFromContentType(
+                HttpMessageDocSupport.headerValue(headers, "Content-Type"));
+        String decoded = HttpMessageDocSupport.decodeTextWithFallback(logicalBodyBytes, charset);
+        if (decoded == null || decoded.isBlank()) {
+            return ParametersResult.EMPTY;
+        }
+        String trimmed = decoded.trim();
+        if (!looksLikeUrlEncodedFormLogicalBody(trimmed)) {
+            return supplementalRejectedNonFormResult();
+        }
+        if (trimmed.indexOf('=') < 0) {
+            return ParametersResult.EMPTY;
+        }
+        String[] pairs = trimmed.split("&", -1);
+        List<Map<String, Object>> out = new ArrayList<>(Math.min(pairs.length, BODY_PARAMETERS_CAP));
+        int dropped = 0;
+        for (String pair : pairs) {
+            if (pair == null || pair.isEmpty()) {
+                continue;
+            }
+            int eq = pair.indexOf('=');
+            String name = eq < 0 ? pair : pair.substring(0, eq);
+            String value = eq < 0 ? "" : pair.substring(eq + 1);
+            String decodedName = decodeUrlEncodedComponent(name);
+            if (!isValidUrlEncodedParamName(decodedName)) {
+                continue;
+            }
+            if (out.size() >= BODY_PARAMETERS_CAP) {
+                dropped++;
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>(3);
+            entry.put("name", decodedName);
+            entry.put("value", decodeUrlEncodedComponent(value));
+            entry.put("type", HttpParameterType.BODY.name());
+            out.add(entry);
+        }
+        if (out.isEmpty()) {
+            return supplementalRejectedNonFormResult();
+        }
+        return pack(out, 0, false, 0, "", dropped, null, false, false, false, List.of(), 0, false);
+    }
+
+    /**
+     * Returns whether decoded logical body bytes look like urlencoded form rather than JSON/protobuf.
+     *
+     * @param decodedTrim decoded body text after trim
+     * @return {@code false} when the body starts like a JSON array or object
+     */
+    static boolean looksLikeUrlEncodedFormLogicalBody(String decodedTrim) {
+        if (decodedTrim == null || decodedTrim.isEmpty()) {
+            return false;
+        }
+        char first = decodedTrim.charAt(0);
+        if (first == '[' || first == '{') {
+            return false;
+        }
+        return !decodedTrim.startsWith("[[");
+    }
+
+    /**
+     * Returns whether a parsed urlencoded parameter name is safe to export.
+     *
+     * <p>Values may contain brackets or JSON; only names are validated.</p>
+     *
+     * @param name decoded parameter name
+     * @return {@code false} for empty, bracket-prefixed, or control-character names
+     */
+    static boolean isValidUrlEncodedParamName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        char first = name.charAt(0);
+        if (first == '[' || first == '{') {
+            return false;
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char ch = name.charAt(i);
+            if (ch < 0x20 || ch == 0x7f) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ParametersResult supplementalRejectedNonFormResult() {
+        return pack(List.of(), 0, false, 0, "", 0, null, false, false, false, List.of(), 0, true);
+    }
+
+    private static String decodeUrlEncodedComponent(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return java.net.URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
     /**
      * Converts {@code request.parameters()} to the exported list form, optionally filtering
-     * synthesized {@code BODY}-typed entries when the body is not form-encoded, and enforcing
-     * the {@link #PARAMETERS_HARD_CAP} safety ceiling against Content-Type spoofing.
-     *
-     * <p>When {@code includeBody} is {@code false}, {@link HttpParameterType#BODY} entries are
-     * skipped and counted; all other types (URL, COOKIE, XML, JSON, MULTIPART_ATTRIBUTE, and
-     * {@code null}/unknown) are preserved. When {@code includeBody} is {@code true}, BODY
-     * entries are retained up to the hard cap.</p>
-     *
-     * <p>The hard cap is applied in two stages. First, if {@code includeBody} is {@code true}
-     * and the total parameter count exceeds {@link #PARAMETERS_HARD_CAP} <em>and</em> BODY
-     * entries alone exceed the cap, all BODY entries are dropped (Burp's parser is treating a
-     * non-form body as form-encoded). Second, if the remaining list still exceeds the cap it is
-     * truncated, so no single request can emit more than {@link #PARAMETERS_HARD_CAP} nested
-     * parameter documents. Dropped entries at both stages are counted in the returned result.</p>
+     * synthesized {@code BODY}-typed entries and enforcing non-URL caps.
      */
     static ParametersResult parametersToList(List<ParsedHttpParameter> parameters, boolean includeBody) {
         if (parameters == null || parameters.isEmpty()) {
             return ParametersResult.EMPTY;
         }
-        boolean effectiveIncludeBody = includeBody;
-        if (effectiveIncludeBody && parameters.size() > PARAMETERS_HARD_CAP) {
-            int bodyCount = 0;
-            for (ParsedHttpParameter p : parameters) {
-                if (p != null && p.type() == HttpParameterType.BODY) {
-                    bodyCount++;
-                    if (bodyCount > PARAMETERS_HARD_CAP) {
-                        effectiveIncludeBody = false;
-                        break;
-                    }
-                }
+        List<ParsedHttpParameter> urlParameters = new ArrayList<>();
+        List<ParsedHttpParameter> nonUrlParameters = new ArrayList<>();
+        for (ParsedHttpParameter parameter : parameters) {
+            if (parameter != null && parameter.type() == HttpParameterType.URL) {
+                urlParameters.add(parameter);
+            } else if (parameter != null) {
+                nonUrlParameters.add(parameter);
             }
         }
-        List<Map<String, Object>> out = new ArrayList<>(Math.min(parameters.size(), PARAMETERS_HARD_CAP));
+        return merge(capUrlParameters(urlParameters), parametersToListNonUrl(nonUrlParameters, includeBody));
+    }
+
+    static ParametersResult sitemapUrlParameters(HttpRequest request) {
+        return capUrlParameters(safeUrlParameters(request));
+    }
+
+    /**
+     * Rebuilds {@code path.with_query} from {@code pathWithoutQuery} and a narrowed query string.
+     */
+    static String buildPathWithQuery(String pathWithoutQuery, String query) {
+        String normalizedPath = HttpMessageDocSupport.nullToEmpty(pathWithoutQuery);
+        String normalizedQuery = query == null ? "" : query;
+        if (normalizedQuery.isEmpty()) {
+            return normalizedPath;
+        }
+        if (normalizedPath.isEmpty()) {
+            return "?" + normalizedQuery;
+        }
+        return normalizedPath + "?" + normalizedQuery;
+    }
+
+    /**
+     * Reads the query string from a built request sub-document.
+     */
+    static String requestDocQuery(Map<String, Object> requestDoc) {
+        if (requestDoc == null) {
+            return "";
+        }
+        Object path = requestDoc.get("path");
+        if (path instanceof Map<?, ?> pathMap) {
+            return HttpMessageDocSupport.nullToEmpty(HttpMessageDocSupport.stringValue(pathMap.get("query")));
+        }
+        return HttpMessageDocSupport.nullToEmpty(HttpMessageDocSupport.stringValue(requestDoc.get("query")));
+    }
+
+    static void recordParameterTelemetry(
+            HttpRequest request,
+            ContentType contentType,
+            ParametersResult parametersResult) {
+        if (parametersResult.droppedSynthesized() > 0) {
+            ai.attackframework.tools.burp.utils.ExportStats.recordSynthesizedBodyParamsDropped(
+                    parametersResult.droppedSynthesized());
+        }
+        if (parametersResult.bodyParamsSource() != null) {
+            ai.attackframework.tools.burp.utils.ExportStats.recordBodyParamsSource(parametersResult.bodyParamsSource());
+        }
+        for (String encoding : parametersResult.encodingsApplied()) {
+            if (encoding != null && !encoding.isBlank()) {
+                ai.attackframework.tools.burp.utils.ExportStats.recordBodyParamsEncoding(encoding);
+            }
+        }
+        if (parametersResult.wireBodyParamsDropped() > 0) {
+            ai.attackframework.tools.burp.utils.ExportStats.recordWireBodyParamsDropped(
+                    parametersResult.wireBodyParamsDropped());
+        }
+    }
+
+    private static ParametersResult capUrlParameters(List<ParsedHttpParameter> urlParameters) {
+        if (urlParameters == null || urlParameters.isEmpty()) {
+            return ParametersResult.EMPTY;
+        }
+        List<Map<String, Object>> out = new ArrayList<>(Math.min(urlParameters.size(), URL_PARAMETERS_CAP));
         int dropped = 0;
-        for (ParsedHttpParameter p : parameters) {
-            HttpParameterType type = p.type();
-            if (!effectiveIncludeBody && type == HttpParameterType.BODY) {
-                dropped++;
+        for (ParsedHttpParameter parameter : urlParameters) {
+            if (parameter == null) {
                 continue;
             }
-            if (out.size() >= PARAMETERS_HARD_CAP) {
+            if (out.size() >= URL_PARAMETERS_CAP) {
                 dropped++;
                 continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>(3);
-            entry.put("name", p.name());
-            entry.put("value", p.value());
+            entry.put("name", parameter.name());
+            entry.put("value", parameter.value());
+            entry.put("type", HttpParameterType.URL.name());
+            out.add(entry);
+        }
+        String adjustedQuery = buildQueryStringFromUrlEntries(out);
+        return pack(out, 0, false, dropped, adjustedQuery, 0, null, false, false, false, List.of(), 0, false);
+    }
+
+    private static ParametersResult parametersToListNonUrl(
+            List<ParsedHttpParameter> parameters,
+            boolean includeBody) {
+        if (parameters == null || parameters.isEmpty()) {
+            return ParametersResult.EMPTY;
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        int droppedSynthesized = 0;
+        int bodyKept = 0;
+        int bodyDropped = 0;
+        int otherKept = 0;
+        for (ParsedHttpParameter parameter : parameters) {
+            if (parameter == null) {
+                continue;
+            }
+            HttpParameterType type = parameter.type();
+            if (type == HttpParameterType.BODY) {
+                if (!includeBody) {
+                    droppedSynthesized++;
+                    continue;
+                }
+                if (bodyKept >= BODY_PARAMETERS_CAP) {
+                    bodyDropped++;
+                    continue;
+                }
+                bodyKept++;
+            } else {
+                if (otherKept >= PARAMETERS_HARD_CAP) {
+                    continue;
+                }
+                otherKept++;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>(3);
+            entry.put("name", parameter.name());
+            entry.put("value", parameter.value());
             entry.put("type", type == null ? null : type.name());
             out.add(entry);
         }
-        return new ParametersResult(out, dropped, false);
+        return pack(out, droppedSynthesized, false, 0, "", bodyDropped, null, false, false, false, List.of(), 0, false);
     }
 
-    static List<Map<String, Object>> sitemapUrlParameters(HttpRequest request) {
+    private static ParametersResult merge(ParametersResult urlPart, ParametersResult nonUrlPart) {
+        List<Map<String, Object>> merged = new ArrayList<>(urlPart.entries().size() + nonUrlPart.entries().size());
+        merged.addAll(urlPart.entries());
+        merged.addAll(nonUrlPart.entries());
+        String source = nonUrlPart.bodyParamsSource() != null
+                ? nonUrlPart.bodyParamsSource()
+                : urlPart.bodyParamsSource() != null
+                        ? urlPart.bodyParamsSource()
+                        : inferBodyParamsSource(merged);
+        return pack(
+                merged,
+                nonUrlPart.droppedSynthesized(),
+                nonUrlPart.bodyEnumerationSkipped(),
+                urlPart.droppedUrlParams(),
+                urlPart.adjustedQuery(),
+                nonUrlPart.droppedBodyParams(),
+                source,
+                nonUrlPart.wireBodyParamsReplaced() || urlPart.wireBodyParamsReplaced(),
+                nonUrlPart.skipPathBodyRescued() || urlPart.skipPathBodyRescued(),
+                nonUrlPart.wireTransformed() || urlPart.wireTransformed(),
+                nonUrlPart.encodingsApplied().isEmpty()
+                        ? urlPart.encodingsApplied()
+                        : nonUrlPart.encodingsApplied(),
+                nonUrlPart.wireBodyParamsDropped() + urlPart.wireBodyParamsDropped(),
+                nonUrlPart.supplementalRejectedNonForm() || urlPart.supplementalRejectedNonForm());
+    }
+
+    private static List<ParsedHttpParameter> safeUrlParameters(HttpRequest request) {
         if (request == null) {
             return List.of();
         }
-        List<ParsedHttpParameter> parameters = request.parameters(HttpParameterType.URL);
-        return parametersToList(parameters, true).entries();
-    }
-
-    /**
-     * Records parameter-cardinality telemetry for one request and, when a threshold is crossed,
-     * emits a single log line classified by the kind of cardinality observed.
-     *
-     * <p>Split-level logging so users are not confused by WARN output on the common case:</p>
-     * <ul>
-     *   <li><b>Real anomaly</b> ({@code retained >= PARAMETERS_WARN_THRESHOLD}): legitimate
-     *       request with thousands of real parameters. Emits {@code WARN} on the panel so
-     *       operators notice. Message tag: {@code [ParameterCardinality][retained]}.</li>
-     *   <li><b>Routine filter activity</b> ({@code droppedSynthesized >= PARAMETERS_WARN_THRESHOLD}
-     *       while {@code retained} stays below threshold): a Content-Type mismatch caused Burp's
-     *       parameter parser to fabricate synthetic {@code BODY} entries from a binary request
-     *       body whose declared Content-Type (typically {@code URL_ENCODED}) did not match the
-     *       actual bytes, and our synthetic-BODY filter dropped them. Expected and common on
-     *       protobuf, gRPC, or other binary request bodies mis-declared as form-encoded, so only
-     *       {@code DEBUG} is emitted. Message tag: {@code [ParameterCardinality][synthesized_dropped]}.</li>
-     * </ul>
-     *
-     * <p>Routine body-enumeration skips (non-form / binary bodies) update
-     * {@link ai.attackframework.tools.burp.utils.ExportStats} only; they are not logged. The
-     * {@code Synthesized Body Params Dropped} and {@code Docs Over Param Threshold} counters
-     * also update in {@link ai.attackframework.tools.burp.utils.ExportStats} independent of log
-     * level.</p>
-     */
-    /** Package-private for direct testing of the threshold branches. */
-    static void recordParameterTelemetry(
-            HttpRequest request,
-            ContentType contentType,
-            int retained,
-            int droppedSynthesized,
-            boolean bodyEnumerationSkipped) {
-        if (droppedSynthesized > 0) {
-            ai.attackframework.tools.burp.utils.ExportStats.recordSynthesizedBodyParamsDropped(droppedSynthesized);
-        }
-        if (bodyEnumerationSkipped) {
-            ai.attackframework.tools.burp.utils.ExportStats.recordSkippedBodyParameterEnumeration();
-        }
-        boolean retainedHigh = retained >= PARAMETERS_WARN_THRESHOLD;
-        boolean droppedHigh = droppedSynthesized >= PARAMETERS_WARN_THRESHOLD;
-        if (!retainedHigh && !droppedHigh) {
-            return;
-        }
-        ai.attackframework.tools.burp.utils.ExportStats.recordDocsOverParamsThreshold();
-        String ct = contentType == null ? "unknown" : contentType.toString();
-        String commonFields = formatCommonFields(
-                safeMethod(request),
-                safeTruncatedUrl(request),
-                ct,
-                retained,
-                droppedSynthesized);
-        if (retainedHigh) {
-            Logger.logWarnPanelOnly("[ParameterCardinality][retained] High retained parameter count; "
-                    + "likely a legitimate request with unusual cardinality - review: " + commonFields);
-        } else {
-            Logger.logDebug("[ParameterCardinality][synthesized_dropped] Content-Type mismatch "
-                    + "caused Burp's parameters() API to mis-infer "
-                    + droppedSynthesized
-                    + " synthetic BODY parameters: the request declared a form-encoded "
-                    + "Content-Type (" + ct + ") but carried a binary body, so Burp scanned the "
-                    + "raw bytes as if form-encoded and fabricated entries. All dropped. "
-                    + "Expected on binary request bodies such as protobuf/gRPC: " + commonFields);
-        }
-    }
-
-    private static String safeMethod(HttpRequest request) {
         try {
-            if (request != null && request.method() != null) {
-                return request.method();
+            List<ParsedHttpParameter> parameters = request.parameters(HttpParameterType.URL);
+            return parameters == null ? List.of() : parameters;
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    static String buildQueryStringFromUrlEntries(List<Map<String, Object>> urlEntries) {
+        if (urlEntries == null || urlEntries.isEmpty()) {
+            return "";
+        }
+        StringBuilder query = new StringBuilder();
+        boolean first = true;
+        for (Map<String, Object> entry : urlEntries) {
+            if (entry == null) {
+                continue;
             }
-        } catch (RuntimeException ignored) { /* fall through to "unknown" */ }
-        return "unknown";
+            if (!first) {
+                query.append('&');
+            }
+            first = false;
+            query.append(encodeQueryComponent(HttpMessageDocSupport.stringValue(entry.get("name"))));
+            query.append('=');
+            query.append(encodeQueryComponent(HttpMessageDocSupport.stringValue(entry.get("value"))));
+        }
+        return query.toString();
     }
 
-    private static String safeTruncatedUrl(HttpRequest request) {
-        String url = HttpMessageDocSupport.normalizeBlank(
-                RequestResponseDocBuilder.safeRequestUrl(request, "ParameterCardinality"));
-        if (url == null) {
-            return "unknown";
+    private record UrlEncodedWireContext(
+            BodyContentEncodingSupport.ResolvedBody resolved, byte[] logicalBytes) {}
+
+    private static UrlEncodedWireContext resolveUrlEncodedWireContext(
+            byte[] wireBodyBytes,
+            ContentType contentType,
+            List<HttpHeader> headers) {
+        if (wireBodyBytes == null || wireBodyBytes.length == 0 || !isDeclaredUrlEncoded(contentType, headers)) {
+            return null;
         }
-        if (url.length() > PARAMETERS_WARN_URL_MAX_LEN) {
-            return url.substring(0, PARAMETERS_WARN_URL_MAX_LEN) + "...";
-        }
-        return url;
+        String primary = resolvePrimaryMediaType(contentType, headers);
+        BodyContentEncodingSupport.ResolvedBody resolved =
+                resolveBodyForExport(wireBodyBytes, headers, primary, true, true);
+        return new UrlEncodedWireContext(resolved, resolved.logicalBytes());
     }
 
-    private static String formatCommonFields(
-            String method, String url, String contentType, int retained, int droppedSynthesized) {
-        return "method=" + method
-                + " url=" + url
-                + " content_type=" + contentType
-                + " retained=" + retained
-                + " dropped_synthesized=" + droppedSynthesized;
+    private static ParametersResult withoutBodyEntries(ParametersResult result) {
+        if (result == null || result.entries().isEmpty()) {
+            return result == null ? ParametersResult.EMPTY : result;
+        }
+        List<Map<String, Object>> kept = new ArrayList<>(result.entries().size());
+        for (Map<String, Object> entry : result.entries()) {
+            if (entry != null && !"BODY".equals(HttpMessageDocSupport.stringValue(entry.get("type")))) {
+                kept.add(entry);
+            }
+        }
+        return withExportMetadata(
+                new ParametersResult(
+                        kept,
+                        result.droppedSynthesized(),
+                        result.bodyEnumerationSkipped(),
+                        result.droppedUrlParams(),
+                        result.adjustedQuery(),
+                        result.droppedBodyParams(),
+                        result.bodyParamsSource(),
+                        result.wireBodyParamsReplaced(),
+                        result.skipPathBodyRescued(),
+                        result.wireTransformed(),
+                        result.encodingsApplied(),
+                        result.wireBodyParamsDropped(),
+                        result.supplementalRejectedNonForm()),
+                inferBodyParamsSource(kept),
+                result.wireBodyParamsReplaced(),
+                result.skipPathBodyRescued(),
+                result.wireTransformed(),
+                result.encodingsApplied(),
+                result.wireBodyParamsDropped());
+    }
+
+    private static int countBodyEntries(List<Map<String, Object>> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (Map<String, Object> entry : entries) {
+            if (entry != null && "BODY".equals(HttpMessageDocSupport.stringValue(entry.get("type")))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean hasRetainedNonBodyEntries(List<Map<String, Object>> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return false;
+        }
+        for (Map<String, Object> entry : entries) {
+            if (entry == null) {
+                continue;
+            }
+            String type = HttpMessageDocSupport.stringValue(entry.get("type"));
+            if (type != null && !"BODY".equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String inferBodyParamsSource(List<Map<String, Object>> entries) {
+        return hasBodyParameterEntry(entries) ? BODY_PARAMS_SOURCE_BURP : BODY_PARAMS_SOURCE_NONE;
+    }
+
+    private static ParametersResult withExportMetadata(
+            ParametersResult base,
+            String bodyParamsSource,
+            boolean wireBodyParamsReplaced,
+            boolean skipPathBodyRescued,
+            boolean wireTransformed,
+            List<String> encodingsApplied,
+            int wireBodyParamsDropped) {
+        return withExportMetadata(
+                base,
+                bodyParamsSource,
+                wireBodyParamsReplaced,
+                skipPathBodyRescued,
+                wireTransformed,
+                encodingsApplied,
+                wireBodyParamsDropped,
+                base.supplementalRejectedNonForm());
+    }
+
+    private static ParametersResult withExportMetadata(
+            ParametersResult base,
+            String bodyParamsSource,
+            boolean wireBodyParamsReplaced,
+            boolean skipPathBodyRescued,
+            boolean wireTransformed,
+            List<String> encodingsApplied,
+            int wireBodyParamsDropped,
+            boolean supplementalRejectedNonForm) {
+        return pack(
+                base.entries(),
+                base.droppedSynthesized(),
+                skipPathBodyRescued ? false : base.bodyEnumerationSkipped(),
+                base.droppedUrlParams(),
+                base.adjustedQuery(),
+                base.droppedBodyParams(),
+                bodyParamsSource,
+                wireBodyParamsReplaced,
+                skipPathBodyRescued,
+                wireTransformed,
+                encodingsApplied == null ? List.of() : List.copyOf(encodingsApplied),
+                wireBodyParamsDropped,
+                supplementalRejectedNonForm);
+    }
+
+    private static ParametersResult pack(
+            List<Map<String, Object>> entries,
+            int droppedSynthesized,
+            boolean bodyEnumerationSkipped,
+            int droppedUrlParams,
+            String adjustedQuery,
+            int droppedBodyParams,
+            String bodyParamsSource,
+            boolean wireBodyParamsReplaced,
+            boolean skipPathBodyRescued,
+            boolean wireTransformed,
+            List<String> encodingsApplied,
+            int wireBodyParamsDropped,
+            boolean supplementalRejectedNonForm) {
+        String resolvedSource = bodyParamsSource == null ? inferBodyParamsSource(entries) : bodyParamsSource;
+        return new ParametersResult(
+                entries,
+                droppedSynthesized,
+                bodyEnumerationSkipped,
+                droppedUrlParams,
+                adjustedQuery == null ? "" : adjustedQuery,
+                droppedBodyParams,
+                resolvedSource,
+                wireBodyParamsReplaced,
+                skipPathBodyRescued,
+                wireTransformed,
+                encodingsApplied == null ? List.of() : encodingsApplied,
+                wireBodyParamsDropped,
+                supplementalRejectedNonForm);
+    }
+
+    private static String encodeQueryComponent(String value) {
+        String normalized = value == null ? "" : value;
+        return URLEncoder.encode(normalized, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

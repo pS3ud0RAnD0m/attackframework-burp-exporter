@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
 
+import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
 import burp.api.montoya.core.Marker;
 import burp.api.montoya.http.HttpService;
@@ -31,9 +32,40 @@ public final class RequestResponseDocBuilder {
     public record ParametersResult(
             List<Map<String, Object>> entries,
             int droppedSynthesized,
-            boolean bodyEnumerationSkipped) {
+            boolean bodyEnumerationSkipped,
+            int droppedUrlParams,
+            String adjustedQuery,
+            int droppedBodyParams,
+            String bodyParamsSource,
+            boolean wireBodyParamsReplaced,
+            boolean skipPathBodyRescued,
+            boolean wireTransformed,
+            List<String> encodingsApplied,
+            int wireBodyParamsDropped,
+            boolean supplementalRejectedNonForm) {
         private static ParametersResult from(RequestResponseParametersSupport.ParametersResult result) {
-            return new ParametersResult(result.entries(), result.droppedSynthesized(), result.bodyEnumerationSkipped());
+            return new ParametersResult(
+                    result.entries(),
+                    result.droppedSynthesized(),
+                    result.bodyEnumerationSkipped(),
+                    result.droppedUrlParams(),
+                    result.adjustedQuery(),
+                    result.droppedBodyParams(),
+                    result.bodyParamsSource(),
+                    result.wireBodyParamsReplaced(),
+                    result.skipPathBodyRescued(),
+                    result.wireTransformed(),
+                    result.encodingsApplied(),
+                    result.wireBodyParamsDropped(),
+                    result.supplementalRejectedNonForm());
+        }
+
+        boolean urlParamsTruncated() {
+            return droppedUrlParams > 0;
+        }
+
+        boolean bodyParamsTruncated() {
+            return droppedBodyParams > 0;
         }
     }
 
@@ -48,17 +80,85 @@ public final class RequestResponseDocBuilder {
     static void recordParameterTelemetry(
             HttpRequest request,
             ContentType contentType,
+            ParametersResult parametersResult) {
+        RequestResponseParametersSupport.recordParameterTelemetry(request, contentType, toSupport(parametersResult));
+    }
+
+    private static RequestResponseParametersSupport.ParametersResult toSupport(ParametersResult result) {
+        return new RequestResponseParametersSupport.ParametersResult(
+                result.entries(),
+                result.droppedSynthesized(),
+                result.bodyEnumerationSkipped(),
+                result.droppedUrlParams(),
+                result.adjustedQuery(),
+                result.droppedBodyParams(),
+                result.bodyParamsSource(),
+                result.wireBodyParamsReplaced(),
+                result.skipPathBodyRescued(),
+                result.wireTransformed(),
+                result.encodingsApplied(),
+                result.wireBodyParamsDropped(),
+                result.supplementalRejectedNonForm());
+    }
+
+    /** Bridges legacy tests that pass scalar telemetry fields. */
+    static void recordParameterTelemetry(
+            HttpRequest request,
+            ContentType contentType,
             int retained,
             int droppedSynthesized,
             boolean bodyEnumerationSkipped) {
-        RequestResponseParametersSupport.recordParameterTelemetry(
-                request, contentType, retained, droppedSynthesized, bodyEnumerationSkipped);
+        if (droppedSynthesized > 0) {
+            RequestResponseParametersSupport.recordParameterTelemetry(
+                    request,
+                    contentType,
+                    new RequestResponseParametersSupport.ParametersResult(
+                            List.of(),
+                            droppedSynthesized,
+                            bodyEnumerationSkipped,
+                            0,
+                            "",
+                            0,
+                            RequestResponseParametersSupport.BODY_PARAMS_SOURCE_NONE,
+                            false,
+                            false,
+                            false,
+                            List.of(),
+                            0,
+                            false));
+        } else if (bodyEnumerationSkipped) {
+            RequestResponseParametersSupport.recordParameterTelemetry(
+                    request,
+                    contentType,
+                    new RequestResponseParametersSupport.ParametersResult(
+                            List.of(),
+                            0,
+                            true,
+                            0,
+                            "",
+                            0,
+                            RequestResponseParametersSupport.BODY_PARAMS_SOURCE_NONE,
+                            false,
+                            false,
+                            false,
+                            List.of(),
+                            0,
+                            false));
+        }
     }
 
     static boolean shouldIncludeBodyParameters(
             ContentType contentType, List<HttpHeader> headers, String inferredContentType) {
+        return shouldIncludeBodyParameters(contentType, headers, inferredContentType, null);
+    }
+
+    static boolean shouldIncludeBodyParameters(
+            ContentType contentType,
+            List<HttpHeader> headers,
+            String inferredContentType,
+            byte[] bodyBytes) {
         return RequestResponseParametersSupport.shouldIncludeBodyParameters(
-                contentType, headers, inferredContentType);
+                contentType, headers, inferredContentType, bodyBytes);
     }
 
     static String inferRequestContentType(byte[] bodyBytes, List<HttpHeader> headers) {
@@ -147,11 +247,25 @@ public final class RequestResponseDocBuilder {
             HttpService service,
             Map<String, Object> requestDoc,
             String logPrefix) {
+        if (request != null && requestDoc != null && requestDocQueryDiffersFromBurp(request, requestDoc)) {
+            String narrowedPath = HttpMessageDocSupport.normalizeBlank(requestPathWithQuery(requestDoc));
+            String rebuilt = reconstructAbsoluteUrl(service, narrowedPath);
+            if (rebuilt != null) {
+                return rebuilt;
+            }
+            if (narrowedPath != null) {
+                return narrowedPath;
+            }
+        }
         String directUrl = safeRequestUrl(request, logPrefix);
         if (directUrl != null) {
             return directUrl;
         }
         String path = HttpMessageDocSupport.normalizeBlank(requestPathWithQuery(requestDoc));
+        return reconstructAbsoluteUrl(service, path);
+    }
+
+    private static String reconstructAbsoluteUrl(HttpService service, String path) {
         if (path == null) {
             return null;
         }
@@ -166,24 +280,232 @@ public final class RequestResponseDocBuilder {
         return scheme + "://" + service.host() + portSuffix(scheme, service.port()) + normalizedPath;
     }
 
+    private static void applyUrlParameterCapToRequestFields(
+            Map<String, Object> req,
+            String method,
+            String pathWithQuery,
+            String pathWithoutQuery,
+            String query,
+            String fileExtension,
+            ParametersResult parametersResult,
+            boolean trafficShape) {
+        String effectiveQuery = query;
+        String effectivePathWithQuery = pathWithQuery;
+        if (parametersResult.urlParamsTruncated()) {
+            effectiveQuery = parametersResult.adjustedQuery();
+            effectivePathWithQuery = RequestResponseParametersSupport.buildPathWithQuery(
+                    pathWithoutQuery, effectiveQuery);
+        }
+        putRequestCoreFields(
+                req,
+                method,
+                effectivePathWithQuery,
+                pathWithoutQuery,
+                effectiveQuery,
+                fileExtension,
+                trafficShape);
+    }
+
+    private static void finalizeParameterTelemetry(
+            HttpRequest request,
+            HttpService service,
+            Map<String, Object> requestDoc,
+            ContentType contentType,
+            List<HttpHeader> requestHeaders,
+            String inferredContentType,
+            byte[] bodyBytes,
+            ParametersResult parametersResult) {
+        recordParameterTelemetry(request, contentType, parametersResult);
+        boolean misgateSuspect = BodyEnumerationSkippedLog.isMisgateSuspect(
+                contentType,
+                requestHeaders,
+                inferredContentType,
+                bodyBytes,
+                parametersResult.bodyEnumerationSkipped());
+        recordParameterIntegrityStats(parametersResult, misgateSuspect);
+        recordCompressedWireBodyParamsLog(request, service, requestDoc, parametersResult);
+        if (parametersResult.urlParamsTruncated()) {
+            UrlParameterTruncationLog.record(
+                    request,
+                    service,
+                    requestDoc,
+                    parametersResult.droppedUrlParams());
+        }
+        if (parametersResult.bodyParamsTruncated()) {
+            BodyParameterTruncationLog.record(
+                    request,
+                    service,
+                    requestDoc,
+                    parametersResult.droppedBodyParams());
+        }
+        BodyEnumerationSkippedLog.evaluateAndRecord(
+                request,
+                service,
+                requestDoc,
+                contentType,
+                requestHeaders,
+                inferredContentType,
+                bodyBytes,
+                parametersResult.bodyEnumerationSkipped());
+    }
+
+    private static void recordParameterIntegrityStats(
+            ParametersResult parametersResult,
+            boolean misgateSuspect) {
+        if (parametersResult == null) {
+            return;
+        }
+        if (misgateSuspect) {
+            ExportStats.recordBodyEnumerationMisgateSuspect();
+        }
+        if (parametersResult.bodyEnumerationSkipped()) {
+            ExportStats.recordSkippedBodyParameterEnumeration();
+        }
+        String source = parametersResult.bodyParamsSource();
+        if (source != null && !source.isBlank()) {
+            ExportStats.recordBodyParamsSource(source);
+        }
+        if (parametersResult.encodingsApplied() != null) {
+            for (String encoding : parametersResult.encodingsApplied()) {
+                if (encoding != null && !encoding.isBlank()) {
+                    ExportStats.recordBodyParamsEncoding(encoding);
+                }
+            }
+        }
+        String skipReason = resolveBodyParamsSkipReason(parametersResult, misgateSuspect);
+        if (skipReason == null || skipReason.isBlank()) {
+            return;
+        }
+        ExportStats.recordBodyParamsSkipReason(skipReason);
+        switch (skipReason) {
+            case "wire_replaced" -> ExportStats.recordWireBodyParamsReplaced();
+            case "supplemental_added" -> ExportStats.recordSupplementalBodyParamsUsed();
+            case "supplemental_rejected_non_form" -> ExportStats.recordSupplementalRejectedNonForm();
+            case "skip_path_rescued" -> ExportStats.recordSkipPathBodyRescued();
+            default -> {
+                // misgate_binary, enumeration_skipped, wire_dropped, etc.
+            }
+        }
+    }
+
+    /**
+     * Resolves the per-document skip/correction reason for parameter-integrity session stats.
+     *
+     * @param parametersResult collected parameter metadata
+     * @param misgateSuspect whether the mis-gate suspect criteria matched
+     * @return keyword reason, or {@code null} when no special path applied
+     */
+    static String resolveBodyParamsSkipReason(ParametersResult parametersResult, boolean misgateSuspect) {
+        if (parametersResult.supplementalRejectedNonForm()) {
+            return "supplemental_rejected_non_form";
+        }
+        if (parametersResult.skipPathBodyRescued()) {
+            return "skip_path_rescued";
+        }
+        if (parametersResult.wireBodyParamsReplaced()) {
+            return "wire_replaced";
+        }
+        if (misgateSuspect) {
+            return "misgate_binary";
+        }
+        if (parametersResult.wireTransformed()
+                && parametersResult.wireBodyParamsDropped() > 0
+                && RequestResponseParametersSupport.BODY_PARAMS_SOURCE_NONE.equals(
+                        parametersResult.bodyParamsSource())) {
+            return "wire_dropped";
+        }
+        if (RequestResponseParametersSupport.BODY_PARAMS_SOURCE_SUPPLEMENTAL.equals(
+                        parametersResult.bodyParamsSource())
+                && !parametersResult.wireBodyParamsReplaced()) {
+            return "supplemental_added";
+        }
+        if (parametersResult.bodyEnumerationSkipped()) {
+            return "enumeration_skipped";
+        }
+        return null;
+    }
+
+    private static void recordCompressedWireBodyParamsLog(
+            HttpRequest request,
+            HttpService service,
+            Map<String, Object> requestDoc,
+            ParametersResult parametersResult) {
+        if (parametersResult.supplementalRejectedNonForm()
+                && parametersResult.wireTransformed()
+                && parametersResult.wireBodyParamsDropped() > 0) {
+            CompressedWireBodyParamsLog.record(
+                    request, service, requestDoc, CompressedWireBodyParamsLog.Category.WIRE_DROPPED);
+            return;
+        }
+        if (parametersResult.wireBodyParamsReplaced()) {
+            CompressedWireBodyParamsLog.record(
+                    request, service, requestDoc, CompressedWireBodyParamsLog.Category.REPLACED);
+            return;
+        }
+        if (parametersResult.skipPathBodyRescued()) {
+            CompressedWireBodyParamsLog.record(
+                    request, service, requestDoc, CompressedWireBodyParamsLog.Category.SKIP_RESCUED);
+            return;
+        }
+        if (parametersResult.wireTransformed()
+                && parametersResult.wireBodyParamsDropped() > 0
+                && RequestResponseParametersSupport.BODY_PARAMS_SOURCE_NONE.equals(
+                        parametersResult.bodyParamsSource())) {
+            CompressedWireBodyParamsLog.record(
+                    request, service, requestDoc, CompressedWireBodyParamsLog.Category.WIRE_DROPPED);
+            return;
+        }
+        if ((RequestResponseParametersSupport.BODY_PARAMS_SOURCE_SUPPLEMENTAL.equals(
+                        parametersResult.bodyParamsSource())
+                || RequestResponseParametersSupport.BODY_PARAMS_SOURCE_MIXED.equals(
+                        parametersResult.bodyParamsSource()))
+                && !parametersResult.wireTransformed()
+                && RequestResponseParametersSupport.hasBodyParameterEntry(parametersResult.entries())) {
+            CompressedWireBodyParamsLog.record(
+                    request, service, requestDoc, CompressedWireBodyParamsLog.Category.SUPPLEMENTAL_ADDED);
+        }
+    }
+
+    private static boolean requestDocQueryDiffersFromBurp(HttpRequest request, Map<String, Object> requestDoc) {
+        if (request == null || requestDoc == null) {
+            return false;
+        }
+        try {
+            String burpQuery = HttpMessageDocSupport.nullToEmpty(request.query());
+            String docQuery = RequestResponseParametersSupport.requestDocQuery(requestDoc);
+            return !burpQuery.equals(docQuery);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     private static Map<String, Object> buildRequestDocStrict(HttpRequest request) {
         Map<String, Object> req = new LinkedHashMap<>();
-        putRequestCoreFields(req, request.method(), request.path(), request.pathWithoutQuery(),
-                request.query(), request.fileExtension(), false);
-
         burp.api.montoya.http.message.ContentType contentType = request.contentType();
         List<HttpHeader> requestHeaders = request.headers();
         byte[] bodyBytes = request.body() == null ? null : request.body().getBytes();
-        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(bodyBytes, requestHeaders);
+        String inferredContentType =
+                RequestResponseParametersSupport.inferRequestContentType(bodyBytes, requestHeaders, contentType);
+        boolean includeBody = RequestResponseParametersSupport.shouldIncludeBodyParameters(
+                contentType, requestHeaders, inferredContentType, bodyBytes);
+        ParametersResult parametersResult = ParametersResult.from(
+                RequestResponseParametersSupport.collectParameters(
+                        request, includeBody, bodyBytes, contentType, requestHeaders));
+        applyUrlParameterCapToRequestFields(
+                req,
+                request.method(),
+                request.path(),
+                request.pathWithoutQuery(),
+                request.query(),
+                request.fileExtension(),
+                parametersResult,
+                false);
         putLegacyRequestContentTypeFields(req, contentType, inferredContentType);
 
         req.put("headers", HttpMessageDocSupport.buildHeadersObject(requestHeaders));
-        boolean includeBody = RequestResponseParametersSupport.shouldIncludeBodyParameters(contentType, requestHeaders, inferredContentType);
-        ParametersResult parametersResult = ParametersResult.from(
-                RequestResponseParametersSupport.collectParameters(request, includeBody));
         req.put("parameters", parametersResult.entries());
-        RequestResponseParametersSupport.recordParameterTelemetry(request, contentType, parametersResult.entries().size(),
-                parametersResult.droppedSynthesized(), parametersResult.bodyEnumerationSkipped());
+        finalizeParameterTelemetry(
+                request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
                 req,
@@ -192,7 +514,6 @@ public final class RequestResponseDocBuilder {
                 HttpMessageDocSupport.mediaTypeHints(
                         contentType == null ? null : contentType.toString(),
                         contentType == null ? null : contentType.name()),
-                false,
                 false,
                 request.bodyOffset());
 
@@ -202,20 +523,29 @@ public final class RequestResponseDocBuilder {
 
     private static Map<String, Object> buildTrafficRequestDocStrict(HttpRequest request) {
         Map<String, Object> req = new LinkedHashMap<>();
-        putRequestCoreFields(req, request.method(), request.path(), request.pathWithoutQuery(),
-                request.query(), request.fileExtension(), true);
-
         burp.api.montoya.http.message.ContentType contentType = request.contentType();
         List<HttpHeader> requestHeaders = request.headers();
         byte[] bodyBytes = request.body() == null ? null : request.body().getBytes();
-        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(bodyBytes, requestHeaders);
-        req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
-        boolean includeBody = RequestResponseParametersSupport.shouldIncludeBodyParameters(contentType, requestHeaders, inferredContentType);
+        String inferredContentType =
+                RequestResponseParametersSupport.inferRequestContentType(bodyBytes, requestHeaders, contentType);
+        boolean includeBody = RequestResponseParametersSupport.shouldIncludeBodyParameters(
+                contentType, requestHeaders, inferredContentType, bodyBytes);
         ParametersResult parametersResult = ParametersResult.from(
-                RequestResponseParametersSupport.collectParameters(request, includeBody));
+                RequestResponseParametersSupport.collectParameters(
+                        request, includeBody, bodyBytes, contentType, requestHeaders));
+        applyUrlParameterCapToRequestFields(
+                req,
+                request.method(),
+                request.path(),
+                request.pathWithoutQuery(),
+                request.query(),
+                request.fileExtension(),
+                parametersResult,
+                true);
+        req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
         req.put("parameters", parametersResult.entries());
-        RequestResponseParametersSupport.recordParameterTelemetry(request, contentType, parametersResult.entries().size(),
-                parametersResult.droppedSynthesized(), parametersResult.bodyEnumerationSkipped());
+        finalizeParameterTelemetry(
+                request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
                 req,
@@ -224,7 +554,6 @@ public final class RequestResponseDocBuilder {
                 HttpMessageDocSupport.mediaTypeHints(
                         contentType == null ? null : contentType.toString(),
                         contentType == null ? null : contentType.name()),
-                false,
                 false,
                 request.bodyOffset());
 
@@ -234,15 +563,27 @@ public final class RequestResponseDocBuilder {
 
     private static Map<String, Object> buildSitemapRequestDocStrict(HttpRequest request) {
         Map<String, Object> req = new LinkedHashMap<>();
-        putRequestCoreFields(req, request.method(), request.path(), request.pathWithoutQuery(),
-                request.query(), request.fileExtension(), true);
-
         burp.api.montoya.http.message.ContentType contentType = request.contentType();
         List<HttpHeader> requestHeaders = request.headers();
         byte[] bodyBytes = request.body() == null ? null : request.body().getBytes();
-        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(bodyBytes, requestHeaders);
+        String inferredContentType =
+                RequestResponseParametersSupport.inferRequestContentType(bodyBytes, requestHeaders, contentType);
+        ParametersResult parametersResult = ParametersResult.from(
+                RequestResponseParametersSupport.sitemapParameters(
+                        request, bodyBytes, contentType, requestHeaders));
+        applyUrlParameterCapToRequestFields(
+                req,
+                request.method(),
+                request.path(),
+                request.pathWithoutQuery(),
+                request.query(),
+                request.fileExtension(),
+                parametersResult,
+                true);
         req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
-        req.put("parameters", RequestResponseParametersSupport.sitemapUrlParameters(request));
+        req.put("parameters", parametersResult.entries());
+        finalizeParameterTelemetry(
+                request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
                 req,
@@ -251,7 +592,6 @@ public final class RequestResponseDocBuilder {
                 HttpMessageDocSupport.mediaTypeHints(
                         contentType == null ? null : contentType.toString(),
                         contentType == null ? null : contentType.name()),
-                false,
                 false,
                 request.bodyOffset());
 
@@ -311,19 +651,30 @@ public final class RequestResponseDocBuilder {
     private static Map<String, Object> buildFallbackRequestDoc(HttpRequest request, boolean trafficShape) {
         RawRequestSnapshot raw = RawRequestSnapshot.from(request);
         Map<String, Object> req = new LinkedHashMap<>();
-        putRequestCoreFields(req, raw.method(), raw.path(), raw.pathWithoutQuery(), raw.query(),
-                raw.fileExtension(), trafficShape);
-
         burp.api.montoya.http.message.ContentType contentType = safeContentType(request);
         List<HttpHeader> requestHeaders = safeHeaders(request);
-        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(raw.bodyBytes(), requestHeaders);
+        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(
+                raw.bodyBytes(), requestHeaders, contentType);
+        ParametersResult parametersResult = safeParametersResult(
+                request, contentType, requestHeaders, inferredContentType, raw.bodyBytes());
+        applyUrlParameterCapToRequestFields(
+                req,
+                raw.method(),
+                raw.path(),
+                raw.pathWithoutQuery(),
+                raw.query(),
+                raw.fileExtension(),
+                parametersResult,
+                trafficShape);
         if (trafficShape) {
             req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
         } else {
             putLegacyRequestContentTypeFields(req, contentType, inferredContentType);
             req.put("headers", HttpMessageDocSupport.buildHeadersObject(requestHeaders));
         }
-        req.put("parameters", safeParameters(request, contentType, requestHeaders, inferredContentType));
+        req.put("parameters", parametersResult.entries());
+        finalizeParameterTelemetry(
+                request, null, req, contentType, requestHeaders, inferredContentType, raw.bodyBytes(), parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
                 req,
@@ -332,7 +683,6 @@ public final class RequestResponseDocBuilder {
                 HttpMessageDocSupport.mediaTypeHints(
                         contentType == null ? null : contentType.toString(),
                         contentType == null ? null : contentType.name()),
-                false,
                 false,
                 raw.bodyOffset());
 
@@ -343,14 +693,25 @@ public final class RequestResponseDocBuilder {
     private static Map<String, Object> buildFallbackSitemapRequestDoc(HttpRequest request) {
         RawRequestSnapshot raw = RawRequestSnapshot.from(request);
         Map<String, Object> req = new LinkedHashMap<>();
-        putRequestCoreFields(req, raw.method(), raw.path(), raw.pathWithoutQuery(), raw.query(),
-                raw.fileExtension(), true);
-
         burp.api.montoya.http.message.ContentType contentType = safeContentType(request);
         List<HttpHeader> requestHeaders = safeHeaders(request);
-        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(raw.bodyBytes(), requestHeaders);
+        String inferredContentType = RequestResponseParametersSupport.inferRequestContentType(
+                raw.bodyBytes(), requestHeaders, contentType);
+        ParametersResult parametersResult = safeSitemapParametersResult(
+                request, contentType, requestHeaders, raw.bodyBytes());
+        applyUrlParameterCapToRequestFields(
+                req,
+                raw.method(),
+                raw.path(),
+                raw.pathWithoutQuery(),
+                raw.query(),
+                raw.fileExtension(),
+                parametersResult,
+                true);
         req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
-        req.put("parameters", safeSitemapUrlParameters(request));
+        req.put("parameters", parametersResult.entries());
+        finalizeParameterTelemetry(
+                request, null, req, contentType, requestHeaders, inferredContentType, raw.bodyBytes(), parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
                 req,
@@ -359,7 +720,6 @@ public final class RequestResponseDocBuilder {
                 HttpMessageDocSupport.mediaTypeHints(
                         contentType == null ? null : contentType.toString(),
                         contentType == null ? null : contentType.name()),
-                false,
                 false,
                 raw.bodyOffset());
 
@@ -438,7 +798,6 @@ public final class RequestResponseDocBuilder {
         MimeType stated = response.statedMimeType();
         MimeType inferred = response.inferredMimeType();
         boolean montoyaTextualHint = HttpMessageDocSupport.isTextualMimeHint(mime) || HttpMessageDocSupport.isTextualMimeHint(stated) || HttpMessageDocSupport.isTextualMimeHint(inferred);
-        boolean montoyaBinaryHint = HttpMessageDocSupport.isBinaryMimeHint(mime) || HttpMessageDocSupport.isBinaryMimeHint(stated) || HttpMessageDocSupport.isBinaryMimeHint(inferred);
 
         byte[] bodyBytes = response.body() == null ? null : response.body().getBytes();
         HttpMessageDocSupport.putBodyFields(
@@ -450,8 +809,8 @@ public final class RequestResponseDocBuilder {
                         HttpMessageDocSupport.mimeTypeHint(stated),
                         HttpMessageDocSupport.mimeTypeHint(inferred)),
                 montoyaTextualHint,
-                montoyaBinaryHint,
-                response.bodyOffset());
+                response.bodyOffset(),
+                false);
 
         if (trafficShape) {
             HttpMessageDocSupport.putResponseBodyField(resp, "markers", HttpMessageDocSupport.trafficMarkersToList(response.markers()));
@@ -650,31 +1009,35 @@ public final class RequestResponseDocBuilder {
         }
     }
 
-    private static List<Map<String, Object>> safeParameters(
+    private static ParametersResult safeParametersResult(
             HttpRequest request,
             burp.api.montoya.http.message.ContentType contentType,
             List<HttpHeader> headers,
-            String inferredContentType) {
+            String inferredContentType,
+            byte[] wireBodyBytes) {
         if (request == null) {
-            return List.of();
+            return ParametersResult.from(RequestResponseParametersSupport.ParametersResult.EMPTY);
         }
         try {
-            boolean includeBody = RequestResponseParametersSupport.shouldIncludeBodyParameters(contentType, headers, inferredContentType);
-            ParametersResult result = ParametersResult.from(
-                    RequestResponseParametersSupport.collectParameters(request, includeBody));
-            RequestResponseParametersSupport.recordParameterTelemetry(request, contentType, result.entries().size(),
-                    result.droppedSynthesized(), result.bodyEnumerationSkipped());
-            return result.entries();
+            boolean includeBody = RequestResponseParametersSupport.shouldIncludeBodyParameters(
+                    contentType, headers, inferredContentType, wireBodyBytes);
+            return ParametersResult.from(RequestResponseParametersSupport.collectParameters(
+                    request, includeBody, wireBodyBytes, contentType, headers));
         } catch (RuntimeException ignored) {
-            return List.of();
+            return ParametersResult.from(RequestResponseParametersSupport.ParametersResult.EMPTY);
         }
     }
 
-    private static List<Map<String, Object>> safeSitemapUrlParameters(HttpRequest request) {
+    private static ParametersResult safeSitemapParametersResult(
+            HttpRequest request,
+            burp.api.montoya.http.message.ContentType contentType,
+            List<HttpHeader> headers,
+            byte[] wireBodyBytes) {
         try {
-            return RequestResponseParametersSupport.sitemapUrlParameters(request);
+            return ParametersResult.from(RequestResponseParametersSupport.sitemapParameters(
+                    request, wireBodyBytes, contentType, headers));
         } catch (RuntimeException ignored) {
-            return List.of();
+            return ParametersResult.from(RequestResponseParametersSupport.ParametersResult.EMPTY);
         }
     }
 
