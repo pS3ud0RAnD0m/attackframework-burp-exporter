@@ -6,7 +6,7 @@ import javax.swing.JTextArea;
 import javax.swing.text.BadLocationException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Random;
+import java.util.SplittableRandom;
 
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.allText;
 import static ai.attackframework.tools.burp.ui.LogPanelTestHarness.field;
@@ -86,7 +86,7 @@ class LogPanelIncrementalTrimHeadlessTest {
             setText(field(p, "log.filter.text"), filterText);
         }
 
-        Random rnd = new Random(seed);
+        SplittableRandom rnd = new SplittableRandom(seed);
         for (int i = 0; i < eventCount; i++) {
             String level = LEVELS[rnd.nextInt(LEVELS.length)];
             // Unique suffix avoids consecutive duplicate compaction (REPLACE), focusing this
@@ -123,7 +123,7 @@ class LogPanelIncrementalTrimHeadlessTest {
         LogPanel p = newPanel();
         resetPanelState(p);
 
-        Random rnd = new Random(123L);
+        SplittableRandom rnd = new SplittableRandom(123L);
         for (int i = 0; i < 6_500; i++) {
             String level = LEVELS[rnd.nextInt(LEVELS.length)];
             String message = MESSAGES[rnd.nextInt(MESSAGES.length)] + " #" + i;

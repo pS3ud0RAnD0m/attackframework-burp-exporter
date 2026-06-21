@@ -16,6 +16,9 @@ brotliDec = "0.1.2"
 brotli4j = "1.18.0"
 commonsCompress = "1.27.1"
 zstdJni = "1.5.6-6"
+gradleVersionsPlugin = "0.53.0"
+spotless = "7.0.4"
+spotbugsPlugin = "6.4.4"
 
 [libraries]
 montoya = { group = "net.portswigger.burp.extensions", name = "montoya-api", version.ref = "montoya" }
@@ -52,3 +55,8 @@ brotli4jNativeWindows = { group = "com.aayushatharva.brotli4j", name = "native-w
 brotli4jNativeLinux = { group = "com.aayushatharva.brotli4j", name = "native-linux-x86_64", version.ref = "brotli4j" }
 commonsCompress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
 zstdJni = { group = "com.github.luben", name = "zstd-jni", version.ref = "zstdJni" }
+
+[plugins]
+ben-manes-versions = { id = "com.github.ben-manes.versions", version.ref = "gradleVersionsPlugin" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugsPlugin" }

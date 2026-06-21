@@ -118,9 +118,9 @@ class ExporterIndexStatsReporterFinalPushIT {
         SearchResponse<JsonNode> search = client.search(searchRequest, JsonNode.class);
         assertThat(search.hits().hits()).isNotEmpty();
 
-        JsonNode source = search.hits().hits().get(0).source();
-        assertThat(source).isNotNull();
-
+        JsonNode source = java.util.Objects.requireNonNull(
+                search.hits().hits().getFirst().source(),
+                "indexed exporter stats document");
         assertThat(source.path("event").path("data").path("export").path("running").asBoolean()).isFalse();
         JsonNode telemetry = source.path("event").path("data").path("telemetry");
         assertThat(telemetry.path("docs_body_enumeration_misgate_suspect_total").asLong()).isEqualTo(misgate);

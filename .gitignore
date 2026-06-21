@@ -13,5 +13,6 @@
 
 # Allowed dirs
 !.github/**
+!config/**
 !gradle/**
 !src/**

@@ -414,7 +414,6 @@ public class StatsPanel extends JPanel {
     private final JPanel fileSinkCard;
     private final JPanel openSearchSinkRow;
     private final JPanel fileSinkRow;
-    private Map<String, JLabel> miscMetricValues;
     private final JPanel cardsRow;
     private final JPanel lowerPanel;
     private final JPanel miscStatsCard;
@@ -547,7 +546,6 @@ public class StatsPanel extends JPanel {
         miscStatsCard.setName("miscStatsCard");
         miscSectionComponents = miscState.sections();
         final Map<String, JLabel> miscValues = miscState.values();
-        miscMetricValues = miscValues;
         exportRunningValue = miscValues.get("Export Running");
         sharedBatchSizeValue = miscValues.get("Shared Batch Size");
         proxyHistoryChunkTargetValue = miscValues.get("Proxy History Chunk Target");

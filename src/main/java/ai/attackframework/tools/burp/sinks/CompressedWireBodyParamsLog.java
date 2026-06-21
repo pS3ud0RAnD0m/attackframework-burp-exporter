@@ -124,12 +124,12 @@ public final class CompressedWireBodyParamsLog {
         boolean liveWarn;
         synchronized (LOCK) {
             if (startupAccumulationActive) {
-                STARTUP_DOC_COUNTS.merge(category, 1, Integer::sum);
-                urlBucketFor(STARTUP_URLS, category).merge(dedupeUrl, 1, Integer::sum);
+                STARTUP_DOC_COUNTS.compute(category, (k, v) -> v == null ? 1 : v + 1);
+                urlBucketFor(STARTUP_URLS, category).compute(dedupeUrl, (k, v) -> v == null ? 1 : v + 1);
                 liveWarn = false;
             } else {
-                LIVE_PENDING_DOC_COUNTS.merge(category, 1, Integer::sum);
-                urlBucketFor(LIVE_PENDING_URLS, category).merge(dedupeUrl, 1, Integer::sum);
+                LIVE_PENDING_DOC_COUNTS.compute(category, (k, v) -> v == null ? 1 : v + 1);
+                urlBucketFor(LIVE_PENDING_URLS, category).compute(dedupeUrl, (k, v) -> v == null ? 1 : v + 1);
                 liveWarn = category == Category.REPLACED || category == Category.SKIP_RESCUED;
             }
         }

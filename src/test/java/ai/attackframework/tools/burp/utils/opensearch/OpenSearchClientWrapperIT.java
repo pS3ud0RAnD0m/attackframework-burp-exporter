@@ -87,8 +87,7 @@ class OpenSearchClientWrapperIT {
         );
         assertThat(getResp.found()).isTrue();
 
-        JsonNode source = getResp.source();
-        assertThat(source).isNotNull();
+        JsonNode source = java.util.Objects.requireNonNull(getResp.source(), "indexed document source");
         assertThat(source.get("field").asText()).isEqualTo("value");
 
         client.indices().delete(new DeleteIndexRequest.Builder().index(indexName).build());

@@ -117,7 +117,7 @@ public final class BodyParameterTruncationLog {
 
     private static void recordStartup(String url, int droppedBodyParams) {
         synchronized (LOCK) {
-            STARTUP_URL_DROPPED_TOTALS.merge(url, droppedBodyParams, Integer::sum);
+            STARTUP_URL_DROPPED_TOTALS.compute(url, (k, v) -> v == null ? droppedBodyParams : v + droppedBodyParams);
         }
     }
 

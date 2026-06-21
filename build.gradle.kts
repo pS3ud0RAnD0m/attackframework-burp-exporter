@@ -6,11 +6,16 @@ import org.gradle.jvm.tasks.Jar
 import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.gradle.external.javadoc.StandardJavadocDocletOptions
 
+import com.github.spotbugs.snom.Confidence
+import com.github.spotbugs.snom.Effort
+import com.github.spotbugs.snom.SpotBugsTask
+
 plugins {
-    id("java")
-    id("jacoco")
-    id("com.github.ben-manes.versions") version "0.53.0"
-    id("com.diffplug.spotless") version "7.0.4"
+    java
+    jacoco
+    alias(libs.plugins.ben.manes.versions)
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.spotbugs)
 }
 
 group = project.property("group").toString()
@@ -71,7 +76,27 @@ val verboseTests: Boolean =
     (project.findProperty("verboseTests")?.toString()?.toBooleanStrictOrNull()) ?: false
 
 tasks.withType<JavaCompile>().configureEach {
-    options.compilerArgs.addAll(listOf("-Xlint:deprecation", "-Xlint:unchecked"))
+    options.compilerArgs.addAll(
+        listOf(
+            "-Xlint:deprecation",
+            "-Xlint:unchecked",
+            "-Xlint:cast",
+            "-Xlint:rawtypes",
+        ),
+    )
+}
+
+spotbugs {
+    toolVersion.set(libs.versions.spotbugs.get())
+    effort.set(Effort.MAX)
+    reportLevel.set(Confidence.HIGH)
+    excludeFilter.set(file("config/spotbugs/exclude.xml"))
+}
+
+tasks.withType<SpotBugsTask>().configureEach {
+    reports.create("html") {
+        required.set(true)
+    }
 }
 
 spotless {

@@ -587,10 +587,6 @@ public final class RepeaterTabsIndexReporter {
                 snapshot.baseline());
     }
 
-    private static void logStartupExportCompletionSummary() {
-        logStartupExportCompletionSummary(currentStartupSessionId());
-    }
-
     private static void scheduleStartupExportCompletionSummary() {
         pushSnapshotNow();
         int generation = RUN_GENERATION.get();

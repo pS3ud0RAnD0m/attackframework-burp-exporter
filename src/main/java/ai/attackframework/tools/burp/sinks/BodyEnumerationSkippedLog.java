@@ -320,10 +320,10 @@ public final class BodyEnumerationSkippedLog {
     private static void recordMisgateSuspect(String url) {
         synchronized (LOCK) {
             if (startupAccumulationActive) {
-                STARTUP_SUSPECT_URLS.merge(url, 1, Integer::sum);
+                STARTUP_SUSPECT_URLS.compute(url, (k, v) -> v == null ? 1 : v + 1);
                 startupSuspectDocCount++;
             } else {
-                LIVE_PENDING_URLS.merge(url, 1, Integer::sum);
+                LIVE_PENDING_URLS.compute(url, (k, v) -> v == null ? 1 : v + 1);
                 livePendingDocCount++;
             }
         }

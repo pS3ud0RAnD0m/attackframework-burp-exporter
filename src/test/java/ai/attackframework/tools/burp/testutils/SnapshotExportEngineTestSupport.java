@@ -1,5 +1,6 @@
 package ai.attackframework.tools.burp.testutils;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,7 +48,7 @@ public final class SnapshotExportEngineTestSupport {
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("sequence", sequence);
         document.put("request", Map.of("url", "https://example.test/item/" + sequence));
-        byte[] ndjson = ("{\"index\":{}}\n{\"sequence\":" + sequence + "}\n").getBytes();
+        byte[] ndjson = ("{\"index\":{}}\n{\"sequence\":" + sequence + "}\n").getBytes(StandardCharsets.UTF_8);
         return new PreparedExportDocument(indexName, "traffic", document, estimatedBytes, ndjson);
     }
 

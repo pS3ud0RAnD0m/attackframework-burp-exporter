@@ -16,7 +16,7 @@ import ai.attackframework.tools.burp.utils.Logger;
 
 /**
  * Locks down the shape of the Repeater Tabs startup completion summary emitted by
- * {@code RepeaterTabsIndexReporter.logStartupExportCompletionSummary()}.
+ * {@code RepeaterTabsIndexReporter.logStartupExportCompletionSummary(String)}.
  *
  * <p>Uses reflection to invoke the package-private lifecycle hooks and the private summary
  * method so the test can assert prefix + {@link SnapshotSummary} body + metadata suffix
@@ -50,7 +50,7 @@ class RepeaterTabsStartupSummaryTest {
             ExportStats.recordTrafficToolTypeSuccess("REPEATER_TABS", 2);
             FileExportStats.recordTrafficToolTypeSuccess("REPEATER_TABS", 2);
 
-            invokeStatic("logStartupExportCompletionSummary");
+            invokeStartupExportCompletionSummary();
             drainEventDispatchThread();
 
             assertThat(capturedMessages).hasSize(1);
@@ -70,7 +70,7 @@ class RepeaterTabsStartupSummaryTest {
     void logStartupExportCompletionSummary_rendersZeroedBodyWhenBaselineAbsent() throws Exception {
         Logger.registerListener(listener);
         try {
-            invokeStatic("logStartupExportCompletionSummary");
+            invokeStartupExportCompletionSummary();
             drainEventDispatchThread();
 
             assertThat(capturedMessages).hasSize(1);
@@ -98,6 +98,13 @@ class RepeaterTabsStartupSummaryTest {
             Logger.unregisterListener(listener);
             RepeaterTabsIndexReporter.clearSessionState();
         }
+    }
+
+    private static void invokeStartupExportCompletionSummary() throws Exception {
+        Method sessionMethod = RepeaterTabsIndexReporter.class.getDeclaredMethod("currentStartupSessionId");
+        sessionMethod.setAccessible(true);
+        String sessionId = (String) sessionMethod.invoke(null);
+        invokeStatic("logStartupExportCompletionSummary", sessionId);
     }
 
     private static void invokeStatic(String methodName) throws Exception {

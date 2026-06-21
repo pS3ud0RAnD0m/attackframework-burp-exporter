@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,7 @@ class WebSocketTrafficDocumentBuilderScopeTest {
                 null,
                 null,
                 "CLIENT_TO_SERVER",
-                "hi".getBytes(),
+                "hi".getBytes(StandardCharsets.UTF_8),
                 false,
                 "2024-01-01T00:00:00Z",
                 null,
@@ -122,7 +123,7 @@ class WebSocketTrafficDocumentBuilderScopeTest {
                 null,
                 null,
                 "CLIENT_TO_SERVER",
-                "hi".getBytes(),
+                "hi".getBytes(StandardCharsets.UTF_8),
                 false,
                 "2024-01-01T00:00:00Z",
                 null,
