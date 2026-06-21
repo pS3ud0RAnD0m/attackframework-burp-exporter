@@ -12,7 +12,6 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
-import org.apache.commons.compress.compressors.CompressorException;
 import org.apache.commons.compress.compressors.CompressorInputStream;
 import org.apache.commons.compress.compressors.CompressorStreamFactory;
 import org.brotli.dec.BrotliInputStream;
@@ -287,7 +286,7 @@ final class BodyContentEncodingSupport {
                         COMPRESSOR_FACTORY.createCompressorInputStream(CompressorStreamFactory.Z, new ByteArrayInputStream(input));
                 ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(input.length * 4, 65_536))) {
             return readBounded(in, out);
-        } catch (IOException | CompressorException ignored) {
+        } catch (IOException ignored) {
             return null;
         }
     }
