@@ -727,6 +727,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         byte[] plain = "[[1,2]]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         byte[] gzip = gzipBytes(plain);
         ParsedHttpParameter garbageBody = param("\u001f\u008b", "", HttpParameterType.BODY);
+        CompressedWireBodyParamsLog.startForCurrentRun();
         HttpRequest request = mock(HttpRequest.class);
         when(request.parameters()).thenReturn(List.of(garbageBody));
         when(request.method()).thenReturn("POST");
@@ -745,10 +746,16 @@ class RequestResponseDocBuilderParametersFilterTest {
         when(request.fileExtension()).thenReturn("");
 
         Map<String, Object> doc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
+        CompressedWireBodyParamsLog.flushStartupSummary();
+        flushLogListeners();
 
         assertThat(doc).doesNotContainKey("export");
         assertThat(ExportStats.getDocsSupplementalRejectedNonForm()).isEqualTo(1);
         assertThat(ExportStats.getBodyParamsSkipReasonCounts().get("supplemental_rejected_non_form")).isEqualTo(1L);
+        assertThat(events)
+                .anySatisfy(event -> assertThat(event.message())
+                        .contains("supplemental_rejected_non_form=1/1 url(s)")
+                        .doesNotContain("wire_dropped=1/1 url(s)"));
     }
 
     private static byte[] gzipBytes(byte[] input) throws Exception {
@@ -757,6 +764,10 @@ class RequestResponseDocBuilderParametersFilterTest {
             gzip.write(input);
         }
         return out.toByteArray();
+    }
+
+    private static void flushLogListeners() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {});
     }
 
     private record LoggedEvent(String level, String message) {

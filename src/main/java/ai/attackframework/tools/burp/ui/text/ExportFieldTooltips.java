@@ -158,7 +158,7 @@ public final class ExportFieldTooltips {
                     "Exporter reporters write Thread.currentThread().getName(); this is diagnostic runtime metadata, not the Burp tool, request thread, or OpenSearch thread.");
             case "event.type" -> Tooltips.textWithSource(
                     "Exporter event category.",
-                    "ExporterIndexLogForwarder writes log_event; ExporterIndexStatsReporter writes stats_snapshot; ExporterIndexConfigReporter writes config_snapshot.");
+                    "ExporterIndexLogForwarder writes log; ExporterIndexStatsReporter writes stats_snapshot; ExporterIndexConfigReporter writes config_snapshot; ParameterIntegrityDetailReporter writes parameter_integrity_detail.");
             default -> genericLeafTooltip(fieldKey);
         };
     }

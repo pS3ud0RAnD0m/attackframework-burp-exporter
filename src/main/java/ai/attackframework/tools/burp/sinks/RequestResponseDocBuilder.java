@@ -430,11 +430,12 @@ public final class RequestResponseDocBuilder {
             HttpService service,
             Map<String, Object> requestDoc,
             ParametersResult parametersResult) {
-        if (parametersResult.supplementalRejectedNonForm()
-                && parametersResult.wireTransformed()
-                && parametersResult.wireBodyParamsDropped() > 0) {
+        if (parametersResult.supplementalRejectedNonForm()) {
             CompressedWireBodyParamsLog.record(
-                    request, service, requestDoc, CompressedWireBodyParamsLog.Category.WIRE_DROPPED);
+                    request,
+                    service,
+                    requestDoc,
+                    CompressedWireBodyParamsLog.Category.SUPPLEMENTAL_REJECTED_NON_FORM);
             return;
         }
         if (parametersResult.wireBodyParamsReplaced()) {

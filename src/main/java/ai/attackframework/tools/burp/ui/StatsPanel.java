@@ -1836,8 +1836,10 @@ public class StatsPanel extends JPanel {
                 "insight rules allow). <code>request.parameters</code> may omit form fields on purpose.",
                 "Common on analytics and measurement posts (for example GA4",
                 "<code>app-measurement.com</code>). This is <b>not</b> an export failure.</p>",
-                "<p>When non-zero, an INFO line lists sample <code>request.url</code> values at backlog",
-                "complete and during live export. DEBUG adds more samples.</p>"));
+                "<p>When this host matters to your validation set, use the Wiki Data Integrity",
+                "logging guidance and Exporter-index detail events:",
+                "<code>event.type=parameter_integrity_detail</code>,",
+                "<code>event.data.category=misgate_binary</code>.</p>"));
         tooltips.put("Skipped BODY Enumeration", Tooltips.htmlRaw(
                 "All requests where BODY parameter enumeration was not applied to",
                 "<code>request.parameters</code> for this session.",
@@ -1859,21 +1861,23 @@ public class StatsPanel extends JPanel {
                 "declared urlencoded body still contained parseable form fields in logical bytes;",
                 "the exporter added supplemental BODY rows to <code>request.parameters</code> anyway.",
                 "<p><b>0</b> is normal when every skip-path body is truly non-form binary.",
-                "Non-zero triggers a live WARN on first sighting per <code>request.url</code>.</p>"));
+                "Non-zero is usually a successful correction; use Data Integrity detail events",
+                "for URL-level validation if this host matters.</p>"));
         tooltips.put("Supplemental BODY Used", Tooltips.htmlRaw(
                 "Documents where the exporter added at least one BODY row to",
                 "<code>request.parameters</code> from logical urlencoded bytes when Burp did not",
                 "supply usable BODY parameters (uncompressed wire, no wire replace).",
-                "<p>This counter uses session skip-reason accounting. The startup INFO rollup",
+                "<p>This counter uses session skip-reason accounting. The startup DEBUG rollup",
                 "<code>supplemental_added=</code> in <code>[ParameterIntegrity]</code> logs can be",
                 "higher because it also counts a broader log category for the same family of",
-                "fixes.</p>"));
+                "fixes. Detail events keep representative sample URLs only.</p>"));
         tooltips.put("Supplemental Rejected (non-form)", Tooltips.htmlRaw(
                 "Documents where the exporter refused to invent BODY parameter rows because the",
                 "logical body after decompress looked like JSON, protobuf, or another non-form",
                 "shape—not a urlencoded field list.",
                 "<p>Prevents false-positive <code>request.parameters</code> on compressed JSON APIs",
-                "declared as forms. Raw body export is unchanged.</p>"));
+                "declared as forms. Raw body export is unchanged; review only if this host",
+                "and BODY parameter helper matter to your current test.</p>"));
         tooltips.put("Wire BODY Dropped (entries)", Tooltips.htmlRaw(
                 "Count of individual <code>request.parameters</code> BODY <b>entries</b> removed,",
                 "not failed documents.",
@@ -1881,7 +1885,8 @@ public class StatsPanel extends JPanel {
                 "bracket-prefixed names) and the 1,000 BODY parameter cap. Pair with",
                 "<b>Wire BODY Replaced</b> / <b>Supplemental BODY Used</b> for document-level",
                 "fixes. BODY cap hits also log <code>[ParameterIntegrity] BODY parameters truncated",
-                "to 1000</code> (live WARN) or a startup INFO summary.</p>"));
+                "to 1000</code> (live DEBUG) or a startup DEBUG summary. Use Data Integrity detail",
+                "events for the URL-level drill-down.</p>"));
         tooltips.put("Bulk In-Flight", Tooltips.htmlRaw(
                 "OpenSearch bulk HTTP requests currently executing.",
                 "Incremented at bulk start and decremented when the request completes."));

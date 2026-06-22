@@ -580,6 +580,38 @@ class StatsPanelTest {
     }
 
     @Test
+    void miscStatsCard_parameterIntegrityTooltips_pointToDataIntegrityDrilldown() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(runtimeState(true, true));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JPanel miscCard = findByName(
+                    JPanel.class.cast(get(panel, "cardsRow")),
+                    "miscStatsCard",
+                    JPanel.class);
+
+            JPanel misgateRow = findByName(miscCard, "miscStats.row.Parameter Integrity.0", JPanel.class);
+            JPanel supplementalRow = findByName(miscCard, "miscStats.row.Parameter Integrity.4", JPanel.class);
+            JPanel rejectedRow = findByName(miscCard, "miscStats.row.Parameter Integrity.5", JPanel.class);
+
+            assertThat(misgateRow.getToolTipText())
+                    .contains("Wiki Data Integrity")
+                    .contains("event.type=parameter_integrity_detail")
+                    .contains("event.data.category=misgate_binary")
+                    .contains("validation set")
+                    .doesNotContain("INFO line lists sample")
+                    .doesNotContain("DEBUG adds more samples");
+            assertThat(supplementalRow.getToolTipText())
+                    .contains("representative sample URLs only");
+            assertThat(rejectedRow.getToolTipText())
+                    .contains("review only if this host")
+                    .doesNotContain("validate manually");
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
     void miscStatsCard_hidesOpenSearchSection_whenOpenSearchDestinationDisabled() {
         ConfigState.State previous = RuntimeConfig.getState();
         try {

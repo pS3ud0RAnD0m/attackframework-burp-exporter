@@ -247,7 +247,8 @@ class ConfigPanelFieldTooltipsHeadlessTest {
             assertThat(exporterEventType.getToolTipText())
                     .contains("Exporter event category.")
                     .contains("Source")
-                    .contains("ExporterIndexLogForwarder writes log_event");
+                    .contains("ExporterIndexLogForwarder writes log")
+                    .contains("parameter_integrity_detail");
             assertThat(exporterEventSource.getToolTipText())
                     .contains("Exporter event source label.")
                     .contains("Source")

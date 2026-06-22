@@ -23,10 +23,13 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 class BodyParameterTruncationLogTest {
 
     private final List<String> infoMessages = new CopyOnWriteArrayList<>();
+    private final List<String> debugMessages = new CopyOnWriteArrayList<>();
     private final List<String> warnMessages = new CopyOnWriteArrayList<>();
     private final Logger.LogListener listener = (level, message) -> {
         if ("INFO".equals(level)) {
             infoMessages.add(message);
+        } else if ("DEBUG".equals(level)) {
+            debugMessages.add(message);
         } else if ("WARN".equals(level)) {
             warnMessages.add(message);
         }
@@ -59,19 +62,26 @@ class BodyParameterTruncationLogTest {
         BodyParameterTruncationLog.flushStartupSummary();
         flushLogListeners();
 
-        assertThat(infoMessages).hasSize(1);
-        assertThat(infoMessages.get(0))
+        assertThat(infoMessages).isEmpty();
+        assertThat(debugMessages).hasSize(1);
+        assertThat(debugMessages.get(0))
                 .contains("BODY parameters truncated")
                 .contains("1 unique request.url")
                 .contains("dropped_body_params=12")
-                .contains("https://example.test/form");
+                .contains("No raw request data was lost")
+                .contains("Data-Integrity#body_params_truncated")
+                .doesNotContain("Wiki -> Data Integrity -> Logging")
+                .doesNotContain("Drill-down if affected endpoints matter")
+                .doesNotContain("event.type=parameter_integrity_detail")
+                .doesNotContain("category=body_params_truncated")
+                .doesNotContain("urls=");
         assertThat(warnMessages).isEmpty();
         assertThat(ExportStats.getDocsBodyParamsTruncated()).isEqualTo(2);
         assertThat(ExportStats.getBodyParamsDroppedTotal()).isEqualTo(12);
     }
 
     @Test
-    void afterStartupFlush_liveTruncationsWarnImmediately() throws Exception {
+    void afterStartupFlush_liveTruncationsDebugImmediately() throws Exception {
         HttpRequest first = mock(HttpRequest.class);
         when(first.url()).thenReturn("https://example.test/live-a");
         HttpRequest second = mock(HttpRequest.class);
@@ -84,9 +94,20 @@ class BodyParameterTruncationLogTest {
         flushLogListeners();
 
         assertThat(infoMessages).isEmpty();
-        assertThat(warnMessages).hasSize(2);
-        assertThat(warnMessages.get(0)).contains("[ParameterIntegrity]").contains("live-a");
-        assertThat(warnMessages.get(1)).contains("live-b");
+        assertThat(warnMessages).isEmpty();
+        assertThat(debugMessages).hasSize(2);
+        assertThat(debugMessages.get(0))
+                .contains("[ParameterIntegrity]")
+                .contains("No raw request data was lost")
+                .contains("Data-Integrity#body_params_truncated")
+                .doesNotContain("category=body_params_truncated")
+                .doesNotContain("live-a")
+                .doesNotContain("...");
+        assertThat(debugMessages.get(1))
+                .contains("BODY parameters truncated")
+                .doesNotContain("category=body_params_truncated")
+                .doesNotContain("live-b")
+                .doesNotContain("...");
     }
 
     @Test
@@ -100,8 +121,11 @@ class BodyParameterTruncationLogTest {
         assertThat(line)
                 .contains("2 unique request.url")
                 .contains("dropped_body_params=10")
-                .contains("https://example.test/a")
-                .contains("https://example.test/b");
+                .contains("Data-Integrity#body_params_truncated")
+                .doesNotContain("event.type=parameter_integrity_detail")
+                .doesNotContain("category=body_params_truncated")
+                .doesNotContain("https://example.test/a")
+                .doesNotContain("https://example.test/b");
     }
 
     private static void flushLogListeners() throws Exception {

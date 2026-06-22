@@ -1,6 +1,5 @@
 package ai.attackframework.tools.burp.sinks;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,16 +18,13 @@ import burp.api.montoya.http.message.requests.HttpRequest;
  *
  * <p>Targets the mis-gate case where declared form/multipart traffic was skipped because the body
  * sniff inferred binary. Burp-correction paths (declared grpc/protobuf, synthetic BODY filter)
- * stay silent. Startup and Stop emit INFO session hints plus OpenSearch reconcile probes;
- * URL samples remain DEBUG. Live rollups fire every {@link #PERIODIC_INTERVAL_SECONDS}.</p>
+ * stay silent. Startup, live, and Stop emit concise DEBUG summaries. Live rollups fire every
+ * {@link #PERIODIC_INTERVAL_SECONDS}.</p>
  */
 public final class BodyEnumerationSkippedLog {
 
     /** Live periodic summary interval while export is running. */
     static final int PERIODIC_INTERVAL_SECONDS = 60;
-
-    /** Maximum URLs listed inline on a summary line. */
-    static final int URL_SAMPLE_CAP = 10;
 
     private static final Object LOCK = new Object();
     private static final LazyScheduler SCHEDULER =
@@ -91,7 +87,7 @@ public final class BodyEnumerationSkippedLog {
 
     /** Clears state without emitting; used during test and lifecycle resets. */
     public static void clearRunState() {
-        stopPeriodicFlusher();
+        SCHEDULER.stop();
         startForCurrentRun();
     }
 
@@ -194,20 +190,18 @@ public final class BodyEnumerationSkippedLog {
     }
 
     /**
-     * Emits a deduplicated startup/backlog DEBUG summary when any startup suspects were recorded.
+     * Emits deduplicated startup/backlog DEBUG summaries when any startup suspects were recorded.
      *
      * <p>Safe to call multiple times; only the first emission logs.</p>
      */
     public static void flushStartupSummary() {
-        String misgateInfoLine;
-        String misgateDebugLine;
+        String misgateLine;
         String gateBugLine;
         int misgateCount;
         Map<String, Integer> misgateUrlSnapshot;
         synchronized (LOCK) {
             startupAccumulationActive = false;
-            misgateInfoLine = null;
-            misgateDebugLine = null;
+            misgateLine = null;
             gateBugLine = null;
             misgateCount = 0;
             misgateUrlSnapshot = Map.of();
@@ -215,11 +209,7 @@ public final class BodyEnumerationSkippedLog {
                 startupSummaryEmitted = true;
                 misgateCount = startupSuspectDocCount;
                 misgateUrlSnapshot = new LinkedHashMap<>(STARTUP_SUSPECT_URLS);
-                misgateInfoLine = formatMisgateInfoSummaryLocked("startup/backlog", misgateCount);
-                misgateDebugLine = formatMisgateDebugSummaryLocked(
-                        "startup/backlog",
-                        misgateCount,
-                        misgateUrlSnapshot);
+                misgateLine = formatMisgateSummaryLocked("startup/backlog", misgateCount, misgateUrlSnapshot);
                 STARTUP_SUSPECT_URLS.clear();
                 startupSuspectDocCount = 0;
             }
@@ -231,11 +221,16 @@ public final class BodyEnumerationSkippedLog {
                         + " (unexpected gate outcome; report if seen).";
             }
         }
-        if (misgateInfoLine != null) {
-            Logger.logInfoPanelOnly(misgateInfoLine);
-        }
-        if (misgateDebugLine != null) {
-            Logger.logDebug(misgateDebugLine);
+        if (misgateLine != null) {
+            ParameterIntegrityDetailReporter.report(
+                    "startup_backlog",
+                    "misgate_binary",
+                    misgateCount,
+                    misgateUrlSnapshot,
+                    Map.of(),
+                    "request.parameters may omit BODY rows; request.body remains complete",
+                    ParameterIntegrityDetailReporter.UrlListPolicy.FULL);
+            Logger.logDebug(misgateLine);
         }
         if (gateBugLine != null) {
             Logger.logWarnPanelOnly(gateBugLine);
@@ -243,7 +238,7 @@ public final class BodyEnumerationSkippedLog {
     }
 
     /**
-     * Emits a DEBUG summary for live suspects accumulated since the last periodic flush.
+     * Emits DEBUG summaries for live suspects accumulated since the last periodic flush.
      *
      * <p>No-op when export is stopped or the pending bucket is empty.</p>
      */
@@ -251,47 +246,59 @@ public final class BodyEnumerationSkippedLog {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        String infoLine;
-        String debugLine;
+        String line;
+        int docCount;
+        Map<String, Integer> urlSnapshot;
         synchronized (LOCK) {
             if (livePendingDocCount <= 0) {
                 return;
             }
-            infoLine = formatMisgateInfoSummaryLocked("live", livePendingDocCount);
-            debugLine = formatMisgateDebugSummaryLocked("live", livePendingDocCount, LIVE_PENDING_URLS);
+            docCount = livePendingDocCount;
+            urlSnapshot = new LinkedHashMap<>(LIVE_PENDING_URLS);
+            line = formatMisgateSummaryLocked("live", docCount, urlSnapshot);
             LIVE_PENDING_URLS.clear();
             livePendingDocCount = 0;
         }
-        if (infoLine != null) {
-            Logger.logInfoPanelOnly(infoLine);
-        }
-        if (debugLine != null) {
-            Logger.logDebug(debugLine);
+        if (line != null) {
+            ParameterIntegrityDetailReporter.report(
+                    "live",
+                    "misgate_binary",
+                    docCount,
+                    urlSnapshot,
+                    Map.of(),
+                    "request.parameters may omit BODY rows; request.body remains complete",
+                    ParameterIntegrityDetailReporter.UrlListPolicy.FULL);
+            Logger.logDebug(line);
         }
     }
 
     /**
      * Emits a final DEBUG summary for any live suspects not yet flushed by the periodic scheduler.
      *
-     * <p>Session totals are INFO from {@link ParameterIntegritySessionLog}; this path keeps URL
-     * samples and gate-bug warnings only.</p>
+     * <p>Session totals are INFO from {@link ParameterIntegritySessionLog}; this path keeps
+     * pending summaries and gate-bug warnings only.</p>
      */
     public static void flushStopSummary() {
         flushStopDebugSamples();
     }
 
     /**
-     * Emits DEBUG mis-gate URL samples for live suspects not yet flushed by the periodic scheduler.
+     * Emits DEBUG mis-gate summaries for live suspects not yet flushed by the scheduler.
      */
     public static void flushStopDebugSamples() {
-        String misgateDebugLine;
+        String misgateLine;
         String gateBugLine;
+        int misgateCount;
+        Map<String, Integer> misgateUrlSnapshot;
         synchronized (LOCK) {
-            misgateDebugLine = null;
+            misgateLine = null;
             gateBugLine = null;
+            misgateCount = 0;
+            misgateUrlSnapshot = Map.of();
             if (livePendingDocCount > 0) {
-                misgateDebugLine = formatMisgateDebugSummaryLocked(
-                        "stop", livePendingDocCount, LIVE_PENDING_URLS);
+                misgateCount = livePendingDocCount;
+                misgateUrlSnapshot = new LinkedHashMap<>(LIVE_PENDING_URLS);
+                misgateLine = formatMisgateSummaryLocked("stop", misgateCount, misgateUrlSnapshot);
                 LIVE_PENDING_URLS.clear();
                 livePendingDocCount = 0;
             }
@@ -303,8 +310,16 @@ public final class BodyEnumerationSkippedLog {
                         + " (unexpected gate outcome; report if seen).";
             }
         }
-        if (misgateDebugLine != null) {
-            Logger.logDebug(misgateDebugLine);
+        if (misgateLine != null) {
+            ParameterIntegrityDetailReporter.report(
+                    "stop",
+                    "misgate_binary",
+                    misgateCount,
+                    misgateUrlSnapshot,
+                    Map.of(),
+                    "request.parameters may omit BODY rows; request.body remains complete",
+                    ParameterIntegrityDetailReporter.UrlListPolicy.FULL);
+            Logger.logDebug(misgateLine);
         }
         if (gateBugLine != null) {
             Logger.logWarnPanelOnly(gateBugLine);
@@ -313,7 +328,7 @@ public final class BodyEnumerationSkippedLog {
 
     static String formatMisgateSummaryForTests(int docCount, Map<String, Integer> urlCounts, String phase) {
         synchronized (LOCK) {
-            return formatMisgateDebugSummaryLocked(phase, docCount, urlCounts);
+            return formatMisgateSummaryLocked(phase, docCount, urlCounts);
         }
     }
 
@@ -335,43 +350,21 @@ public final class BodyEnumerationSkippedLog {
         }
     }
 
-    private static String formatMisgateInfoSummaryLocked(String phase, int docCount) {
+    private static String formatMisgateSummaryLocked(String phase, int docCount, Map<String, Integer> urlCounts) {
         if (docCount <= 0) {
             return null;
         }
-        return "[ParameterIntegrity] BODY params omitted for " + docCount
-                + " request(s) during " + phase
-                + " (declared form/multipart, body inferred binary)."
-                + " Raw body is complete; see Stats → Mis-gate Suspects.";
-    }
-
-    private static String formatMisgateDebugSummaryLocked(
-            String phase, int docCount, Map<String, Integer> urlCounts) {
-        StringBuilder sb = new StringBuilder(280);
-        sb.append("[ParameterIntegrity] Mis-gate detail during ")
+        StringBuilder sb = new StringBuilder(320);
+        sb.append("[ParameterIntegrity] misgate_binary during ")
                 .append(phase)
                 .append(": ")
                 .append(docCount)
-                .append(" request(s). Form fields may be missing from request.parameters; raw body is complete.");
-        List<String> samples = sampleUrls(urlCounts);
-        if (!samples.isEmpty()) {
-            sb.append(" Sample request.url(s): ").append(String.join(", ", samples));
-            if (urlCounts.size() > samples.size()) {
-                sb.append(", ...");
-            }
-        }
+                .append(" request(s); unique_request_urls=")
+                .append(urlCounts == null ? 0 : urlCounts.size())
+                .append(". Form fields may be missing from request.parameters. See Stats → Mis-gate Suspects. ")
+                .append(ParameterIntegrityDetailReporter.detailPointer("misgate_binary"))
+                .append(".");
         return sb.toString();
-    }
-
-    private static List<String> sampleUrls(Map<String, Integer> urlCounts) {
-        List<String> samples = new ArrayList<>(Math.min(URL_SAMPLE_CAP, urlCounts.size()));
-        for (String url : urlCounts.keySet()) {
-            if (samples.size() >= URL_SAMPLE_CAP) {
-                break;
-            }
-            samples.add(truncateUrl(url));
-        }
-        return samples;
     }
 
     private static String dedupeUrl(HttpRequest request, HttpService service, Map<String, Object> requestDoc) {
@@ -387,13 +380,4 @@ public final class BodyEnumerationSkippedLog {
         return path == null ? "unknown" : path;
     }
 
-    private static String truncateUrl(String url) {
-        if (url == null) {
-            return "unknown";
-        }
-        if (url.length() <= RequestResponseParametersSupport.PARAMETERS_WARN_URL_MAX_LEN) {
-            return url;
-        }
-        return url.substring(0, RequestResponseParametersSupport.PARAMETERS_WARN_URL_MAX_LEN) + "...";
-    }
 }

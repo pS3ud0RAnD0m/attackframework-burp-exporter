@@ -23,10 +23,13 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 class UrlParameterTruncationLogTest {
 
     private final List<String> infoMessages = new CopyOnWriteArrayList<>();
+    private final List<String> debugMessages = new CopyOnWriteArrayList<>();
     private final List<String> warnMessages = new CopyOnWriteArrayList<>();
     private final Logger.LogListener listener = (level, message) -> {
         if ("INFO".equals(level)) {
             infoMessages.add(message);
+        } else if ("DEBUG".equals(level)) {
+            debugMessages.add(message);
         } else if ("WARN".equals(level)) {
             warnMessages.add(message);
         }
@@ -59,11 +62,18 @@ class UrlParameterTruncationLogTest {
         UrlParameterTruncationLog.flushStartupSummary();
         flushLogListeners();
 
-        assertThat(infoMessages).hasSize(1);
-        assertThat(infoMessages.get(0))
+        assertThat(infoMessages).isEmpty();
+        assertThat(debugMessages).hasSize(1);
+        assertThat(debugMessages.get(0))
                 .contains("1 unique request.url")
                 .contains("dropped_url_params=12")
-                .contains("https://example.test/fuzz?many=1");
+                .contains("No request body data was lost")
+                .contains("Data-Integrity#url_params_truncated")
+                .doesNotContain("Wiki -> Data Integrity -> Logging")
+                .doesNotContain("Drill-down if affected endpoints matter")
+                .doesNotContain("event.type=parameter_integrity_detail")
+                .doesNotContain("category=url_params_truncated")
+                .doesNotContain("urls=");
         assertThat(warnMessages).isEmpty();
         assertThat(ExportStats.getDocsUrlParamsTruncated()).isEqualTo(2);
         assertThat(ExportStats.getUrlParamsDroppedTotal()).isEqualTo(12);
@@ -80,11 +90,12 @@ class UrlParameterTruncationLogTest {
         UrlParameterTruncationLog.flushStartupSummary();
         flushLogListeners();
 
-        assertThat(infoMessages).hasSize(1);
+        assertThat(infoMessages).isEmpty();
+        assertThat(debugMessages).hasSize(1);
     }
 
     @Test
-    void afterStartupFlush_liveTruncationsWarnImmediately() throws Exception {
+    void afterStartupFlush_liveTruncationsDebugImmediately() throws Exception {
         HttpRequest first = mock(HttpRequest.class);
         when(first.url()).thenReturn("https://example.test/live-a");
         HttpRequest second = mock(HttpRequest.class);
@@ -97,9 +108,19 @@ class UrlParameterTruncationLogTest {
         flushLogListeners();
 
         assertThat(infoMessages).isEmpty();
-        assertThat(warnMessages).hasSize(2);
-        assertThat(warnMessages.get(0)).contains("live-a");
-        assertThat(warnMessages.get(1)).contains("live-b");
+        assertThat(warnMessages).isEmpty();
+        assertThat(debugMessages).hasSize(2);
+        assertThat(debugMessages.get(0))
+                .contains("No request body data was lost")
+                .contains("Data-Integrity#url_params_truncated")
+                .doesNotContain("category=url_params_truncated")
+                .doesNotContain("live-a")
+                .doesNotContain("...");
+        assertThat(debugMessages.get(1))
+                .contains("URL parameters truncated")
+                .doesNotContain("category=url_params_truncated")
+                .doesNotContain("live-b")
+                .doesNotContain("...");
     }
 
     @Test
@@ -113,8 +134,11 @@ class UrlParameterTruncationLogTest {
         assertThat(line)
                 .contains("2 unique request.url")
                 .contains("dropped_url_params=10")
-                .contains("https://example.test/a")
-                .contains("https://example.test/b");
+                .contains("Data-Integrity#url_params_truncated")
+                .doesNotContain("event.type=parameter_integrity_detail")
+                .doesNotContain("category=url_params_truncated")
+                .doesNotContain("https://example.test/a")
+                .doesNotContain("https://example.test/b");
     }
 
     private static void flushLogListeners() throws Exception {

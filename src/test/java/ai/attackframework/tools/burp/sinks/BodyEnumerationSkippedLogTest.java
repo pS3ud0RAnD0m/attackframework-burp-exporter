@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.Logger;
+import ai.attackframework.tools.burp.utils.config.ConfigState;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.HttpHeader;
@@ -24,6 +25,7 @@ import burp.api.montoya.http.message.requests.HttpRequest;
 /** Unit tests for {@link BodyEnumerationSkippedLog}. */
 class BodyEnumerationSkippedLogTest {
 
+    private final ConfigState.State previousState = RuntimeConfig.getState();
     private final List<String> debugMessages = new CopyOnWriteArrayList<>();
     private final List<String> infoMessages = new CopyOnWriteArrayList<>();
     private final List<String> warnMessages = new CopyOnWriteArrayList<>();
@@ -40,6 +42,7 @@ class BodyEnumerationSkippedLogTest {
     @BeforeEach
     void setUp() {
         ExportStats.resetForTests();
+        RuntimeConfig.updateState(null);
         Logger.resetState();
         Logger.registerListener(listener);
         BodyEnumerationSkippedLog.startForCurrentRun();
@@ -51,11 +54,12 @@ class BodyEnumerationSkippedLogTest {
         Logger.unregisterListener(listener);
         Logger.resetState();
         ExportStats.resetForTests();
+        RuntimeConfig.updateState(previousState);
         RuntimeConfig.setExportRunning(false);
     }
 
     @Test
-    void evaluateAndRecord_misgateSuspect_flushesStartupInfoAndDebugSummaries() throws Exception {
+    void evaluateAndRecord_misgateSuspect_flushesStartupDebugSummaries() throws Exception {
         HttpRequest request = mock(HttpRequest.class);
         when(request.url()).thenReturn("https://example.test/form");
         byte[] body = "a=1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -73,15 +77,21 @@ class BodyEnumerationSkippedLogTest {
         BodyEnumerationSkippedLog.flushStartupSummary();
         flushLogListeners();
 
-        assertThat(infoMessages).hasSize(1);
-        assertThat(infoMessages.get(0))
-                .contains("[ParameterIntegrity]")
-                .contains("BODY params omitted")
-                .contains("Mis-gate Suspects");
+        assertThat(infoMessages).isEmpty();
         assertThat(debugMessages).hasSize(1);
         assertThat(debugMessages.get(0))
-                .contains("Mis-gate detail")
-                .contains("https://example.test/form");
+                .contains("[ParameterIntegrity]")
+                .contains("misgate_binary during startup/backlog")
+                .contains("unique_request_urls=1")
+                .contains("Form fields may be missing from request.parameters")
+                .contains("Mis-gate Suspects")
+                .contains("No raw body data was lost")
+                .contains("Data-Integrity#misgate_binary")
+                .doesNotContain("Wiki -> Data Integrity -> Logging")
+                .doesNotContain("event.type=parameter_integrity_detail")
+                .doesNotContain("category=misgate_binary")
+                .doesNotContain("https://example.test/form")
+                .doesNotContain("...");
         assertThat(ExportStats.getDocsBodyEnumerationMisgateSuspect()).isZero();
     }
 
@@ -147,8 +157,7 @@ class BodyEnumerationSkippedLogTest {
 
         assertThat(debugMessages).hasSize(1);
         assertThat(debugMessages.get(0)).contains("during live");
-        assertThat(infoMessages).hasSize(1);
-        assertThat(infoMessages.get(0)).contains("during live");
+        assertThat(infoMessages).isEmpty();
     }
 
     @Test
@@ -176,6 +185,31 @@ class BodyEnumerationSkippedLogTest {
     }
 
     @Test
+    void clearRunState_dropsPendingLiveSuspectsWithoutLogging() throws Exception {
+        RuntimeConfig.setExportRunning(true);
+        BodyEnumerationSkippedLog.flushStartupSummary();
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenReturn("https://example.test/reset");
+        byte[] body = "z=3".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        BodyEnumerationSkippedLog.evaluateAndRecord(
+                request,
+                null,
+                Map.of(),
+                ContentType.URL_ENCODED,
+                List.of(),
+                HttpMessageDocSupport.INFERRED_CT_BINARY,
+                body,
+                true);
+        BodyEnumerationSkippedLog.clearRunState();
+        flushLogListeners();
+
+        assertThat(debugMessages).isEmpty();
+        assertThat(infoMessages).isEmpty();
+        assertThat(warnMessages).isEmpty();
+    }
+
+    @Test
     void formatMisgateSummaryForTests_listsSampleUrls() {
         Map<String, Integer> urls = new LinkedHashMap<>();
         urls.put("https://example.test/a", 1);
@@ -186,8 +220,13 @@ class BodyEnumerationSkippedLogTest {
         assertThat(line)
                 .contains("2 request(s)")
                 .contains("during test")
-                .contains("https://example.test/a")
-                .contains("https://example.test/b")
+                .contains("unique_request_urls=2")
+                .contains("Data-Integrity#misgate_binary")
+                .doesNotContain("event.type=parameter_integrity_detail")
+                .doesNotContain("category=misgate_binary")
+                .doesNotContain("https://example.test/a")
+                .doesNotContain("https://example.test/b")
+                .doesNotContain("...")
                 .doesNotContain("Narrow acceptance probe");
     }
 
