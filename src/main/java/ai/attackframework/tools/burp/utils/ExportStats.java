@@ -449,7 +449,7 @@ public final class ExportStats {
     }
 
     /**
-     * Samples current queue/spill/retry pressure for run-high-water telemetry.
+     * Samples current queue/spill/retry pressure for run-high-water stats.
      *
      * <p>Called from {@code StatsPanel} refresh so peaks are captured even when depth spikes
      * between individual queue mutations.</p>
@@ -744,7 +744,7 @@ public final class ExportStats {
     /**
      * Records synthesized BODY-typed parameters that were filtered out on binary request bodies.
      *
-     * <p>Feeds the {@code Synthesized Body Params Dropped} telemetry counter; ignored when
+     * <p>Feeds the {@code Synthesized Body Params Dropped} stats counter; ignored when
      * {@code count <= 0}.</p>
      */
     public static void recordSynthesizedBodyParamsDropped(long count) {
@@ -1173,7 +1173,7 @@ public final class ExportStats {
         firstTrafficSuccessAtMs.set(-1);
     }
 
-    /** Clears per-run export counters while preserving snapshot-last-run telemetry. */
+    /** Clears per-run export counters while preserving snapshot-last-run stats. */
     public static void resetForRun() {
         FileExportStats.resetForRun();
         for (String key : INDEX_KEYS) {

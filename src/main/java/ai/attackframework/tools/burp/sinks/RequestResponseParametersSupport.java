@@ -15,7 +15,7 @@ import burp.api.montoya.http.message.params.HttpParameterType;
 import burp.api.montoya.http.message.params.ParsedHttpParameter;
 import burp.api.montoya.http.message.requests.HttpRequest;
 
-/** Request parameter collection, inference, and telemetry. */
+/** Request parameter collection, inference, and stats accounting. */
 final class RequestResponseParametersSupport {
 
     private RequestResponseParametersSupport() {}
@@ -249,7 +249,7 @@ final class RequestResponseParametersSupport {
      * <p>{@code droppedUrlParams} and {@code adjustedQuery} are set when
      * {@link #URL_PARAMETERS_CAP} truncated URL parameters. {@code droppedBodyParams} is set when
      * {@link #BODY_PARAMETERS_CAP} truncated BODY parameters. Export metadata fields feed
-     * {@code session.*} and session telemetry.</p>
+     * {@code session.*} and session stats.</p>
      */
     record ParametersResult(
             List<Map<String, Object>> entries,
@@ -684,7 +684,7 @@ final class RequestResponseParametersSupport {
         return HttpMessageDocSupport.nullToEmpty(HttpMessageDocSupport.stringValue(requestDoc.get("query")));
     }
 
-    static void recordParameterTelemetry(
+    static void recordParameterStats(
             HttpRequest request,
             ContentType contentType,
             ParametersResult parametersResult) {

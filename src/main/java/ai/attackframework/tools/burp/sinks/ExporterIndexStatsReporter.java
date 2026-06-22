@@ -31,7 +31,7 @@ import ai.attackframework.tools.burp.utils.opensearch.OpenSearchClientWrapper;
  * focused testing.</p>
  *
  * <p>{@code stats_snapshot} {@code event.data} uses a nested layout ({@code jvm}, {@code export},
- * {@code indexes}, {@code traffic}, {@code telemetry}, optional {@code proxy_history_last_run}).
+ * {@code indexes}, {@code traffic}, {@code stats}, optional {@code proxy_history_last_run}).
  * Attribution maps include only non-zero counters; file attribution is omitted when file export is
  * off; failure attribution is omitted when traffic has no failures.</p>
  */
@@ -224,7 +224,7 @@ public final class ExporterIndexStatsReporter {
         data.put("export", buildExportSection(finalSnapshot));
         data.put("indexes", buildIndexesSection());
         data.put("traffic", buildTrafficSection());
-        data.put("telemetry", buildTelemetrySection());
+        data.put("stats", buildStatsSection());
         Map<String, Object> snapshotLastRuns = buildSnapshotLastRunsSection();
         if (!snapshotLastRuns.isEmpty()) {
             data.put("snapshot_last_runs", snapshotLastRuns);
@@ -435,78 +435,78 @@ public final class ExporterIndexStatsReporter {
         return sink;
     }
 
-    private static Map<String, Object> buildTelemetrySection() {
-        Map<String, Object> telemetry = new LinkedHashMap<>();
+    private static Map<String, Object> buildStatsSection() {
+        Map<String, Object> stats = new LinkedHashMap<>();
         long retryDrops = ExportStats.getTotalRetryQueueDrops();
         if (retryDrops > 0) {
-            telemetry.put("retry_queue_drops_total", retryDrops);
+            stats.put("retry_queue_drops_total", retryDrops);
         }
         long permanentDrops = ExportStats.getTotalPermanentDrops();
         if (permanentDrops > 0) {
-            telemetry.put("permanent_drops_total", permanentDrops);
+            stats.put("permanent_drops_total", permanentDrops);
         }
         long synthesizedDropped = ExportStats.getSynthesizedBodyParamsDropped();
         if (synthesizedDropped > 0) {
-            telemetry.put("synthesized_body_params_dropped_total", synthesizedDropped);
+            stats.put("synthesized_body_params_dropped_total", synthesizedDropped);
         }
         long bodyParamsDropped = ExportStats.getBodyParamsDroppedTotal();
         if (bodyParamsDropped > 0) {
-            telemetry.put("body_params_dropped_total", bodyParamsDropped);
+            stats.put("body_params_dropped_total", bodyParamsDropped);
         }
         long docsBodyTruncated = ExportStats.getDocsBodyParamsTruncated();
         if (docsBodyTruncated > 0) {
-            telemetry.put("docs_with_body_params_truncated_total", docsBodyTruncated);
+            stats.put("docs_with_body_params_truncated_total", docsBodyTruncated);
         }
         long misgateSuspects = ExportStats.getDocsBodyEnumerationMisgateSuspect();
         if (misgateSuspects > 0) {
-            telemetry.put("docs_body_enumeration_misgate_suspect_total", misgateSuspects);
+            stats.put("docs_body_enumeration_misgate_suspect_total", misgateSuspects);
         }
         long skippedBodyEnumeration = ExportStats.getDocsWithSkippedBodyEnumeration();
         if (skippedBodyEnumeration > 0) {
-            telemetry.put("docs_with_skipped_body_enumeration_total", skippedBodyEnumeration);
+            stats.put("docs_with_skipped_body_enumeration_total", skippedBodyEnumeration);
         }
         long wireReplaced = ExportStats.getDocsWireBodyParamsReplaced();
         if (wireReplaced > 0) {
-            telemetry.put("docs_wire_body_params_replaced_total", wireReplaced);
+            stats.put("docs_wire_body_params_replaced_total", wireReplaced);
         }
         long wireDropped = ExportStats.getWireBodyParamsDroppedTotal();
         if (wireDropped > 0) {
-            telemetry.put("wire_body_params_dropped_total", wireDropped);
+            stats.put("wire_body_params_dropped_total", wireDropped);
         }
         long supplementalUsed = ExportStats.getDocsSupplementalBodyParamsUsed();
         if (supplementalUsed > 0) {
-            telemetry.put("docs_supplemental_body_params_used_total", supplementalUsed);
+            stats.put("docs_supplemental_body_params_used_total", supplementalUsed);
         }
         long supplementalRejected = ExportStats.getDocsSupplementalRejectedNonForm();
         if (supplementalRejected > 0) {
-            telemetry.put("docs_supplemental_rejected_non_form_total", supplementalRejected);
+            stats.put("docs_supplemental_rejected_non_form_total", supplementalRejected);
         }
         long skipRescued = ExportStats.getDocsSkipPathBodyRescued();
         if (skipRescued > 0) {
-            telemetry.put("docs_skip_path_body_rescued_total", skipRescued);
+            stats.put("docs_skip_path_body_rescued_total", skipRescued);
         }
         Map<String, Object> bodyParamsSourceCounts = sparseLongCounts(ExportStats.getBodyParamsSourceCounts());
         if (!bodyParamsSourceCounts.isEmpty()) {
-            telemetry.put("body_params_source_counts", bodyParamsSourceCounts);
+            stats.put("body_params_source_counts", bodyParamsSourceCounts);
         }
         Map<String, Object> bodyParamsSkipReasonCounts = sparseLongCounts(ExportStats.getBodyParamsSkipReasonCounts());
         if (!bodyParamsSkipReasonCounts.isEmpty()) {
-            telemetry.put("body_params_skip_reason_counts", bodyParamsSkipReasonCounts);
+            stats.put("body_params_skip_reason_counts", bodyParamsSkipReasonCounts);
         }
         Map<String, Object> bodyParamsEncodingCounts = sparseLongCounts(ExportStats.getBodyParamsEncodingCounts());
         if (!bodyParamsEncodingCounts.isEmpty()) {
-            telemetry.put("body_params_encodings_counts", bodyParamsEncodingCounts);
+            stats.put("body_params_encodings_counts", bodyParamsEncodingCounts);
         }
         Map<String, Object> repeaterSources = sparseRepeaterMetadataSources();
         if (!repeaterSources.isEmpty()) {
-            telemetry.put("repeater_live_metadata_sources", repeaterSources);
+            stats.put("repeater_live_metadata_sources", repeaterSources);
         }
-        telemetry.put("snapshot_flush_executor", buildSnapshotFlushExecutorSection());
+        stats.put("snapshot_flush_executor", buildSnapshotFlushExecutorSection());
         Map<String, Object> runPeaks = buildRunPeaksSection();
         if (!runPeaks.isEmpty()) {
-            telemetry.put("run_peaks", runPeaks);
+            stats.put("run_peaks", runPeaks);
         }
-        return telemetry;
+        return stats;
     }
 
     private static Map<String, Object> buildRunPeaksSection() {

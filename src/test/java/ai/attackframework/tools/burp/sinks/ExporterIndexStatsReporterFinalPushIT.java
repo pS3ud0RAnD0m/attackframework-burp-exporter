@@ -50,7 +50,7 @@ class ExporterIndexStatsReporterFinalPushIT {
     }
 
     @Test
-    void pushFinalSnapshotNow_writesRunningFalseAndTelemetryWhenExportStopped() throws Exception {
+    void pushFinalSnapshotNow_writesRunningFalseAndStatsWhenExportStopped() throws Exception {
         Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
         deleteIndex("exporter");
         createIndex("exporter");
@@ -122,12 +122,12 @@ class ExporterIndexStatsReporterFinalPushIT {
                 search.hits().hits().getFirst().source(),
                 "indexed exporter stats document");
         assertThat(source.path("event").path("data").path("export").path("running").asBoolean()).isFalse();
-        JsonNode telemetry = source.path("event").path("data").path("telemetry");
-        assertThat(telemetry.path("docs_body_enumeration_misgate_suspect_total").asLong()).isEqualTo(misgate);
-        assertThat(telemetry.path("docs_wire_body_params_replaced_total").asLong()).isEqualTo(wireReplaced);
-        assertThat(telemetry.path("docs_supplemental_rejected_non_form_total").asLong())
+        JsonNode stats = source.path("event").path("data").path("stats");
+        assertThat(stats.path("docs_body_enumeration_misgate_suspect_total").asLong()).isEqualTo(misgate);
+        assertThat(stats.path("docs_wire_body_params_replaced_total").asLong()).isEqualTo(wireReplaced);
+        assertThat(stats.path("docs_supplemental_rejected_non_form_total").asLong())
                 .isEqualTo(supplementalRejected);
-        assertThat(telemetry.path("body_params_skip_reason_counts").path("wire_replaced").asLong()).isEqualTo(2);
-        assertThat(telemetry.path("body_params_skip_reason_counts").path("misgate_binary").asLong()).isEqualTo(3);
+        assertThat(stats.path("body_params_skip_reason_counts").path("wire_replaced").asLong()).isEqualTo(2);
+        assertThat(stats.path("body_params_skip_reason_counts").path("misgate_binary").asLong()).isEqualTo(3);
     }
 }

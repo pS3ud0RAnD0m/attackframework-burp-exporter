@@ -282,11 +282,11 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_droppedSynthesized_statsOnlyNoLog() throws Exception {
+    void recordParameterStats_droppedSynthesized_statsOnlyNoLog() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/api");
 
         SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
+                RequestResponseDocBuilder.recordParameterStats(
                         request, ContentType.JSON, 10, 4_999, false));
 
         assertThat(events).isEmpty();
@@ -294,11 +294,11 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_highDroppedSynthesized_statsOnlyNoLog() throws Exception {
+    void recordParameterStats_highDroppedSynthesized_statsOnlyNoLog() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/upload");
 
         SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
+                RequestResponseDocBuilder.recordParameterStats(
                         request, ContentType.URL_ENCODED, 2, 5_000, false));
 
         assertThat(events).isEmpty();
@@ -306,11 +306,11 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_highRetained_statsOnlyNoLog() throws Exception {
+    void recordParameterStats_highRetained_statsOnlyNoLog() throws Exception {
         HttpRequest request = mockRequest("GET", "https://example.test/search");
 
         SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
+                RequestResponseDocBuilder.recordParameterStats(
                         request, ContentType.JSON, 5_000, 0, false));
 
         assertThat(events).isEmpty();
@@ -410,11 +410,11 @@ class RequestResponseDocBuilderParametersFilterTest {
     }
 
     @Test
-    void recordParameterTelemetry_skippedBody_underThreshold_doesNotBumpExportAckCounter() throws Exception {
+    void recordParameterStats_skippedBody_underThreshold_doesNotBumpExportAckCounter() throws Exception {
         HttpRequest request = mockRequest("POST", "https://example.test/binary-misdeclared");
 
         SwingUtilities.invokeAndWait(() ->
-                RequestResponseDocBuilder.recordParameterTelemetry(
+                RequestResponseDocBuilder.recordParameterStats(
                         request, ContentType.URL_ENCODED, /* retained */ 3, /* dropped */ 0,
                         /* bodyEnumerationSkipped */ true));
 

@@ -149,7 +149,7 @@ class ExporterIndexStatsReporterTest {
                     .contains("\"spill\"")
                     .contains("\"queue_bytes_estimate\"")
                     .contains("\"active_drain_batches\"")
-                    .contains("\"telemetry\"")
+                    .contains("\"stats\"")
                     .contains("\"snapshot_flush_executor\"")
                     .contains("\"dual_sink\"")
                     .contains("\"repeater_live_metadata_sources\"")

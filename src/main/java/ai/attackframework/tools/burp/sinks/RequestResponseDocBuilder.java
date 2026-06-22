@@ -77,11 +77,11 @@ public final class RequestResponseDocBuilder {
         return ParametersResult.from(RequestResponseParametersSupport.parametersToList(parameters, includeBody));
     }
 
-    static void recordParameterTelemetry(
+    static void recordParameterStats(
             HttpRequest request,
             ContentType contentType,
             ParametersResult parametersResult) {
-        RequestResponseParametersSupport.recordParameterTelemetry(request, contentType, toSupport(parametersResult));
+        RequestResponseParametersSupport.recordParameterStats(request, contentType, toSupport(parametersResult));
     }
 
     private static RequestResponseParametersSupport.ParametersResult toSupport(ParametersResult result) {
@@ -101,15 +101,15 @@ public final class RequestResponseDocBuilder {
                 result.supplementalRejectedNonForm());
     }
 
-    /** Bridges legacy tests that pass scalar telemetry fields. */
-    static void recordParameterTelemetry(
+    /** Bridges legacy tests that pass scalar export-stats fields. */
+    static void recordParameterStats(
             HttpRequest request,
             ContentType contentType,
             int retained,
             int droppedSynthesized,
             boolean bodyEnumerationSkipped) {
         if (droppedSynthesized > 0) {
-            RequestResponseParametersSupport.recordParameterTelemetry(
+            RequestResponseParametersSupport.recordParameterStats(
                     request,
                     contentType,
                     new RequestResponseParametersSupport.ParametersResult(
@@ -127,7 +127,7 @@ public final class RequestResponseDocBuilder {
                             0,
                             false));
         } else if (bodyEnumerationSkipped) {
-            RequestResponseParametersSupport.recordParameterTelemetry(
+            RequestResponseParametersSupport.recordParameterStats(
                     request,
                     contentType,
                     new RequestResponseParametersSupport.ParametersResult(
@@ -306,7 +306,7 @@ public final class RequestResponseDocBuilder {
                 trafficShape);
     }
 
-    private static void finalizeParameterTelemetry(
+    private static void finalizeParameterStats(
             HttpRequest request,
             HttpService service,
             Map<String, Object> requestDoc,
@@ -315,7 +315,7 @@ public final class RequestResponseDocBuilder {
             String inferredContentType,
             byte[] bodyBytes,
             ParametersResult parametersResult) {
-        recordParameterTelemetry(request, contentType, parametersResult);
+        recordParameterStats(request, contentType, parametersResult);
         boolean misgateSuspect = BodyEnumerationSkippedLog.isMisgateSuspect(
                 contentType,
                 requestHeaders,
@@ -505,7 +505,7 @@ public final class RequestResponseDocBuilder {
 
         req.put("headers", HttpMessageDocSupport.buildHeadersObject(requestHeaders));
         req.put("parameters", parametersResult.entries());
-        finalizeParameterTelemetry(
+        finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
@@ -545,7 +545,7 @@ public final class RequestResponseDocBuilder {
                 true);
         req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
         req.put("parameters", parametersResult.entries());
-        finalizeParameterTelemetry(
+        finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
@@ -583,7 +583,7 @@ public final class RequestResponseDocBuilder {
                 true);
         req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
         req.put("parameters", parametersResult.entries());
-        finalizeParameterTelemetry(
+        finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
@@ -674,7 +674,7 @@ public final class RequestResponseDocBuilder {
             req.put("headers", HttpMessageDocSupport.buildHeadersObject(requestHeaders));
         }
         req.put("parameters", parametersResult.entries());
-        finalizeParameterTelemetry(
+        finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, raw.bodyBytes(), parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
@@ -711,7 +711,7 @@ public final class RequestResponseDocBuilder {
                 true);
         req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
         req.put("parameters", parametersResult.entries());
-        finalizeParameterTelemetry(
+        finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, raw.bodyBytes(), parametersResult);
 
         HttpMessageDocSupport.putBodyFields(
