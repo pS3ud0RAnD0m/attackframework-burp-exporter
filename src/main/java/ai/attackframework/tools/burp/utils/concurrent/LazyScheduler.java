@@ -28,6 +28,7 @@ public final class LazyScheduler {
     private final String threadName;
     private final long shutdownTimeoutMs;
     private volatile ScheduledExecutorService executor;
+    private volatile boolean recurringStarted;
 
     /**
      * Creates a new holder with the
@@ -83,29 +84,30 @@ public final class LazyScheduler {
      * <p>Folds the "{@code volatile} check + {@code synchronized} double-check +
      * {@code getOrStart().scheduleAtFixedRate(...)}" idiom that every recurring reporter
      * previously inlined. Safe to call from any thread and safe to call more than once: on the
-     * second and subsequent calls the method returns {@code false} without touching the
-     * executor, so callers can treat it as idempotent.</p>
+     * second and subsequent calls the method returns {@code false} without adding another fixed
+     * rate task, so callers can treat it as idempotent.</p>
      *
-     * <p>The start check uses {@link #isStarted()} rather than tracking the individual schedule,
-     * so callers that need to register multiple recurring tasks against the same holder must
-     * obtain the executor directly via {@link #getOrStart()} instead.</p>
+     * <p>The recurring registration is tracked separately from executor creation, so callers can
+     * submit one-shot startup work through {@link #getOrStart()} and register a recurring task
+     * after that work completes.</p>
      *
      * @param task recurring work; scheduled via {@link ScheduledExecutorService#scheduleAtFixedRate}
      * @param initialDelay delay before the first run, expressed in {@code unit}
      * @param period fixed-rate period between successive runs, expressed in {@code unit}
      * @param unit time unit for {@code initialDelay} and {@code period}
-     * @return {@code true} when this call started the executor and registered the task;
-     *         {@code false} when the holder was already started and the call was a no-op
+     * @return {@code true} when this call registered the task; {@code false} when a recurring
+     *         task was already registered and the call was a no-op
      */
     public boolean startRecurring(Runnable task, long initialDelay, long period, TimeUnit unit) {
-        if (isStarted()) {
+        if (recurringStarted) {
             return false;
         }
         synchronized (this) {
-            if (isStarted()) {
+            if (recurringStarted) {
                 return false;
             }
             getOrStart().scheduleAtFixedRate(task, initialDelay, period, unit);
+            recurringStarted = true;
             return true;
         }
     }
@@ -113,8 +115,9 @@ public final class LazyScheduler {
     /**
      * Returns {@code true} when an executor is currently held.
      *
-     * <p>Intended for idempotent "already started?" guards that want to skip re-registering a
-     * recurring task. The check is lock-free because {@link #executor} is {@code volatile}.</p>
+     * <p>Intended for lifecycle checks that care whether a scheduler thread exists. Recurring
+     * task registration is tracked separately by {@link #startRecurring(Runnable, long, long,
+     * TimeUnit)}. The check is lock-free because {@link #executor} is {@code volatile}.</p>
      *
      * @return {@code true} when {@link #getOrStart()} has been called since the last
      *         {@link #stop()}, otherwise {@code false}
@@ -150,6 +153,7 @@ public final class LazyScheduler {
         synchronized (this) {
             current = executor;
             executor = null;
+            recurringStarted = false;
         }
         Workers.awaitExecutorShutdown(current, shutdownTimeoutMs);
     }

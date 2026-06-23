@@ -2,6 +2,7 @@ package ai.attackframework.tools.burp.ui;
 
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Point;
 import java.awt.event.ActionEvent;
 import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -20,9 +21,9 @@ import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
+import javax.swing.JViewport;
 
 import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultCaret;
 import javax.swing.text.Document;
 
 import java.util.ArrayDeque;
@@ -239,6 +240,27 @@ public class LogPanelTestHarness {
         throw new IllegalStateException("No JTextArea found in LogPanel");
     }
 
+    /** Returns the viewport containing the log text area. */
+    public static JViewport viewport(LogPanel root) {
+        return onEdt(() -> {
+            Component parent = textPane(root).getParent();
+            if (parent instanceof JViewport viewport) {
+                return viewport;
+            }
+            throw new IllegalStateException("No JViewport found around LogPanel text area");
+        });
+    }
+
+    /** Returns the current log viewport position. */
+    public static Point viewportPosition(LogPanel root) {
+        return onEdt(() -> viewport(root).getViewPosition());
+    }
+
+    /** Sets the log viewport y-position while preserving x=0. */
+    public static void setViewportY(LogPanel root, int y) {
+        onEdt(() -> viewport(root).setViewPosition(new Point(0, Math.max(0, y))));
+    }
+
     // ---------- Convenience actions ----------
 
     /** Sets text on a field on the EDT. */
@@ -348,21 +370,12 @@ public class LogPanelTestHarness {
         });
     }
 
-    /**
-     * Toggles pause via the toolbar button (firing listeners) and aligns the caret update policy,
-     * so headless behavior matches the interactive UI.
-     */
+    /** Toggles pause via the toolbar button so production listeners own the behavior under test. */
     public static void setPaused(LogPanel p, boolean paused) {
         JButton pause = button(p, "log.pause");
         boolean currentlyPaused = "Unpause".equals(pause.getText());
         if (currentlyPaused != paused) {
             click(pause);
         }
-        onEdt(() -> {
-            var caret = textPane(p).getCaret();
-            if (caret instanceof DefaultCaret dc) {
-                dc.setUpdatePolicy(paused ? DefaultCaret.NEVER_UPDATE : DefaultCaret.ALWAYS_UPDATE);
-            }
-        });
     }
 }

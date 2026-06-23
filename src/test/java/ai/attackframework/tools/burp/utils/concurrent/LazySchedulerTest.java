@@ -151,7 +151,7 @@ class LazySchedulerTest {
     }
 
     @Test
-    void startRecurring_whenAlreadyStarted_isNoOp() {
+    void startRecurring_whenRecurringAlreadyRegistered_isNoOp() {
         holder = new LazyScheduler("lazy-scheduler-recurring-idempotent");
         AtomicInteger registrations = new AtomicInteger();
         Runnable task = registrations::incrementAndGet;
@@ -164,6 +164,17 @@ class LazySchedulerTest {
         assertThat(second).isFalse();
         assertThat(third).isFalse();
         assertThat(holder.isStarted()).isTrue();
+    }
+
+    @Test
+    void startRecurring_afterOneShotExecutorStart_registersRecurringTask() {
+        holder = new LazyScheduler("lazy-scheduler-recurring-after-oneshot");
+        ScheduledExecutorService existing = holder.getOrStart();
+
+        boolean registered = holder.startRecurring(() -> {}, 10_000L, 10_000L, TimeUnit.MILLISECONDS);
+
+        assertThat(registered).isTrue();
+        assertThat(holder.peek()).isSameAs(existing);
     }
 
     @Test

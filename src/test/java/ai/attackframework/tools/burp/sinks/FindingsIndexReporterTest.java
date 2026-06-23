@@ -13,6 +13,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ai.attackframework.tools.burp.testutils.LazySchedulers;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -56,6 +57,19 @@ class FindingsIndexReporterTest {
         MontoyaApiProvider.set(previousApi);
         RuntimeConfig.setExportRunning(false);
         RuntimeConfig.setExportStarting(false);
+    }
+
+    @Test
+    void start_defersSchedulerUntilStartupSnapshotCompletes() {
+        try {
+            RuntimeConfig.setExportRunning(true);
+
+            FindingsIndexReporter.start();
+
+            assertThat(LazySchedulers.peek(FindingsIndexReporter.class, "SCHEDULER")).isNull();
+        } finally {
+            resetState();
+        }
     }
 
     @Test

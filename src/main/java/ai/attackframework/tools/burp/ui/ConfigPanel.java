@@ -729,19 +729,19 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        FindingsIndexReporter.start();
-        if (!RuntimeConfig.isExportRunning()) {
-            return;
-        }
         FindingsIndexReporter.pushSnapshotNow();
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
-        SitemapIndexReporter.start();
+        FindingsIndexReporter.start();
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }
         SitemapIndexReporter.pushSnapshotNow();
+        if (!RuntimeConfig.isExportRunning()) {
+            return;
+        }
+        SitemapIndexReporter.start();
         if (!RuntimeConfig.isExportRunning()) {
             return;
         }

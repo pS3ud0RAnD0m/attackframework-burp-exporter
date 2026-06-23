@@ -67,9 +67,9 @@ public final class FindingsIndexReporter {
     /**
      * Single-owner scheduler for findings push work.
      *
-     * <p>Created lazily by {@link LazyScheduler#getOrStart()} on {@link #start()} and torn down
-     * by {@link #stop()} during UI stop or extension unload. A subsequent {@link #start()} or
-     * {@link #pushSnapshotNow()} lazily recreates the executor.</p>
+     * <p>Created lazily by {@link LazyScheduler#getOrStart()} for startup snapshot work or
+     * recurring polling registration, and torn down by {@link #stop()} during UI stop or extension
+     * unload. A subsequent {@link #pushSnapshotNow()} lazily recreates the executor.</p>
      */
     private static final LazyScheduler SCHEDULER =
             new LazyScheduler("attackframework-findings-reporter");
@@ -77,6 +77,8 @@ public final class FindingsIndexReporter {
             new PeriodicExportSeenKeys();
     private static final AtomicBoolean issuesAccessFailureLogged = new AtomicBoolean();
     private static volatile boolean runInProgress;
+    private static volatile boolean periodicPollingRequested;
+    private static volatile boolean startupSnapshotFinished;
 
     private FindingsIndexReporter() {}
 
@@ -106,17 +108,18 @@ public final class FindingsIndexReporter {
             if (api == null) {
                 return;
             }
-            ScheduledExecutorService exec = SCHEDULER.peek();
-            if (exec != null) {
-                exec.submit(() -> {
-                    try {
-                        pushIssues(api, true);
-                    } catch (RuntimeException e) {
-                        String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                        Logger.logWarnPanelOnly("[SnapshotExport] Findings: push failed: " + msg);
-                    }
-                });
-            }
+            ScheduledExecutorService exec = SCHEDULER.getOrStart();
+            exec.submit(() -> {
+                try {
+                    pushIssues(api, true);
+                } catch (RuntimeException e) {
+                    String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    Logger.logWarnPanelOnly("[SnapshotExport] Findings: push failed: " + msg);
+                } finally {
+                    startupSnapshotFinished = true;
+                    startPeriodicIfReady();
+                }
+            });
         } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             Logger.logWarnPanelOnly("[SnapshotExport] Findings: push failed: " + msg);
@@ -124,10 +127,20 @@ public final class FindingsIndexReporter {
     }
 
     /**
-     * Starts the 30-second scheduler. Does not perform an initial push (caller
-     * must call {@link #pushSnapshotNow()} once on Start). Safe to call from any thread.
+     * Requests 30-second periodic polling after the startup snapshot finishes.
+     *
+     * <p>Does not perform an initial push; callers must call {@link #pushSnapshotNow()} once on
+     * Start. Safe to call from any thread.</p>
      */
     public static void start() {
+        periodicPollingRequested = true;
+        startPeriodicIfReady();
+    }
+
+    private static void startPeriodicIfReady() {
+        if (!periodicPollingRequested || !startupSnapshotFinished) {
+            return;
+        }
         SCHEDULER.startRecurring(
                 FindingsIndexReporter::pushNewIssuesOnly,
                 INTERVAL_SECONDS,
@@ -144,6 +157,8 @@ public final class FindingsIndexReporter {
         SCHEDULER.stop();
         issuesAccessFailureLogged.set(false);
         runInProgress = false;
+        periodicPollingRequested = false;
+        startupSnapshotFinished = false;
         PERIODIC_EXPORT_SEEN_KEYS.clear();
     }
 

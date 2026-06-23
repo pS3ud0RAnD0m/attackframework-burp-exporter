@@ -7,6 +7,7 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.HeadlessException;
 import java.awt.Insets;
+import java.awt.Point;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -39,8 +40,10 @@ import javax.swing.JTextArea;
 import javax.swing.KeyStroke;
 import javax.swing.Timer;
 import javax.swing.UIManager;
+import javax.swing.JViewport;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultCaret;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter.HighlightPainter;
 
@@ -431,6 +434,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
         searchRecomputeTimer.setRepeats(false);
         searchRecomputeTimer.setCoalesce(true);
 
+        applyAutoscrollPauseState();
         rebuildView();
         computeMatchesAndJumpFirst();
         syncRuntimePreferencesFromUi();
@@ -473,6 +477,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     private void setAutoscrollPaused(boolean paused) {
         autoscrollPaused = paused;
         updatePauseButtonLabel();
+        applyAutoscrollPauseState();
         PREFS.putBoolean(PREF_PAUSE, paused);
         if (!paused) {
             renderer.autoscrollIfNeeded(false);
@@ -483,6 +488,15 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
     /** Syncs the pause button label with {@link #autoscrollPaused}. */
     private void updatePauseButtonLabel() {
         pauseAutoscrollBtn.setText(autoscrollPaused ? UNPAUSE_BTN_LABEL : PAUSE_BTN_LABEL);
+    }
+
+    /**
+     * Applies the pause state to Swing's caret follow policy.
+     */
+    private void applyAutoscrollPauseState() {
+        if (logTextPane.getCaret() instanceof DefaultCaret caret) {
+            caret.setUpdatePolicy(autoscrollPaused ? DefaultCaret.NEVER_UPDATE : DefaultCaret.ALWAYS_UPDATE);
+        }
     }
 
     /**
@@ -598,6 +612,7 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             levelCombo.setSelectedItem(displayLogMinLevel(preferences.minLevel()));
             autoscrollPaused = preferences.pauseAutoscroll();
             updatePauseButtonLabel();
+            applyAutoscrollPauseState();
             filterField.setText(preferences.filterText());
             filterCaseToggle.setSelected(preferences.filterCase());
             filterRegexToggle.setSelected(preferences.filterRegex());
@@ -607,7 +622,11 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             searchRegexToggle.setSelected(preferences.searchRegex());
             persistUiPreferencesToPreferences(preferences);
             rebuildView();
-            computeMatchesAndJumpFirst();
+            if (autoscrollPaused) {
+                recomputeMatchesNow();
+            } else {
+                computeMatchesAndJumpFirst();
+            }
         } finally {
             applyingUiPreferences = false;
         }
@@ -705,23 +724,27 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             case APPEND -> {
                 LogStore.Entry e = d.entry();
                 String line = renderer.formatLine(e.ts, e.level, e.message, e.repeats());
-                renderer.append(line, e.level);
-                renderedAggregates.add(new LogStore.Aggregate(e.ts, e.level, e.message, e.repeats()));
+                runPreservingViewportWhenPaused(() -> {
+                    renderer.append(line, e.level);
+                    renderedAggregates.add(new LogStore.Aggregate(e.ts, e.level, e.message, e.repeats()));
+                    renderer.autoscrollIfNeeded(autoscrollPaused);
+                });
                 if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=APPEND");
-                renderer.autoscrollIfNeeded(autoscrollPaused);
                 recomputeMatchesAfterDocChange();
             }
             case REPLACE -> {
                 LogStore.Entry e = d.entry();
                 String line = renderer.formatLine(e.ts, e.level, e.message, e.repeats());
-                renderer.replaceLast(line, e.level);
-                if (!renderedAggregates.isEmpty()) {
-                    LogStore.Aggregate prev = renderedAggregates.getLast();
-                    renderedAggregates.set(renderedAggregates.size() - 1,
-                            new LogStore.Aggregate(e.ts, e.level, e.message, prev.count() + 1));
-                }
+                runPreservingViewportWhenPaused(() -> {
+                    renderer.replaceLast(line, e.level);
+                    if (!renderedAggregates.isEmpty()) {
+                        LogStore.Aggregate prev = renderedAggregates.getLast();
+                        renderedAggregates.set(renderedAggregates.size() - 1,
+                                new LogStore.Aggregate(e.ts, e.level, e.message, prev.count() + 1));
+                    }
+                    renderer.autoscrollIfNeeded(autoscrollPaused);
+                });
                 if (Logger.isInternalTraceEnabled()) Logger.internalTrace("LogPanel render=REPLACE");
-                renderer.autoscrollIfNeeded(autoscrollPaused);
                 recomputeMatchesAfterDocChange();
             }
             default -> {
@@ -789,17 +812,21 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
             newEnd--;
         }
 
-        if (oldEnd > 0) {
-            renderer.removeLeadingLines(oldEnd);
-        }
-        if (newEnd > 0) {
-            StringBuilder sb = new StringBuilder(newEnd * 80);
-            for (int i = 0; i < newEnd; i++) {
-                LogStore.Aggregate a = newVisible.get(i);
-                sb.append(renderer.formatLine(a.ts(), a.level(), a.message(), a.count()));
+        final int oldEndFinal = oldEnd;
+        final int newEndFinal = newEnd;
+        runPreservingViewportWhenPaused(() -> {
+            if (oldEndFinal > 0) {
+                renderer.removeLeadingLines(oldEndFinal);
             }
-            renderer.prependLines(sb.toString());
-        }
+            if (newEndFinal > 0) {
+                StringBuilder sb = new StringBuilder(newEndFinal * 80);
+                for (int i = 0; i < newEndFinal; i++) {
+                    LogStore.Aggregate a = newVisible.get(i);
+                    sb.append(renderer.formatLine(a.ts(), a.level(), a.message(), a.count()));
+                }
+                renderer.prependLines(sb.toString());
+            }
+        });
 
         renderedAggregates = newVisible;
         if (Logger.isInternalTraceEnabled()) {
@@ -872,17 +899,46 @@ public class LogPanel extends JPanel implements Logger.ReplayableLogListener {
      */
     private void rebuildView() {
         store.setFilter(this::visible);
-        renderer.clear();
-        List<LogStore.Aggregate> visible = store.buildVisibleAggregated();
-        for (LogStore.Aggregate a : visible) {
-            String line = renderer.formatLine(a.ts(), a.level(), a.message(), a.count());
-            renderer.append(line, a.level());
-        }
-        renderedAggregates = new ArrayList<>(visible);
-        renderer.autoscrollIfNeeded(autoscrollPaused);
+        runPreservingViewportWhenPaused(() -> {
+            renderer.clear();
+            List<LogStore.Aggregate> visible = store.buildVisibleAggregated();
+            for (LogStore.Aggregate a : visible) {
+                String line = renderer.formatLine(a.ts(), a.level(), a.message(), a.count());
+                renderer.append(line, a.level());
+            }
+            renderedAggregates = new ArrayList<>(visible);
+            renderer.autoscrollIfNeeded(autoscrollPaused);
+        });
         recomputeMatchesAfterDocChange();
         if (Logger.isInternalTraceEnabled()) {
-            Logger.internalTrace("LogPanel rebuild done, lines=" + visible.size());
+            Logger.internalTrace("LogPanel rebuild done, lines=" + renderedAggregates.size());
+        }
+    }
+
+    /**
+     * Runs a visible document mutation without moving the viewport while autoscroll is paused.
+     */
+    private void runPreservingViewportWhenPaused(Runnable mutation) {
+        ViewportSnapshot snapshot = captureViewportSnapshot();
+        try {
+            mutation.run();
+        } finally {
+            if (snapshot != null) {
+                snapshot.restore();
+            }
+        }
+    }
+
+    private ViewportSnapshot captureViewportSnapshot() {
+        if (!autoscrollPaused || !(logTextPane.getParent() instanceof JViewport viewport)) {
+            return null;
+        }
+        return new ViewportSnapshot(viewport, viewport.getViewPosition());
+    }
+
+    private record ViewportSnapshot(JViewport viewport, Point position) {
+        void restore() {
+            viewport.setViewPosition(position);
         }
     }
 

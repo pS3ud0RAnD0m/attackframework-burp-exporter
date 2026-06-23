@@ -12,6 +12,7 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.testutils.LazySchedulers;
 import ai.attackframework.tools.burp.utils.MontoyaApiProvider;
 import ai.attackframework.tools.burp.utils.config.ConfigKeys;
 import ai.attackframework.tools.burp.utils.config.ConfigState;
@@ -33,8 +34,18 @@ class SitemapIndexReporterTest {
 
     @AfterEach
     void resetState() {
+        SitemapIndexReporter.stop();
         MontoyaApiProvider.set(null);
         RuntimeConfig.setExportRunning(false);
+    }
+
+    @Test
+    void start_defersSchedulerUntilStartupSnapshotCompletes() {
+        RuntimeConfig.setExportRunning(true);
+
+        SitemapIndexReporter.start();
+
+        assertThat(LazySchedulers.peek(SitemapIndexReporter.class, "SCHEDULER")).isNull();
     }
 
     @Test
