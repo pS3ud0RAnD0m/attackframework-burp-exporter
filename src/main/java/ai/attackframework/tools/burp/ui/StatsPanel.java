@@ -2297,7 +2297,7 @@ public class StatsPanel extends JPanel {
         JButton button = new Tooltips.HtmlButton(chartStyleButtonLabel());
         button.setFocusable(false);
         button.setFont(chartBaseFont());
-        Tooltips.apply(button, Tooltips.htmlRaw("Cycle chart styles: <b>Simple</b>, <b>Smooth</b>, and <b>Accessible</b>."));
+        Tooltips.apply(button, Tooltips.htmlRaw("Cycle chart styles: <b>Smooth</b>, <b>Simple</b>, and <b>Accessible</b>."));
         button.addActionListener(event -> cycleChartStyle());
         return button;
     }
@@ -2344,7 +2344,11 @@ public class StatsPanel extends JPanel {
     }
 
     private void cycleChartStyle() {
-        chartStyleIndex = (chartStyleIndex + 1) % CHART_STYLE_NAMES.length;
+        chartStyleIndex = switch (chartStyleIndex) {
+            case 1 -> 0;
+            case 0 -> 2;
+            default -> 1;
+        };
         RuntimeConfig.updateStatsChartStyle(chartStyleIndex + 1);
         applyChartStyles();
         refreshSharedLegendPanel();

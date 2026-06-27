@@ -318,13 +318,38 @@ class StatsPanelTest {
             assertThat(styleToolTip.getComponent()).isSameAs(styleButton);
             assertThat(styleToolTip.getClientProperty("html.disable")).isEqualTo(Boolean.FALSE);
             assertThat(styleButton.getToolTipText())
-                    .isEqualTo("<html>Cycle chart styles: <b>Simple</b>, <b>Smooth</b>, and <b>Accessible</b>.</html>");
+                    .isEqualTo("<html>Cycle chart styles: <b>Smooth</b>, <b>Simple</b>, and <b>Accessible</b>.</html>");
             assertThat(labels).containsExactly(
                     "Traffic",
                     "Exporter",
                     "Settings",
                     "Sitemap",
                     "Findings");
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
+    }
+
+    @Test
+    void defaultChartStyle_isSmooth() {
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    ConfigState.defaultUiPreferences()));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
+            JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
+
+            assertThat(styleButton.getText()).isEqualTo("Smooth");
+            assertThat(chart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
         } finally {
             RuntimeConfig.updateState(previous);
         }
@@ -793,21 +818,36 @@ class StatsPanelTest {
 
     @Test
     void memoryChart_seriesPaintsTrackThroughputPaletteForGreenAndYellow() {
-        StatsPanel panel = onEdt(StatsPanel::new);
-        JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
-        XYLineAndShapeRenderer renderer =
-                (XYLineAndShapeRenderer) memoryChart.getXYPlot().getRenderer();
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
+            XYLineAndShapeRenderer renderer =
+                    (XYLineAndShapeRenderer) memoryChart.getXYPlot().getRenderer();
 
-        // The memory chart's two series adopt the throughput chart's Traffic (green) and
-        // Sitemap (yellow) palette through MEMORY_SERIES_TO_STYLE.
-        assertThat(renderer.getSeriesPaint(0)).isEqualTo(call(panel, "seriesLinePaint", 0));
-        assertThat(renderer.getSeriesPaint(1)).isEqualTo(call(panel, "seriesLinePaint", 3));
-        // The default chart style (Simple) hides shape markers on every chart, including the
-        // memory chart; the Accessible-style coverage is verified separately.
-        assertThat(renderer.getSeriesShapesVisible(0))
-                .isEqualTo(call(panel, "seriesShapesVisible", 0));
-        assertThat(renderer.getSeriesShapesVisible(1))
-                .isEqualTo(call(panel, "seriesShapesVisible", 3));
+            // The memory chart's two series adopt the throughput chart's Traffic (green) and
+            // Sitemap (yellow) palette through MEMORY_SERIES_TO_STYLE.
+            assertThat(renderer.getSeriesPaint(0)).isEqualTo(call(panel, "seriesLinePaint", 0));
+            assertThat(renderer.getSeriesPaint(1)).isEqualTo(call(panel, "seriesLinePaint", 3));
+            // Simple style hides shape markers on every chart, including the memory chart; the
+            // Accessible-style coverage is verified separately.
+            assertThat(renderer.getSeriesShapesVisible(0))
+                    .isEqualTo(call(panel, "seriesShapesVisible", 0));
+            assertThat(renderer.getSeriesShapesVisible(1))
+                    .isEqualTo(call(panel, "seriesShapesVisible", 3));
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
     }
 
     @Test
@@ -823,15 +863,15 @@ class StatsPanelTest {
                     previous.trafficToolTypes(),
                     previous.findingsSeverities(),
                     previous.enabledExportFieldsByIndex(),
-                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+                    ConfigState.defaultUiPreferences()));
             StatsPanel panel = onEdt(StatsPanel::new);
             JFreeChart memoryChart = JFreeChart.class.cast(get(panel, "memoryChart"));
             JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
 
-            assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
-
-            onEdt((Runnable) styleButton::doClick); // Smooth
             assertThat(memoryChart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
+
+            onEdt((Runnable) styleButton::doClick); // Simple
+            assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
 
             onEdt((Runnable) styleButton::doClick); // Accessible
             assertThat(memoryChart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
@@ -863,7 +903,7 @@ class StatsPanelTest {
             JPanel memoryLegendPanel = JPanel.class.cast(get(panel, "memoryLegendPanel"));
             JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
 
-            // Cover Simple, Smooth, and Accessible. The Accessible pass is the regression
+            // Cover Smooth, Simple, and Accessible. The Accessible pass is the regression
             // guard: the icon must paint a shape marker plus dashed stroke without throwing
             // even when no chart pixels have been laid out yet.
             for (int i = 0; i < 3; i++) {
@@ -1074,19 +1114,35 @@ class StatsPanelTest {
 
     @Test
     void chartRenderer_usesAccessibleSeriesPaintsStrokesAndMarkers() {
-        StatsPanel panel = onEdt(StatsPanel::new);
-        JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
+        ConfigState.State previous = RuntimeConfig.getState();
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    previous.dataSources(),
+                    previous.scopeType(),
+                    previous.customEntries(),
+                    previous.sinks(),
+                    previous.settingsSub(),
+                    previous.trafficToolTypes(),
+                    previous.findingsSeverities(),
+                    previous.enabledExportFieldsByIndex(),
+                    ConfigState.defaultUiPreferences()));
+            StatsPanel panel = onEdt(StatsPanel::new);
+            JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
 
-        JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
-        onEdt((Runnable) styleButton::doClick);
-        onEdt((Runnable) styleButton::doClick);
-        XYLineAndShapeRenderer renderer = currentRenderer(chart);
+            JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
+            onEdt((Runnable) styleButton::doClick);
+            onEdt((Runnable) styleButton::doClick);
+            assertThat(styleButton.getText()).isEqualTo("Accessible");
+            XYLineAndShapeRenderer renderer = currentRenderer(chart);
 
-        assertSeriesStyle(panel, renderer, 0, new float[] { 8f, 5f }, true);
-        assertSeriesStyle(panel, renderer, 1, new float[] { 8f, 4f, 1.5f, 4f }, true);
-        assertSeriesStyle(panel, renderer, 2, null, true);
-        assertSeriesStyle(panel, renderer, 3, new float[] { 1.5f, 4f }, true);
-        assertSeriesStyle(panel, renderer, 4, new float[] { 12f, 6f }, true);
+            assertSeriesStyle(panel, renderer, 0, new float[] { 8f, 5f }, true);
+            assertSeriesStyle(panel, renderer, 1, new float[] { 8f, 4f, 1.5f, 4f }, true);
+            assertSeriesStyle(panel, renderer, 2, null, true);
+            assertSeriesStyle(panel, renderer, 3, new float[] { 1.5f, 4f }, true);
+            assertSeriesStyle(panel, renderer, 4, new float[] { 12f, 6f }, true);
+        } finally {
+            RuntimeConfig.updateState(previous);
+        }
     }
 
     @Test
@@ -1102,18 +1158,18 @@ class StatsPanelTest {
                     previous.trafficToolTypes(),
                     previous.findingsSeverities(),
                     previous.enabledExportFieldsByIndex(),
-                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+                    ConfigState.defaultUiPreferences()));
             StatsPanel panel = onEdt(StatsPanel::new);
             JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
             JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
 
-            assertThat(styleButton.getText()).isEqualTo("Simple");
-            assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
+            assertThat(styleButton.getText()).isEqualTo("Smooth");
+            assertThat(chart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
             assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
 
             onEdt((Runnable) styleButton::doClick);
-            assertThat(styleButton.getText()).isEqualTo("Smooth");
-            assertThat(chart.getXYPlot().getRenderer()).isInstanceOf(XYSplineRenderer.class);
+            assertThat(styleButton.getText()).isEqualTo("Simple");
+            assertThat(chart.getXYPlot().getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
             assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isFalse();
 
             onEdt((Runnable) styleButton::doClick);
@@ -1122,7 +1178,7 @@ class StatsPanelTest {
             assertThat(currentRenderer(chart).getSeriesShapesVisible(0)).isTrue();
 
             onEdt((Runnable) styleButton::doClick);
-            assertThat(styleButton.getText()).isEqualTo("Simple");
+            assertThat(styleButton.getText()).isEqualTo("Smooth");
         } finally {
             RuntimeConfig.updateState(previous);
         }
@@ -1141,14 +1197,14 @@ class StatsPanelTest {
                     previous.trafficToolTypes(),
                     previous.findingsSeverities(),
                     previous.enabledExportFieldsByIndex(),
-                    new ConfigState.UiPreferences(1, ConfigState.defaultLogPanelPreferences())));
+                    new ConfigState.UiPreferences(3, ConfigState.defaultLogPanelPreferences())));
             StatsPanel panel = onEdt(StatsPanel::new);
             JFreeChart chart = JFreeChart.class.cast(get(panel, "docsChart"));
 
             XYPlot plot = chart.getXYPlot();
             assertThat(plot.getRenderer()).isNotInstanceOf(XYSplineRenderer.class);
             JButton styleButton = JButton.class.cast(get(panel, "chartStyleButton"));
-            assertThat(styleButton.getText()).isEqualTo("Simple");
+            assertThat(styleButton.getText()).isEqualTo("Accessible");
             onEdt((Runnable) styleButton::doClick);
             assertThat(plot.getRenderer()).isInstanceOf(XYSplineRenderer.class);
             XYSplineRenderer renderer = (XYSplineRenderer) plot.getRenderer();
@@ -1522,7 +1578,7 @@ class StatsPanelTest {
             int index,
             float[] expectedDashArray,
             boolean expectedShapesVisible) {
-        assertThat(renderer.getSeriesPaint(index)).isEqualTo(call(panel, "seriesPaint", index));
+        assertThat(renderer.getSeriesPaint(index)).isEqualTo(call(panel, "seriesLinePaint", index));
         assertThat(renderer.getSeriesShape(index).getBounds2D())
                 .isEqualTo(((Shape) call(panel, "seriesMarkerShape", index)).getBounds2D());
         assertThat(renderer.getSeriesShapesVisible(index)).isEqualTo(expectedShapesVisible);

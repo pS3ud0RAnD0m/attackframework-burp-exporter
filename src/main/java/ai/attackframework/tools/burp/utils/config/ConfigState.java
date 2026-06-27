@@ -59,8 +59,8 @@ public final class ConfigState {
 
     /** Default advanced disk-used threshold for file export. */
     public static final int DEFAULT_FILE_MAX_DISK_USED_PERCENT = 95;
-    /** Default Stats panel chart style (1 = Smooth). */
-    public static final int DEFAULT_STATS_CHART_STYLE = 1;
+    /** Default Stats panel chart style (2 = Smooth). */
+    public static final int DEFAULT_STATS_CHART_STYLE = 2;
     /** Default minimum visible level in LogPanel. */
     public static final String DEFAULT_LOG_MIN_LEVEL = "trace";
 
