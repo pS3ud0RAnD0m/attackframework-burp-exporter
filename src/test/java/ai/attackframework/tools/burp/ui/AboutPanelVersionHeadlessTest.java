@@ -40,7 +40,7 @@ class AboutPanelVersionHeadlessTest {
                     .contains("v1.2.3-test")
                     .contains("This Burp Suite extension continuously exports settings, sitemap, issues, and traffic into index databases")
                     .contains("Burp Exporter:")
-                    .contains("https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter")
+                    .contains("https://github.com/pS3ud0RAnD0m/burp-exporter")
                     .contains("Anomalous Vectors OpenSearch:")
                     .contains("https://github.com/AnomalousVectors/attackframework");
             assertThat(txt)

@@ -58,7 +58,7 @@ public class AboutPanel extends JPanel {
         area.setForeground(UIManager.getColor("Label.foreground"));
         panel.add(area, "growx, wrap");
 
-        panel.add(buildLinkRow("  Burp Exporter:", "https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter"), "growx, wrap");
+        panel.add(buildLinkRow("  Burp Exporter:", "https://github.com/pS3ud0RAnD0m/burp-exporter"), "growx, wrap");
         panel.add(buildLinkRow("  Anomalous Vectors OpenSearch:", "https://github.com/AnomalousVectors/attackframework"), "growx");
         return panel;
     }
