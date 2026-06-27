@@ -122,13 +122,17 @@ class SitemapIndexReporterTest {
         assertThat(doc.keySet())
                 .doesNotContain("request_id", "source", "url", "method", "path", "host", "status", "param_names");
         Map<?, ?> requestDoc = nestedMap(doc, "request");
-        assertThat(requestDoc.get("url")).isEqualTo("https://auth.example.com/login");
+        Map<?, ?> urlDoc = nestedMap(requestDoc, "url");
+        assertThat(urlDoc.get("raw")).isEqualTo("https://auth.example.com/login");
+        assertThat(urlDoc.get("scheme")).isEqualTo("https");
+        assertThat(urlDoc.get("host")).isEqualTo("auth.example.com");
+        assertThat(urlDoc.get("port")).isEqualTo(443);
         assertThat(requestDoc.get("method")).isEqualTo("GET");
-        assertThat(requestDoc.get("port")).isEqualTo(443);
+        assertThat(requestDoc.containsKey("port")).isFalse();
         Map<?, ?> pathDoc = nestedMap(requestDoc, "path");
         assertThat(pathDoc.get("with_query")).isEqualTo("/login");
         Map<?, ?> protocol = nestedMap(requestDoc, "protocol");
-        assertThat(protocol.get("scheme")).isEqualTo("https");
+        assertThat(protocol.containsKey("scheme")).isFalse();
         assertThat(protocol.get("http_version")).isEqualTo("HTTP/1.1");
     }
 

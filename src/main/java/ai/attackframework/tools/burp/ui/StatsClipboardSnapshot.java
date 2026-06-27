@@ -10,16 +10,21 @@ import java.util.Map;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.core.CountResponse;
+import org.opensearch.client.opensearch.indices.RefreshResponse;
 
 import ai.attackframework.tools.burp.sinks.TrafficExportQueue;
 import ai.attackframework.tools.burp.sinks.TrafficHttpHandler;
 import ai.attackframework.tools.burp.sinks.TrafficRouteBucket;
 import ai.attackframework.tools.burp.utils.ExportStats;
 import ai.attackframework.tools.burp.utils.FileExportStats;
+import ai.attackframework.tools.burp.utils.IndexNaming;
 import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.SystemMetrics;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import ai.attackframework.tools.burp.utils.opensearch.BatchSizeController;
+import ai.attackframework.tools.burp.utils.opensearch.OpenSearchConnector;
 
 /**
  * Builds the Stats panel clipboard text from live counters (no Swing table state).
@@ -39,6 +44,8 @@ public final class StatsClipboardSnapshot {
     private static final String[] OPEN_SEARCH_COLUMNS =
             { "Index", "Exported", "Queued", "Retry Drops", "Permanent Drops",
                     "Failures", "Last Bulk (ms)", "Last Error" };
+    private static volatile OpenSearchCountResolver countResolver =
+            StatsClipboardSnapshot::resolveOpenSearchIndexCounts;
 
     private StatsClipboardSnapshot() {}
 
@@ -77,6 +84,31 @@ public final class StatsClipboardSnapshot {
         logCompactJsonLine("misc_stats", buildMiscStatsPayload());
     }
 
+    /**
+     * Logs session-final Stats with refreshed OpenSearch index counts when OpenSearch is active.
+     *
+     * <p>Used at Stop after the final exporter stats snapshot is pushed. The live StatsPanel and
+     * clipboard path intentionally keep session-export counters; this stop-only path favors
+     * operator validation against OpenSearch {@code _count}.</p>
+     */
+    public static void logSessionStopSummaryWithOpenSearchCounts() {
+        OpenSearchCountResolution counts = resolveStopOpenSearchCounts();
+        if (counts.warning() != null) {
+            Logger.logWarnPanelOnly("[Stats] Session stop " + counts.warning());
+        }
+        if (isFileSectionEnabled()) {
+            logCompactJsonLine("file_counts", buildFileCountsPayload());
+        }
+        if (isOpenSearchSectionEnabled()) {
+            logCompactJsonLine("open_search_counts", buildOpenSearchCountsPayload(counts));
+        }
+        logCompactJsonLine("misc_stats", buildMiscStatsPayload());
+    }
+
+    static void setOpenSearchCountResolverForTests(OpenSearchCountResolver resolver) {
+        countResolver = resolver != null ? resolver : StatsClipboardSnapshot::resolveOpenSearchIndexCounts;
+    }
+
     private static void logCompactJsonLine(String kind, Map<String, Object> payload) {
         Map<String, Object> root = new LinkedHashMap<>(payload.size() + 1);
         root.put("kind", kind);
@@ -96,9 +128,17 @@ public final class StatsClipboardSnapshot {
     }
 
     private static Map<String, Object> buildOpenSearchCountsPayload() {
+        return buildOpenSearchCountsPayload(OpenSearchCountResolution.sessionCounters());
+    }
+
+    private static Map<String, Object> buildOpenSearchCountsPayload(OpenSearchCountResolution countResolution) {
         Map<String, Object> payload = new LinkedHashMap<>(2);
         payload.put("columns", List.of(OPEN_SEARCH_COLUMNS));
-        payload.put("rows", buildOpenSearchCountRows());
+        payload.put("rows", buildOpenSearchCountRows(countResolution.counts()));
+        payload.put("count_source", countResolution.source());
+        if (countResolution.warning() != null) {
+            payload.put("count_warning", countResolution.warning());
+        }
         return payload;
     }
 
@@ -155,6 +195,10 @@ public final class StatsClipboardSnapshot {
     }
 
     private static List<String[]> buildOpenSearchCountRows() {
+        return buildOpenSearchCountRows(Map.of());
+    }
+
+    private static List<String[]> buildOpenSearchCountRows(Map<String, Long> countOverrides) {
         List<String[]> rows = new ArrayList<>();
         List<String> sortedKeys = new ArrayList<>(ExportStats.getIndexKeys());
         sortedKeys.sort(String::compareToIgnoreCase);
@@ -164,7 +208,7 @@ public final class StatsClipboardSnapshot {
         long totalPermanentDrops = 0;
         long totalFailure = 0;
         for (String indexKey : sortedKeys) {
-            long exported = ExportStats.getExportedCount(indexKey);
+            long exported = countOverrides.getOrDefault(indexKey, ExportStats.getExportedCount(indexKey));
             int queued = ExportStats.getQueueSize(indexKey);
             long retryDrops = ExportStats.getRetryQueueDrops(indexKey);
             long permanentDrops = ExportStats.getPermanentDrops(indexKey);
@@ -207,6 +251,77 @@ public final class StatsClipboardSnapshot {
                 "-"
         });
         return rows;
+    }
+
+    private static OpenSearchCountResolution resolveStopOpenSearchCounts() {
+        if (!RuntimeConfig.isOpenSearchActive()) {
+            return OpenSearchCountResolution.sessionCounters();
+        }
+        try {
+            Map<String, Long> counts = countResolver.resolve(List.copyOf(ExportStats.getIndexKeys()));
+            return new OpenSearchCountResolution(
+                    counts == null ? Map.of() : Map.copyOf(counts),
+                    "opensearch_index_count",
+                    null);
+        } catch (RuntimeException ex) {
+            String detail = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+            return new OpenSearchCountResolution(
+                    Map.of(),
+                    "session_export_counters",
+                    "OpenSearch index counts unavailable at Stop; using session export counters: " + detail);
+        }
+    }
+
+    private static Map<String, Long> resolveOpenSearchIndexCounts(List<String> indexKeys) {
+        OpenSearchClient client = OpenSearchConnector.getClient(
+                RuntimeConfig.openSearchUrl(),
+                RuntimeConfig.openSearchUser(),
+                RuntimeConfig.openSearchPassword());
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (String indexKey : indexKeys) {
+            String indexName = RuntimeConfig.indexNameForKey(indexKey);
+            if (indexName == null || indexName.isBlank()) {
+                indexName = IndexNaming.indexNameForShortName(indexKey);
+            }
+            RefreshResponse refresh = refreshIndex(client, indexName);
+            if (refresh.shards().failed() > 0) {
+                throw new IllegalStateException("refresh failed for " + indexName);
+            }
+            CountResponse count = countIndex(client, indexName);
+            counts.put(indexKey, count.count());
+        }
+        return counts;
+    }
+
+    private static RefreshResponse refreshIndex(OpenSearchClient client, String indexName) {
+        try {
+            return client.indices().refresh(r -> r.index(indexName));
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("refresh failed for " + indexName + ": " + ex.getMessage(), ex);
+        }
+    }
+
+    private static CountResponse countIndex(OpenSearchClient client, String indexName) {
+        try {
+            return client.count(c -> c.index(indexName));
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("count failed for " + indexName + ": " + ex.getMessage(), ex);
+        }
+    }
+
+    @FunctionalInterface
+    interface OpenSearchCountResolver {
+        Map<String, Long> resolve(List<String> indexKeys);
+    }
+
+    private record OpenSearchCountResolution(
+            Map<String, Long> counts,
+            String source,
+            String warning) {
+
+        private static OpenSearchCountResolution sessionCounters() {
+            return new OpenSearchCountResolution(Map.of(), "session_export_counters", null);
+        }
     }
 
     private static void appendOpenSearchTrafficSourceSubRows(List<String[]> rows) {

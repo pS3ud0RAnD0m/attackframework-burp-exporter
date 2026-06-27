@@ -77,14 +77,14 @@ class ExportFieldFilterDocumentRoundTripTest {
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
-                Map.of("traffic", Set.of("request.url", "websocket.is_websocket"))));
+                Map.of("traffic", Set.of("request.url.raw", "websocket.is_websocket"))));
 
         Map<String, Object> built = buildSampleHttpDocument();
         Map<String, Object> filtered = ExportFieldFilter.filterDocument(built, "traffic");
 
         assertThat(filtered).containsKeys("meta", "request", "websocket");
         assertThat(nestedMap(filtered, "request").keySet().size()).isEqualTo(1);
-        assertThat(nestedMap(filtered, "request").get("url")).isEqualTo("https://example.com/path");
+        assertThat(nestedMap(nestedMap(filtered, "request"), "url").get("raw")).isEqualTo("https://example.com/path");
         assertThat(nestedMap(filtered, "websocket").keySet().size()).isEqualTo(1);
         assertThat(nestedMap(filtered, "websocket").get("is_websocket")).isEqualTo(false);
         assertThat(filtered).doesNotContainKeys("burp", "response");
@@ -120,7 +120,7 @@ class ExportFieldFilterDocumentRoundTripTest {
                 Map.of("traffic", Set.of(
                         "websocket.direction",
                         "websocket.payload.text",
-                        "request.url"))));
+                        "request.url.raw"))));
 
         Map<String, Object> built = buildSampleProxyWebSocketDocument();
         Map<String, Object> filtered = ExportFieldFilter.filterDocument(built, "traffic");
@@ -137,9 +137,9 @@ class ExportFieldFilterDocumentRoundTripTest {
         assertThat(payload.containsKey("b64")).isFalse();
         assertThat(payload.containsKey("length")).isFalse();
         Map<?, ?> request = nestedMap(filtered, "request");
-        assertThat(request.get("url")).isEqualTo("https://example.com/ws");
+        assertThat(nestedMap(request, "url").get("raw")).isEqualTo("https://example.com/ws");
         assertThat(request.containsKey("method")).isFalse();
-        assertThat(request.containsKey("header")).isFalse();
+        assertThat(request.containsKey("headers")).isFalse();
         assertThat(request.containsKey("parameters")).isFalse();
     }
 

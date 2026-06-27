@@ -141,7 +141,11 @@ class ProxyHistoryIndexReporterTest {
         Map<?, ?> burp = map(doc.get("burp"));
         Map<?, ?> proxy = map(burp.get("proxy"));
         Map<?, ?> websocket = map(doc.get("websocket"));
-        assertThat(requestDoc.get("url")).isEqualTo("https://shop.example.com/api/orders");
+        Map<?, ?> urlDoc = nestedMap(requestDoc, "url");
+        assertThat(urlDoc.get("raw")).isEqualTo("https://shop.example.com/api/orders");
+        assertThat(urlDoc.get("scheme")).isEqualTo("https");
+        assertThat(urlDoc.get("host")).isEqualTo("shop.example.com");
+        assertThat(urlDoc.get("port")).isEqualTo(443);
         assertThat(requestDoc.get("method")).isEqualTo("POST");
         assertThat(requestDoc.containsKey("edited")).isFalse();
         assertThat(burp.get("reporting_tool")).isEqualTo("Proxy History");
@@ -161,20 +165,19 @@ class ProxyHistoryIndexReporterTest {
         Map<?, ?> responseDoc = map(callStatic(RequestResponseDocBuilder.class, "emptyTrafficResponseDoc"));
 
         assertContainsKeys(responseDoc,
-                "status", "protocol", "header", "body");
-        assertThat(responseDoc.containsKey("headers")).isFalse();
-        assertThat(responseDoc.containsKey("cookies")).isFalse();
+                "status", "protocol", "headers", "cookies", "mime_type", "body");
+        assertThat(responseDoc.containsKey("header")).isFalse();
         assertThat(responseDoc.containsKey("markers")).isFalse();
         Map<?, ?> status = nestedMap(responseDoc, "status");
         assertContainsKeys(status, "code", "code_class", "description");
         Map<?, ?> protocol = nestedMap(responseDoc, "protocol");
         assertContainsKeys(protocol, "http_version");
-        assertThat(responseDoc.containsKey("mime_type")).isFalse();
         assertMissingKeys(responseDoc, "header_names", "body_length", "body_offset");
-        Map<?, ?> header = nestedMap(responseDoc, "header");
-        assertContainsKeys(header, "content-type_inferred_burp", "content-type_inferred_burp_body");
-        assertThat(header.get("content-type_inferred_burp")).isNull();
-        assertThat(header.get("content-type_inferred_burp_body")).isNull();
+        Map<?, ?> mimeType = nestedMap(responseDoc, "mime_type");
+        assertContainsKeys(mimeType, "burp", "stated", "inferred_body");
+        assertThat(mimeType.get("burp")).isNull();
+        assertThat(mimeType.get("stated")).isNull();
+        assertThat(mimeType.get("inferred_body")).isNull();
 
         Map<?, ?> body = nestedMap(responseDoc, "body");
         assertThat(body.get("length")).isEqualTo(0);

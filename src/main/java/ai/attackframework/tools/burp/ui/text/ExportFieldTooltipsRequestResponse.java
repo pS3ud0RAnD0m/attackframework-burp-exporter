@@ -34,11 +34,26 @@ final class ExportFieldTooltipsRequestResponse {
         if (fieldKey.startsWith("request.parameters.")) {
             return requestParameterFieldTooltip(fieldKey.substring("request.parameters.".length()));
         }
-        if (fieldKey.startsWith("request.headers.full.")) {
-            return requestHeaderEntryFieldTooltip(fieldKey.substring("request.headers.full.".length()));
+        if (fieldKey.startsWith("request.url.")) {
+            return requestUrlFieldTooltip(fieldKey.substring("request.url.".length()));
         }
-        if (fieldKey.startsWith("response.headers.full.")) {
-            return responseHeaderEntryFieldTooltip(fieldKey.substring("response.headers.full.".length()));
+        if (fieldKey.startsWith("request.content_type.")) {
+            return requestContentTypeFieldTooltip(fieldKey.substring("request.content_type.".length()));
+        }
+        if (fieldKey.startsWith("response.mime_type.")) {
+            return responseMimeTypeFieldTooltip(fieldKey.substring("response.mime_type.".length()));
+        }
+        if (fieldKey.startsWith("response.header_attributes.")) {
+            return responseHeaderAttributesFieldTooltip(fieldKey.substring("response.header_attributes.".length()));
+        }
+        if (fieldKey.startsWith("request.headers.")) {
+            return requestHeaderEntryFieldTooltip(fieldKey.substring("request.headers.".length()));
+        }
+        if (fieldKey.startsWith("response.headers.")) {
+            return responseHeaderEntryFieldTooltip(fieldKey.substring("response.headers.".length()));
+        }
+        if (fieldKey.startsWith("request.cookies.")) {
+            return requestCookieFieldTooltip(fieldKey.substring("request.cookies.".length()));
         }
         if (fieldKey.startsWith("response.cookies.")) {
             return responseCookieFieldTooltip(fieldKey.substring("response.cookies.".length()));
@@ -48,62 +63,38 @@ final class ExportFieldTooltipsRequestResponse {
                     "HTTP method.",
                     "RequestResponseDocBuilder.buildTrafficRequestDoc() uses HttpRequest.method().");
             case "request.path" -> Tooltips.textWithSource(
-                    "Request path and query portion (legacy flat field).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which uses HttpRequest.path().");
+                    "Request path summary object.",
+                    "Traffic, sitemap, and findings evidence write path details under request.path.with_query, request.path.without_query, request.path.query, and request.path.file_extension.");
             case "response.status_code" -> Tooltips.textWithSource(
                     "Obtain the HTTP status code contained in the response.",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildResponseDoc(), which uses HttpResponse.statusCode().");
+                    "Current HTTP documents write this under response.status.code from HttpResponse.statusCode().");
             case "response.status_description" -> Tooltips.textWithSource(
                     "Obtain the HTTP reason phrase contained in the response for HTTP 1 messages.",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildResponseDoc(), which uses HttpResponse.reasonPhrase().");
-            case "response.mime_type" -> Tooltips.textWithSource(
-                    "Obtain the MIME type of the response, as determined by Burp Suite.",
-                    "Sitemap and findings evidence use HttpResponse.mimeType().name() in RequestResponseDocBuilder.buildResponseDoc().");
-            case "response.stated_mime_type" -> Tooltips.textWithSource(
-                    "Obtain the MIME type of the response, as stated in the HTTP headers.",
-                    "Sitemap and findings evidence use HttpResponse.statedMimeType().name() in RequestResponseDocBuilder.buildResponseDoc().");
-            case "response.inferred_mime_type" -> Tooltips.textWithSource(
-                    "Obtain the MIME type of the response, as inferred from the contents of the HTTP message body.",
-                    "Sitemap and findings evidence use HttpResponse.inferredMimeType().name() in RequestResponseDocBuilder.buildResponseDoc().");
+                    "Current HTTP documents write this under response.status.description from HttpResponse.reasonPhrase().");
             case "request.content_type" -> Tooltips.textWithSource(
-                    "Burp ContentType string for the request (legacy flat field; duplicates enum name).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which uses HttpRequest.contentType().toString().");
-            case "request.content_type_enum" -> Tooltips.textWithSource(
-                    "Burp ContentType enum constant for the request (for example URL_ENCODED).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which uses HttpRequest.contentType().name().");
+                    "Request content-type summary object.",
+                    "HttpMessageDocSupport.requestContentType() combines the raw Content-Type header, Burp ContentType, parsed media type, charset, and exporter inference.");
             case "request.file_extension" -> Tooltips.textWithSource(
-                    "File extension inferred from the request URL path (legacy flat field).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which uses HttpRequest.fileExtension().");
+                    "File extension inferred from the request URL path.",
+                    "Current HTTP documents write this under request.path.file_extension from HttpRequest.fileExtension().");
             case "request.http_version" -> Tooltips.textWithSource(
                     "HTTP version on the request line (for example HTTP/1.1).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which reads HttpRequest.httpVersion().");
-            case "request.inferred_content_type" -> Tooltips.textWithSource(
-                    "Exporter-inferred request payload class from body bytes (legacy flat field).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc() and inferRequestContentType() on request body bytes.");
+                    "Current HTTP documents write this under request.protocol.http_version from HttpRequest.httpVersion().");
             case "request.path_without_query" -> Tooltips.textWithSource(
-                    "Request path without the query string (legacy flat field).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which uses HttpRequest.pathWithoutQuery().");
+                    "Request path without the query string.",
+                    "Current HTTP documents write this under request.path.without_query from HttpRequest.pathWithoutQuery().");
             case "request.query" -> Tooltips.textWithSource(
-                    "Raw query string from the request URL (legacy flat field).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildRequestDoc(), which uses HttpRequest.query().");
+                    "Raw query string from the request URL.",
+                    "Current HTTP documents write this under request.path.query from HttpRequest.query().");
             case "response.http_version" -> Tooltips.textWithSource(
                     "HTTP version on the response status line.",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.buildResponseDoc(), which reads HttpResponse.httpVersion().");
+                    "Current HTTP documents write this under response.protocol.http_version from HttpResponse.httpVersion().");
             case "response.status_code_class" -> Tooltips.textWithSource(
                     "HTTP status family derived from the status code (for example 2xx, 4xx).",
-                    "Sitemap and findings evidence use RequestResponseDocBuilder.statusCodeClassName() on HttpResponse.statusCode().");
-            case "response.headers.names" -> Tooltips.textWithSource(
-                    "Ordered list of response header names.",
-                    "RequestResponseDocBuilder.buildResponseDoc() uses headerNames(HttpResponse.headers()) under response.headers.names.");
-            case "response.headers.etag" -> Tooltips.textWithSource(
-                    "ETag response header value when present.",
-                    "RequestResponseDocBuilder.putResponseAttributes() reads HttpResponseReceived.attributes(AttributeType.ETAG_HEADER) into response.headers.etag.");
-            case "response.headers.last_modified" -> Tooltips.textWithSource(
-                    "Last-Modified response header value when present.",
-                    "RequestResponseDocBuilder.putResponseAttributes() reads HttpResponseReceived.attributes(AttributeType.LAST_MODIFIED_HEADER) into response.headers.last_modified.");
-            case "response.headers.content_location" -> Tooltips.textWithSource(
-                    "Content-Location response header value when present.",
-                    "RequestResponseDocBuilder.putResponseAttributes() reads HttpResponseReceived.attributes(AttributeType.CONTENT_LOCATION) into response.headers.content_location.");
+                    "Current HTTP documents write this under response.status.code_class from HttpResponse.statusCode().");
+            case "response.mime_type" -> Tooltips.textWithSource(
+                    "Response MIME/content-type summary object.",
+                    "HttpMessageDocSupport.responseMimeType() combines the raw Content-Type header with Burp MIME, stated MIME, body-inferred MIME, parsed media type, and charset.");
             case "response.location" -> Tooltips.textWithSource(
                     "Location response header value (redirect target).",
                     "RequestResponseDocBuilder.putResponseAttributes() reads HttpResponseReceived.attributes(AttributeType.LOCATION).");
@@ -330,7 +321,7 @@ final class ExportFieldTooltipsRequestResponse {
                     "Parsed HTTP parameter name.",
                     "RequestResponseDocBuilder.parametersToList() uses ParsedHttpParameter.name() from HttpRequest.parameters(); BODY parameters may be filtered on binary bodies.");
             case "type" -> Tooltips.textWithSource(
-                    "Burp parameter type (URL, BODY, COOKIE, JSON, XML, etc.).",
+                    "Burp parameter type (URL, BODY, JSON, XML, etc.; cookies are exported under request.cookies).",
                     "RequestResponseDocBuilder.parametersToList() uses ParsedHttpParameter.type().name().");
             case "value" -> Tooltips.textWithSource(
                     "Parsed HTTP parameter value.",
@@ -339,27 +330,144 @@ final class ExportFieldTooltipsRequestResponse {
         };
     }
 
+    static String requestUrlFieldTooltip(String leaf) {
+        return switch (leaf) {
+            case "raw" -> Tooltips.textWithSource(
+                    "Full request URL.",
+                    "HttpMessageDocSupport.urlObject() writes RequestResponseDocBuilder.buildBestEffortUrl() into request.url.raw.");
+            case "text" -> Tooltips.textWithSource(
+                    "Full request URL indexed for text search, including long query strings.",
+                    "HttpMessageDocSupport.urlObject() copies request.url.raw into request.url.text.");
+            case "scheme" -> Tooltips.textWithSource(
+                    "Request URL scheme.",
+                    "HttpMessageDocSupport.urlObject() parses request.url.raw and falls back to HttpService.secure().");
+            case "host" -> Tooltips.textWithSource(
+                    "Target host parsed from the request URL.",
+                    "HttpMessageDocSupport.urlObject() parses request.url.raw and falls back to HttpService.host().");
+            case "port" -> Tooltips.textWithSource(
+                    "Target port parsed from the request URL or HTTP service.",
+                    "HttpMessageDocSupport.urlObject() uses an explicit URL port when present, otherwise HttpService.port().");
+            case "path" -> Tooltips.textWithSource(
+                    "Path component parsed from the request URL.",
+                    "HttpMessageDocSupport.urlObject() parses URI.getRawPath() from request.url.raw.");
+            case "query" -> Tooltips.textWithSource(
+                    "Query component parsed from the request URL without the leading question mark.",
+                    "HttpMessageDocSupport.urlObject() parses URI.getRawQuery() from request.url.raw.");
+            case "fragment" -> Tooltips.textWithSource(
+                    "Fragment component parsed from the request URL without the leading hash.",
+                    "HttpMessageDocSupport.urlObject() parses URI.getRawFragment() from request.url.raw.");
+            default -> ExportFieldTooltips.genericLeafTooltip("request.url." + leaf);
+        };
+    }
+
+    static String requestContentTypeFieldTooltip(String leaf) {
+        return switch (leaf) {
+            case "raw" -> Tooltips.textWithSource(
+                    "Raw request Content-Type header value.",
+                    "HttpMessageDocSupport.requestContentType() reads the Content-Type header via headerValue().");
+            case "media_type" -> Tooltips.textWithSource(
+                    "Parsed request media type without parameters.",
+                    "HttpMessageDocSupport.requestContentType() resolves the primary media type from Content-Type and Burp ContentType hints.");
+            case "charset" -> Tooltips.textWithSource(
+                    "Charset declared in the request Content-Type header.",
+                    "HttpMessageDocSupport.requestContentType() parses the charset parameter from Content-Type.");
+            case "burp_declared" -> Tooltips.textWithSource(
+                    "Burp request ContentType string.",
+                    "HttpMessageDocSupport.requestContentType() writes HttpRequest.contentType().toString().");
+            case "burp_enum" -> Tooltips.textWithSource(
+                    "Burp request ContentType enum name.",
+                    "HttpMessageDocSupport.requestContentType() writes HttpRequest.contentType().name().");
+            case "inferred" -> Tooltips.textWithSource(
+                    "Exporter-inferred request payload class from body bytes and headers.",
+                    "RequestResponseParametersSupport.inferRequestContentType() supplies request.content_type.inferred.");
+            default -> ExportFieldTooltips.genericLeafTooltip("request.content_type." + leaf);
+        };
+    }
+
+    static String responseMimeTypeFieldTooltip(String leaf) {
+        return switch (leaf) {
+            case "raw_content_type" -> Tooltips.textWithSource(
+                    "Raw response Content-Type header value.",
+                    "HttpMessageDocSupport.responseMimeType() reads the Content-Type response header via headerValue().");
+            case "media_type" -> Tooltips.textWithSource(
+                    "Parsed response media type without parameters.",
+                    "HttpMessageDocSupport.responseMimeType() resolves the primary media type from Content-Type and Burp MIME hints.");
+            case "charset" -> Tooltips.textWithSource(
+                    "Charset declared in the response Content-Type header.",
+                    "HttpMessageDocSupport.responseMimeType() parses the charset parameter from Content-Type.");
+            case "burp" -> Tooltips.textWithSource(
+                    "Burp response MIME verdict.",
+                    "HttpMessageDocSupport.responseMimeType() writes HttpResponse.mimeType().name().");
+            case "stated" -> Tooltips.textWithSource(
+                    "MIME type stated by Burp from response metadata.",
+                    "HttpMessageDocSupport.responseMimeType() writes HttpResponse.statedMimeType().name().");
+            case "inferred_body" -> Tooltips.textWithSource(
+                    "MIME type Burp inferred from the response body.",
+                    "HttpMessageDocSupport.responseMimeType() writes HttpResponse.inferredMimeType().name().");
+            default -> ExportFieldTooltips.genericLeafTooltip("response.mime_type." + leaf);
+        };
+    }
+
+    static String responseHeaderAttributesFieldTooltip(String leaf) {
+        return switch (leaf) {
+            case "date" -> Tooltips.textWithSource(
+                    "Typed helper for the standard HTTP response Date header.",
+                    "RequestResponseDocBuilder.populateResponsePayload() copies the raw Date header into response.header_attributes.date; the raw header row remains in response.headers.");
+            default -> ExportFieldTooltips.genericLeafTooltip("response.header_attributes." + leaf);
+        };
+    }
+
     static String requestHeaderEntryFieldTooltip(String leaf) {
         return switch (leaf) {
             case "name" -> Tooltips.textWithSource(
-                    "Request header name.",
-                    "RequestResponseDocBuilder.buildHeadersObject() copies HttpHeader.name() into request.headers.full nested entries.");
+                    "Normalized request header name.",
+                    "HttpMessageDocSupport.headersToList() lower-cases HttpHeader.name() into request.headers.name.");
+            case "raw" -> Tooltips.textWithSource(
+                    "Original request header name as Burp exposed it.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.name() into request.headers.raw.");
             case "value" -> Tooltips.textWithSource(
                     "Request header value.",
-                    "RequestResponseDocBuilder.buildHeadersObject() copies HttpHeader.value() into request.headers.full nested entries.");
-            default -> ExportFieldTooltips.genericLeafTooltip("request.headers.full." + leaf);
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.value() into request.headers.value.");
+            case "ordinal" -> Tooltips.textWithSource(
+                    "Zero-based request header order in the message.",
+                    "HttpMessageDocSupport.headersToList() assigns ordinals while preserving duplicate header order.");
+            default -> ExportFieldTooltips.genericLeafTooltip("request.headers." + leaf);
         };
     }
 
     static String responseHeaderEntryFieldTooltip(String leaf) {
         return switch (leaf) {
             case "name" -> Tooltips.textWithSource(
-                    "Response header name.",
-                    "RequestResponseDocBuilder.buildHeadersObject() copies HttpHeader.name() into response.headers.full nested entries.");
+                    "Normalized response header name.",
+                    "HttpMessageDocSupport.headersToList() lower-cases HttpHeader.name() into response.headers.name.");
+            case "raw" -> Tooltips.textWithSource(
+                    "Original response header name as Burp exposed it.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.name() into response.headers.raw.");
             case "value" -> Tooltips.textWithSource(
                     "Response header value.",
-                    "RequestResponseDocBuilder.buildHeadersObject() copies HttpHeader.value() into response.headers.full nested entries.");
-            default -> ExportFieldTooltips.genericLeafTooltip("response.headers.full." + leaf);
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.value() into response.headers.value.");
+            case "ordinal" -> Tooltips.textWithSource(
+                    "Zero-based response header order in the message.",
+                    "HttpMessageDocSupport.headersToList() assigns ordinals while preserving duplicate header order.");
+            default -> ExportFieldTooltips.genericLeafTooltip("response.headers." + leaf);
+        };
+    }
+
+    static String requestCookieFieldTooltip(String leaf) {
+        return switch (leaf) {
+            case "name" -> Tooltips.textWithSource(
+                    "Request cookie name.",
+                    "HttpMessageDocSupport.requestCookiesToList() parses Cookie header pairs into request.cookies.name.");
+            case "value" -> Tooltips.textWithSource(
+                    "Request cookie value.",
+                    "HttpMessageDocSupport.requestCookiesToList() parses Cookie header pairs into request.cookies.value.");
+            case "raw" -> Tooltips.textWithSource(
+                    "Raw request Cookie header pair.",
+                    "HttpMessageDocSupport.requestCookiesToList() preserves each Cookie pair before splitting name and value.");
+            case "ordinal" -> Tooltips.textWithSource(
+                    "Zero-based request cookie order in Cookie headers.",
+                    "HttpMessageDocSupport.requestCookiesToList() assigns ordinals while parsing Cookie header pairs.");
+            default -> ExportFieldTooltips.genericLeafTooltip("request.cookies." + leaf);
         };
     }
 
@@ -367,19 +475,42 @@ final class ExportFieldTooltipsRequestResponse {
         return switch (leaf) {
             case "name" -> Tooltips.textWithSource(
                     "Set-Cookie name.",
-                    "RequestResponseDocBuilder.cookiesToList() uses burp.api.montoya.http.message.Cookie.name().");
+                    "HttpMessageDocSupport.responseCookiesToList() uses burp.api.montoya.http.message.Cookie.name().");
             case "value" -> Tooltips.textWithSource(
                     "Set-Cookie value.",
-                    "RequestResponseDocBuilder.cookiesToList() uses Cookie.value().");
+                    "HttpMessageDocSupport.responseCookiesToList() uses Cookie.value().");
             case "domain" -> Tooltips.textWithSource(
                     "Cookie domain attribute.",
-                    "RequestResponseDocBuilder.cookiesToList() uses Cookie.domain().");
+                    "HttpMessageDocSupport.responseCookiesToList() uses Cookie.domain().");
             case "path" -> Tooltips.textWithSource(
                     "Cookie path attribute.",
-                    "RequestResponseDocBuilder.cookiesToList() uses Cookie.path().");
-            case "expiration" -> Tooltips.textWithSource(
-                    "Cookie expiration instant when provided.",
-                    "RequestResponseDocBuilder.cookiesToList() uses Cookie.expiration() converted to Instant.toString().");
+                    "HttpMessageDocSupport.responseCookiesToList() uses Cookie.path().");
+            case "expires" -> Tooltips.textWithSource(
+                    "Typed cookie expiration helper. Set-Cookie raw remains the authoritative evidence when dates are unusual.",
+                    "HttpMessageDocSupport.responseCookiesToList() uses Cookie.expiration() when Montoya exposes it; otherwise"
+                            + " it parses Set-Cookie Expires and normalizes recognized browser/HTTP date forms to ISO.");
+            case "max_age" -> Tooltips.textWithSource(
+                    "Typed Cookie Max-Age helper in seconds. Large values are preserved as long-range numeric helpers.",
+                    "HttpMessageDocSupport.responseCookiesToList() preserves the Set-Cookie Max-Age attribute string;"
+                            + " OpenSearch indexes parseable values as a long.");
+            case "secure" -> Tooltips.textWithSource(
+                    "Whether the Secure flag was present.",
+                    "HttpMessageDocSupport.responseCookiesToList() parses Secure from Set-Cookie.");
+            case "http_only" -> Tooltips.textWithSource(
+                    "Whether the HttpOnly flag was present.",
+                    "HttpMessageDocSupport.responseCookiesToList() parses HttpOnly from Set-Cookie.");
+            case "same_site" -> Tooltips.textWithSource(
+                    "Cookie SameSite attribute.",
+                    "HttpMessageDocSupport.responseCookiesToList() parses SameSite from Set-Cookie.");
+            case "partitioned" -> Tooltips.textWithSource(
+                    "Whether the Partitioned flag was present.",
+                    "HttpMessageDocSupport.responseCookiesToList() parses Partitioned from Set-Cookie.");
+            case "raw" -> Tooltips.textWithSource(
+                    "Raw Set-Cookie header value; authoritative evidence for cookie attributes.",
+                    "HttpMessageDocSupport.responseCookiesToList() preserves the Set-Cookie value before parsing attributes.");
+            case "ordinal" -> Tooltips.textWithSource(
+                    "Zero-based Set-Cookie order in the response.",
+                    "HttpMessageDocSupport.responseCookiesToList() assigns ordinals while preserving duplicate cookie order.");
             default -> ExportFieldTooltips.genericLeafTooltip("response.cookies." + leaf);
         };
     }

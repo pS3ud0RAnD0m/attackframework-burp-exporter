@@ -999,7 +999,8 @@ class RepeaterTabsIndexReporterTest {
             assertThat(burpRepeater(document)).containsEntry("tab_name", "FallbackTab");
 
             Map<String, Object> requestDoc = objectMap(document.get("request"));
-            assertThat(requestDoc.get("url")).isEqualTo("https://example.test/fallback/path?q=1");
+            assertThat(objectMap(requestDoc.get("url")).get("raw"))
+                    .isEqualTo("https://example.test/fallback/path?q=1");
             assertThat(requestDoc.get("method")).isEqualTo("POST");
             Map<String, Object> path = objectMap(requestDoc.get("path"));
             assertThat(path.get("with_query")).isEqualTo("/fallback/path?q=1");

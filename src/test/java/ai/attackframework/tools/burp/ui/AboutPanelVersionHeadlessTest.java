@@ -38,15 +38,16 @@ class AboutPanelVersionHeadlessTest {
             assertThat(txt)
                     .contains("Burp Exporter v1.2.3-test")
                     .contains("v1.2.3-test")
-                    .contains("This Burp Suite extension continuously exports settings, sitemap, issues, and traffic into OpenSearch")
-                    .contains("Body export")
-                    .contains("body.b64")
-                    .contains("body.text")
-                    .contains("gzip, x-gzip, deflate, br, zstd, compress, x-compress")
+                    .contains("This Burp Suite extension continuously exports settings, sitemap, issues, and traffic into index databases")
                     .contains("Burp Exporter:")
                     .contains("https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter")
-                    .contains("Attack Framework:")
-                    .contains("https://github.com/attackframework/attackframework");
+                    .contains("Anomalous Vectors OpenSearch:")
+                    .contains("https://github.com/AnomalousVectors/attackframework");
+            assertThat(txt)
+                    .doesNotContain("Body export")
+                    .doesNotContain("body.b64")
+                    .doesNotContain("body.text")
+                    .doesNotContain("gzip, x-gzip, deflate, br, zstd, compress, x-compress");
             assertThat(labels).filteredOn(label -> label.getText() != null && label.getText().startsWith("https://github.com/"))
                     .hasSize(2)
                     .allSatisfy(label -> assertThat(label.getMouseListeners()).isNotEmpty());

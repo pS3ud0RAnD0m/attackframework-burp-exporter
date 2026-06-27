@@ -42,9 +42,9 @@ class ConfigPanelFieldTooltipsHeadlessTest {
         JButton findingsExpand = findByName(panel, "fields.findings.expand", JButton.class);
         javax.swing.JTextField baseTemplateField = findByName(panel, "indexNaming.baseTemplate", javax.swing.JTextField.class);
         JCheckBox settingsProjectId = findByName(panel, "fields.settings.burp.project_id", JCheckBox.class);
-        JCheckBox sitemapUrl = findByName(panel, "fields.sitemap.request.url", JCheckBox.class);
+        JCheckBox sitemapUrl = findByName(panel, "fields.sitemap.request.url.raw", JCheckBox.class);
         JCheckBox findingsSeverity = findByName(panel, "fields.findings.issue.severity", JCheckBox.class);
-        JCheckBox trafficUrl = findByName(panel, "fields.traffic.request.url", JCheckBox.class);
+        JCheckBox trafficUrl = findByName(panel, "fields.traffic.request.url.raw", JCheckBox.class);
         JCheckBox trafficBurpInScope = findByName(panel, "fields.traffic.burp.is_in_scope", JCheckBox.class);
         JCheckBox trafficResponseStatusCode = findByName(panel, "fields.traffic.response.status.code", JCheckBox.class);
         JCheckBox trafficResponseStatusDescription = findByName(panel, "fields.traffic.response.status.description", JCheckBox.class);
@@ -92,10 +92,10 @@ class ConfigPanelFieldTooltipsHeadlessTest {
                     .contains("Burp project identifier.")
                     .contains("<b>Source")
                     .contains("SettingsIndexReporter uses MontoyaApi.project().id()");
-            assertThat(sitemapUrl.getText()).isEqualTo("Url");
-            assertThat(sitemapUrl.getToolTipText()).contains("Field:</b> request.url");
+            assertThat(sitemapUrl.getText()).isEqualTo("Raw");
+            assertThat(sitemapUrl.getToolTipText()).contains("Field:</b> request.url.raw");
             assertThat(sitemapUrl.getToolTipText())
-                    .contains("Field:</b> request.url")
+                    .contains("Field:</b> request.url.raw")
                     .contains("Full request URL for the sitemap item.")
                     .contains("SitemapIndexReporter.buildSitemapDoc()");
             assertThat(findingsSeverity.getText()).isEqualTo("Severity");
@@ -105,14 +105,13 @@ class ConfigPanelFieldTooltipsHeadlessTest {
                     .contains("Issue severity")
                     .contains("informational maps to INFORMATION")
                     .contains("AuditIssue.severity()");
-            assertThat(trafficUrl.getText()).isEqualTo("Url");
+            assertThat(trafficUrl.getText()).isEqualTo("Raw");
             assertThat(trafficUrl.getToolTipText())
-                    .contains("Field:</b> request.url")
+                    .contains("Field:</b> request.url.raw")
                     .contains("<b>Description:</b>")
                     .contains("Full request URL.")
                     .contains("<b>Source")
-                    .contains("TrafficHttpHandler.buildDocument() uses request.url()")
-                    .contains("ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url()");
+                    .contains("Traffic producers use RequestResponseDocBuilder.buildBestEffortUrl()");
             assertThat(trafficBurpInScope.getText()).isEqualTo("Is in scope");
             assertThat(trafficBurpInScope.getToolTipText())
                     .contains("Field:</b> burp.is_in_scope")
@@ -480,7 +479,7 @@ class ConfigPanelFieldTooltipsHeadlessTest {
     @Test
     void field_checkbox_tooltip_owner_creates_html_enabled_tooltip() throws Exception {
         ConfigPanel panel = newPanelOnEdt();
-        JCheckBox trafficUrl = findByName(panel, "fields.traffic.request.url", JCheckBox.class);
+        JCheckBox trafficUrl = findByName(panel, "fields.traffic.request.url.raw", JCheckBox.class);
 
         runEdt(() -> {
             assertThat(trafficUrl).isNotNull();

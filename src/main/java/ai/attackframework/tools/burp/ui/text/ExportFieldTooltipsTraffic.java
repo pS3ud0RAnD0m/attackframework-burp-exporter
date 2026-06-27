@@ -7,7 +7,14 @@ final class ExportFieldTooltipsTraffic {
     private ExportFieldTooltipsTraffic() { }
 
     static final Map<String, String> DISPLAY_NAMES = Map.ofEntries(
-            Map.entry("request.protocol.scheme", "protocol.scheme"),
+            Map.entry("request.url.raw", "url.raw"),
+            Map.entry("request.url.text", "url.text"),
+            Map.entry("request.url.scheme", "url.scheme"),
+            Map.entry("request.url.host", "url.host"),
+            Map.entry("request.url.port", "url.port"),
+            Map.entry("request.url.path", "url.path"),
+            Map.entry("request.url.query", "url.query"),
+            Map.entry("request.url.fragment", "url.fragment"),
             Map.entry("request.protocol.http_version", "protocol.http_version"),
             Map.entry("response.protocol.http_version", "protocol.http_version"),
             Map.entry("response.status.code", "status.code"),
@@ -38,24 +45,36 @@ final class ExportFieldTooltipsTraffic {
 
     static String trafficTooltip(String fieldKey) {
         return switch (fieldKey) {
-            case "request.url" -> Tooltips.textWithSource(
+            case "request.url.raw" -> Tooltips.textWithSource(
                     "Full request URL.",
-                    "TrafficHttpHandler.buildDocument() uses request.url(); ProxyHistoryIndexReporter.buildDocument() uses item.finalRequest().url().");
-            case "request.host" -> Tooltips.textWithSource(
-                    "Target host.",
-                    "Traffic producers set request.host from HttpRequest.httpService().host().");
-            case "request.port" -> Tooltips.textWithSource(
-                    "Target port.",
-                    "Traffic producers set request.port from HttpRequest.httpService().port().");
-            case "request.protocol.scheme" -> Tooltips.textWithSource(
-                    "Request scheme: https or http.",
-                    "Traffic producers map HttpRequest.httpService().secure() to https or http.");
+                    "Traffic producers use RequestResponseDocBuilder.buildBestEffortUrl() and store the result in request.url.raw.");
+            case "request.url.text" -> Tooltips.textWithSource(
+                    "Full request URL indexed for text search, including long query strings.",
+                    "HttpMessageDocSupport.urlObject() copies request.url.raw into request.url.text.");
+            case "request.url.scheme" -> Tooltips.textWithSource(
+                    "Request URL scheme: https or http.",
+                    "HttpMessageDocSupport.urlObject() parses request.url.raw and falls back to HttpService.secure().");
+            case "request.url.host" -> Tooltips.textWithSource(
+                    "Target host parsed from the request URL.",
+                    "HttpMessageDocSupport.urlObject() parses request.url.raw and falls back to HttpService.host().");
+            case "request.url.port" -> Tooltips.textWithSource(
+                    "Target port parsed from the request URL or HTTP service.",
+                    "HttpMessageDocSupport.urlObject() uses an explicit URL port when present, otherwise HttpService.port().");
             case "request.protocol.http_version" -> Tooltips.textWithSource(
                     "HTTP version on the request line (for example HTTP/1.1).",
                     "Traffic producers use HttpRequest.httpVersion(); malformed requests fall back to the raw request line in RequestResponseDocBuilder.safeRequestHttpVersion().");
-            case "request.header" -> Tooltips.textWithSource(
-                    "Actual request headers as lower-case dynamic fields plus exporter-inferred header facets, for example request.header.host and request.header.content-type_inferred.",
-                    "RequestResponseDocBuilder.buildTrafficRequestDoc() copies HttpHeader values into request.header.<lower-case-name>; duplicate header names become arrays, and inferred request content type is written as request.header.content-type_inferred.");
+            case "request.headers.name" -> Tooltips.textWithSource(
+                    "Normalized request header name.",
+                    "HttpMessageDocSupport.headersToList() lower-cases HttpHeader.name() into request.headers.name.");
+            case "request.headers.raw" -> Tooltips.textWithSource(
+                    "Original request header name as Burp exposed it.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.name() into request.headers.raw.");
+            case "request.headers.value" -> Tooltips.textWithSource(
+                    "Request header value.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.value() into request.headers.value.");
+            case "request.headers.ordinal" -> Tooltips.textWithSource(
+                    "Zero-based request header order in the message.",
+                    "HttpMessageDocSupport.headersToList() assigns ordinals while preserving duplicate header order.");
             case "response.protocol.http_version" -> Tooltips.textWithSource(
                     "HTTP version reported for the response.",
                     "RequestResponseDocBuilder.buildTrafficResponseDoc() uses only HttpResponse.httpVersion(); it does not copy request protocol data into response.protocol.http_version.");
@@ -104,9 +123,18 @@ final class ExportFieldTooltipsTraffic {
             case "response.status.code_class" -> Tooltips.textWithSource(
                     "HTTP status family derived from the status code (for example 2xx, 4xx).",
                     "RequestResponseDocBuilder.statusCodeClassName() maps HttpResponse.statusCode() to Burp StatusCodeClass.");
-            case "response.header" -> Tooltips.textWithSource(
-                    "Actual response headers as lower-case dynamic fields plus Burp-inferred content-type facets, for example response.header.server and response.header.content-type_inferred_burp_body.",
-                    "RequestResponseDocBuilder.buildTrafficResponseDoc() copies HttpHeader values into response.header.<lower-case-name>; duplicate header names become arrays, and Burp MIME verdicts are written as response.header.content-type_inferred_burp and response.header.content-type_inferred_burp_body.");
+            case "response.headers.name" -> Tooltips.textWithSource(
+                    "Normalized response header name.",
+                    "HttpMessageDocSupport.headersToList() lower-cases HttpHeader.name() into response.headers.name.");
+            case "response.headers.raw" -> Tooltips.textWithSource(
+                    "Original response header name as Burp exposed it.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.name() into response.headers.raw.");
+            case "response.headers.value" -> Tooltips.textWithSource(
+                    "Response header value.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.value() into response.headers.value.");
+            case "response.headers.ordinal" -> Tooltips.textWithSource(
+                    "Zero-based response header order in the message.",
+                    "HttpMessageDocSupport.headersToList() assigns ordinals while preserving duplicate header order.");
             case "burp.repeater.tab_name" -> Tooltips.textWithSource(
                     "Best-effort Repeater tab label for Repeater-origin traffic. "
                             + "Live Repeater traffic can intentionally leave this empty when Burp cannot safely disambiguate identical concurrent tabs.",

@@ -222,10 +222,10 @@ public final class ConfigControlPanel {
         exportBtn.addActionListener(e -> exportAction.run());
         startStopBtn.addActionListener(e -> {
             boolean wasRunning = RuntimeConfig.isExportRunning();
-            Logger.logDebug("[Control] " + (wasRunning ? "Stop" : "Start") + " clicked; running=" + wasRunning + " -> " + !wasRunning);
             if (wasRunning) {
                 RuntimeConfig.setExportRunning(false);
                 RuntimeConfig.setExportStopping(true);
+                Logger.logDebug("[Control] Stop clicked; running=true -> false");
                 updateStartStopButton(startStopBtn, false);
                 indicator.setState(IndicatorDot.State.STOPPING);
                 ExportShutdownStatus.Snapshot snapshot = ExportShutdownStatus.capture();
@@ -242,6 +242,7 @@ public final class ConfigControlPanel {
                 // Post stop work after this listener returns so Stopping paints before shutdown.
                 SwingUtilities.invokeLater(() -> stopAction.accept(callbacks));
             } else {
+                Logger.logDebug("[Control] Start clicked; running=false -> true");
                 RuntimeConfig.setExportRunning(true);
                 RuntimeConfig.setExportStarting(true);
                 updateStartStopButton(startStopBtn, true);

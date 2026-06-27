@@ -27,7 +27,7 @@ class ConfigImportResilienceTest {
                     "legacySinkFlag": true
                   },
                   "exportFields": {
-                    "traffic": ["request.url", "request.body.removed"],
+                    "traffic": ["request.url.raw", "request.body.removed"],
                     "legacy_index": ["meta.export_id"]
                   },
                   "removedTopLevel": true
@@ -42,7 +42,7 @@ class ConfigImportResilienceTest {
         assertThat(result.state().findingsSeverities()).containsExactly("high");
         assertThat(result.state().enabledExportFieldsByIndex())
                 .containsKey("traffic")
-                .satisfies(map -> assertThat(map.get("traffic")).isEqualTo(Set.of("request.url")));
+                .satisfies(map -> assertThat(map.get("traffic")).isEqualTo(Set.of("request.url.raw")));
 
         ConfigImportReport report = result.report();
         assertThat(report.warningCount()).isGreaterThanOrEqualTo(6);

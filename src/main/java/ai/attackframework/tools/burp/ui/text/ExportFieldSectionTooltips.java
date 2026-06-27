@@ -47,13 +47,12 @@ public final class ExportFieldSectionTooltips {
                     "HTTP request URL, method, path, service, headers, body, parameters, markers, and protocol facets.";
             case "request.body" ->
                     "Request body on the wire (body.b64) and searchable text (body.text) when Content-Encoding is removed and bytes classify as text.";
-            case "request.headers" -> "Parsed request header names and values.";
-            case "request.header" -> "Actual request headers and inferred request header facets exported as lower-case dynamic fields.";
-            case "request.headers.full" -> "Full raw request header block as exported.";
+            case "request.headers" -> "Ordered request header rows with normalized names, raw names, values, and ordinals.";
+            case "request.cookies" -> "Cookie header pairs parsed from the request.";
             case "request.body.markers" -> "Request highlight ranges (inclusive start, exclusive end offsets).";
             case "request.markers" -> "Request highlight ranges (inclusive start, exclusive end offsets).";
             case "request.parameters" -> "Parsed request parameters from the query string and body.";
-            case "request.protocol" -> "Scheme and HTTP version (request line) for the request.";
+            case "request.protocol" -> "HTTP version from the request line.";
             case "response" ->
                     "HTTP status, headers, body, MIME classification, and response markers.";
             case "response.status" -> "HTTP status code, status family, and reason phrase from the response.";
@@ -65,9 +64,7 @@ public final class ExportFieldSectionTooltips {
             case "response.body.html.links" -> "HTML links and outbound references parsed from the response body.";
             case "response.body.html.text" -> "Visible rendered-text facets parsed from the HTML response body.";
             case "response.body.markers" -> "Response highlight ranges (inclusive start, exclusive end offsets).";
-            case "response.headers" -> "Parsed response header names and values.";
-            case "response.header" -> "Actual response headers and inferred response header facets exported as lower-case dynamic fields.";
-            case "response.headers.full" -> "Full raw response header block as exported.";
+            case "response.headers" -> "Ordered response header rows with normalized names, raw names, values, and ordinals.";
             case "response.cookies" -> "Set-Cookie attributes parsed from the response.";
             case "response.markers" -> "Response highlight ranges (inclusive start, exclusive end offsets).";
             case "response.protocol" -> "HTTP version (status line) for the response.";

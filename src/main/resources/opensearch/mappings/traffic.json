@@ -2,233 +2,122 @@
   "settings": {},
   "mappings": {
     "dynamic": true,
-    "dynamic_templates": [
-      {
-        "request_header_values": {
-          "path_match": "request.header.*",
-          "match_mapping_type": "string",
-          "mapping": {
-            "type": "keyword",
-            "ignore_above": 8191
-          }
-        }
-      },
-      {
-        "response_header_values": {
-          "path_match": "response.header.*",
-          "match_mapping_type": "string",
-          "mapping": {
-            "type": "keyword",
-            "ignore_above": 8191
-          }
-        }
-      }
-    ],
     "properties": {
       "burp": {
         "properties": {
-          "notes": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
-            }
-          },
-          "highlight": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
-          "is_in_scope": {
-            "type": "boolean"
-          },
-          "message_id": {
-            "type": "integer"
-          },
+          "notes": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+          "highlight": { "type": "keyword", "ignore_above": 8191 },
+          "is_in_scope": { "type": "boolean" },
+          "message_id": { "type": "integer" },
           "proxy": {
             "properties": {
-              "history_id": {
-                "type": "integer"
-              },
-              "listener_port": {
-                "type": "integer"
-              },
-              "request_is_edited": {
-                "type": "boolean"
-              },
-              "response_is_edited": {
-                "type": "boolean"
-              }
+              "history_id": { "type": "integer" },
+              "listener_port": { "type": "integer" },
+              "request_is_edited": { "type": "boolean" },
+              "response_is_edited": { "type": "boolean" }
             }
           },
           "repeater": {
             "properties": {
-              "tab_group": {
-                "type": "keyword",
-                "ignore_above": 8191
-              },
-              "tab_name": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
+              "tab_group": { "type": "keyword", "ignore_above": 8191 },
+              "tab_name": { "type": "keyword", "ignore_above": 8191 }
             }
           },
-          "reporting_tool": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
+          "reporting_tool": { "type": "keyword", "ignore_above": 8191 },
           "timing": {
             "properties": {
-              "req_sent_to_res_end": {
-                "type": "integer"
-              },
-              "end": {
-                "type": "date"
-              },
-              "req_sent": {
-                "type": "date"
-              },
-              "req_sent_to_res_start": {
-                "type": "integer"
-              }
+              "req_sent_to_res_end": { "type": "integer" },
+              "end": { "type": "date" },
+              "req_sent": { "type": "date" },
+              "req_sent_to_res_start": { "type": "integer" }
             }
           }
         }
       },
       "meta": {
         "properties": {
-          "schema_version": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
-          "extension_version": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
-          "indexed_at": {
-            "type": "date"
-          }
+          "schema_version": { "type": "keyword", "ignore_above": 8191 },
+          "extension_version": { "type": "keyword", "ignore_above": 8191 },
+          "indexed_at": { "type": "date" }
         }
       },
       "request": {
         "properties": {
           "body": {
             "properties": {
-              "b64": {
-                "type": "binary",
-                "doc_values": false
-              },
-              "length": {
-                "type": "integer"
-              },
+              "b64": { "type": "binary", "doc_values": false },
+              "length": { "type": "integer" },
               "markers": {
                 "type": "nested",
                 "properties": {
-                  "start_inclusive": {
-                    "type": "integer"
-                  },
-                  "end_exclusive": {
-                    "type": "integer"
-                  }
+                  "start_inclusive": { "type": "integer" },
+                  "end_exclusive": { "type": "integer" }
                 }
               },
-              "offset": {
-                "type": "integer"
-              },
-              "text": {
-                "type": "text",
-                "index_options": "offsets"
-              }
+              "offset": { "type": "integer" },
+              "text": { "type": "text", "index_options": "offsets" }
             }
           },
-          "header": {
-            "type": "object",
-            "dynamic": true
-          },
-          "method": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
+          "method": { "type": "keyword", "ignore_above": 8191 },
           "parameters": {
             "type": "nested",
             "properties": {
-              "name": {
-                "type": "keyword",
-                "ignore_above": 8191
-              },
-              "type": {
-                "type": "keyword",
-                "ignore_above": 8191
-              },
-              "value": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword",
-                    "ignore_above": 8191
-                  }
-                }
-              }
+              "name": { "type": "keyword", "ignore_above": 8191 },
+              "type": { "type": "keyword", "ignore_above": 8191 },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
             }
           },
           "path": {
             "properties": {
-              "with_query": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword",
-                    "ignore_above": 8191
-                  }
-                }
-              },
-              "without_query": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword",
-                    "ignore_above": 8191
-                  }
-                }
-              },
-              "query": {
-                "type": "text",
-                "fields": {
-                  "raw": {
-                    "type": "keyword",
-                    "ignore_above": 8191
-                  }
-                }
-              },
-              "file_extension": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
+              "with_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "without_query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "file_extension": { "type": "keyword", "ignore_above": 8191 }
             }
           },
           "protocol": {
             "properties": {
-              "scheme": {
-                "type": "keyword",
-                "ignore_above": 8191
-              },
-              "http_version": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
+              "http_version": { "type": "keyword", "ignore_above": 8191 }
             }
           },
-          "port": {
-            "type": "integer"
-          },
           "url": {
-            "type": "text",
-            "fields": {
-              "raw": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
+            "properties": {
+              "raw": { "type": "keyword", "ignore_above": 8191 },
+              "text": { "type": "text" },
+              "scheme": { "type": "keyword", "ignore_above": 8191 },
+              "host": { "type": "keyword", "ignore_above": 8191 },
+              "port": { "type": "integer", "ignore_malformed": true },
+              "path": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "query": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "fragment": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } }
+            }
+          },
+          "headers": {
+            "type": "nested",
+            "properties": {
+              "name": { "type": "keyword", "ignore_above": 8191 },
+              "raw": { "type": "keyword", "ignore_above": 8191 },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "ordinal": { "type": "integer" }
+            }
+          },
+          "cookies": {
+            "type": "nested",
+            "properties": {
+              "name": { "type": "keyword", "ignore_above": 8191 },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "raw": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "ordinal": { "type": "integer" }
+            }
+          },
+          "content_type": {
+            "properties": {
+              "raw": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "media_type": { "type": "keyword", "ignore_above": 8191 },
+              "charset": { "type": "keyword", "ignore_above": 8191 },
+              "burp_declared": { "type": "keyword", "ignore_above": 8191 },
+              "burp_enum": { "type": "keyword", "ignore_above": 8191 },
+              "inferred": { "type": "keyword", "ignore_above": 8191 }
             }
           }
         }
@@ -237,200 +126,127 @@
         "properties": {
           "body": {
             "properties": {
-              "b64": {
-                "type": "binary",
-                "doc_values": false
-              },
+              "b64": { "type": "binary", "doc_values": false },
               "html": {
                 "properties": {
-                  "comments": {
-                    "type": "text",
-                    "fields": {
-                      "raw": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      }
-                    }
-                  },
+                  "comments": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
                   "dom": {
                     "properties": {
-                      "css_classes": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      },
-                      "div_ids": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      },
-                      "tag_names": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      }
+                      "css_classes": { "type": "keyword", "ignore_above": 8191 },
+                      "div_ids": { "type": "keyword", "ignore_above": 8191 },
+                      "tag_names": { "type": "keyword", "ignore_above": 8191 }
                     }
                   },
                   "forms": {
                     "properties": {
-                      "button_submit_labels": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      },
-                      "input_image_labels": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      },
-                      "input_submit_labels": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      },
-                      "non_hidden_form_input_types": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      }
+                      "button_submit_labels": { "type": "keyword", "ignore_above": 8191 },
+                      "input_image_labels": { "type": "keyword", "ignore_above": 8191 },
+                      "input_submit_labels": { "type": "keyword", "ignore_above": 8191 },
+                      "non_hidden_form_input_types": { "type": "keyword", "ignore_above": 8191 }
                     }
                   },
                   "links": {
                     "properties": {
-                      "anchor_labels": {
-                        "type": "text",
-                        "fields": {
-                          "raw": {
-                            "type": "keyword",
-                            "ignore_above": 8191
-                          }
-                        }
-                      },
-                      "canonical_link": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      },
-                      "outbound_edge_count": {
-                        "type": "integer"
-                      },
-                      "outbound_edge_tag_names": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      }
+                      "anchor_labels": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+                      "canonical_link": { "type": "keyword", "ignore_above": 8191 },
+                      "outbound_edge_count": { "type": "integer" },
+                      "outbound_edge_tag_names": { "type": "keyword", "ignore_above": 8191 }
                     }
                   },
-                  "page_title": {
-                    "type": "text",
-                    "fields": {
-                      "raw": {
-                        "type": "keyword",
-                        "ignore_above": 8191
-                      }
-                    }
-                  },
+                  "page_title": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
                   "text": {
                     "properties": {
-                      "visible_text": {
-                        "type": "text",
-                        "index_options": "offsets"
-                      },
-                      "visible_word_count": {
-                        "type": "integer"
-                      }
+                      "visible_text": { "type": "text", "index_options": "offsets" },
+                      "visible_word_count": { "type": "integer" }
                     }
                   }
                 }
               },
-              "length": {
-                "type": "integer"
-              },
-              "line_count": {
-                "type": "integer"
-              },
+              "length": { "type": "integer" },
+              "line_count": { "type": "integer" },
               "markers": {
                 "type": "nested",
                 "properties": {
-                  "start_inclusive": {
-                    "type": "integer"
-                  },
-                  "end_exclusive": {
-                    "type": "integer"
-                  }
+                  "start_inclusive": { "type": "integer" },
+                  "end_exclusive": { "type": "integer" }
                 }
               },
-              "offset": {
-                "type": "integer"
-              },
-              "text": {
-                "type": "text",
-                "index_options": "offsets"
-              },
-              "word_count": {
-                "type": "integer"
-              }
+              "offset": { "type": "integer" },
+              "text": { "type": "text", "index_options": "offsets" },
+              "word_count": { "type": "integer" }
             }
-          },
-          "header": {
-            "type": "object",
-            "dynamic": true
           },
           "protocol": {
             "properties": {
-              "http_version": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
+              "http_version": { "type": "keyword", "ignore_above": 8191 }
             }
           },
           "status": {
             "properties": {
-              "code": {
-                "type": "integer"
-              },
-              "code_class": {
-                "type": "keyword",
-                "ignore_above": 8191
-              },
-              "description": {
-                "type": "keyword",
-                "ignore_above": 8191
-              }
+              "code": { "type": "integer", "ignore_malformed": true },
+              "code_class": { "type": "keyword", "ignore_above": 8191 },
+              "description": { "type": "keyword", "ignore_above": 8191 }
+            }
+          },
+          "headers": {
+            "type": "nested",
+            "properties": {
+              "name": { "type": "keyword", "ignore_above": 8191 },
+              "raw": { "type": "keyword", "ignore_above": 8191 },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "ordinal": { "type": "integer" }
+            }
+          },
+          "header_attributes": {
+            "properties": {
+              "date": { "type": "date", "ignore_malformed": true, "format": "EEE, dd MMM yyyy HH:mm:ss zzz||EEE, d MMM yyyy HH:mm:ss zzz||EEE, dd-MMM-yyyy HH:mm:ss zzz||EEE, d-MMM-yyyy HH:mm:ss zzz||EEE, dd-MMM-yy HH:mm:ss zzz||EEE, d-MMM-yy HH:mm:ss zzz||EEE, dd-MMM-yyyy HH:mm:ss 'GMT'Z||EEE, d-MMM-yyyy HH:mm:ss 'GMT'Z||dd MMM yyyy HH:mm:ss zzz||d MMM yyyy HH:mm:ss zzz||strict_date_optional_time||epoch_millis" }
+            }
+          },
+          "cookies": {
+            "type": "nested",
+            "properties": {
+              "name": { "type": "keyword", "ignore_above": 8191 },
+              "value": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "domain": { "type": "keyword", "ignore_above": 8191 },
+              "path": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "expires": { "type": "date", "ignore_malformed": true, "format": "EEE, dd MMM yyyy HH:mm:ss zzz||EEE, d MMM yyyy HH:mm:ss zzz||EEE, dd-MMM-yyyy HH:mm:ss zzz||EEE, d-MMM-yyyy HH:mm:ss zzz||EEE, dd-MMM-yy HH:mm:ss zzz||EEE, d-MMM-yy HH:mm:ss zzz||EEE, dd-MMM-yyyy HH:mm:ss 'GMT'Z||EEE, d-MMM-yyyy HH:mm:ss 'GMT'Z||dd MMM yyyy HH:mm:ss zzz||d MMM yyyy HH:mm:ss zzz||strict_date_optional_time||epoch_millis" },
+              "max_age": { "type": "long", "ignore_malformed": true },
+              "secure": { "type": "boolean" },
+              "http_only": { "type": "boolean" },
+              "same_site": { "type": "keyword", "ignore_above": 8191 },
+              "partitioned": { "type": "boolean" },
+              "raw": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "ordinal": { "type": "integer" }
+            }
+          },
+          "mime_type": {
+            "properties": {
+              "raw_content_type": { "type": "text", "fields": { "raw": { "type": "keyword", "ignore_above": 8191 } } },
+              "media_type": { "type": "keyword", "ignore_above": 8191 },
+              "charset": { "type": "keyword", "ignore_above": 8191 },
+              "burp": { "type": "keyword", "ignore_above": 8191 },
+              "stated": { "type": "keyword", "ignore_above": 8191 },
+              "inferred_body": { "type": "keyword", "ignore_above": 8191 }
             }
           }
         }
       },
       "websocket": {
         "properties": {
-          "direction": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
-          "is_edited": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "integer"
-          },
-          "is_websocket": {
-            "type": "boolean"
-          },
-          "message_id": {
-            "type": "integer"
-          },
-          "message_type": {
-            "type": "keyword",
-            "ignore_above": 8191
-          },
+          "direction": { "type": "keyword", "ignore_above": 8191 },
+          "is_edited": { "type": "boolean" },
+          "id": { "type": "integer" },
+          "is_websocket": { "type": "boolean" },
+          "message_id": { "type": "integer" },
+          "message_type": { "type": "keyword", "ignore_above": 8191 },
           "payload": {
             "properties": {
-              "b64": {
-                "type": "binary",
-                "doc_values": false
-              },
-              "length": {
-                "type": "integer"
-              },
-              "text": {
-                "type": "text"
-              }
+              "b64": { "type": "binary", "doc_values": false },
+              "length": { "type": "integer" },
+              "text": { "type": "text" }
             }
           },
-          "time": {
-            "type": "date"
-          }
+          "time": { "type": "date" }
         }
       }
     }

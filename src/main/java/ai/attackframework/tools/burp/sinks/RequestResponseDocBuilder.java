@@ -178,7 +178,13 @@ public final class RequestResponseDocBuilder {
     }
 
     /**
-     * Builds a request sub-document for findings/sitemap indices (legacy flat field names).
+     * Builds a flat request sub-document for callers that still need the older HTTP shape.
+     *
+     * <p>Malformed Montoya accessors are handled by a best-effort fallback and a DEBUG log line;
+     * callers receive a partial request document instead of an exception.</p>
+     *
+     * @param request source request; {@code null} produces an empty fallback document
+     * @return mutable request document map
      */
     public static Map<String, Object> buildRequestDoc(HttpRequest request) {
         if (request == null) {
@@ -238,7 +244,7 @@ public final class RequestResponseDocBuilder {
      * @param request request whose direct URL accessor may throw
      * @param service HTTP service backing the request
      * @param requestDoc already-built request sub-document, usually from {@link #buildTrafficRequestDoc(HttpRequest)}
-     *     or {@link #buildRequestDoc(HttpRequest)}
+     *     or {@link #buildSitemapRequestDoc(HttpRequest)}
      * @param logPrefix logger prefix without brackets, for example {@code "RepeaterTabs"}
      * @return direct URL when available, otherwise a best-effort reconstructed URL or {@code null}
      */
@@ -501,10 +507,11 @@ public final class RequestResponseDocBuilder {
                 request.fileExtension(),
                 parametersResult,
                 false);
-        putLegacyRequestContentTypeFields(req, contentType, inferredContentType);
-
-        req.put("headers", HttpMessageDocSupport.buildHeadersObject(requestHeaders));
+        req.put("content_type", HttpMessageDocSupport.requestContentType(
+                requestHeaders, contentType, inferredContentType));
+        req.put("headers", HttpMessageDocSupport.headersToList(requestHeaders));
         req.put("parameters", parametersResult.entries());
+        req.put("cookies", HttpMessageDocSupport.requestCookiesToList(requestHeaders));
         finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
@@ -543,8 +550,11 @@ public final class RequestResponseDocBuilder {
                 request.fileExtension(),
                 parametersResult,
                 true);
-        req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
+        req.put("content_type", HttpMessageDocSupport.requestContentType(
+                requestHeaders, contentType, inferredContentType));
+        req.put("headers", HttpMessageDocSupport.headersToList(requestHeaders));
         req.put("parameters", parametersResult.entries());
+        req.put("cookies", HttpMessageDocSupport.requestCookiesToList(requestHeaders));
         finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
@@ -581,8 +591,11 @@ public final class RequestResponseDocBuilder {
                 request.fileExtension(),
                 parametersResult,
                 true);
-        req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
+        req.put("content_type", HttpMessageDocSupport.requestContentType(
+                requestHeaders, contentType, inferredContentType));
+        req.put("headers", HttpMessageDocSupport.headersToList(requestHeaders));
         req.put("parameters", parametersResult.entries());
+        req.put("cookies", HttpMessageDocSupport.requestCookiesToList(requestHeaders));
         finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, bodyBytes, parametersResult);
 
@@ -633,15 +646,6 @@ public final class RequestResponseDocBuilder {
         return HttpMessageDocSupport.stringValue(path);
     }
 
-    private static void putLegacyRequestContentTypeFields(
-            Map<String, Object> req,
-            burp.api.montoya.http.message.ContentType contentType,
-            String inferredContentType) {
-        req.put("content_type", contentType == null ? null : contentType.toString());
-        req.put("content_type_enum", contentType == null ? null : contentType.name());
-        req.put("inferred_content_type", inferredContentType);
-    }
-
     /**
      * Builds a request sub-document from raw bytes when Montoya accessors throw.
      *
@@ -667,13 +671,11 @@ public final class RequestResponseDocBuilder {
                 raw.fileExtension(),
                 parametersResult,
                 trafficShape);
-        if (trafficShape) {
-            req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
-        } else {
-            putLegacyRequestContentTypeFields(req, contentType, inferredContentType);
-            req.put("headers", HttpMessageDocSupport.buildHeadersObject(requestHeaders));
-        }
+        req.put("content_type", HttpMessageDocSupport.requestContentType(
+                requestHeaders, contentType, inferredContentType));
+        req.put("headers", HttpMessageDocSupport.headersToList(requestHeaders));
         req.put("parameters", parametersResult.entries());
+        req.put("cookies", HttpMessageDocSupport.requestCookiesToList(requestHeaders));
         finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, raw.bodyBytes(), parametersResult);
 
@@ -709,8 +711,11 @@ public final class RequestResponseDocBuilder {
                 raw.fileExtension(),
                 parametersResult,
                 true);
-        req.put("header", HttpMessageDocSupport.buildRequestHeaderValueObject(requestHeaders, inferredContentType));
+        req.put("content_type", HttpMessageDocSupport.requestContentType(
+                requestHeaders, contentType, inferredContentType));
+        req.put("headers", HttpMessageDocSupport.headersToList(requestHeaders));
         req.put("parameters", parametersResult.entries());
+        req.put("cookies", HttpMessageDocSupport.requestCookiesToList(requestHeaders));
         finalizeParameterStats(
                 request, null, req, contentType, requestHeaders, inferredContentType, raw.bodyBytes(), parametersResult);
 
@@ -729,7 +734,10 @@ public final class RequestResponseDocBuilder {
     }
 
     /**
-     * Builds a response sub-document for findings/sitemap indices (legacy flat field names).
+     * Builds a flat response sub-document for callers that still need the older HTTP shape.
+     *
+     * @param response source response; must not be {@code null}
+     * @return mutable response document map
      */
     public static Map<String, Object> buildResponseDoc(HttpResponse response) {
         Map<String, Object> resp = new LinkedHashMap<>();
@@ -737,7 +745,6 @@ public final class RequestResponseDocBuilder {
         resp.put("status_code_class", RequestResponseParametersSupport.statusCodeClassName(response.statusCode()));
         resp.put("status_description", response.reasonPhrase());
         resp.put("http_version", safeResponseHttpVersion(response));
-        putLegacyMimeFields(resp, response);
         populateResponsePayload(resp, response, false);
         return resp;
     }
@@ -761,7 +768,9 @@ public final class RequestResponseDocBuilder {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", TrafficResponseStatusFields.of(0, null, "No response"));
         response.put("protocol", TrafficProtocolFields.responseProtocol(null));
-        response.put("header", TrafficResponseHeaderFields.empty());
+        response.put("headers", List.of());
+        response.put("cookies", List.of());
+        response.put("mime_type", HttpMessageDocSupport.responseMimeType(List.of(), null));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("length", 0);
         body.put("offset", 0);
@@ -772,28 +781,18 @@ public final class RequestResponseDocBuilder {
         return response;
     }
 
-    private static void putLegacyMimeFields(Map<String, Object> resp, HttpResponse response) {
-        MimeType mime = response.mimeType();
-        MimeType stated = response.statedMimeType();
-        MimeType inferred = response.inferredMimeType();
-        resp.put("mime_type", mime == null ? null : mime.name());
-        resp.put("stated_mime_type", stated == null ? null : stated.name());
-        resp.put("inferred_mime_type", inferred == null ? null : inferred.name());
-    }
-
     private static void populateResponsePayload(
             Map<String, Object> resp,
             HttpResponse response,
             boolean trafficShape) {
         List<HttpHeader> responseHeaders = response.headers();
-        if (trafficShape) {
-            resp.put("header", HttpMessageDocSupport.buildResponseHeaderValueObject(responseHeaders, response));
-        } else {
-            Map<String, Object> responseHeadersDoc = HttpMessageDocSupport.buildHeadersObject(responseHeaders);
-            responseHeadersDoc.put("names", HttpMessageDocSupport.headerNames(responseHeaders));
-            resp.put("headers", responseHeadersDoc);
-            resp.put("cookies", HttpMessageDocSupport.cookiesToList(response.cookies()));
+        resp.put("headers", HttpMessageDocSupport.headersToList(responseHeaders));
+        String responseDate = HttpMessageDocSupport.headerValue(responseHeaders, "Date");
+        if (responseDate != null) {
+            HttpMessageDocSupport.putResponseHeaderField(resp, "date", responseDate);
         }
+        resp.put("cookies", HttpMessageDocSupport.responseCookiesToList(response.cookies(), responseHeaders));
+        resp.put("mime_type", HttpMessageDocSupport.responseMimeType(responseHeaders, response));
 
         MimeType mime = response.mimeType();
         MimeType stated = response.statedMimeType();

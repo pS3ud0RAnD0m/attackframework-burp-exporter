@@ -1,11 +1,13 @@
 package ai.attackframework.tools.burp.sinks;
 
 import static ai.attackframework.tools.burp.testutils.Reflect.getStatic;
+import static ai.attackframework.tools.burp.testutils.Reflect.callStatic;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 
 import org.junit.jupiter.api.Test;
@@ -111,6 +113,56 @@ class ExporterIndexStatsReporterTest {
             ExporterStatsPushOutcome outcome = ExporterIndexStatsReporter.pushFinalSnapshotNow();
 
             assertThat(outcome.kind()).isEqualTo(ExporterStatsPushOutcome.Kind.SKIPPED_DISABLED);
+        } finally {
+            tearDown();
+        }
+    }
+
+    @Test
+    void finalSnapshotDoc_countsPendingExporterStatsDocumentWhenOpenSearchActive() {
+        try {
+            RuntimeConfig.updateState(new ConfigState.State(
+                    List.of(ConfigKeys.SRC_EXPORTER),
+                    ConfigKeys.SCOPE_ALL,
+                    List.of(),
+                    new ConfigState.Sinks(false, "", false, false,
+                            true, "https://opensearch.url:9200", "", "", false),
+                    ConfigState.DEFAULT_SETTINGS_SUB,
+                    ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                    ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                    ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                    ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                    null));
+            ExportStats.recordSuccess("exporter", 7);
+            ExportStats.recordSuccess("traffic", 3);
+
+            Map<?, ?> doc = asMap(callStatic(ExporterIndexStatsReporter.class, "buildSnapshotDoc", true));
+            Map<?, ?> event = asMap(doc.get("event"));
+            Map<?, ?> data = asMap(event.get("data"));
+            Map<?, ?> indexes = asMap(data.get("indexes"));
+            Map<?, ?> exporter = asMap(indexes.get("exporter"));
+            Map<?, ?> traffic = asMap(indexes.get("traffic"));
+
+            assertThat(exporter.get("exported")).isEqualTo(8L);
+            assertThat(exporter.get("count")).isEqualTo(8L);
+            assertThat(traffic.get("exported")).isEqualTo(3L);
+            assertThat(ExportStats.getExportedCount("exporter")).isEqualTo(7L);
+        } finally {
+            tearDown();
+        }
+    }
+
+    @Test
+    void periodicFailureCoalescing_logsFirstAndChangedReasonsOnly() {
+        try {
+            assertThat(callStatic(ExporterIndexStatsReporter.class,
+                    "shouldLogPeriodicFailure", true, "cluster down")).isEqualTo(true);
+            assertThat(callStatic(ExporterIndexStatsReporter.class,
+                    "shouldLogPeriodicFailure", true, "cluster down")).isEqualTo(false);
+            assertThat(callStatic(ExporterIndexStatsReporter.class,
+                    "shouldLogPeriodicFailure", true, "auth failed")).isEqualTo(true);
+            assertThat(callStatic(ExporterIndexStatsReporter.class,
+                    "shouldLogPeriodicFailure", false, "auth failed")).isEqualTo(false);
         } finally {
             tearDown();
         }
@@ -229,5 +281,10 @@ class ExporterIndexStatsReporterTest {
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 intervalSeconds,
                 null);
+    }
+
+    private static Map<?, ?> asMap(Object value) {
+        assertThat(value).isInstanceOf(Map.class);
+        return (Map<?, ?>) value;
     }
 }

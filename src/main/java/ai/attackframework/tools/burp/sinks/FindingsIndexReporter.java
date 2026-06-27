@@ -562,10 +562,8 @@ public final class FindingsIndexReporter {
             return;
         }
         String url = RequestResponseDocBuilder.buildBestEffortUrl(request, service, reqDoc, "Findings");
-        reqDoc.put("url", nullToEmpty(url));
-        reqDoc.put("port", service == null ? null : service.port());
+        reqDoc.put("url", HttpMessageDocSupport.urlObject(nullToEmpty(url), service));
         reqDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                service == null ? null : (service.secure() ? "https" : "http"),
                 RequestResponseDocBuilder.safeRequestHttpVersion(request)));
     }
 
@@ -699,7 +697,9 @@ public final class FindingsIndexReporter {
         protocol.put("http_version", null);
         response.put("protocol", protocol);
 
-        response.put("header", new LinkedHashMap<String, Object>());
+        response.put("headers", List.of());
+        response.put("cookies", List.of());
+        response.put("mime_type", HttpMessageDocSupport.responseMimeType(List.of(), null));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("length", 0);

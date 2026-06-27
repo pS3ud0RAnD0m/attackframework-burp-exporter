@@ -10,9 +10,8 @@ final class TrafficProtocolFields {
 
     private TrafficProtocolFields() {}
 
-    static Map<String, Object> requestProtocol(String scheme, String httpVersion) {
+    static Map<String, Object> requestProtocol(String httpVersion) {
         Map<String, Object> protocol = new LinkedHashMap<>();
-        protocol.put("scheme", scheme);
         protocol.put("http_version", httpVersion);
         return protocol;
     }

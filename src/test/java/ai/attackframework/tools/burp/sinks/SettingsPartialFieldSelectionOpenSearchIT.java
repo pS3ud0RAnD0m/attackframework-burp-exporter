@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.sinks;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.awaitSingleIndexedDocument;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.createIndex;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.deleteIndex;
+import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.documentCount;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.nestedMap;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.openSearchSinks;
 import static ai.attackframework.tools.burp.testutils.PartialFieldOpenSearchTestSupport.pushOneDocument;
@@ -67,5 +68,38 @@ class SettingsPartialFieldSelectionOpenSearchIT {
         assertThat(nestedMap(stored, "burp").containsKey("version")).isFalse();
         assertThat(nestedMap(stored, "project").get("project_options"))
                 .isEqualTo(Map.of("test_key", "project_value"));
+    }
+
+    @Test
+    void settingsProjectAndUserPayloads_doNotRejectWhenNestedShapesDrift() {
+        Assumptions.assumeTrue(OpenSearchReachable.isReachable(), "OpenSearch dev cluster not reachable");
+        createIndex("settings");
+
+        ConfigState.State state = new ConfigState.State(
+                List.of(ConfigKeys.SRC_SETTINGS),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                openSearchSinks(),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
+                ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
+                Map.of("settings", Set.of("project", "user")));
+
+        Map<String, Object> first = new LinkedHashMap<>();
+        first.put("meta", Map.of("schema_version", "1"));
+        first.put("project", Map.of("project_options", Map.of("type_drift", "scalar")));
+        first.put("user", Map.of("user_options", Map.of("type_drift", "scalar")));
+
+        Map<String, Object> second = new LinkedHashMap<>();
+        second.put("meta", Map.of("schema_version", "1"));
+        second.put("project", Map.of("project_options", Map.of("type_drift", Map.of("nested", "value"))));
+        second.put("user", Map.of("user_options", Map.of("type_drift", Map.of("nested", "value"))));
+
+        pushOneDocument("settings", first, state);
+        pushOneDocument("settings", second, state);
+
+        assertThat(documentCount("settings")).isEqualTo(2);
     }
 }

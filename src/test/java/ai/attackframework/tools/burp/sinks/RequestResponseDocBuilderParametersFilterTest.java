@@ -62,7 +62,9 @@ class RequestResponseDocBuilderParametersFilterTest {
         RequestResponseDocBuilder.ParametersResult result =
                 RequestResponseDocBuilder.parametersToList(input, true);
 
-        assertThat(result.entries()).hasSize(5);
+        assertThat(result.entries()).hasSize(4);
+        assertThat(result.entries()).extracting(e -> e.get("type"))
+                .containsExactly("URL", "BODY", "BODY", null);
         assertThat(result.droppedSynthesized()).isZero();
     }
 
@@ -80,7 +82,7 @@ class RequestResponseDocBuilderParametersFilterTest {
 
         assertThat(result.entries())
                 .extracting(e -> e.get("type"))
-                .containsExactly("URL", "COOKIE", null);
+                .containsExactly("URL", null);
         assertThat(result.droppedSynthesized()).isEqualTo(2);
     }
 
@@ -103,7 +105,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         RequestResponseDocBuilder.ParametersResult result =
                 RequestResponseDocBuilder.parametersToList(input, true);
 
-        assertThat(result.entries()).hasSize(cap + 2);
+        assertThat(result.entries()).hasSize(cap + 1);
         assertThat(result.droppedBodyParams()).isEqualTo(10);
         assertThat(result.droppedSynthesized()).isZero();
         assertThat(result.bodyParamsTruncated()).isTrue();
@@ -340,14 +342,10 @@ class RequestResponseDocBuilderParametersFilterTest {
         // stubbing call.
         ParsedHttpParameter url1 = param("q", "1", HttpParameterType.URL);
         ParsedHttpParameter url2 = param("page", "2", HttpParameterType.URL);
-        ParsedHttpParameter cookie = param("session", "abc", HttpParameterType.COOKIE);
         List<ParsedHttpParameter> urlParams = List.of(url1, url2);
-        List<ParsedHttpParameter> cookieParams = List.of(cookie);
         HttpRequest request = mock(HttpRequest.class);
         when(request.hasParameters(HttpParameterType.URL)).thenReturn(true);
         when(request.parameters(HttpParameterType.URL)).thenReturn(urlParams);
-        when(request.hasParameters(HttpParameterType.COOKIE)).thenReturn(true);
-        when(request.parameters(HttpParameterType.COOKIE)).thenReturn(cookieParams);
         when(request.hasParameters(HttpParameterType.JSON)).thenReturn(false);
         when(request.hasParameters(HttpParameterType.XML)).thenReturn(false);
         when(request.hasParameters(HttpParameterType.XML_ATTRIBUTE)).thenReturn(false);
@@ -356,7 +354,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         RequestResponseDocBuilder.ParametersResult result =
                 RequestResponseDocBuilder.collectParameters(request, false);
 
-        assertThat(result.entries()).hasSize(3);
+        assertThat(result.entries()).hasSize(2);
         assertThat(result.droppedSynthesized()).isZero();
         assertThat(result.bodyEnumerationSkipped()).isTrue();
         verify(request, never()).parameters();
@@ -389,13 +387,9 @@ class RequestResponseDocBuilderParametersFilterTest {
 
     @Test
     void collectParameters_includeBodyFalse_swallowsTypedAccessorThrows_andCollectsRest() {
-        ParsedHttpParameter cookie = param("session", "abc", HttpParameterType.COOKIE);
-        List<ParsedHttpParameter> cookieParams = List.of(cookie);
         HttpRequest request = mock(HttpRequest.class);
         when(request.hasParameters(HttpParameterType.URL)).thenReturn(true);
         when(request.parameters(HttpParameterType.URL)).thenThrow(new RuntimeException("malformed url params"));
-        when(request.hasParameters(HttpParameterType.COOKIE)).thenReturn(true);
-        when(request.parameters(HttpParameterType.COOKIE)).thenReturn(cookieParams);
         when(request.hasParameters(HttpParameterType.JSON)).thenReturn(false);
         when(request.hasParameters(HttpParameterType.XML)).thenReturn(false);
         when(request.hasParameters(HttpParameterType.XML_ATTRIBUTE)).thenReturn(false);
@@ -404,7 +398,7 @@ class RequestResponseDocBuilderParametersFilterTest {
         RequestResponseDocBuilder.ParametersResult result =
                 RequestResponseDocBuilder.collectParameters(request, false);
 
-        assertThat(result.entries()).hasSize(1);
+        assertThat(result.entries()).isEmpty();
         assertThat(result.bodyEnumerationSkipped()).isTrue();
         verify(request, never()).parameters();
     }

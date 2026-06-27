@@ -77,11 +77,9 @@ final class WebSocketTrafficDocumentBuilder {
             return null;
         }
         if (upgradeRequestDoc != null) {
-            upgradeRequestDoc.put("url", url);
-            upgradeRequestDoc.put("port", service == null ? null : service.port());
-            String scheme = service == null ? null : (service.secure() ? "https" : "http");
+            upgradeRequestDoc.put("url", HttpMessageDocSupport.urlObject(url, service));
             upgradeRequestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                    scheme, RequestResponseDocBuilder.safeRequestHttpVersion(upgrade)));
+                    RequestResponseDocBuilder.safeRequestHttpVersion(upgrade)));
         }
 
         String wsTime = input.timestamp() == null ? java.time.Instant.now().toString() : input.timestamp();

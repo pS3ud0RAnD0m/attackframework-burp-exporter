@@ -93,8 +93,15 @@ class TrafficHttpHandlerDocumentTest {
 
         assertThat(doc).containsKeys("burp", "request", "response", "websocket", "meta");
         assertThat(requestProtocol(doc))
-                .containsEntry("scheme", "https")
                 .containsEntry("http_version", "HTTP/1.1");
+        Map<?, ?> requestUrl = nestedMap(nestedMap(doc, "request"), "url");
+        assertThat(requestUrl.get("raw")).isEqualTo("https://example.com/path?q=1");
+        assertThat(requestUrl.get("text")).isEqualTo("https://example.com/path?q=1");
+        assertThat(requestUrl.get("scheme")).isEqualTo("https");
+        assertThat(requestUrl.get("host")).isEqualTo("example.com");
+        assertThat(requestUrl.get("port")).isEqualTo(443);
+        assertThat(requestUrl.get("path")).isEqualTo("/path");
+        assertThat(requestUrl.get("query")).isEqualTo("q=1");
         assertThat(requestProtocol(doc)).doesNotContainKey("transport");
         assertThat(requestProtocol(doc)).doesNotContainKey("sub");
         assertThat(requestProtocol(doc)).doesNotContainKey("application");
@@ -214,8 +221,8 @@ class TrafficHttpHandlerDocumentTest {
         Map<?, ?> responseDoc = nestedMap(doc, "response");
         assertMissingKeys(responseDoc, "location", "content_length", "cookie_names", "etag_header",
                 "last_modified_header", "content_location");
-        assertThat(responseDoc.containsKey("headers")).isFalse();
-        assertThat(responseDoc.containsKey("cookies")).isFalse();
+        assertThat(responseDoc.containsKey("headers")).isTrue();
+        assertThat(responseDoc.containsKey("cookies")).isTrue();
     }
 
     @Test
@@ -239,10 +246,11 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<?, ?> req = nestedMap(doc, "request");
         assertThat(req).isNotNull();
-        assertContainsKeys(req, "url", "port", "method", "path", "protocol", "header", "parameters",
-                "body");
+        assertContainsKeys(req, "url", "method", "path", "protocol", "headers", "parameters",
+                "cookies", "content_type", "body");
         assertThat(req.containsKey("host")).isFalse();
-        assertThat(req.containsKey("headers")).isFalse();
+        assertThat(req.containsKey("port")).isFalse();
+        assertThat(req.containsKey("header")).isFalse();
         assertThat(req.containsKey("markers")).isFalse();
         assertContainsKeys(nestedMap(req, "body"), "markers");
         Map<?, ?> burp = nestedMap(doc, "burp");
@@ -250,8 +258,13 @@ class TrafficHttpHandlerDocumentTest {
         assertThat(proxy.containsKey("is_edited")).isFalse();
         Map<?, ?> reqBody = nestedMap(req, "body");
         assertContainsKeys(reqBody, "length", "offset", "b64", "text");
-        assertContainsKeys(nestedMap(req, "header"), "content-type_inferred");
+        assertContainsKeys(nestedMap(req, "content_type"), "raw", "media_type", "burp_declared", "burp_enum", "inferred");
         assertThat(req.get("method")).isEqualTo("GET");
+        Map<?, ?> url = nestedMap(req, "url");
+        assertThat(url.get("raw")).isEqualTo("https://example.com/path?q=1");
+        assertThat(url.get("scheme")).isEqualTo("https");
+        assertThat(url.get("host")).isEqualTo("example.com");
+        assertThat(url.get("port")).isEqualTo(443);
         Map<?, ?> path = nestedMap(req, "path");
         assertThat(path.get("with_query")).isEqualTo("/path?q=1");
         assertThat(path.get("without_query")).isEqualTo("/path");
@@ -304,7 +317,11 @@ class TrafficHttpHandlerDocumentTest {
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
         Map<?, ?> req = nestedMap(doc, "request");
-        assertThat(req.get("url")).isEqualTo("https://example.com/fallback/path?q=1");
+        Map<?, ?> url = nestedMap(req, "url");
+        assertThat(url.get("raw")).isEqualTo("https://example.com/fallback/path?q=1");
+        assertThat(url.get("scheme")).isEqualTo("https");
+        assertThat(url.get("host")).isEqualTo("example.com");
+        assertThat(url.get("port")).isEqualTo(443);
         assertThat(req.get("method")).isEqualTo("POST");
         Map<?, ?> path = nestedMap(req, "path");
         assertThat(path.get("with_query")).isEqualTo("/fallback/path?q=1");
@@ -312,6 +329,7 @@ class TrafficHttpHandlerDocumentTest {
         assertThat(path.get("query")).isEqualTo("q=1");
         Map<?, ?> protocol = nestedMap(req, "protocol");
         assertThat(protocol.get("http_version")).isEqualTo("HTTP/2");
+        assertThat(protocol.containsKey("scheme")).isFalse();
     }
 
     @Test
@@ -320,9 +338,8 @@ class TrafficHttpHandlerDocumentTest {
 
         Map<?, ?> resp = nestedMap(doc, "response");
         assertThat(resp).isNotNull();
-        assertContainsKeys(resp, "status", "protocol", "header", "body");
-        assertThat(resp.containsKey("headers")).isFalse();
-        assertThat(resp.containsKey("cookies")).isFalse();
+        assertContainsKeys(resp, "status", "protocol", "headers", "cookies", "mime_type", "body");
+        assertThat(resp.containsKey("header")).isFalse();
         assertThat(resp.containsKey("markers")).isFalse();
         Map<?, ?> respStatus = nestedMap(resp, "status");
         assertContainsKeys(respStatus, "code", "code_class", "description");
@@ -330,15 +347,15 @@ class TrafficHttpHandlerDocumentTest {
         assertContainsKeys(respProtocol, "http_version");
         Map<?, ?> respBody = nestedMap(resp, "body");
         assertContainsKeys(respBody, "length", "offset", "b64", "text", "markers");
-        assertContainsKeys(nestedMap(resp, "header"), "content-type_inferred_burp",
-                "content-type_inferred_burp_body");
+        assertContainsKeys(nestedMap(resp, "mime_type"), "raw_content_type", "media_type", "burp",
+                "stated", "inferred_body");
         assertThat(respStatus.get("code")).isEqualTo(200);
         assertThat(respStatus.get("code_class")).isEqualTo("CLASS_2XX_SUCCESS");
         assertThat(respStatus.get("description")).isEqualTo("OK");
     }
 
     @Test
-    void buildDocument_exportsTrafficHeadersAsLowerCaseDynamicFields() {
+    void buildDocument_exportsTrafficHeadersAsOrderedRows() {
         HttpHeader host = mock(HttpHeader.class);
         when(host.name()).thenReturn("Host");
         when(host.value()).thenReturn("ip.me");
@@ -348,39 +365,103 @@ class TrafficHttpHandlerDocumentTest {
         HttpHeader forwardedForTwo = mock(HttpHeader.class);
         when(forwardedForTwo.name()).thenReturn("x-forwarded-for");
         when(forwardedForTwo.value()).thenReturn("203.0.113.11");
-        when(request.headers()).thenReturn(List.of(host, forwardedFor, forwardedForTwo));
+        HttpHeader cookie = mock(HttpHeader.class);
+        when(cookie.name()).thenReturn("Cookie");
+        when(cookie.value()).thenReturn("sid=abc; theme=dark");
+        when(request.headers()).thenReturn(List.of(host, forwardedFor, forwardedForTwo, cookie));
 
         HttpHeader server = mock(HttpHeader.class);
         when(server.name()).thenReturn("Server");
         when(server.value()).thenReturn("nginx/1.18.0");
+        HttpHeader date = mock(HttpHeader.class);
+        when(date.name()).thenReturn("Date");
+        when(date.value()).thenReturn("Tue, 15 Nov 1994 08:12:31 GMT");
         HttpHeader setCookieOne = mock(HttpHeader.class);
         when(setCookieOne.name()).thenReturn("Set-Cookie");
-        when(setCookieOne.value()).thenReturn("a=1");
+        when(setCookieOne.value()).thenReturn(
+                "a=1; Domain=example.com; Path=/; Max-Age=2592000000; Secure; HttpOnly; SameSite=Lax; Partitioned");
         HttpHeader setCookieTwo = mock(HttpHeader.class);
         when(setCookieTwo.name()).thenReturn("set-cookie");
-        when(setCookieTwo.value()).thenReturn("b=2");
-        when(response.headers()).thenReturn(List.of(server, setCookieOne, setCookieTwo));
+        when(setCookieTwo.value()).thenReturn(
+                "b=2; Expires=Fri Sep 18 2026 01:39:10 GMT+0000 (Coordinated Universal Time)");
+        when(response.headers()).thenReturn(List.of(server, date, setCookieOne, setCookieTwo));
 
         Map<String, Object> doc = handler.buildDocument(response, request, true);
 
         Map<?, ?> requestDoc = nestedMap(doc, "request");
-        Map<?, ?> requestHeader = nestedMap(requestDoc, "header");
-        assertThat(requestHeader.get("host")).isEqualTo("ip.me");
-        assertThat(requestHeader.get("x-forwarded-for"))
-                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class))
-                .containsExactly("203.0.113.10", "203.0.113.11");
-        assertThat(requestHeader.containsKey("content-type_inferred")).isTrue();
-        assertThat(requestDoc.containsKey("headers")).isFalse();
+        List<?> requestHeaders = (List<?>) requestDoc.get("headers");
+        assertThat(requestHeaders).hasSize(4);
+        Map<?, ?> firstRequestHeader = (Map<?, ?>) requestHeaders.get(0);
+        assertThat(firstRequestHeader.get("name")).isEqualTo("host");
+        assertThat(firstRequestHeader.get("raw")).isEqualTo("Host");
+        assertThat(firstRequestHeader.get("value")).isEqualTo("ip.me");
+        assertThat(firstRequestHeader.get("ordinal")).isEqualTo(0);
+        Map<?, ?> secondRequestHeader = (Map<?, ?>) requestHeaders.get(1);
+        assertThat(secondRequestHeader.get("name")).isEqualTo("x-forwarded-for");
+        assertThat(secondRequestHeader.get("value")).isEqualTo("203.0.113.10");
+        assertThat(secondRequestHeader.get("ordinal")).isEqualTo(1);
+        Map<?, ?> thirdRequestHeader = (Map<?, ?>) requestHeaders.get(2);
+        assertThat(thirdRequestHeader.get("name")).isEqualTo("x-forwarded-for");
+        assertThat(thirdRequestHeader.get("value")).isEqualTo("203.0.113.11");
+        assertThat(thirdRequestHeader.get("ordinal")).isEqualTo(2);
+        List<?> requestCookies = (List<?>) requestDoc.get("cookies");
+        assertThat(requestCookies).hasSize(2);
+        Map<?, ?> firstRequestCookie = (Map<?, ?>) requestCookies.get(0);
+        assertThat(firstRequestCookie.get("name")).isEqualTo("sid");
+        assertThat(firstRequestCookie.get("value")).isEqualTo("abc");
+        assertThat(firstRequestCookie.get("raw")).isEqualTo("sid=abc");
+        assertThat(firstRequestCookie.get("ordinal")).isEqualTo(0);
+        Map<?, ?> secondRequestCookie = (Map<?, ?>) requestCookies.get(1);
+        assertThat(secondRequestCookie.get("name")).isEqualTo("theme");
+        assertThat(secondRequestCookie.get("value")).isEqualTo("dark");
+        assertThat(secondRequestCookie.get("ordinal")).isEqualTo(1);
+        assertThat(nestedMap(requestDoc, "content_type").containsKey("inferred")).isTrue();
+        assertThat(requestDoc.containsKey("header")).isFalse();
 
         Map<?, ?> responseDoc = nestedMap(doc, "response");
-        Map<?, ?> responseHeader = nestedMap(responseDoc, "header");
-        assertThat(responseHeader.get("server")).isEqualTo("nginx/1.18.0");
-        assertThat(responseHeader.get("set-cookie"))
-                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.list(Object.class))
-                .containsExactly("a=1", "b=2");
-        assertThat(responseHeader.containsKey("content-type_inferred_burp")).isTrue();
-        assertThat(responseHeader.containsKey("content-type_inferred_burp_body")).isTrue();
-        assertThat(responseDoc.containsKey("headers")).isFalse();
+        List<?> responseHeaders = (List<?>) responseDoc.get("headers");
+        assertThat(responseHeaders).hasSize(4);
+        Map<?, ?> firstResponseHeader = (Map<?, ?>) responseHeaders.get(0);
+        assertThat(firstResponseHeader.get("name")).isEqualTo("server");
+        assertThat(firstResponseHeader.get("value")).isEqualTo("nginx/1.18.0");
+        assertThat(firstResponseHeader.get("ordinal")).isEqualTo(0);
+        Map<?, ?> dateResponseHeader = (Map<?, ?>) responseHeaders.get(1);
+        assertThat(dateResponseHeader.get("name")).isEqualTo("date");
+        assertThat(dateResponseHeader.get("raw")).isEqualTo("Date");
+        assertThat(dateResponseHeader.get("ordinal")).isEqualTo(1);
+        assertThat(nestedMap(responseDoc, "header_attributes").get("date"))
+                .isEqualTo("Tue, 15 Nov 1994 08:12:31 GMT");
+        Map<?, ?> secondResponseHeader = (Map<?, ?>) responseHeaders.get(2);
+        assertThat(secondResponseHeader.get("name")).isEqualTo("set-cookie");
+        assertThat(secondResponseHeader.get("value")).isEqualTo(
+                "a=1; Domain=example.com; Path=/; Max-Age=2592000000; Secure; HttpOnly; SameSite=Lax; Partitioned");
+        assertThat(secondResponseHeader.get("ordinal")).isEqualTo(2);
+        Map<?, ?> thirdResponseHeader = (Map<?, ?>) responseHeaders.get(3);
+        assertThat(thirdResponseHeader.get("name")).isEqualTo("set-cookie");
+        assertThat(thirdResponseHeader.get("value")).isEqualTo(
+                "b=2; Expires=Fri Sep 18 2026 01:39:10 GMT+0000 (Coordinated Universal Time)");
+        assertThat(thirdResponseHeader.get("ordinal")).isEqualTo(3);
+        List<?> responseCookies = (List<?>) responseDoc.get("cookies");
+        assertThat(responseCookies).hasSize(2);
+        Map<?, ?> firstResponseCookie = (Map<?, ?>) responseCookies.get(0);
+        assertThat(firstResponseCookie.get("name")).isEqualTo("a");
+        assertThat(firstResponseCookie.get("value")).isEqualTo("1");
+        assertThat(firstResponseCookie.get("domain")).isEqualTo("example.com");
+        assertThat(firstResponseCookie.get("path")).isEqualTo("/");
+        assertThat(firstResponseCookie.get("max_age")).isEqualTo("2592000000");
+        assertThat(firstResponseCookie.get("secure")).isEqualTo(true);
+        assertThat(firstResponseCookie.get("http_only")).isEqualTo(true);
+        assertThat(firstResponseCookie.get("same_site")).isEqualTo("Lax");
+        assertThat(firstResponseCookie.get("partitioned")).isEqualTo(true);
+        assertThat(firstResponseCookie.get("ordinal")).isEqualTo(0);
+        Map<?, ?> secondResponseCookie = (Map<?, ?>) responseCookies.get(1);
+        assertThat(secondResponseCookie.get("name")).isEqualTo("b");
+        assertThat(secondResponseCookie.get("expires")).isEqualTo("2026-09-18T01:39:10Z");
+        assertThat(secondResponseCookie.get("raw")).isEqualTo(
+                "b=2; Expires=Fri Sep 18 2026 01:39:10 GMT+0000 (Coordinated Universal Time)");
+        assertThat(secondResponseCookie.get("ordinal")).isEqualTo(1);
+        assertThat(nestedMap(responseDoc, "mime_type").containsKey("burp")).isTrue();
+        assertThat(responseDoc.containsKey("header")).isFalse();
     }
 
     @Test
@@ -555,20 +636,19 @@ class TrafficHttpHandlerDocumentTest {
         Map<?, ?> responseDoc = map(callStatic(TrafficHttpHandler.class, "buildOrphanResponse"));
 
         assertContainsKeys(responseDoc,
-                "status", "protocol", "header", "body");
-        assertThat(responseDoc.containsKey("headers")).isFalse();
-        assertThat(responseDoc.containsKey("cookies")).isFalse();
+                "status", "protocol", "headers", "cookies", "mime_type", "body");
+        assertThat(responseDoc.containsKey("header")).isFalse();
         assertThat(responseDoc.containsKey("markers")).isFalse();
         Map<?, ?> status = nestedMap(responseDoc, "status");
         assertContainsKeys(status, "code", "code_class", "description");
         Map<?, ?> protocol = nestedMap(responseDoc, "protocol");
         assertContainsKeys(protocol, "http_version");
-        assertThat(responseDoc.containsKey("mime_type")).isFalse();
         assertMissingKeys(responseDoc, "header_names", "body_length", "body_offset");
-        Map<?, ?> header = nestedMap(responseDoc, "header");
-        assertContainsKeys(header, "content-type_inferred_burp", "content-type_inferred_burp_body");
-        assertThat(header.get("content-type_inferred_burp")).isNull();
-        assertThat(header.get("content-type_inferred_burp_body")).isNull();
+        Map<?, ?> mimeType = nestedMap(responseDoc, "mime_type");
+        assertContainsKeys(mimeType, "burp", "stated", "inferred_body");
+        assertThat(mimeType.get("burp")).isNull();
+        assertThat(mimeType.get("stated")).isNull();
+        assertThat(mimeType.get("inferred_body")).isNull();
 
         Map<?, ?> body = nestedMap(responseDoc, "body");
         assertContainsKeys(body, "markers");

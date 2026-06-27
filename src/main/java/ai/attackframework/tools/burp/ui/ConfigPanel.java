@@ -473,7 +473,7 @@ public class ConfigPanel extends JPanel implements ConfigController.Ui {
             postStopProgress(callbacks, ExportShutdownStatus.pushingFinalStatsMessage());
             ExporterStatsPushOutcome finalPush = ExporterIndexStatsReporter.pushFinalSnapshotNow();
             ParameterIntegritySessionLog.logFinalExporterStatsPush(finalPush);
-            StatsClipboardSnapshot.logSessionStopSummary();
+            StatsClipboardSnapshot.logSessionStopSummaryWithOpenSearchCounts();
             IndexingRetryCoordinator.getInstance().clearPendingWork();
             IndexingRetryCoordinator.getInstance().stopDrainThread();
             postStopProgress(callbacks, ExportShutdownStatus.closingConnectionsMessage());

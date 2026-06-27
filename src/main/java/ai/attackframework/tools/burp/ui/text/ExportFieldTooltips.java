@@ -196,21 +196,27 @@ public final class ExportFieldTooltips {
 
     private static String sitemapTooltip(String fieldKey) {
         return switch (fieldKey) {
-            case "request.url" -> Tooltips.textWithSource(
+            case "request.url.raw" -> Tooltips.textWithSource(
                     "Full request URL for the sitemap item.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses RequestResponseDocBuilder.buildBestEffortUrl() from HttpRequest and HttpService.");
-            case "request.port" -> Tooltips.textWithSource(
-                    "Target port.",
-                    "SitemapIndexReporter.buildSitemapDoc() uses HttpRequestResponse.httpService().port().");
-            case "request.protocol.scheme" -> Tooltips.textWithSource(
-                    "Request scheme: https or http.",
-                    "SitemapIndexReporter.buildSitemapDoc() maps HttpRequestResponse.httpService().secure() to https or http.");
+                    "SitemapIndexReporter.buildSitemapDoc() uses RequestResponseDocBuilder.buildBestEffortUrl() and stores the result in request.url.raw.");
+            case "request.url.scheme" -> Tooltips.textWithSource(
+                    "Request URL scheme: https or http.",
+                    "HttpMessageDocSupport.urlObject() parses request.url.raw and falls back to HttpRequestResponse.httpService().secure().");
+            case "request.url.host" -> Tooltips.textWithSource(
+                    "Target host parsed from the request URL.",
+                    "HttpMessageDocSupport.urlObject() parses request.url.raw and falls back to HttpRequestResponse.httpService().host().");
+            case "request.url.port" -> Tooltips.textWithSource(
+                    "Target port parsed from the request URL or HTTP service.",
+                    "HttpMessageDocSupport.urlObject() uses an explicit URL port when present, otherwise HttpRequestResponse.httpService().port().");
             case "request.protocol.http_version" -> Tooltips.textWithSource(
                     "HTTP version on the request line.",
                     "SitemapIndexReporter.buildSitemapDoc() uses RequestResponseDocBuilder.safeRequestHttpVersion().");
-            case "request.header" -> Tooltips.textWithSource(
-                    "Actual request headers as lower-case dynamic fields plus exporter-inferred header facets.",
-                    "RequestResponseDocBuilder.buildSitemapRequestDoc() copies HttpHeader values into request.header.<lower-case-name>; duplicate header names become arrays, and inferred request content type is written as request.header.content-type_inferred.");
+            case "request.headers.name" -> Tooltips.textWithSource(
+                    "Normalized request header name.",
+                    "HttpMessageDocSupport.headersToList() lower-cases HttpHeader.name() into request.headers.name.");
+            case "request.headers.value" -> Tooltips.textWithSource(
+                    "Request header value.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.value() into request.headers.value.");
             case "request.method" -> Tooltips.textWithSource(
                     "HTTP method.",
                     "RequestResponseDocBuilder.buildSitemapRequestDoc() uses HttpRequest.method().");
@@ -238,9 +244,12 @@ public final class ExportFieldTooltips {
             case "response.protocol.http_version" -> Tooltips.textWithSource(
                     "HTTP version reported for the response.",
                     "RequestResponseDocBuilder.buildTrafficResponseDoc() uses only HttpResponse.httpVersion().");
-            case "response.header" -> Tooltips.textWithSource(
-                    "Actual response headers as lower-case dynamic fields plus Burp-inferred content-type facets.",
-                    "RequestResponseDocBuilder.buildTrafficResponseDoc() copies HttpHeader values into response.header.<lower-case-name>; duplicate header names become arrays, and Burp MIME verdicts are written as response.header.content-type_inferred_burp and response.header.content-type_inferred_burp_body.");
+            case "response.headers.name" -> Tooltips.textWithSource(
+                    "Normalized response header name.",
+                    "HttpMessageDocSupport.headersToList() lower-cases HttpHeader.name() into response.headers.name.");
+            case "response.headers.value" -> Tooltips.textWithSource(
+                    "Response header value.",
+                    "HttpMessageDocSupport.headersToList() copies HttpHeader.value() into response.headers.value.");
             case "burp.notes" -> Tooltips.textWithSource(
                     "User notes attached to the sitemap item in Burp.",
                     "SitemapIndexReporter.buildBurpDoc() reads HttpRequestResponse.annotations().notes().");

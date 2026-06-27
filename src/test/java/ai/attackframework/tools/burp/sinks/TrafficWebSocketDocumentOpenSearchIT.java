@@ -78,7 +78,7 @@ class TrafficWebSocketDocumentOpenSearchIT {
                                 "websocket.direction",
                                 "websocket.payload.text",
                                 "websocket.is_websocket",
-                                "request.url",
+                                "request.url.raw",
                                 "burp.reporting_tool")));
 
         MontoyaApi api = mock(MontoyaApi.class, Answers.RETURNS_DEEP_STUBS);
@@ -96,7 +96,7 @@ class TrafficWebSocketDocumentOpenSearchIT {
         assertThat(websocket.containsKey("id")).isFalse();
         assertThat(websocket.containsKey("message_id")).isFalse();
         assertThat(nestedMap(websocket, "payload").get("text")).isEqualTo("ws-it");
-        assertThat(nestedMap(stored, "request").get("url")).isEqualTo("https://example.com/ws");
+        assertThat(nestedMap(nestedMap(stored, "request"), "url").get("raw")).isEqualTo("https://example.com/ws");
         assertThat(nestedMap(stored, "burp").get("reporting_tool")).isEqualTo("Proxy WebSocket");
     }
 

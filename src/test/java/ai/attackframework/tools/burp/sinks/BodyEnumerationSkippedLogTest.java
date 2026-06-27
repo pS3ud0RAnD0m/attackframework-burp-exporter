@@ -185,6 +185,32 @@ class BodyEnumerationSkippedLogTest {
     }
 
     @Test
+    void flushStopSummary_gateBugWarningIncludesPhaseAndDetailPointer() throws Exception {
+        HttpRequest request = mock(HttpRequest.class);
+        when(request.url()).thenReturn("https://example.test/gate");
+        byte[] body = "y=2".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        BodyEnumerationSkippedLog.flushStartupSummary();
+        BodyEnumerationSkippedLog.evaluateAndRecord(
+                request,
+                null,
+                Map.of(),
+                ContentType.MULTIPART,
+                List.of(),
+                HttpMessageDocSupport.INFERRED_CT_TEXT,
+                body,
+                true);
+        BodyEnumerationSkippedLog.flushStopSummary();
+        flushLogListeners();
+
+        assertThat(warnMessages).hasSize(1);
+        assertThat(warnMessages.get(0))
+                .contains("during stop")
+                .contains("unexpected gate outcome")
+                .contains("Data-Integrity#misgate_binary");
+    }
+
+    @Test
     void clearRunState_dropsPendingLiveSuspectsWithoutLogging() throws Exception {
         RuntimeConfig.setExportRunning(true);
         BodyEnumerationSkippedLog.flushStartupSummary();

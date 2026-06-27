@@ -69,7 +69,7 @@ class ToolWebSocketLiveDocumentOpenSearchIT {
                                 "websocket.payload.text",
                                 "websocket.is_websocket",
                                 "burp.reporting_tool",
-                                "request.url")));
+                                "request.url.raw")));
 
         HttpRequest upgrade = mockUpgradeRequest();
         Map<String, Object> built = ToolWebSocketLiveHandler.buildLiveDocument(
@@ -85,7 +85,8 @@ class ToolWebSocketLiveDocumentOpenSearchIT {
         assertThat(stored).containsKeys("meta", "burp", "request", "websocket");
         assertThat(stored).doesNotContainKey("response");
         assertThat(nestedMap(stored, "burp").get("reporting_tool")).isEqualTo("Repeater");
-        assertThat(nestedMap(stored, "request").get("url")).isEqualTo("https://example.com/ws-live");
+        assertThat(nestedMap(nestedMap(stored, "request"), "url").get("raw"))
+                .isEqualTo("https://example.com/ws-live");
         Map<?, ?> websocket = nestedMap(stored, "websocket");
         assertThat(websocket.get("is_websocket")).isEqualTo(true);
         assertThat(websocket.get("id")).isNull();

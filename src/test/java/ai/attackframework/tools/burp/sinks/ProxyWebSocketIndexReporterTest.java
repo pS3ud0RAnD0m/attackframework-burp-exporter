@@ -187,7 +187,7 @@ class ProxyWebSocketIndexReporterTest {
 
         assertThat(doc).isNotNull();
         Map<?, ?> request = nestedMap(doc, "request");
-        assertThat(request.get("url")).isEqualTo("https://example.com/ws");
+        assertThat(nestedMap(request, "url").get("raw")).isEqualTo("https://example.com/ws");
         assertThat(nestedMap(doc, "burp").get("reporting_tool")).isEqualTo("Proxy WebSocket");
         assertThat(doc).doesNotContainKey("tool_type");
         Map<?, ?> path = nestedMap(request, "path");

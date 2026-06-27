@@ -49,7 +49,6 @@ final class RequestResponseParametersSupport {
 
     /** Non-URL parameter types enumerated by the typed-accessor fast path. */
     static final HttpParameterType[] NON_URL_PARAMETER_TYPES = new HttpParameterType[] {
-            HttpParameterType.COOKIE,
             HttpParameterType.JSON,
             HttpParameterType.XML,
             HttpParameterType.XML_ATTRIBUTE,
@@ -174,14 +173,14 @@ final class RequestResponseParametersSupport {
     }
 
     /**
-     * Computes the traffic {@code request.header.content-type_inferred} verdict from body bytes alone.
+     * Computes the traffic {@code request.content_type.inferred} verdict from body bytes alone.
      */
     static String inferRequestContentType(byte[] bodyBytes, List<HttpHeader> headers) {
         return inferRequestContentType(bodyBytes, headers, null);
     }
 
     /**
-     * Computes {@code request.header.content-type_inferred} from wire body bytes, optionally
+     * Computes {@code request.content_type.inferred} from wire body bytes, optionally
      * decompressing when {@code Content-Encoding} or declared-form gzip magic applies.
      *
      * @param bodyBytes wire body bytes; {@code null} treated as empty
@@ -644,6 +643,8 @@ final class RequestResponseParametersSupport {
         for (ParsedHttpParameter parameter : parameters) {
             if (parameter != null && parameter.type() == HttpParameterType.URL) {
                 urlParameters.add(parameter);
+            } else if (parameter != null && parameter.type() == HttpParameterType.COOKIE) {
+                continue;
             } else if (parameter != null) {
                 nonUrlParameters.add(parameter);
             }
@@ -746,6 +747,9 @@ final class RequestResponseParametersSupport {
                 continue;
             }
             HttpParameterType type = parameter.type();
+            if (type == HttpParameterType.COOKIE) {
+                continue;
+            }
             if (type == HttpParameterType.BODY) {
                 if (!includeBody) {
                     droppedSynthesized++;

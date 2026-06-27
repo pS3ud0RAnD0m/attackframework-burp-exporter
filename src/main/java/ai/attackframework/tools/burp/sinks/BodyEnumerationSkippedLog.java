@@ -99,7 +99,7 @@ public final class BodyEnumerationSkippedLog {
      * @param requestDoc built request sub-document
      * @param contentType Burp declared content type
      * @param headers request headers
-     * @param inferredContentType sniffed {@code request.header.content-type_inferred} value
+     * @param inferredContentType sniffed {@code request.content_type.inferred} value
      * @param bodyBytes raw request body bytes
      * @param bodyEnumerationSkipped whether BODY enumeration was skipped on the fast path
      */
@@ -130,7 +130,7 @@ public final class BodyEnumerationSkippedLog {
      *
      * @param contentType Burp declared content type
      * @param headers request headers
-     * @param inferredContentType sniffed {@code request.header.content-type_inferred} value
+     * @param inferredContentType sniffed {@code request.content_type.inferred} value
      * @param bodyBytes raw request body bytes
      * @param bodyEnumerationSkipped whether BODY enumeration was skipped on the fast path
      * @return {@code true} when the document is a mis-gate suspect
@@ -164,7 +164,7 @@ public final class BodyEnumerationSkippedLog {
      *
      * @param contentType Burp declared content type
      * @param headers request headers
-     * @param inferredContentType sniffed {@code request.header.content-type_inferred} value
+     * @param inferredContentType sniffed {@code request.content_type.inferred} value
      * @param bodyBytes raw request body bytes
      * @param bodyEnumerationSkipped whether BODY enumeration was skipped on the fast path
      * @return {@code true} when the gate outcome is unexpected
@@ -216,9 +216,7 @@ public final class BodyEnumerationSkippedLog {
             if (gateBugDocCount > 0) {
                 int count = gateBugDocCount;
                 gateBugDocCount = 0;
-                gateBugLine = "[ParameterIntegrity] BODY enumeration skipped for " + count
-                        + " request(s) with declared form/multipart but inferred text/empty body"
-                        + " (unexpected gate outcome; report if seen).";
+                gateBugLine = formatGateBugWarning("startup/backlog", count);
             }
         }
         if (misgateLine != null) {
@@ -305,9 +303,7 @@ public final class BodyEnumerationSkippedLog {
             if (gateBugDocCount > 0) {
                 int count = gateBugDocCount;
                 gateBugDocCount = 0;
-                gateBugLine = "[ParameterIntegrity] BODY enumeration skipped for " + count
-                        + " request(s) with declared form/multipart but inferred text/empty body"
-                        + " (unexpected gate outcome; report if seen).";
+                gateBugLine = formatGateBugWarning("stop", count);
             }
         }
         if (misgateLine != null) {
@@ -365,6 +361,17 @@ public final class BodyEnumerationSkippedLog {
                 .append(ParameterIntegrityDetailReporter.detailPointer("misgate_binary"))
                 .append(".");
         return sb.toString();
+    }
+
+    private static String formatGateBugWarning(String phase, int count) {
+        return "[ParameterIntegrity] BODY enumeration skipped during "
+                + phase
+                + " for "
+                + count
+                + " request(s) with declared form/multipart but inferred text/empty body"
+                + " (unexpected gate outcome; report if seen). "
+                + ParameterIntegrityDetailReporter.detailPointer("misgate_binary")
+                + ".";
     }
 
     private static String dedupeUrl(HttpRequest request, HttpService service, Map<String, Object> requestDoc) {

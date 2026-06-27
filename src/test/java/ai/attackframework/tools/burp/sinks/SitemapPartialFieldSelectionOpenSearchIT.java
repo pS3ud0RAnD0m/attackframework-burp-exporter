@@ -58,7 +58,7 @@ class SitemapPartialFieldSelectionOpenSearchIT {
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
                 ConfigState.DEFAULT_EXPORTER_SUB_OPTIONS,
                 ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS,
-                Map.of("sitemap", Set.of("request.url", "burp.is_in_scope")));
+                Map.of("sitemap", Set.of("request.url.raw", "burp.is_in_scope")));
 
         Map<String, Object> built = SitemapIndexReporter.buildSitemapDoc(mockSitemapItem());
         pushOneDocument("sitemap", built, state);
@@ -66,7 +66,7 @@ class SitemapPartialFieldSelectionOpenSearchIT {
 
         assertThat(stored).containsKeys("meta", "request", "burp");
         assertThat(stored).doesNotContainKey("response");
-        assertThat(nestedMap(stored, "request").get("url")).isEqualTo(ITEM_URL);
+        assertThat(nestedMap(nestedMap(stored, "request"), "url").get("raw")).isEqualTo(ITEM_URL);
         assertThat(nestedMap(stored, "burp").containsKey("is_in_scope")).isTrue();
         assertThat(nestedMap(stored, "burp").containsKey("timing")).isFalse();
     }

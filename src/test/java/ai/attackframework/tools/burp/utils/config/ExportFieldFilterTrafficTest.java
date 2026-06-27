@@ -30,7 +30,8 @@ class ExportFieldFilterTrafficTest {
                 "reporting_tool", "Repeater",
                 "is_in_scope", true,
                 "repeater", repeater)));
-        doc.put("request", new LinkedHashMap<>(Map.of("url", "https://example.test/repeater/live")));
+        doc.put("request", new LinkedHashMap<>(Map.of(
+                "url", Map.of("raw", "https://example.test/repeater/live"))));
         doc.put("meta", new LinkedHashMap<>(Map.of("schema_version", "test")));
 
         Map<String, Object> filtered = ExportFieldFilter.filterDocument(doc, "traffic");
@@ -48,8 +49,8 @@ class ExportFieldFilterTrafficTest {
     @Test
     void filterTraffic_withAllFieldsEnabled_preservesNestedArrayContainers() {
         Map<String, Object> request = new LinkedHashMap<>();
-        request.put("url", "https://example.test/path");
-        request.put("header", Map.of("host", "example.test"));
+        request.put("url", Map.of("raw", "https://example.test/path"));
+        request.put("headers", List.of(Map.of("name", "host", "value", "example.test", "ordinal", 0)));
         request.put("parameters", List.of(Map.of("name", "q", "type", "URL", "value", "one")));
         request.put("body", Map.of("markers", List.of(Map.of("start_inclusive", 0, "end_exclusive", 3))));
         Map<String, Object> doc = new LinkedHashMap<>();
@@ -60,16 +61,16 @@ class ExportFieldFilterTrafficTest {
 
         assertThat(filtered.get("request")).isInstanceOf(Map.class);
         Map<?, ?> filteredRequest = (Map<?, ?>) filtered.get("request");
-        assertThat(filteredRequest.containsKey("header")).isTrue();
+        assertThat(filteredRequest.containsKey("headers")).isTrue();
         assertThat(filteredRequest.containsKey("parameters")).isTrue();
         assertThat(filteredRequest.containsKey("markers")).isFalse();
-        assertThat(filteredRequest.get("header")).isEqualTo(request.get("header"));
+        assertThat(filteredRequest.get("headers")).isEqualTo(request.get("headers"));
         assertThat(filteredRequest.get("parameters")).isEqualTo(request.get("parameters"));
         assertThat(filteredRequest.get("body")).isEqualTo(request.get("body"));
     }
 
     @Test
-    void filterTraffic_withDynamicHeaderSelection_preservesAllHeaderFields() {
+    void filterTraffic_withHeaderNameSelection_preservesOnlyHeaderNames() {
         RuntimeConfig.updateState(new ConfigState.State(
                 List.of(ConfigKeys.SRC_TRAFFIC),
                 ConfigKeys.SCOPE_ALL,
@@ -78,13 +79,13 @@ class ExportFieldFilterTrafficTest {
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 List.of("proxy"),
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
-                Map.of("traffic", Set.of("request.header"))));
+                Map.of("traffic", Set.of("request.headers.name"))));
 
         Map<String, Object> request = new LinkedHashMap<>();
-        request.put("url", "https://example.test/path");
-        request.put("header", Map.of(
-                "host", "example.test",
-                "cookie", "session=secret"));
+        request.put("url", Map.of("raw", "https://example.test/path"));
+        request.put("headers", List.of(
+                Map.of("name", "host", "value", "example.test", "ordinal", 0),
+                Map.of("name", "cookie", "value", "session=secret", "ordinal", 1)));
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("request", request);
         doc.put("meta", new LinkedHashMap<>(Map.of("schema_version", "test")));
@@ -92,8 +93,87 @@ class ExportFieldFilterTrafficTest {
         Map<String, Object> filtered = ExportFieldFilter.filterDocument(doc, "traffic");
 
         Map<?, ?> filteredRequest = (Map<?, ?>) filtered.get("request");
-        assertThat(filteredRequest.get("header")).isEqualTo(request.get("header"));
+        List<?> headers = (List<?>) filteredRequest.get("headers");
+        assertThat(headers).hasSize(2);
+        Map<?, ?> firstHeader = (Map<?, ?>) headers.get(0);
+        assertThat(firstHeader.get("name")).isEqualTo("host");
+        assertThat(firstHeader.containsKey("value")).isFalse();
         assertThat(filteredRequest.containsKey("url")).isFalse();
+    }
+
+    @Test
+    void filterTraffic_withRepresentativeHttpLeaves_preservesSharedNestedShape() {
+        RuntimeConfig.updateState(new ConfigState.State(
+                List.of(ConfigKeys.SRC_TRAFFIC),
+                ConfigKeys.SCOPE_ALL,
+                List.of(),
+                new ConfigState.Sinks(false, "", true, "https://opensearch.url:9200", "", "", false),
+                ConfigState.DEFAULT_SETTINGS_SUB,
+                List.of("proxy"),
+                ConfigState.DEFAULT_FINDINGS_SEVERITIES,
+                Map.of("traffic", Set.of(
+                        "request.headers.raw",
+                        "request.cookies.value",
+                        "request.content_type.media_type",
+                        "response.headers.raw",
+                        "response.cookies.raw",
+                        "response.mime_type.media_type"))));
+
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("headers", List.of(Map.of(
+                "name", "host",
+                "raw", "Host: example.test",
+                "value", "example.test",
+                "ordinal", 0)));
+        request.put("cookies", List.of(Map.of(
+                "name", "sid",
+                "value", "abc",
+                "ordinal", 0)));
+        request.put("content_type", Map.of(
+                "raw", "application/json; charset=utf-8",
+                "media_type", "application/json"));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("headers", List.of(Map.of(
+                "name", "set-cookie",
+                "raw", "Set-Cookie: sid=abc",
+                "value", "sid=abc",
+                "ordinal", 0)));
+        response.put("cookies", List.of(Map.of(
+                "name", "sid",
+                "raw", "sid=abc; HttpOnly",
+                "http_only", true,
+                "ordinal", 0)));
+        response.put("mime_type", Map.of(
+                "raw_content_type", "text/html; charset=utf-8",
+                "media_type", "text/html"));
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("request", request);
+        doc.put("response", response);
+        doc.put("meta", new LinkedHashMap<>(Map.of("schema_version", "test")));
+
+        Map<String, Object> filtered = ExportFieldFilter.filterDocument(doc, "traffic");
+
+        Map<?, ?> filteredRequest = (Map<?, ?>) filtered.get("request");
+        Map<?, ?> filteredResponse = (Map<?, ?>) filtered.get("response");
+        Map<?, ?> requestHeader = (Map<?, ?>) ((List<?>) filteredRequest.get("headers")).get(0);
+        Map<?, ?> requestCookie = (Map<?, ?>) ((List<?>) filteredRequest.get("cookies")).get(0);
+        Map<?, ?> requestContentType = (Map<?, ?>) filteredRequest.get("content_type");
+        Map<?, ?> responseHeader = (Map<?, ?>) ((List<?>) filteredResponse.get("headers")).get(0);
+        Map<?, ?> responseCookie = (Map<?, ?>) ((List<?>) filteredResponse.get("cookies")).get(0);
+        Map<?, ?> responseMimeType = (Map<?, ?>) filteredResponse.get("mime_type");
+
+        assertThat(requestHeader).hasSize(1);
+        assertThat(requestHeader.get("raw")).isEqualTo("Host: example.test");
+        assertThat(requestCookie).hasSize(1);
+        assertThat(requestCookie.get("value")).isEqualTo("abc");
+        assertThat(requestContentType).hasSize(1);
+        assertThat(requestContentType.get("media_type")).isEqualTo("application/json");
+        assertThat(responseHeader).hasSize(1);
+        assertThat(responseHeader.get("raw")).isEqualTo("Set-Cookie: sid=abc");
+        assertThat(responseCookie).hasSize(1);
+        assertThat(responseCookie.get("raw")).isEqualTo("sid=abc; HttpOnly");
+        assertThat(responseMimeType).hasSize(1);
+        assertThat(responseMimeType.get("media_type")).isEqualTo("text/html");
     }
 
     @Test
@@ -161,11 +241,11 @@ class ExportFieldFilterTrafficTest {
                 ConfigState.DEFAULT_SETTINGS_SUB,
                 ConfigState.DEFAULT_TRAFFIC_TOOL_TYPES,
                 ConfigState.DEFAULT_FINDINGS_SEVERITIES,
-                Map.of("findings", Set.of("requests_responses.request.url"))));
+                Map.of("findings", Set.of("requests_responses.request.url.raw"))));
 
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("requests_responses", List.of(
-                Map.of("request", Map.of("url", "https://example.test/one")),
+                Map.of("request", Map.of("url", Map.of("raw", "https://example.test/one"))),
                 Map.of("request", Map.of("method", "GET")),
                 Map.of("response", Map.of("status", Map.of("code", 200)))));
         doc.put("meta", new LinkedHashMap<>(Map.of("schema_version", "test")));
@@ -176,7 +256,7 @@ class ExportFieldFilterTrafficTest {
         assertThat(pairs).hasSize(1);
         Map<?, ?> pair = (Map<?, ?>) pairs.get(0);
         Map<?, ?> request = (Map<?, ?>) pair.get("request");
-        assertThat(request.get("url")).isEqualTo("https://example.test/one");
+        assertThat(((Map<?, ?>) request.get("url")).get("raw")).isEqualTo("https://example.test/one");
         assertThat(request.containsKey("method")).isFalse();
     }
 

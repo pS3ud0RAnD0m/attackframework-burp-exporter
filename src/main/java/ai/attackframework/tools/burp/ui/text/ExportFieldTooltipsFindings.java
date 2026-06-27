@@ -123,11 +123,11 @@ final class ExportFieldTooltipsFindings {
                     "HTTP version on the evidence request line.",
                     "FindingsIndexReporter.putPairRequestServiceFields() uses RequestResponseDocBuilder.safeRequestHttpVersion().");
             case "request.header" -> Tooltips.textWithSource(
-                    "Actual evidence request headers as lower-case dynamic fields plus exporter-inferred header facets.",
-                    "RequestResponseDocBuilder.buildTrafficRequestDoc() copies HttpHeader values into request.header.<lower-case-name>; duplicate header names become arrays, and inferred request content type is written as request.header.content-type_inferred.");
+                    "Actual evidence request headers as ordered rows.",
+                    "RequestResponseDocBuilder.buildTrafficRequestDoc() writes HttpHeader values into request.headers rows with name, raw, value, and ordinal fields; request.content_type carries parsed content-type helpers.");
             case "response.header" -> Tooltips.textWithSource(
-                    "Actual evidence response headers as lower-case dynamic fields plus Burp-inferred content-type facets.",
-                    "RequestResponseDocBuilder.buildTrafficResponseDoc() copies HttpHeader values into response.header.<lower-case-name>; duplicate header names become arrays, and Burp MIME verdicts are written as response.header.content-type_inferred_burp and response.header.content-type_inferred_burp_body.");
+                    "Actual evidence response headers as ordered rows.",
+                    "RequestResponseDocBuilder.buildTrafficResponseDoc() writes HttpHeader values into response.headers rows with name, raw, value, and ordinal fields; response.mime_type carries Burp and parsed MIME helpers.");
             default -> ExportFieldTooltipsTraffic.trafficTooltip(nestedFieldKey);
         };
     }
@@ -249,11 +249,11 @@ final class ExportFieldTooltipsFindings {
                     "Raw HTTP response bytes from the Collaborator pingback as Base64.",
                     "FindingsIndexReporter.buildCollaboratorInteractionsList() uses HttpResponse.toByteArray() from HttpDetails.requestResponse().response() and Base64-encodes the bytes.");
             case "request.header" -> Tooltips.textWithSource(
-                    "Parsed Collaborator HTTP request headers as lower-case dynamic fields plus exporter-inferred header facets.",
-                    "FindingsIndexReporter.buildCollaboratorInteractionsList() uses RequestResponseDocBuilder.buildTrafficRequestDoc() for HttpDetails.requestResponse().request().");
+                    "Parsed Collaborator HTTP request headers as ordered rows.",
+                    "FindingsIndexReporter.buildCollaboratorInteractionsList() uses RequestResponseDocBuilder.buildTrafficRequestDoc() for HttpDetails.requestResponse().request(), which writes request.headers rows.");
             case "response.header" -> Tooltips.textWithSource(
-                    "Parsed Collaborator HTTP response headers as lower-case dynamic fields plus Burp-inferred content-type facets.",
-                    "FindingsIndexReporter.buildCollaboratorInteractionsList() uses RequestResponseDocBuilder.buildTrafficResponseDoc() for HttpDetails.requestResponse().response().");
+                    "Parsed Collaborator HTTP response headers as ordered rows.",
+                    "FindingsIndexReporter.buildCollaboratorInteractionsList() uses RequestResponseDocBuilder.buildTrafficResponseDoc() for HttpDetails.requestResponse().response(), which writes response.headers rows.");
             default -> {
                 yield ExportFieldTooltips.genericLeafTooltip("collaborator.http." + leaf);
             }

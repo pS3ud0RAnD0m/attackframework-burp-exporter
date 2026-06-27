@@ -16,8 +16,8 @@
           "indexed_at": { "type": "date" }
         }
       },
-      "project": { "type": "object", "enabled": true },
-      "user": { "type": "object", "enabled": true }
+      "project": { "type": "object", "enabled": false },
+      "user": { "type": "object", "enabled": false }
     }
   }
 }

@@ -124,6 +124,46 @@ class UrlParameterTruncationLogTest {
     }
 
     @Test
+    void flushStopSummary_emitsPendingLiveOverflowRemainder() throws Exception {
+        Map<String, Object> requestDoc = Map.of();
+
+        UrlParameterTruncationLog.flushStartupSummary();
+        for (int i = 0; i <= UrlParameterTruncationLog.LIVE_UNIQUE_URL_LOG_CAP; i++) {
+            HttpRequest request = mock(HttpRequest.class);
+            when(request.url()).thenReturn("https://example.test/live-" + i);
+            UrlParameterTruncationLog.record(request, null, requestDoc, 1);
+        }
+        UrlParameterTruncationLog.flushStopSummary();
+        flushLogListeners();
+
+        assertThat(debugMessages).hasSize(UrlParameterTruncationLog.LIVE_UNIQUE_URL_LOG_CAP + 1);
+        assertThat(debugMessages.get(debugMessages.size() - 1))
+                .contains("URL parameters truncated for 1 additional unique request.url")
+                .contains("Data-Integrity#url_params_truncated");
+        assertThat(warnMessages).isEmpty();
+    }
+
+    @Test
+    void liveOverflowSummary_reportsAdditionalUrlsSincePreviousSummary() throws Exception {
+        Map<String, Object> requestDoc = Map.of();
+
+        UrlParameterTruncationLog.flushStartupSummary();
+        for (int i = 0; i < UrlParameterTruncationLog.LIVE_UNIQUE_URL_LOG_CAP + 50; i++) {
+            HttpRequest request = mock(HttpRequest.class);
+            when(request.url()).thenReturn("https://example.test/live-" + i);
+            UrlParameterTruncationLog.record(request, null, requestDoc, 1);
+        }
+        flushLogListeners();
+
+        assertThat(debugMessages)
+                .filteredOn(message -> message.contains("additional unique request.url"))
+                .hasSize(2)
+                .allSatisfy(message -> assertThat(message)
+                        .contains("URL parameters truncated for 25 additional unique request.url")
+                        .doesNotContain("for 50 additional"));
+    }
+
+    @Test
     void formatStartupSummaryForTests_listsSampleUrls() {
         Map<String, Integer> totals = new LinkedHashMap<>();
         totals.put("https://example.test/a", 4);

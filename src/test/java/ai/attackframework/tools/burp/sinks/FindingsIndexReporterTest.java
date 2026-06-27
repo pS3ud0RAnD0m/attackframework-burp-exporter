@@ -512,8 +512,10 @@ class FindingsIndexReporterTest {
         assertThat(http.get("request_b64")).isEqualTo("R0VUIC9jYWxsYmFjayBIVFRQLzEuMQ0KDQo=");
         assertThat(http.get("response_b64")).isEqualTo("SFRUUC8xLjEgMjAwIE9LDQoNCg==");
         assertThat(parsedRequest.get("method")).isEqualTo("GET");
-        assertThat(parsedRequest.get("port")).isEqualTo(80);
-        assertThat(((Map<?, ?>) parsedRequest.get("protocol")).get("scheme")).isEqualTo("http");
+        Map<?, ?> parsedUrl = (Map<?, ?>) parsedRequest.get("url");
+        assertThat(parsedUrl.get("port")).isEqualTo(80);
+        assertThat(parsedUrl.get("scheme")).isEqualTo("http");
+        assertThat(((Map<?, ?>) parsedRequest.get("protocol")).containsKey("scheme")).isFalse();
         assertThat(((Map<?, ?>) parsedResponse.get("status")).get("code")).isEqualTo(200);
     }
 

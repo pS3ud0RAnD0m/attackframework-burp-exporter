@@ -200,11 +200,12 @@ class SitemapIndexReporterIT {
             assertThat(burp.containsKey("reporting_tool")).isFalse();
 
             Map<?, ?> request = nestedMap(doc, "request");
-            assertThat(request.get("url")).isEqualTo(ITEM_URL);
-            assertThat(request.get("port")).isEqualTo(ITEM_PORT);
+            Map<?, ?> requestUrl = nestedMap(request, "url");
+            assertThat(requestUrl.get("raw")).isEqualTo(ITEM_URL);
+            assertThat(requestUrl.get("port")).isEqualTo(ITEM_PORT);
             assertThat(request.get("method")).isEqualTo(ITEM_METHOD);
             Map<?, ?> requestProtocol = nestedMap(request, "protocol");
-            assertThat(requestProtocol.get("scheme")).isEqualTo("https");
+            assertThat(requestProtocol.containsKey("scheme")).isFalse();
             Map<?, ?> requestPath = nestedMap(request, "path");
             assertThat(requestPath.get("with_query")).isEqualTo(ITEM_PATH);
             assertThat(requestPath.get("query")).isEqualTo(ITEM_QUERY);

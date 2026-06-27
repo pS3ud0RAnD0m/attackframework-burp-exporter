@@ -247,10 +247,9 @@ public final class ProxyHistoryIndexReporter {
         Map<String, Object> requestDoc = RequestResponseDocBuilder.buildTrafficRequestDoc(request);
         String url = RequestResponseDocBuilder.buildBestEffortUrl(request, service, requestDoc, "ProxyHistory");
         boolean burpInScope = scopeCache.isInScope(url);
-        requestDoc.put("url", url);
-        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("url", HttpMessageDocSupport.urlObject(url, service));
         requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+                RequestResponseDocBuilder.safeRequestHttpVersion(request)));
 
         Map<String, Object> document = new LinkedHashMap<>();
         Map<String, Object> burp = new LinkedHashMap<>();

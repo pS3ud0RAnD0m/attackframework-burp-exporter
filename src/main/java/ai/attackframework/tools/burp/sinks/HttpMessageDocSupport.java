@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.nio.ByteBuffer;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
@@ -16,12 +18,18 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.UnsupportedCharsetException;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 import ai.attackframework.tools.burp.utils.StringKeyedMaps;
+import burp.api.montoya.http.HttpService;
 import burp.api.montoya.core.Marker;
 import burp.api.montoya.http.message.Cookie;
 import burp.api.montoya.http.message.HttpHeader;
 import burp.api.montoya.http.message.MimeType;
+import burp.api.montoya.http.message.ContentType;
 import burp.api.montoya.http.message.responses.HttpResponse;
 
 /** Shared HTTP message encoding, headers, markers, and body fields. */
@@ -29,16 +37,16 @@ final class HttpMessageDocSupport {
 
     private HttpMessageDocSupport() {}
 
+    private static final DateTimeFormatter BROWSER_COOKIE_EXPIRES_FORMAT =
+            DateTimeFormatter.ofPattern("EEE MMM d yyyy HH:mm:ss 'GMT'Z", Locale.ROOT);
+
     static final int TEXT_SNIFF_BYTES = 64 * 1024;
     static final double MAX_CONTROL_CHAR_RATIO = 0.02d;
     /**
-     * Inference vocabulary for {@code request.header.content-type_inferred}.
+     * Request body content-type inference vocabulary.
      *
-     * <p>Mirrors the fidelity pattern used by {@code response.header.content-type_inferred_burp_body}
-     * (Burp's byte-sniffing verdict) so consumers can compare declared vs. sniffed without us ever
-     * rewriting the declared value. Feeds {@link #shouldIncludeBodyParameters} as a
-     * tamper-resistant gate against Content-Type spoofing, e.g. a raw protobuf body declared
-     * as {@code application/x-www-form-urlencoded}.</p>
+     * <p>Feeds BODY parameter collection as a tamper-resistant gate against Content-Type spoofing,
+     * for example a raw protobuf body declared as {@code application/x-www-form-urlencoded}.</p>
      */
     static final String INFERRED_CT_EMPTY = "empty";
     static final String INFERRED_CT_BINARY = "binary";
@@ -121,30 +129,72 @@ final class HttpMessageDocSupport {
         if (responseDoc == null || field == null) {
             return;
         }
-        Map<String, Object> headers = StringKeyedMaps.nested(responseDoc, "headers", () -> {
-            Map<String, Object> fresh = new LinkedHashMap<>();
-            fresh.put("full", List.of());
-            return fresh;
-        });
-        headers.put(field, value);
+        Map<String, Object> attributes = StringKeyedMaps.nested(responseDoc, "header_attributes", LinkedHashMap::new);
+        attributes.put(field, value);
     }
 
-    static List<Map<String, Object>> cookiesToList(List<Cookie> cookies) {
+    static List<Map<String, Object>> responseCookiesToList(List<Cookie> cookies, List<HttpHeader> headers) {
+        List<Map<String, Object>> fromHeaders = responseCookiesFromHeaders(headers);
+        if (!fromHeaders.isEmpty()) {
+            return fromHeaders;
+        }
         if (cookies == null || cookies.isEmpty()) {
             return List.of();
         }
         List<Map<String, Object>> out = new ArrayList<>(cookies.size());
+        int ordinal = 0;
         for (Cookie c : cookies) {
-            Map<String, Object> entry = new LinkedHashMap<>(5);
+            if (c == null) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>(12);
             entry.put("name", c.name());
             entry.put("value", c.value());
             entry.put("domain", c.domain());
             entry.put("path", c.path());
             Optional<java.time.ZonedDateTime> exp = c.expiration();
-            entry.put("expiration", exp == null || exp.isEmpty() ? null : exp.get().toInstant().toString());
+            entry.put("expires", exp == null || exp.isEmpty() ? null : exp.get().toInstant().toString());
+            entry.put("max_age", null);
+            entry.put("secure", false);
+            entry.put("http_only", false);
+            entry.put("same_site", null);
+            entry.put("partitioned", false);
+            entry.put("raw", null);
+            entry.put("ordinal", ordinal++);
             out.add(entry);
         }
         return out;
+    }
+
+    static List<Map<String, Object>> requestCookiesToList(List<HttpHeader> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        int ordinal = 0;
+        for (HttpHeader header : headers) {
+            if (header == null || header.name() == null || !header.name().equalsIgnoreCase("Cookie")) {
+                continue;
+            }
+            String value = header.value();
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            for (String part : value.split(";")) {
+                String raw = part.trim();
+                if (raw.isEmpty()) {
+                    continue;
+                }
+                int equals = raw.indexOf('=');
+                Map<String, Object> entry = new LinkedHashMap<>(4);
+                entry.put("name", equals < 0 ? raw : raw.substring(0, equals).trim());
+                entry.put("value", equals < 0 ? "" : raw.substring(equals + 1).trim());
+                entry.put("raw", raw);
+                entry.put("ordinal", ordinal++);
+                out.add(entry);
+            }
+        }
+        return List.copyOf(out);
     }
 
     /**
@@ -660,55 +710,25 @@ final class HttpMessageDocSupport {
     }
 
     /**
-     * Converts Burp headers to a list of name/value maps for the traffic/sitemap index mapping.
+     * Converts Burp headers to ordered name/value rows for agent-friendly analysis.
      */
-    static List<Map<String, String>> headersToList(List<HttpHeader> headers) {
+    static List<Map<String, Object>> headersToList(List<HttpHeader> headers) {
         if (headers == null || headers.isEmpty()) {
             return List.of();
         }
-        List<Map<String, String>> out = new ArrayList<>(headers.size());
+        List<Map<String, Object>> out = new ArrayList<>(headers.size());
+        int ordinal = 0;
         for (HttpHeader h : headers) {
-            Map<String, String> entry = new LinkedHashMap<>(2);
-            entry.put("name", h.name());
+            if (h == null) {
+                continue;
+            }
+            Map<String, Object> entry = new LinkedHashMap<>(4);
+            entry.put("name", normalizedHeaderFieldName(h.name()));
+            entry.put("raw", h.name());
             entry.put("value", h.value());
+            entry.put("ordinal", ordinal++);
             out.add(entry);
         }
-        return out;
-    }
-
-    static Map<String, Object> buildHeadersObject(List<HttpHeader> headers) {
-        Map<String, Object> out = new LinkedHashMap<>(1);
-        out.put("full", headersToList(headers));
-        return out;
-    }
-
-    static Map<String, Object> buildHeaderValueObject(List<HttpHeader> headers) {
-        if (headers == null || headers.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> out = new LinkedHashMap<>();
-        for (HttpHeader header : headers) {
-            if (header == null) {
-                continue;
-            }
-            String name = normalizedHeaderFieldName(header.name());
-            if (name == null) {
-                continue;
-            }
-            putHeaderValue(out, name, header.value());
-        }
-        return out;
-    }
-
-    static Map<String, Object> buildRequestHeaderValueObject(List<HttpHeader> headers, String inferredContentType) {
-        Map<String, Object> out = new LinkedHashMap<>(buildHeaderValueObject(headers));
-        out.put("content-type_inferred", inferredContentType);
-        return out;
-    }
-
-    static Map<String, Object> buildResponseHeaderValueObject(List<HttpHeader> headers, HttpResponse response) {
-        Map<String, Object> out = new LinkedHashMap<>(buildHeaderValueObject(headers));
-        TrafficResponseHeaderFields.putInferredContentTypeFields(out, response);
         return out;
     }
 
@@ -716,39 +736,177 @@ final class HttpMessageDocSupport {
         if (headerName == null) {
             return null;
         }
-        String normalized = headerName.trim().toLowerCase(Locale.ROOT).replace('.', '_');
+        String normalized = headerName.trim().toLowerCase(Locale.ROOT);
         return normalized.isBlank() ? null : normalized;
     }
 
-    static void putHeaderValue(Map<String, Object> headers, String name, String value) {
-        Object existing = headers.get(name);
-        if (!headers.containsKey(name)) {
-            headers.put(name, value);
-            return;
-        }
-        if (existing instanceof List<?> existingValues) {
-            List<Object> values = new ArrayList<>(existingValues);
-            values.add(value);
-            headers.put(name, values);
-            return;
-        }
-        List<Object> values = new ArrayList<>(2);
-        values.add(existing);
-        values.add(value);
-        headers.put(name, values);
+    static Map<String, Object> requestContentType(
+            List<HttpHeader> headers,
+            ContentType contentType,
+            String inferredContentType) {
+        String raw = headerValue(headers, "Content-Type");
+        Map<String, Object> out = new LinkedHashMap<>(6);
+        out.put("raw", raw);
+        out.put("media_type", primaryMediaType(
+                raw,
+                mediaTypeHints(
+                        contentType == null ? null : contentType.toString(),
+                        contentType == null ? null : contentType.name())));
+        Charset charset = charsetFromContentType(raw);
+        out.put("charset", charset == null ? null : charset.name());
+        out.put("burp_declared", contentType == null ? null : contentType.toString());
+        out.put("burp_enum", contentType == null ? null : contentType.name());
+        out.put("inferred", inferredContentType);
+        return out;
     }
 
-    static List<String> headerNames(List<HttpHeader> headers) {
+    static Map<String, Object> responseMimeType(List<HttpHeader> headers, HttpResponse response) {
+        MimeType burp = response == null ? null : response.mimeType();
+        MimeType stated = response == null ? null : response.statedMimeType();
+        MimeType inferred = response == null ? null : response.inferredMimeType();
+        String raw = headerValue(headers, "Content-Type");
+        Map<String, Object> out = new LinkedHashMap<>(7);
+        out.put("raw_content_type", raw);
+        out.put("media_type", primaryMediaType(
+                raw,
+                mediaTypeHints(mimeTypeHint(burp), mimeTypeHint(stated), mimeTypeHint(inferred))));
+        Charset charset = charsetFromContentType(raw);
+        out.put("charset", charset == null ? null : charset.name());
+        out.put("burp", mimeTypeHint(burp));
+        out.put("stated", mimeTypeHint(stated));
+        out.put("inferred_body", mimeTypeHint(inferred));
+        return out;
+    }
+
+    static Map<String, Object> urlObject(String rawUrl, HttpService service) {
+        String raw = normalizeBlank(rawUrl);
+        URI uri = parseUri(raw);
+        String scheme = uri == null ? null : normalizeBlank(uri.getScheme());
+        String host = uri == null ? null : normalizeBlank(uri.getHost());
+        Integer port = uri == null || uri.getPort() < 0 ? null : uri.getPort();
+        if (scheme == null && service != null) {
+            scheme = service.secure() ? "https" : "http";
+        }
+        if (host == null && service != null) {
+            host = normalizeBlank(service.host());
+        }
+        if (port == null && service != null && service.port() > 0) {
+            port = service.port();
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>(8);
+        out.put("raw", raw);
+        out.put("text", raw);
+        out.put("scheme", scheme);
+        out.put("host", host);
+        out.put("port", port);
+        out.put("path", uri == null ? null : nullToEmpty(uri.getRawPath()));
+        out.put("query", uri == null ? null : uri.getRawQuery());
+        out.put("fragment", uri == null ? null : uri.getRawFragment());
+        return out;
+    }
+
+    private static URI parseUri(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return new URI(raw);
+        } catch (URISyntaxException e) {
+            return null;
+        }
+    }
+
+    private static List<Map<String, Object>> responseCookiesFromHeaders(List<HttpHeader> headers) {
         if (headers == null || headers.isEmpty()) {
             return List.of();
         }
-        List<String> out = new ArrayList<>(headers.size());
-        for (HttpHeader h : headers) {
-            if (h != null && h.name() != null) {
-                out.add(h.name());
+        List<Map<String, Object>> out = new ArrayList<>();
+        int ordinal = 0;
+        for (HttpHeader header : headers) {
+            if (header == null || header.name() == null || !header.name().equalsIgnoreCase("Set-Cookie")) {
+                continue;
+            }
+            Map<String, Object> parsed = parseSetCookie(header.value(), ordinal++);
+            if (parsed != null) {
+                out.add(parsed);
             }
         }
+        return List.copyOf(out);
+    }
+
+    private static Map<String, Object> parseSetCookie(String rawValue, int ordinal) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        String[] parts = rawValue.split(";");
+        String nameValue = parts[0].trim();
+        int equals = nameValue.indexOf('=');
+        Map<String, Object> out = new LinkedHashMap<>(12);
+        out.put("name", equals < 0 ? nameValue : nameValue.substring(0, equals).trim());
+        out.put("value", equals < 0 ? "" : nameValue.substring(equals + 1).trim());
+        out.put("domain", null);
+        out.put("path", null);
+        out.put("expires", null);
+        out.put("max_age", null);
+        out.put("secure", false);
+        out.put("http_only", false);
+        out.put("same_site", null);
+        out.put("partitioned", false);
+        out.put("raw", rawValue);
+        out.put("ordinal", ordinal);
+        for (int i = 1; i < parts.length; i++) {
+            applySetCookieAttribute(out, parts[i].trim());
+        }
         return out;
+    }
+
+    private static void applySetCookieAttribute(Map<String, Object> cookie, String attribute) {
+        if (attribute == null || attribute.isBlank()) {
+            return;
+        }
+        int equals = attribute.indexOf('=');
+        String name = (equals < 0 ? attribute : attribute.substring(0, equals)).trim().toLowerCase(Locale.ROOT);
+        String value = equals < 0 ? "" : attribute.substring(equals + 1).trim();
+        switch (name) {
+            case "domain" -> cookie.put("domain", value);
+            case "path" -> cookie.put("path", value);
+            case "expires" -> cookie.put("expires", normalizeCookieDate(value));
+            case "max-age" -> cookie.put("max_age", value);
+            case "secure" -> cookie.put("secure", true);
+            case "httponly" -> cookie.put("http_only", true);
+            case "samesite" -> cookie.put("same_site", value);
+            case "partitioned" -> cookie.put("partitioned", true);
+            default -> {
+                // Ignore extension attributes until the schema has a named field for them.
+            }
+        }
+    }
+
+    private static String normalizeCookieDate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toString();
+        } catch (DateTimeParseException e) {
+            try {
+                return Instant.parse(value).toString();
+            } catch (DateTimeParseException ignored) {
+                return normalizeBrowserCookieDate(value);
+            }
+        }
+    }
+
+    private static String normalizeBrowserCookieDate(String value) {
+        // Browser-like Set-Cookie Expires strings include a parenthetical zone name that OpenSearch
+        // date formats do not parse cleanly; raw Set-Cookie remains available in response.cookies.raw.
+        String stripped = value.replaceFirst("\\s*\\([^)]*\\)\\s*$", "").trim();
+        try {
+            return ZonedDateTime.parse(stripped, BROWSER_COOKIE_EXPIRES_FORMAT).toInstant().toString();
+        } catch (DateTimeParseException ignored) {
+            return value;
+        }
     }
 
 }

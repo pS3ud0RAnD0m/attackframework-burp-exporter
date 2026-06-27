@@ -3,7 +3,7 @@ package ai.attackframework.tools.burp.sinks;
 import ai.attackframework.tools.burp.utils.Logger;
 
 /**
- * Session-boundary logging for parameter-integrity export outcomes.
+ * Session-boundary logging for parameter-integrity and final Stats export outcomes.
  *
  * <p>Session-final Stats totals (File Counts, OpenSearch Counts, Misc Stats including Parameter
  * Integrity) are INFO from {@link ai.attackframework.tools.burp.ui.StatsClipboardSnapshot} after
@@ -19,12 +19,14 @@ public final class ParameterIntegritySessionLog {
      *
      * <p>Safe to call multiple times; intended once per export Stop before connection teardown.
      * Clipboard-equivalent Stats totals are logged from
-     * {@link ai.attackframework.tools.burp.ui.StatsClipboardSnapshot#logSessionStopSummary()} after
-     * the final exporter stats push.</p>
+     * {@link ai.attackframework.tools.burp.ui.StatsClipboardSnapshot#logSessionStopSummaryWithOpenSearchCounts()}
+     * after the final exporter stats push.</p>
      */
     public static void flushStopDebugValidation() {
         BodyEnumerationSkippedLog.flushStopDebugSamples();
         CompressedWireBodyParamsLog.flushStopDebugSamples();
+        BodyParameterTruncationLog.flushStopSummary();
+        UrlParameterTruncationLog.flushStopSummary();
     }
 
     /**
@@ -38,12 +40,12 @@ public final class ParameterIntegritySessionLog {
         }
         switch (outcome.kind()) {
             case SUCCESS -> Logger.logInfoPanelOnly(
-                    "[ParameterIntegrity] Final exporter stats push: success.");
-            case SKIPPED_DISABLED, SKIPPED_NO_SINK -> Logger.logInfoPanelOnly(
-                    "[ParameterIntegrity] Final exporter stats push: skipped ("
+                    "[Stats] Final exporter stats push: success.");
+            case SKIPPED_DISABLED, SKIPPED_NO_SINK -> Logger.logDebug(
+                    "[Stats] Final exporter stats push: skipped ("
                             + outcome.detail() + ").");
             case FAILED -> Logger.logWarnPanelOnly(
-                    "[ParameterIntegrity] Final exporter stats push: failed ("
+                    "[Stats] Final exporter stats push: failed ("
                             + outcome.detail() + ").");
             default -> {
                 // exhaustive enum

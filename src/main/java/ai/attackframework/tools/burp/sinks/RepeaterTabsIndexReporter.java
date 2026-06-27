@@ -1020,10 +1020,9 @@ public final class RepeaterTabsIndexReporter {
                 requestDoc,
                 "RepeaterTabs");
         boolean burpInScope = isInScope(url);
-        requestDoc.put("url", url);
-        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("url", HttpMessageDocSupport.urlObject(url, service));
         requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+                RequestResponseDocBuilder.safeRequestHttpVersion(request)));
 
         Map<String, Object> document = new LinkedHashMap<>();
         Map<String, Object> burp = new LinkedHashMap<>();

@@ -56,6 +56,7 @@ public final class ExporterIndexStatsReporter {
     private static final LazyScheduler SCHEDULER =
             new LazyScheduler("attackframework-exporter-stats");
     private static volatile int scheduledIntervalSeconds = ConfigState.DEFAULT_EXPORTER_STATS_INTERVAL_SECONDS;
+    private static volatile String lastPeriodicFailureDetail;
 
     private ExporterIndexStatsReporter() {}
 
@@ -148,6 +149,7 @@ public final class ExporterIndexStatsReporter {
      */
     public static void stop() {
         SCHEDULER.stop();
+        lastPeriodicFailureDetail = null;
     }
 
     /**
@@ -205,24 +207,39 @@ public final class ExporterIndexStatsReporter {
                     "Exporter stats snapshot push failed");
             if (!ok) {
                 String reason = pushResult.resolvedFailureDetail();
-                if (finalSnapshot || openSearchActive) {
+                if (finalSnapshot || shouldLogPeriodicFailure(openSearchActive, reason)) {
                     Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: " + reason);
                 }
                 return ExporterStatsPushOutcome.failed(reason);
             }
+            lastPeriodicFailureDetail = null;
             return ExporterStatsPushOutcome.success();
         } catch (RuntimeException e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: " + msg);
+            if (finalSnapshot || shouldLogPeriodicFailure(RuntimeConfig.isOpenSearchActive(), msg)) {
+                Logger.logWarnPanelOnly("[SnapshotExport] Exporter stats: push failed: " + msg);
+            }
             return ExporterStatsPushOutcome.failed(msg);
         }
+    }
+
+    private static boolean shouldLogPeriodicFailure(boolean openSearchActive, String reason) {
+        if (!openSearchActive) {
+            return false;
+        }
+        String normalized = reason == null || reason.isBlank() ? "unknown" : reason;
+        if (normalized.equals(lastPeriodicFailureDetail)) {
+            return false;
+        }
+        lastPeriodicFailureDetail = normalized;
+        return true;
     }
 
     private static Map<String, Object> buildSnapshotDoc(boolean finalSnapshot) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("jvm", buildJvmSection(SystemMetrics.snapshot()));
         data.put("export", buildExportSection(finalSnapshot));
-        data.put("indexes", buildIndexesSection());
+        data.put("indexes", buildIndexesSection(finalSnapshot));
         data.put("traffic", buildTrafficSection());
         data.put("stats", buildStatsSection());
         Map<String, Object> snapshotLastRuns = buildSnapshotLastRunsSection();
@@ -307,11 +324,11 @@ public final class ExporterIndexStatsReporter {
         return export;
     }
 
-    private static Map<String, Object> buildIndexesSection() {
+    private static Map<String, Object> buildIndexesSection(boolean finalSnapshot) {
         Map<String, Object> indexes = new LinkedHashMap<>();
         for (String key : ExportStats.getIndexKeys()) {
             Map<String, Object> index = new LinkedHashMap<>();
-            long exported = ExportStats.getExportedCount(key);
+            long exported = exportedCountForSnapshot(key, finalSnapshot);
             index.put("exported", exported);
             index.put("count", exported);
             index.put("bytes", ExportStats.getExportedBytes(key));
@@ -328,6 +345,14 @@ public final class ExporterIndexStatsReporter {
             indexes.put(key, index);
         }
         return indexes;
+    }
+
+    private static long exportedCountForSnapshot(String key, boolean finalSnapshot) {
+        long exported = ExportStats.getExportedCount(key);
+        if (finalSnapshot && "exporter".equals(key) && RuntimeConfig.isOpenSearchActive()) {
+            return exported + 1L;
+        }
+        return exported;
     }
 
     private static Map<String, Object> buildTrafficSection() {

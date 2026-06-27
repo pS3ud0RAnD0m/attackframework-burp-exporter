@@ -4,6 +4,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -19,6 +20,7 @@ import javax.swing.SwingUtilities;
 import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
+import ai.attackframework.tools.burp.utils.Logger;
 import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 import net.miginfocom.swing.MigLayout;
 
@@ -163,6 +165,13 @@ class ConfigControlPanelHeadlessTest {
     @Test
     void stop_click_clearsExportRunningBeforeStopActionRuns() throws Exception {
         resetExportRunning();
+        AtomicBoolean exportReadyWhenStopClickLogged = new AtomicBoolean(true);
+        Logger.LogListener listener = (level, message) -> {
+            if ("[Control] Stop clicked; running=true -> false".equals(message)) {
+                exportReadyWhenStopClickLogged.set(RuntimeConfig.isExportReady());
+            }
+        };
+        Logger.registerListener(listener);
         try {
             AtomicReference<Boolean> runningWhenStopActionRuns = new AtomicReference<>();
             JPanel root = buildPanel(
@@ -180,7 +189,10 @@ class ConfigControlPanelHeadlessTest {
             runEdt(() -> { });
 
             assertThat(runningWhenStopActionRuns).hasValue(false);
+            assertThat(exportReadyWhenStopClickLogged).isFalse();
         } finally {
+            Logger.unregisterListener(listener);
+            Logger.resetState();
             resetExportRunning();
         }
     }

@@ -111,6 +111,46 @@ class BodyParameterTruncationLogTest {
     }
 
     @Test
+    void flushStopSummary_emitsPendingLiveOverflowRemainder() throws Exception {
+        Map<String, Object> requestDoc = Map.of();
+
+        BodyParameterTruncationLog.flushStartupSummary();
+        for (int i = 0; i <= BodyParameterTruncationLog.LIVE_UNIQUE_URL_LOG_CAP; i++) {
+            HttpRequest request = mock(HttpRequest.class);
+            when(request.url()).thenReturn("https://example.test/live-" + i);
+            BodyParameterTruncationLog.record(request, null, requestDoc, 1);
+        }
+        BodyParameterTruncationLog.flushStopSummary();
+        flushLogListeners();
+
+        assertThat(debugMessages).hasSize(BodyParameterTruncationLog.LIVE_UNIQUE_URL_LOG_CAP + 1);
+        assertThat(debugMessages.get(debugMessages.size() - 1))
+                .contains("BODY parameters truncated for 1 additional unique request.url")
+                .contains("Data-Integrity#body_params_truncated");
+        assertThat(warnMessages).isEmpty();
+    }
+
+    @Test
+    void liveOverflowSummary_reportsAdditionalUrlsSincePreviousSummary() throws Exception {
+        Map<String, Object> requestDoc = Map.of();
+
+        BodyParameterTruncationLog.flushStartupSummary();
+        for (int i = 0; i < BodyParameterTruncationLog.LIVE_UNIQUE_URL_LOG_CAP + 50; i++) {
+            HttpRequest request = mock(HttpRequest.class);
+            when(request.url()).thenReturn("https://example.test/live-" + i);
+            BodyParameterTruncationLog.record(request, null, requestDoc, 1);
+        }
+        flushLogListeners();
+
+        assertThat(debugMessages)
+                .filteredOn(message -> message.contains("additional unique request.url"))
+                .hasSize(2)
+                .allSatisfy(message -> assertThat(message)
+                        .contains("BODY parameters truncated for 25 additional unique request.url")
+                        .doesNotContain("for 50 additional"));
+    }
+
+    @Test
     void formatStartupSummaryForTests_listsSampleUrls() {
         Map<String, Integer> totals = new LinkedHashMap<>();
         totals.put("https://example.test/a", 4);

@@ -322,10 +322,9 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 service,
                 requestDoc,
                 "TrafficHttpHandler");
-        requestDoc.put("url", url);
-        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("url", HttpMessageDocSupport.urlObject(url, service));
         requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+                RequestResponseDocBuilder.safeRequestHttpVersion(request)));
 
         Map<String, Object> document = new LinkedHashMap<>();
         Map<String, Object> burp = new LinkedHashMap<>();
@@ -399,10 +398,9 @@ class TrafficHttpHandlerSupport implements HttpHandler {
                 service,
                 requestDoc,
                 "TrafficHttpHandler");
-        requestDoc.put("url", url);
-        requestDoc.put("port", service == null ? null : service.port());
+        requestDoc.put("url", HttpMessageDocSupport.urlObject(url, service));
         requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                scheme, RequestResponseDocBuilder.safeRequestHttpVersion(request)));
+                RequestResponseDocBuilder.safeRequestHttpVersion(request)));
 
         Map<String, Object> document = new LinkedHashMap<>();
         Map<String, Object> burp = new LinkedHashMap<>();
@@ -683,7 +681,9 @@ class TrafficHttpHandlerSupport implements HttpHandler {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("status", TrafficResponseStatusFields.of(ORPHAN_STATUS, null, ORPHAN_REASON_PHRASE));
         resp.put("protocol", TrafficProtocolFields.responseProtocol(null));
-        resp.put("header", TrafficResponseHeaderFields.empty());
+        resp.put("headers", Collections.emptyList());
+        resp.put("cookies", Collections.emptyList());
+        resp.put("mime_type", HttpMessageDocSupport.responseMimeType(Collections.emptyList(), null));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("length", 0);
         body.put("offset", 0);

@@ -28,6 +28,12 @@ class MappingsContractTest {
     );
 
     private static final String RESOURCE_ROOT = "/opensearch/mappings/";
+    private static final String HTTP_DATE_FORMAT =
+            "EEE, dd MMM yyyy HH:mm:ss zzz||EEE, d MMM yyyy HH:mm:ss zzz||EEE, dd-MMM-yyyy HH:mm:ss zzz"
+                    + "||EEE, d-MMM-yyyy HH:mm:ss zzz||EEE, dd-MMM-yy HH:mm:ss zzz"
+                    + "||EEE, d-MMM-yy HH:mm:ss zzz||EEE, dd-MMM-yyyy HH:mm:ss 'GMT'Z"
+                    + "||EEE, d-MMM-yyyy HH:mm:ss 'GMT'Z||dd MMM yyyy HH:mm:ss zzz"
+                    + "||d MMM yyyy HH:mm:ss zzz||strict_date_optional_time||epoch_millis";
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -82,12 +88,22 @@ class MappingsContractTest {
             JsonNode props = root.path("mappings").path("properties");
             JsonNode requestProtocol = props.path("request").path("properties").path("protocol").path("properties");
             assertThat(requestProtocol.has("http_version")).isTrue();
-            assertThat(requestProtocol.has("scheme")).isTrue();
+            assertThat(requestProtocol.has("scheme")).isFalse();
             assertThat(requestProtocol.has("transport")).isFalse();
             assertThat(requestProtocol.has("host")).isFalse();
             assertThat(requestProtocol.has("port")).isFalse();
             assertThat(props.path("request").path("properties").has("host")).isFalse();
-            assertThat(props.path("request").path("properties").has("port")).isTrue();
+            assertThat(props.path("request").path("properties").has("port")).isFalse();
+            JsonNode requestUrl = props.path("request").path("properties").path("url").path("properties");
+            assertThat(requestUrl.has("raw")).isTrue();
+            assertThat(requestUrl.has("text")).isTrue();
+            assertThat(requestUrl.has("scheme")).isTrue();
+            assertThat(requestUrl.has("host")).isTrue();
+            assertThat(requestUrl.has("port")).isTrue();
+            assertThat(requestUrl.path("port").path("ignore_malformed").asBoolean()).isTrue();
+            assertThat(requestUrl.has("path")).isTrue();
+            assertThat(requestUrl.has("query")).isTrue();
+            assertThat(requestUrl.has("fragment")).isTrue();
             assertThat(requestProtocol.has("sub")).isFalse();
             assertThat(requestProtocol.has("application")).isFalse();
             assertThat(props.path("request").path("properties").has("http_version")).isFalse();
@@ -95,23 +111,33 @@ class MappingsContractTest {
             assertThat(responseProtocol.has("http_version")).isTrue();
             assertThat(props.path("response").path("properties").has("http_version")).isFalse();
             JsonNode responseProps = props.path("response").path("properties");
-            assertThat(responseProps.has("headers")).isFalse();
-            assertThat(responseProps.path("header").path("type").asText()).isEqualTo("object");
-            assertThat(props.path("response").path("properties").has("mime_type")).isFalse();
+            assertThat(responseProps.path("headers").path("type").asText()).isEqualTo("nested");
+            JsonNode responseHeaderAttributes = responseProps.path("header_attributes").path("properties");
+            assertThat(responseHeaderAttributes.path("date").path("type").asText()).isEqualTo("date");
+            assertThat(responseHeaderAttributes.path("date").path("format").asText()).isEqualTo(HTTP_DATE_FORMAT);
+            assertThat(responseHeaderAttributes.path("date").path("ignore_malformed").asBoolean()).isTrue();
+            assertThat(responseProps.has("header")).isFalse();
+            assertThat(props.path("response").path("properties").has("mime_type")).isTrue();
             assertThat(props.path("response").path("properties").has("stated_mime_type")).isFalse();
             assertThat(props.path("response").path("properties").has("inferred_mime_type")).isFalse();
             JsonNode responseStatus = props.path("response").path("properties").path("status").path("properties");
             assertThat(responseStatus.has("code")).isTrue();
+            assertThat(responseStatus.path("code").path("ignore_malformed").asBoolean()).isTrue();
             assertThat(responseStatus.has("code_class")).isTrue();
             assertThat(responseStatus.has("description")).isTrue();
             assertThat(props.path("response").path("properties").has("status_code")).isFalse();
             assertThat(props.path("response").path("properties").has("status_code_class")).isFalse();
             assertThat(props.path("response").path("properties").has("status_description")).isFalse();
             JsonNode requestProps = props.path("request").path("properties");
-            assertThat(requestProps.has("headers")).isFalse();
-            assertThat(requestProps.path("header").path("type").asText()).isEqualTo("object");
+            assertThat(requestProps.path("headers").path("type").asText()).isEqualTo("nested");
+            assertThat(requestProps.has("header")).isFalse();
+            JsonNode responseCookies = responseProps.path("cookies").path("properties");
+            assertThat(responseCookies.path("expires").path("format").asText()).isEqualTo(HTTP_DATE_FORMAT);
+            assertThat(responseCookies.path("expires").path("ignore_malformed").asBoolean()).isTrue();
+            assertThat(responseCookies.path("max_age").path("type").asText()).isEqualTo("long");
+            assertThat(responseCookies.path("max_age").path("ignore_malformed").asBoolean()).isTrue();
             assertThat(props.path("meta").path("properties").has("export")).isFalse();
-            assertThat(props.path("request").path("properties").has("content_type")).isFalse();
+            assertThat(props.path("request").path("properties").has("content_type")).isTrue();
             assertThat(props.path("request").path("properties").has("content_type_enum")).isFalse();
             assertThat(props.path("request").path("properties").has("inferred_content_type")).isFalse();
             JsonNode requestPath = props.path("request").path("properties").path("path").path("properties");
@@ -123,7 +149,7 @@ class MappingsContractTest {
             assertThat(props.path("request").path("properties").has("query")).isFalse();
             assertThat(props.path("request").path("properties").has("file_extension")).isFalse();
             assertThat(props.path("request").path("properties").has("edited")).isFalse();
-            assertThat(responseProps.path("header").path("type").asText()).isEqualTo("object");
+            assertThat(responseProps.has("header")).isFalse();
 
             JsonNode burpProxy = props.path("burp").path("properties").path("proxy").path("properties");
             assertThat(burpProxy.has("is_edited")).isFalse();
@@ -195,16 +221,16 @@ class MappingsContractTest {
             JsonNode responseProps = root.path("mappings").path("properties").path("response").path("properties");
 
             assertThat(requestProps.has("host")).isFalse();
-            assertThat(requestProps.has("content_type")).isFalse();
-            assertThat(requestProps.has("headers")).isFalse();
+            assertThat(requestProps.has("content_type")).isTrue();
+            assertThat(requestProps.path("headers").path("type").asText()).isEqualTo("nested");
             assertThat(responseProps.has("content_length")).isFalse();
-            assertThat(responseProps.has("cookies")).isFalse();
-            assertThat(responseProps.has("headers")).isFalse();
+            assertThat(responseProps.path("cookies").path("type").asText()).isEqualTo("nested");
+            assertThat(responseProps.path("headers").path("type").asText()).isEqualTo("nested");
             assertThat(responseProps.has("location")).isFalse();
-            assertThat(responseProps.has("mime_type")).isFalse();
-            assertThat(requestProps.path("header").path("type").asText()).isEqualTo("object");
-            assertThat(responseProps.path("header").path("type").asText()).isEqualTo("object");
-            assertTrafficHeaderDynamicTemplates(root.path("mappings").path("dynamic_templates"));
+            assertThat(responseProps.has("mime_type")).isTrue();
+            assertThat(requestProps.has("header")).isFalse();
+            assertThat(responseProps.has("header")).isFalse();
+            assertThat(root.path("mappings").has("dynamic_templates")).isFalse();
         }
     }
 
@@ -215,7 +241,7 @@ class MappingsContractTest {
 
         assertThat(sitemapProps.path("request")).isEqualTo(trafficProps.path("request"));
         assertThat(sitemapProps.path("response")).isEqualTo(trafficProps.path("response"));
-        assertTrafficHeaderDynamicTemplates(mappingRoot("sitemap.json").path("mappings").path("dynamic_templates"));
+        assertThat(mappingRoot("sitemap.json").path("mappings").has("dynamic_templates")).isFalse();
 
         JsonNode sitemapBurp = sitemapProps.path("burp").path("properties");
         assertThat(sitemapBurp.has("notes")).isTrue();
@@ -238,7 +264,7 @@ class MappingsContractTest {
         assertThat(findingsProps.has("requests_responses")).isTrue();
         assertThat(findingsProps.has("request_responses")).isFalse();
         assertThat(findingsProps.has("request_responses_missing")).isFalse();
-        assertFindingsHeaderDynamicTemplates(mappingRoot("findings.json").path("mappings").path("dynamic_templates"));
+        assertThat(mappingRoot("findings.json").path("mappings").has("dynamic_templates")).isFalse();
 
         JsonNode pairBurp = evidenceProps.path("burp").path("properties");
         assertThat(pairBurp.has("notes")).isTrue();
@@ -329,6 +355,46 @@ class MappingsContractTest {
     }
 
     @Test
+    void findings_nonHttpTypedFields_keepExplicitStrictBoundaries() throws Exception {
+        JsonNode props = mappingProperties("findings.json");
+
+        JsonNode collaboratorProps = props.path("collaborator").path("properties");
+        assertThat(collaboratorProps.path("client_ip").path("type").asText()).isEqualTo("ip");
+        assertThat(collaboratorProps.path("client_ip").has("ignore_malformed")).isFalse();
+        assertThat(collaboratorProps.path("client_port").path("type").asText()).isEqualTo("integer");
+        assertThat(collaboratorProps.path("client_port").has("ignore_malformed")).isFalse();
+        assertThat(collaboratorProps.path("time").path("type").asText()).isEqualTo("date");
+        assertThat(collaboratorProps.path("time").has("ignore_malformed")).isFalse();
+
+        JsonNode issueProps = props.path("issue").path("properties");
+        assertThat(issueProps.path("type_id").path("type").asText()).isEqualTo("integer");
+        assertThat(issueProps.path("type_id").has("ignore_malformed")).isFalse();
+
+        JsonNode targetProps = props.path("target").path("properties");
+        assertThat(targetProps.path("port").path("type").asText()).isEqualTo("integer");
+        assertThat(targetProps.path("port").has("ignore_malformed")).isFalse();
+    }
+
+    @Test
+    void settingsAndExporter_keepVariablePayloadsAsOpenObjects() throws Exception {
+        JsonNode settingsProps = mappingProperties("settings.json");
+        assertThat(settingsProps.path("project").path("type").asText()).isEqualTo("object");
+        assertThat(settingsProps.path("project").path("enabled").asBoolean()).isFalse();
+        assertThat(settingsProps.path("project").has("properties")).isFalse();
+        assertThat(settingsProps.path("user").path("type").asText()).isEqualTo("object");
+        assertThat(settingsProps.path("user").path("enabled").asBoolean()).isFalse();
+        assertThat(settingsProps.path("user").has("properties")).isFalse();
+
+        JsonNode exporterEventData = mappingProperties("exporter.json")
+                .path("event")
+                .path("properties")
+                .path("data");
+        assertThat(exporterEventData.path("type").asText()).isEqualTo("object");
+        assertThat(exporterEventData.path("enabled").asBoolean()).isTrue();
+        assertThat(exporterEventData.has("properties")).isFalse();
+    }
+
+    @Test
     void bodyMetadata_areNestedUnderBody_acrossHttpDocs() throws Exception {
         assertBodyMetadataNested("traffic.json");
         assertBodyMetadataNested("sitemap.json");
@@ -371,13 +437,13 @@ class MappingsContractTest {
                     .path("properties");
 
             JsonNode rrReqProps = rr.path("request").path("properties");
-            assertThat(rrReqProps.has("headers")).isFalse();
-            assertThat(rrReqProps.path("header").path("type").asText()).isEqualTo("object");
+            assertThat(rrReqProps.path("headers").path("type").asText()).isEqualTo("nested");
+            assertThat(rrReqProps.has("header")).isFalse();
             assertThat(rr.path("request").path("properties").has("header_names")).isFalse();
 
             JsonNode rrRespProps = rr.path("response").path("properties");
-            assertThat(rrRespProps.has("headers")).isFalse();
-            assertThat(rrRespProps.path("header").path("type").asText()).isEqualTo("object");
+            assertThat(rrRespProps.path("headers").path("type").asText()).isEqualTo("nested");
+            assertThat(rrRespProps.has("header")).isFalse();
             assertThat(rr.path("response").path("properties").has("header_names")).isFalse();
             assertThat(rr.path("response").path("properties").has("etag_header")).isFalse();
             assertThat(rr.path("response").path("properties").has("last_modified_header")).isFalse();
@@ -519,59 +585,35 @@ class MappingsContractTest {
 
             JsonNode requestProps = props.path("request").path("properties");
             JsonNode requestHeaders = requestProps.path("headers").path("properties");
-            boolean trafficLikeHttpShape = isTrafficLikeHttpShape(mappingFile);
-            assertThat(requestProps.has("headers")).isEqualTo(!trafficLikeHttpShape);
-            assertThat(requestHeaders.has("full")).isEqualTo(!trafficLikeHttpShape);
-            assertThat(requestProps.has("header")).isEqualTo(trafficLikeHttpShape);
+            assertThat(requestProps.path("headers").path("type").asText()).isEqualTo("nested");
+            assertThat(requestHeaders.has("name")).isTrue();
+            assertThat(requestHeaders.has("raw")).isTrue();
+            assertThat(requestHeaders.has("raw_name")).isFalse();
+            assertThat(requestHeaders.has("value")).isTrue();
+            assertThat(requestHeaders.has("ordinal")).isTrue();
+            assertThat(requestHeaders.has("full")).isFalse();
+            assertThat(requestProps.has("header")).isFalse();
 
             JsonNode responseProps = props.path("response").path("properties");
             JsonNode responseHeaders = responseProps.path("headers").path("properties");
-            assertThat(responseProps.has("headers")).isEqualTo(!trafficLikeHttpShape);
-            assertThat(responseHeaders.has("full")).isEqualTo(!trafficLikeHttpShape);
-            assertThat(responseProps.has("header")).isEqualTo(trafficLikeHttpShape);
-            assertThat(responseHeaders.has("names")).isEqualTo(hasConvenienceResponseHeaderFields);
-            assertThat(responseHeaders.has("etag")).isEqualTo(hasConvenienceResponseHeaderFields);
-            assertThat(responseHeaders.has("last_modified")).isEqualTo(hasConvenienceResponseHeaderFields);
-            assertThat(responseHeaders.has("content_location")).isEqualTo(hasConvenienceResponseHeaderFields);
+            assertThat(responseProps.path("headers").path("type").asText()).isEqualTo("nested");
+            assertThat(responseHeaders.has("name")).isTrue();
+            assertThat(responseHeaders.has("raw")).isTrue();
+            assertThat(responseHeaders.has("raw_name")).isFalse();
+            assertThat(responseHeaders.has("value")).isTrue();
+            assertThat(responseHeaders.has("ordinal")).isTrue();
+            assertThat(responseHeaders.has("full")).isFalse();
+            assertThat(responseProps.has("header")).isFalse();
+            assertThat(responseHeaders.has("names")).isFalse();
+            assertThat(responseHeaders.has("etag")).isFalse();
+            assertThat(responseHeaders.has("last_modified")).isFalse();
+            assertThat(responseHeaders.has("content_location")).isFalse();
 
             assertThat(responseProps.has("header_names")).isFalse();
             assertThat(responseProps.has("etag_header")).isFalse();
             assertThat(responseProps.has("last_modified_header")).isFalse();
             assertThat(responseProps.has("content_location")).isFalse();
         }
-    }
-
-    private static void assertTrafficHeaderDynamicTemplates(JsonNode dynamicTemplates) {
-        assertThat(dynamicTemplates.isArray()).isTrue();
-        assertDynamicKeywordTemplate(dynamicTemplates, "request_header_values", "request.header.*");
-        assertDynamicKeywordTemplate(dynamicTemplates, "response_header_values", "response.header.*");
-    }
-
-    private static void assertFindingsHeaderDynamicTemplates(JsonNode dynamicTemplates) {
-        assertThat(dynamicTemplates.isArray()).isTrue();
-        assertDynamicKeywordTemplate(dynamicTemplates, "request_header_values", "requests_responses.request.header.*");
-        assertDynamicKeywordTemplate(dynamicTemplates, "response_header_values", "requests_responses.response.header.*");
-        assertDynamicKeywordTemplate(dynamicTemplates, "collaborator_request_header_values",
-                "collaborator.http.request.header.*");
-        assertDynamicKeywordTemplate(dynamicTemplates, "collaborator_response_header_values",
-                "collaborator.http.response.header.*");
-    }
-
-    private static void assertDynamicKeywordTemplate(JsonNode templates, String name, String pathMatch) {
-        JsonNode template = dynamicTemplate(templates, name);
-        assertThat(template.path("path_match").asText()).isEqualTo(pathMatch);
-        JsonNode mapping = template.path("mapping");
-        assertThat(mapping.path("type").asText()).isEqualTo("keyword");
-        assertThat(mapping.path("ignore_above").asInt()).isEqualTo(8191);
-    }
-
-    private static JsonNode dynamicTemplate(JsonNode templates, String name) {
-        for (JsonNode candidate : templates) {
-            if (candidate.has(name)) {
-                return candidate.path(name);
-            }
-        }
-        throw new AssertionError("Missing dynamic template " + name);
     }
 
     private static boolean isTrafficLikeHttpShape(String mappingFile) {
@@ -655,7 +697,8 @@ class MappingsContractTest {
     void stringFields_haveExactMatchSubfield_whereExpected() throws Exception {
         record FieldShape(String mappingFile, String dottedPath) {}
         List<FieldShape> expected = List.of(
-                new FieldShape("sitemap.json",  "request.url"),
+                new FieldShape("sitemap.json",  "request.url.path"),
+                new FieldShape("sitemap.json",  "request.url.query"),
                 new FieldShape("sitemap.json",  "request.path.query"),
                 new FieldShape("sitemap.json",  "response.body.html.comments"),
                 new FieldShape("sitemap.json",  "burp.notes"),
@@ -663,10 +706,12 @@ class MappingsContractTest {
                 new FieldShape("traffic.json",  "burp.notes"),
                 new FieldShape("findings.json", "issue.name"),
                 new FieldShape("findings.json", "target.url"),
-                new FieldShape("findings.json", "requests_responses.request.url"),
+                new FieldShape("findings.json", "requests_responses.request.url.path"),
+                new FieldShape("findings.json", "requests_responses.request.url.query"),
                 new FieldShape("findings.json", "requests_responses.response.body.html.comments"),
                 new FieldShape("findings.json", "requests_responses.burp.notes"),
-                new FieldShape("findings.json", "collaborator.http.request.url"),
+                new FieldShape("findings.json", "collaborator.http.request.url.path"),
+                new FieldShape("findings.json", "collaborator.http.request.url.query"),
                 new FieldShape("findings.json", "collaborator.http.response.body.html.comments")
         );
 

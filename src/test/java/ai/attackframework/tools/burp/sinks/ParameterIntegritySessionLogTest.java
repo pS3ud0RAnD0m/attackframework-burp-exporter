@@ -59,8 +59,18 @@ class ParameterIntegritySessionLogTest {
         ParameterIntegritySessionLog.logFinalExporterStatsPush(ExporterStatsPushOutcome.success());
         flushLogListeners();
 
-        assertThat(infoMessages).anyMatch(m -> m.equals("[ParameterIntegrity] Final exporter stats push: success."));
+        assertThat(infoMessages).anyMatch(m -> m.equals("[Stats] Final exporter stats push: success."));
         assertThat(debugMessages).isEmpty();
+    }
+
+    @Test
+    void logFinalExporterStatsPush_expectedSkipIsDebugOnly() throws Exception {
+        ParameterIntegritySessionLog.logFinalExporterStatsPush(ExporterStatsPushOutcome.skippedDisabled());
+        flushLogListeners();
+
+        assertThat(debugMessages).anyMatch(m -> m.startsWith("[Stats] Final exporter stats push: skipped"));
+        assertThat(infoMessages).isEmpty();
+        assertThat(warnMessages).isEmpty();
     }
 
     @Test
@@ -69,7 +79,8 @@ class ParameterIntegritySessionLogTest {
                 ExporterStatsPushOutcome.failed("connection closed"));
         flushLogListeners();
 
-        assertThat(warnMessages).anyMatch(m -> m.contains("failed (connection closed)"));
+        assertThat(warnMessages).anyMatch(m -> m.equals(
+                "[Stats] Final exporter stats push: failed (connection closed)."));
         assertThat(debugMessages).isEmpty();
     }
 

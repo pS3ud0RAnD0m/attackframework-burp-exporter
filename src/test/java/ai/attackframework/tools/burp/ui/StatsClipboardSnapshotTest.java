@@ -3,6 +3,7 @@ package ai.attackframework.tools.burp.ui;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import javax.swing.SwingUtilities;
@@ -22,9 +23,12 @@ import ai.attackframework.tools.burp.utils.config.RuntimeConfig;
 class StatsClipboardSnapshotTest {
 
     private final List<String> infoMessages = new CopyOnWriteArrayList<>();
+    private final List<String> warnMessages = new CopyOnWriteArrayList<>();
     private final Logger.LogListener listener = (level, message) -> {
         if ("INFO".equals(level)) {
             infoMessages.add(message);
+        } else if ("WARN".equals(level)) {
+            warnMessages.add(message);
         }
     };
 
@@ -58,6 +62,7 @@ class StatsClipboardSnapshotTest {
         Logger.resetState();
         ExportStats.resetForTests();
         FileExportStats.resetForTests();
+        StatsClipboardSnapshot.setOpenSearchCountResolverForTests(null);
         if (previousState != null) {
             RuntimeConfig.updateState(previousState);
         }
@@ -90,5 +95,39 @@ class StatsClipboardSnapshotTest {
             assertThat(line).contains("\"kind\":");
         }
         assertThat(infoMessages.get(2)).contains("Mis-gate Suspects");
+    }
+
+    @Test
+    void logSessionStopSummaryWithOpenSearchCounts_usesResolvedIndexCounts() throws Exception {
+        StatsClipboardSnapshot.setOpenSearchCountResolverForTests(keys -> Map.of("traffic", 123L));
+
+        StatsClipboardSnapshot.logSessionStopSummaryWithOpenSearchCounts();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertThat(infoMessages).hasSize(3);
+        assertThat(infoMessages.get(1))
+                .contains("\"count_source\":\"opensearch_index_count\"")
+                .contains("[\"Traffic\",\"123\"");
+        assertThat(warnMessages).isEmpty();
+    }
+
+    @Test
+    void logSessionStopSummaryWithOpenSearchCounts_fallsBackToSessionCountersWhenCountFails() throws Exception {
+        StatsClipboardSnapshot.setOpenSearchCountResolverForTests(keys -> {
+            throw new IllegalStateException("cluster unavailable");
+        });
+
+        StatsClipboardSnapshot.logSessionStopSummaryWithOpenSearchCounts();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertThat(warnMessages).hasSize(1);
+        assertThat(warnMessages.get(0))
+                .contains("[Stats] Session stop OpenSearch index counts unavailable at Stop")
+                .contains("cluster unavailable");
+        assertThat(infoMessages).hasSize(3);
+        assertThat(infoMessages.get(1))
+                .contains("\"count_source\":\"session_export_counters\"")
+                .contains("\"count_warning\":\"OpenSearch index counts unavailable at Stop; using session export counters")
+                .contains("[\"Traffic\",\"100\"");
     }
 }

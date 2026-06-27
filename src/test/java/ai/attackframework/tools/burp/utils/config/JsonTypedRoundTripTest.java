@@ -381,7 +381,7 @@ class JsonTypedRoundTripTest {
     @Test
     void build_and_parse_preserves_exportFields_when_present() throws IOException {
         Map<String, Set<String>> enabledByIndex = Map.of(
-                "traffic", Set.of("request.url", "request.port", "request.method"),
+                "traffic", Set.of("request.url.raw", "request.url.port", "request.method"),
                 "settings", Set.of("burp.project_id")
         );
         var state = new ConfigState.State(
@@ -396,7 +396,7 @@ class JsonTypedRoundTripTest {
         ConfigState.State parsed = ConfigJsonMapper.parseState(json);
         assertThat(parsed.enabledExportFieldsByIndex()).isNotNull();
         assertThat(parsed.enabledExportFieldsByIndex().get("traffic"))
-                .containsExactlyInAnyOrder("request.url", "request.port", "request.method");
+                .containsExactlyInAnyOrder("request.url.raw", "request.url.port", "request.method");
         assertThat(parsed.enabledExportFieldsByIndex().get("settings")).containsExactly("burp.project_id");
     }
 
@@ -428,10 +428,10 @@ class JsonTypedRoundTripTest {
               "scope":["all"],
               "sinks":{},
               "exportFields":{
-                "traffic":["tool","burp.reporting_tool","response.header",
-                  "response.headers.mime_type.inferred_burp"],
+                "traffic":["tool","burp.reporting_tool","response.headers.name",
+                  "response.mime_type.inferred_body"],
                 "settings":["settings_project","project"],
-                "sitemap":["status","response.status.code","request.url"]
+                "sitemap":["status","response.status.code","request.url.raw"]
               }
             }
             """;
@@ -442,11 +442,12 @@ class JsonTypedRoundTripTest {
         assertThat(parsed.enabledExportFieldsByIndex().get("traffic"))
                 .containsExactlyInAnyOrder(
                         "burp.reporting_tool",
-                        "response.header");
+                        "response.headers.name",
+                        "response.mime_type.inferred_body");
         assertThat(parsed.enabledExportFieldsByIndex().get("settings"))
                 .containsExactly("project");
         assertThat(parsed.enabledExportFieldsByIndex().get("sitemap"))
-                .containsExactlyInAnyOrder("response.status.code", "request.url");
+                .containsExactlyInAnyOrder("response.status.code", "request.url.raw");
     }
 
     @Test

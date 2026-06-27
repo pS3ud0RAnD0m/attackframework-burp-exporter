@@ -411,10 +411,8 @@ public final class SitemapIndexReporter {
         doc.put("burp", buildBurpDoc(item, burpInScope));
 
         if (requestDoc != null) {
-            requestDoc.put("url", url);
-            requestDoc.put("port", service == null ? null : service.port());
+            requestDoc.put("url", HttpMessageDocSupport.urlObject(url, service));
             requestDoc.put("protocol", TrafficProtocolFields.requestProtocol(
-                    service == null ? null : (service.secure() ? "https" : "http"),
                     RequestResponseDocBuilder.safeRequestHttpVersion(request)));
         }
         doc.put("request", requestDoc);

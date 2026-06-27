@@ -30,6 +30,7 @@ public final class UrlParameterTruncationLog {
 
     private static int liveUniqueUrlLogsEmitted;
     private static long liveOverflowUniqueUrls;
+    private static long liveOverflowUniqueUrlsLastLogged;
     private static int startupTruncatedDocCount;
     private static boolean startupSummaryEmitted;
     /** When {@code true}, truncations accumulate for the startup/backlog summary line. */
@@ -44,6 +45,7 @@ public final class UrlParameterTruncationLog {
             LIVE_LOGGED_URLS.clear();
             liveUniqueUrlLogsEmitted = 0;
             liveOverflowUniqueUrls = 0;
+            liveOverflowUniqueUrlsLastLogged = 0;
             startupTruncatedDocCount = 0;
             startupSummaryEmitted = false;
             startupAccumulationActive = true;
@@ -110,6 +112,24 @@ public final class UrlParameterTruncationLog {
         Logger.logDebug(line);
     }
 
+    /**
+     * Emits any final live overflow summary not reached by the periodic threshold.
+     *
+     * <p>This method is thread-safe. It updates the live overflow watermark before logging so a
+     * repeated Stop flush does not duplicate the same summary.</p>
+     */
+    public static void flushStopSummary() {
+        long additional;
+        synchronized (LOCK) {
+            additional = liveOverflowUniqueUrls - liveOverflowUniqueUrlsLastLogged;
+            if (additional <= 0) {
+                return;
+            }
+            liveOverflowUniqueUrlsLastLogged = liveOverflowUniqueUrls;
+        }
+        Logger.logDebug(formatOverflowSummary(additional));
+    }
+
     static String formatStartupSummaryForTests(Map<String, Integer> urlDroppedTotals) {
         synchronized (LOCK) {
             Map<String, Integer> previous = new LinkedHashMap<>(STARTUP_URL_DROPPED_TOTALS);
@@ -157,13 +177,22 @@ public final class UrlParameterTruncationLog {
         if (liveOverflowUniqueUrls <= 0 || liveOverflowUniqueUrls % 25 != 0) {
             return;
         }
-        Logger.logDebug("[ParameterCardinality] URL parameters truncated for "
-                + liveOverflowUniqueUrls
+        long additional = liveOverflowUniqueUrls - liveOverflowUniqueUrlsLastLogged;
+        if (additional <= 0) {
+            return;
+        }
+        liveOverflowUniqueUrlsLastLogged = liveOverflowUniqueUrls;
+        Logger.logDebug(formatOverflowSummary(additional));
+    }
+
+    private static String formatOverflowSummary(long additionalUniqueUrls) {
+        return "[ParameterCardinality] URL parameters truncated for "
+                + additionalUniqueUrls
                 + " additional unique request.url value(s) this run (cap="
                 + RequestResponseParametersSupport.URL_PARAMETERS_CAP
                 + "); see Stats for session totals. "
                 + ParameterIntegrityDetailReporter.detailPointer("url_params_truncated")
-                + ".");
+                + ".";
     }
 
     private static String formatLiveLine(String url, int droppedUrlParams) {

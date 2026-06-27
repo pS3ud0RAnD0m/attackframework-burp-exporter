@@ -34,7 +34,7 @@ class ConfigPanelFieldCatalogLayoutHeadlessTest {
         JCheckBox reporter = findByName(panel, "fields.traffic.burp.reporting_tool", JCheckBox.class);
         JCheckBox proxyHistoryId = findByName(panel, "fields.traffic.burp.proxy.history_id", JCheckBox.class);
         JCheckBox requestBodyB64 = findByName(panel, "fields.traffic.request.body.b64", JCheckBox.class);
-        JCheckBox scheme = findByName(panel, "fields.traffic.request.protocol.scheme", JCheckBox.class);
+        JCheckBox scheme = findByName(panel, "fields.traffic.request.url.scheme", JCheckBox.class);
 
         runEdt(() -> {
             trafficExpand.doClick();
@@ -49,6 +49,7 @@ class ConfigPanelFieldCatalogLayoutHeadlessTest {
             assertThat(burpSection.getText()).isEqualTo("Burp");
             assertThat(scheme).isNotNull();
             assertThat(scheme.getText()).isEqualTo("Scheme");
+            assertThat(findByName(panel, "fields.traffic.request.protocol.scheme", JCheckBox.class)).isNull();
             assertThat(findByName(panel, "fields.traffic.scheme", JCheckBox.class)).isNull();
             burpExpand.doClick();
             assertThat(burpExpand.getText()).isEqualTo("−");
