@@ -90,7 +90,6 @@ spotbugs {
     toolVersion.set(libs.versions.spotbugs.get())
     effort.set(Effort.MAX)
     reportLevel.set(Confidence.HIGH)
-    excludeFilter.set(file("config/spotbugs/exclude.xml"))
 }
 
 tasks.withType<SpotBugsTask>().configureEach {
