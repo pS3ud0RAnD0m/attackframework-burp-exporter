@@ -10,15 +10,15 @@ By externalizing Burp’s insights into searchable, semantically indexed stores,
 
 ## Documentation
 
-- User guide and wiki: [github.com/pS3ud0RAnD0m/attackframework-burp-exporter/wiki](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/wiki)
-- Javadocs: [ps3ud0rand0m.github.io/attackframework-burp-exporter](https://ps3ud0rand0m.github.io/attackframework-burp-exporter/)
+- User guide and wiki: [project wiki](../../wiki)
+- Javadocs: [ps3ud0rand0m.github.io/burp-exporter](https://ps3ud0rand0m.github.io/burp-exporter/)
 - Contributing: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Security policy: [`.github/SECURITY.md`](.github/SECURITY.md)
 
 ## Support
 
-- Bugs and feature requests: [GitHub Issues](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/issues)
-- Security reports: [GitHub Private Vulnerability Reporting](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/security/advisories/new)
+- Bugs and feature requests: [GitHub Issues](../../issues)
+- Security reports: [GitHub Private Vulnerability Reporting](../../security/advisories/new)
 
 ## License
 

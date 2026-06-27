@@ -7,7 +7,7 @@ Thanks for your interest in contributing.
 - Use Discussions for questions and design discussion
 - Use Issues for bugs and feature requests
 - Use GitHub Private Vulnerability Reporting for security issues
-- Read the [README](../README.md) for project context and the repository wiki for user-facing documentation
+- Read the [README](../README.md) for project context and the [repository wiki](../../../wiki) for user-facing documentation
 - Prefer the issue forms so reports include the triage details maintainers need
 
 ## Contribution Guidelines

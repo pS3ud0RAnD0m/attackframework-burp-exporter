@@ -11,7 +11,7 @@ Users may be asked to upgrade to the latest version when reporting issues.
 
 If you discover a security issue in this project, **do not open a public issue**.
 
-Instead, use GitHub’s [Private Vulnerability Reporting](https://github.com/pS3ud0RAnD0m/attackframework-burp-exporter/security/advisories/new).
+Instead, use GitHub’s [Private Vulnerability Reporting](../../../security/advisories/new).
 
 This ensures the issue is reviewed without public exposure.
 
