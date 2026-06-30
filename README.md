@@ -6,7 +6,7 @@ This Burp Suite extension continuously exports settings, sitemap, issues, and tr
 
 By externalizing Burp’s insights into searchable, semantically indexed stores, this extension enables advanced querying, cross-project correlation, and integration with agentic pentesting workflows. This allows autonomous or assisted systems to reason over historical findings, surface patterns, and drive automated reconnaissance and exploitation logic.
 
-**Burp Exporter** is part of the larger [Anomalous Vectors Research Framework](https://github.com/AnomalousVectors/attackframework) — a modular ecosystem for integrating offensive security tools with modern AI and data infrastructure.
+Burp Exporter is part of a larger research framework being developed by Anomalous Vectors. Consider using [Anomalous Vectors OpenSearch](https://github.com/AnomalousVectors/opensearch) if wanting assured compatiblilty and expanding features tailored for offensive research.
 
 ## Documentation
 

@@ -38,7 +38,7 @@
     }
   },
   "indexNames" : {
-    "baseTemplate" : "${now:yyyyMMdd}-attackframework-tool-burp"
+    "baseTemplate" : "${now:yyyyMMdd}-tool-burp"
   },
   "ui" : {
     "stats" : {

@@ -12,14 +12,14 @@
     </appender>
 
     <!-- Nested class reference uses the binary name with '$' -->
-    <appender name="UI" class="ai.attackframework.tools.burp.utils.Logger$UiAppender"/>
+    <appender name="UI" class="ai.anomalousvectors.tools.burp.utils.Logger$UiAppender"/>
 
     <!-- Never log HTTP wire/packet content (would blow up with traffic). -->
     <logger name="org.apache.hc" level="WARN"/>
     <logger name="org.opensearch" level="WARN"/>
 
     <!-- Our package: DEBUG in console/UI. Third-party at INFO+ to avoid flood. -->
-    <logger name="ai.attackframework.tools.burp" level="DEBUG"/>
+    <logger name="ai.anomalousvectors.tools.burp" level="DEBUG"/>
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="UI"/>

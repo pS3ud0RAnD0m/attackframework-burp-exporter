@@ -116,7 +116,7 @@ tasks.test {
 
     workingDir = project.projectDir
     systemProperty("java.awt.headless", "true")
-    systemProperty("attackframework.version", project.version.toString())
+    systemProperty("burp.exporter.version", project.version.toString())
     // Forward OpenSearch URL/creds from Gradle -P or env into the test JVM (forked process does not inherit -P)
     listOf("OPENSEARCH_URL", "OPENSEARCH_USER", "OPENSEARCH_PASSWORD").forEach { key ->
         val value = project.findProperty(key)?.toString()?.takeIf { it.isNotBlank() }
@@ -190,11 +190,9 @@ tasks.named<JacocoReport>("jacocoTestReport") {
 }
 
 tasks.withType<Javadoc>().configureEach {
-    isFailOnError = false
-    @Suppress("UNCHECKED_CAST")
+    isFailOnError = true
     (options as StandardJavadocDocletOptions).apply {
-        addBooleanOption("Xdoclint:none", true)
-        addBooleanOption("quiet", true)
+        addBooleanOption("Xdoclint:all,-missing", true)
         encoding = "UTF-8"
         charSet = "UTF-8"
         docEncoding = "UTF-8"
