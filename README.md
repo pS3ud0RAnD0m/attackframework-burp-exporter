@@ -10,15 +10,15 @@ Burp Exporter is part of a larger research framework being developed by Anomalou
 
 ## Documentation
 
-- User guide and wiki: [project wiki](../../wiki)
-- Javadocs: [ps3ud0rand0m.github.io/burp-exporter](https://ps3ud0rand0m.github.io/burp-exporter/)
+- Wiki: [https://github.com/AnomalousVectors/burp-exporter/wiki](../../wiki)
+- Javadocs: [https://AnomalousVectors.github.io/burp-exporter](https://AnomalousVectors.github.io/burp-exporter/)
 - Contributing: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)
 - Security policy: [`.github/SECURITY.md`](.github/SECURITY.md)
 
 ## Support
 
-- Bugs and feature requests: [GitHub Issues](../../issues)
-- Security reports: [GitHub Private Vulnerability Reporting](../../security/advisories/new)
+- Bugs and feature requests: [https://github.com/AnomalousVectors/burp-exporter/issuess](../../issues)
+- Vulnerability Reporting: [https://github.com/AnomalousVectors/burp-exporter/security/advisories/new](../../security/advisories/new)
 
 ## License
 

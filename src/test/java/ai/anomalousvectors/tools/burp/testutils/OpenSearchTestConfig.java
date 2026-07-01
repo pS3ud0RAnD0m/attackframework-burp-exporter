@@ -22,8 +22,7 @@ public final class OpenSearchTestConfig {
     private static final String ENV_USER = "OPENSEARCH_USER";
     private static final String ENV_PASSWORD = "OPENSEARCH_PASSWORD";
 
-    private static volatile OpenSearchTestConfig instance;
-    private static final Object lock = new Object();
+    private static OpenSearchTestConfig instance;
 
     private final String baseUrl;
     private final String username;
@@ -52,13 +51,9 @@ public final class OpenSearchTestConfig {
     /**
      * Returns the singleton test config (lazy-loaded from system properties and env).
      */
-    public static OpenSearchTestConfig get() {
+    public static synchronized OpenSearchTestConfig get() {
         if (instance == null) {
-            synchronized (lock) {
-                if (instance == null) {
-                    instance = load();
-                }
-            }
+            instance = load();
         }
         return instance;
     }

@@ -15,7 +15,7 @@ public final class ProductInfo {
     /** Label for the extension repository link. */
     public static final String REPOSITORY_LABEL = "Burp Exporter:";
     /** Public extension repository URL. */
-    public static final String REPOSITORY_URL = "https://github.com/pS3ud0RAnD0m/burp-exporter";
+    public static final String REPOSITORY_URL = "https://github.com/AnomalousVectors/burp-exporter";
     /** Label for the parent framework/OpenSearch project link. */
     public static final String FRAMEWORK_OPENSEARCH_LABEL = "Anomalous Vectors OpenSearch:";
     /** Public parent framework/OpenSearch project URL. */

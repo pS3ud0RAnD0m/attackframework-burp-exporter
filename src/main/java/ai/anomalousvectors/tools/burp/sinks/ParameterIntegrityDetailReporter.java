@@ -24,7 +24,7 @@ final class ParameterIntegrityDetailReporter {
 
     private static final String SCHEMA_VERSION = "1";
     private static final String WIKI_DATA_INTEGRITY_URL =
-            "https://github.com/pS3ud0RAnD0m/burp-exporter/wiki/Data-Integrity";
+            "https://github.com/AnomalousVectors/burp-exporter/wiki/Data-Integrity";
 
     enum UrlListPolicy {
         FULL,

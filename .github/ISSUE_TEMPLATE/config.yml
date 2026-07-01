@@ -1,13 +1,13 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/pS3ud0RAnD0m/burp-exporter/security/advisories/new
+    url: https://github.com/AnomalousVectors/burp-exporter/security/advisories/new
     about: Use private reporting for security issues. Do not open a public issue.
 
   - name: Ask a question or discuss
-    url: https://github.com/pS3ud0RAnD0m/burp-exporter/discussions
+    url: https://github.com/AnomalousVectors/burp-exporter/discussions
     about: Use Discussions for setup questions, design discussion, and general conversation.
 
   - name: Documentation
-    url: https://github.com/pS3ud0RAnD0m/burp-exporter/wiki
+    url: https://github.com/AnomalousVectors/burp-exporter/wiki
     about: Browse the wiki for installation, configuration, testing, and usage guidance.
