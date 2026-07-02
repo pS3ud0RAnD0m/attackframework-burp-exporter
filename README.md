@@ -17,7 +17,7 @@ Burp Exporter is part of a larger research framework being developed by Anomalou
 
 ## Support
 
-- Bugs and feature requests: [https://github.com/AnomalousVectors/burp-exporter/issuess](../../issues)
+- Bugs and feature requests: [https://github.com/AnomalousVectors/burp-exporter/issues](../../issues)
 - Vulnerability Reporting: [https://github.com/AnomalousVectors/burp-exporter/security/advisories/new](../../security/advisories/new)
 
 ## License
